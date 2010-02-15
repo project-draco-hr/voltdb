@@ -1,0 +1,35 @@
+{
+  assert(orderByNode.getNodeType() == Node.ELEMENT_NODE);
+  assert(orderByNode.getNodeName().equalsIgnoreCase("operation"));
+  NamedNodeMap attrs=orderByNode.getAttributes();
+  Node operationTypeNode=attrs.getNamedItem("type");
+  assert(operationTypeNode != null);
+  assert(operationTypeNode.getNodeValue().equalsIgnoreCase("orderby"));
+  Node descNode=attrs.getNamedItem("desc");
+  boolean descending=descNode.getNodeValue().equalsIgnoreCase("true");
+  Node child=orderByNode.getFirstChild();
+  while (child.getNodeType() != Node.ELEMENT_NODE)   child=child.getNextSibling();
+  assert(child != null);
+  if (child.getNodeName().equals("columnref")) {
+    NamedNodeMap childAttrs=child.getAttributes();
+    String alias=childAttrs.getNamedItem("alias").getNodeValue();
+    ParsedColInfo col=allColumns.get(alias);
+    if (col == null) {
+      col=new ParsedColInfo();
+      col.alias=alias;
+      col.expression=parseExpressionTree(child,db);
+      ExpressionUtil.assignLiteralConstantTypesRecursively(col.expression);
+      ExpressionUtil.assignOutputValueTypesRecursively(col.expression);
+      col.index=allColumns.size();
+      col.columnName=childAttrs.getNamedItem("column").getNodeValue();
+      col.tableName=childAttrs.getNamedItem("table").getNodeValue();
+      allColumns.put(alias,col);
+    }
+    col.orderBy=true;
+    col.ascending=!descending;
+    orderColumns.add(col);
+  }
+ else {
+    throw new RuntimeException("ORDER BY with complex expressions not yet supported");
+  }
+}

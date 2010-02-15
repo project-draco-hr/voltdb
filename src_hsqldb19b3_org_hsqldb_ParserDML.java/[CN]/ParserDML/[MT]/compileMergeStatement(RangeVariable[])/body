@@ -1,0 +1,76 @@
+{
+  boolean[] insertColumnCheckList;
+  int[] insertColumnMap=null;
+  int[] updateColumnMap=null;
+  int[] baseUpdateColumnMap;
+  Table table;
+  RangeVariable targetRange;
+  RangeVariable sourceRange;
+  Expression mergeCondition;
+  HsqlArrayList updateList=new HsqlArrayList();
+  Expression[] updateExpressions=null;
+  HsqlArrayList insertList=new HsqlArrayList();
+  Expression insertExpression=null;
+  read();
+  readThis(Tokens.INTO);
+  targetRange=readSimpleRangeVariable(StatementTypes.MERGE);
+  table=targetRange.rangeTable;
+  readThis(Tokens.USING);
+  sourceRange=readTableOrSubquery();
+  readThis(Tokens.ON);
+  mergeCondition=XreadBooleanValueExpression();
+  if (mergeCondition.getDataType() != Type.SQL_BOOLEAN) {
+    throw Error.error(ErrorCode.X_42568);
+  }
+  RangeVariable[] fullRangeVars=new RangeVariable[]{sourceRange,targetRange};
+  RangeVariable[] sourceRangeVars=new RangeVariable[]{sourceRange};
+  RangeVariable[] targetRangeVars=new RangeVariable[]{targetRange};
+  insertColumnMap=table.getColumnMap();
+  insertColumnCheckList=table.getNewColumnCheckList();
+  OrderedHashSet updateColNames=new OrderedHashSet();
+  OrderedHashSet insertColNames=new OrderedHashSet();
+  readMergeWhen(insertColNames,updateColNames,insertList,updateList,targetRangeVars,sourceRange);
+  if (insertList.size() > 0) {
+    int colCount=insertColNames.size();
+    if (colCount != 0) {
+      insertColumnMap=table.getColumnIndexes(insertColNames);
+      insertColumnCheckList=table.getColumnCheckList(insertColumnMap);
+    }
+    insertExpression=(Expression)insertList.get(0);
+    setParameterTypes(insertExpression,table,insertColumnMap);
+  }
+  if (updateList.size() > 0) {
+    updateExpressions=new Expression[updateList.size()];
+    updateList.toArray(updateExpressions);
+    updateColumnMap=table.getColumnIndexes(updateColNames);
+  }
+  if (updateExpressions != null) {
+    Table baseTable=table.getBaseTable();
+    baseUpdateColumnMap=updateColumnMap;
+    if (table != baseTable) {
+      baseUpdateColumnMap=new int[updateColumnMap.length];
+      ArrayUtil.projectRow(table.getBaseTableColumnMap(),updateColumnMap,baseUpdateColumnMap);
+    }
+    resolveUpdateExpressions(table,sourceRangeVars,updateColumnMap,updateExpressions,outerRanges);
+  }
+  HsqlList unresolved=null;
+  unresolved=mergeCondition.resolveColumnReferences(fullRangeVars,null);
+  ExpressionColumn.checkColumnsResolved(unresolved);
+  mergeCondition.resolveTypes(session,null);
+  if (mergeCondition.isParam()) {
+    mergeCondition.dataType=Type.SQL_BOOLEAN;
+  }
+  if (mergeCondition.getDataType() != Type.SQL_BOOLEAN) {
+    throw Error.error(ErrorCode.X_42568);
+  }
+  RangeVariableResolver resolver=new RangeVariableResolver(fullRangeVars,mergeCondition,compileContext);
+  resolver.processConditions();
+  fullRangeVars=resolver.rangeVariables;
+  if (insertExpression != null) {
+    unresolved=insertExpression.resolveColumnReferences(sourceRangeVars,unresolved);
+    ExpressionColumn.checkColumnsResolved(unresolved);
+    insertExpression.resolveTypes(session,null);
+  }
+  StatementDMQL cs=new StatementDML(session,fullRangeVars,insertColumnMap,updateColumnMap,insertColumnCheckList,mergeCondition,insertExpression,updateExpressions,compileContext);
+  return cs;
+}

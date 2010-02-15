@@ -1,0 +1,119 @@
+{
+  compiler.addInfo("Compiling Statement: " + stmt);
+  QueryType qtype;
+  if (stmt.toLowerCase().startsWith("insert")) {
+    qtype=QueryType.INSERT;
+    catalogStmt.setReadonly(false);
+  }
+ else   if (stmt.toLowerCase().startsWith("update")) {
+    qtype=QueryType.UPDATE;
+    catalogStmt.setReadonly(false);
+  }
+ else   if (stmt.toLowerCase().startsWith("delete")) {
+    qtype=QueryType.DELETE;
+    catalogStmt.setReadonly(false);
+  }
+ else   if (stmt.toLowerCase().startsWith("select")) {
+    qtype=QueryType.SELECT;
+    catalogStmt.setReadonly(true);
+  }
+ else {
+    throw compiler.new VoltCompilerException("Unparsable SQL statement.");
+  }
+  catalogStmt.setQuerytype(qtype.getValue());
+  catalogStmt.setSqltext(stmt);
+  catalogStmt.setSinglepartition(singlePartition);
+  catalogStmt.setBatched(false);
+  catalogStmt.setParamnum(0);
+  String name=catalogStmt.getParent().getTypeName() + "-" + catalogStmt.getTypeName();
+  PlanNodeList node_list=null;
+  TrivialCostModel costModel=new TrivialCostModel();
+  QueryPlanner planner=new QueryPlanner(catalog.getClusters().get("cluster"),db,hsql,estimates,true,false);
+  CompiledPlan plan=null;
+  try {
+    plan=planner.compilePlan(costModel,catalogStmt.getSqltext(),catalogStmt.getTypeName(),catalogStmt.getParent().getTypeName(),catalogStmt.getSinglepartition(),null);
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+    throw compiler.new VoltCompilerException("Failed to plan for stmt: " + catalogStmt.getTypeName());
+  }
+  if (plan == null) {
+    String msg="Failed to plan for stmt: " + catalogStmt.getTypeName();
+    String plannerMsg=planner.getErrorMessage();
+    if (plannerMsg != null)     msg+=" with error: \"" + plannerMsg + "\"";
+    throw compiler.new VoltCompilerException(msg);
+  }
+  if (plan.fullWhereClause != null) {
+    String json="ERROR";
+    try {
+      String jsonCompact=plan.fullWhereClause.toJSONString();
+      json=jsonCompact;
+    }
+ catch (    Exception e) {
+      e.printStackTrace();
+    }
+    String hexString=HexEncoder.hexEncode(json);
+    catalogStmt.setExptree(hexString);
+  }
+  if (plan.fullWinnerPlan != null) {
+    String json="ERROR";
+    try {
+      String jsonCompact=plan.fullWinnerPlan.toJSONString();
+      json=jsonCompact;
+    }
+ catch (    Exception e) {
+      e.printStackTrace();
+    }
+    String hexString=HexEncoder.hexEncode(json);
+    catalogStmt.setFullplan(hexString);
+  }
+  for (  ParameterInfo param : plan.parameters) {
+    StmtParameter catalogParam=catalogStmt.getParameters().add(String.valueOf(param.index));
+    catalogParam.setJavatype(param.type.getValue());
+    catalogParam.setIndex(param.index);
+  }
+  int index=0;
+  for (  Integer colguid : plan.columns) {
+    PlanColumn planColumn=planner.getPlannerContext().get(colguid);
+    Column catColumn=catalogStmt.getOutput_columns().add(String.valueOf(index));
+    catColumn.setNullable(false);
+    catColumn.setIndex(index);
+    catColumn.setName(planColumn.displayName());
+    catColumn.setType(planColumn.type().getValue());
+    catColumn.setSize(planColumn.width());
+    index++;
+  }
+  catalogStmt.setReplicatedtabledml(plan.replicatedTableDML);
+  int i=0;
+  Collections.sort(plan.fragments);
+  for (  CompiledPlan.Fragment fragment : plan.fragments) {
+    node_list=new PlanNodeList(fragment.planGraph);
+    String planFragmentName=Integer.toString(i);
+    PlanFragment planFragment=catalogStmt.getFragments().add(planFragmentName);
+    planFragment.setNontransactional(!fragmentReferencesPersistentTable(fragment.planGraph));
+    planFragment.setHasdependencies(fragment.hasDependencies);
+    planFragment.setMultipartition(fragment.multiPartition);
+    String json=null;
+    try {
+      JSONObject jobj=new JSONObject(node_list.toJSONString());
+      json=jobj.toString(4);
+    }
+ catch (    JSONException e2) {
+      e2.printStackTrace();
+      System.exit(-1);
+    }
+    PrintStream plansOut=BuildDirectoryUtils.getDebugOutputPrintStream("statement-winner-plans",name + "-" + String.valueOf(i++)+ ".txt");
+    plansOut.println(json);
+    plansOut.close();
+    try {
+      FastSerializer fs=new FastSerializer(false,false);
+      fs.write(json.getBytes());
+      String hexString=fs.getHexEncodedBytes();
+      planFragment.setPlannodetree(hexString);
+    }
+ catch (    Exception e) {
+      e.printStackTrace();
+      throw compiler.new VoltCompilerException(e.getMessage());
+    }
+  }
+}

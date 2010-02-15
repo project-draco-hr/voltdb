@@ -1,0 +1,34 @@
+{
+  HsqlException he=null;
+  setState(DATABASE_CLOSING);
+  sessionManager.closeAllSessions();
+  sessionManager.clearAll();
+  if (filesReadOnly) {
+    closemode=CLOSEMODE_IMMEDIATELY;
+  }
+  logger.closeLog(closemode);
+  lobManager.close();
+  try {
+    if (closemode == CLOSEMODE_COMPACT) {
+      clearStructures();
+      reopen();
+      setState(DATABASE_CLOSING);
+      logger.closeLog(CLOSEMODE_NORMAL);
+    }
+  }
+ catch (  Throwable t) {
+    if (t instanceof HsqlException) {
+      he=(HsqlException)t;
+    }
+ else {
+      he=Error.error(ErrorCode.GENERAL_ERROR,t.toString());
+    }
+  }
+  logger.releaseLock();
+  setState(DATABASE_SHUTDOWN);
+  clearStructures();
+  DatabaseManager.removeDatabase(this);
+  if (he != null) {
+    throw he;
+  }
+}

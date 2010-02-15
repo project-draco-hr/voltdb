@@ -1,0 +1,43 @@
+{
+  int groupColCount=stmt.groupByColumns.size();
+  int displayColCount=stmt.displayColumns.size();
+  String msg="Materialized view \"" + viewName + "\" ";
+  if (stmt.tableList.size() != 1) {
+    msg+="has " + String.valueOf(stmt.tableList.size()) + " when only 1 is allowed.";
+    throw m_compiler.new VoltCompilerException(msg);
+  }
+  if (displayColCount <= groupColCount) {
+    msg+="has too few columns.";
+    throw m_compiler.new VoltCompilerException(msg);
+  }
+  int i;
+  for (i=0; i < groupColCount; i++) {
+    ParsedSelectStmt.ParsedColInfo gbcol=stmt.groupByColumns.get(i);
+    ParsedSelectStmt.ParsedColInfo outcol=stmt.displayColumns.get(i);
+    if (outcol.expression.getExpressionType() != ExpressionType.VALUE_TUPLE) {
+      msg+="must have column at index " + String.valueOf(i) + " be "+ gbcol.alias;
+      throw m_compiler.new VoltCompilerException(msg);
+    }
+    TupleValueExpression expr=(TupleValueExpression)outcol.expression;
+    if (expr.getColumnIndex() != gbcol.index) {
+      msg+="must have column at index " + String.valueOf(i) + " be "+ gbcol.alias;
+      throw m_compiler.new VoltCompilerException(msg);
+    }
+  }
+  AbstractExpression coli=stmt.displayColumns.get(i).expression;
+  if ((coli.getExpressionType() != ExpressionType.AGGREGATE_COUNT) || (coli.getLeft() != null) || (coli.getRight() != null)) {
+    msg+="is missing count(*) as the column after the group by columns, a materialized view requirement.";
+    throw m_compiler.new VoltCompilerException(msg);
+  }
+  for (i++; i < displayColCount; i++) {
+    ParsedSelectStmt.ParsedColInfo outcol=stmt.displayColumns.get(i);
+    if ((outcol.expression.getExpressionType() != ExpressionType.AGGREGATE_COUNT) && (outcol.expression.getExpressionType() != ExpressionType.AGGREGATE_SUM)) {
+      msg+="must have non-group by columns aggregated by sum or count.";
+      throw m_compiler.new VoltCompilerException(msg);
+    }
+    if (outcol.expression.getLeft().getExpressionType() != ExpressionType.VALUE_TUPLE) {
+      msg+="must have non-group by columns use only one level of aggregation.";
+      throw m_compiler.new VoltCompilerException(msg);
+    }
+  }
+}

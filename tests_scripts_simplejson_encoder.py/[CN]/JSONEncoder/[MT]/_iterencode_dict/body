@@ -1,0 +1,67 @@
+def _iterencode_dict(self, dct, markers=None):
+    if (not dct):
+        yield '{}'
+        return
+    if (markers is not None):
+        markerid = id(dct)
+        if (markerid in markers):
+            raise ValueError('Circular reference detected')
+        markers[markerid] = dct
+    yield '{'
+    key_separator = self.key_separator
+    if (self.indent is not None):
+        self.current_indent_level += 1
+        newline_indent = self._newline_indent()
+        item_separator = (self.item_separator + newline_indent)
+        yield newline_indent
+    else:
+        newline_indent = None
+        item_separator = self.item_separator
+    first = True
+    if self.ensure_ascii:
+        encoder = encode_basestring_ascii
+    else:
+        encoder = encode_basestring
+    allow_nan = self.allow_nan
+    if self.sort_keys:
+        keys = dct.keys()
+        keys.sort()
+        items = [(k, dct[k]) for k in keys]
+    else:
+        items = dct.iteritems()
+    _encoding = self.encoding
+    _do_decode = ((_encoding is not None) and (not (_encoding == 'utf-8')))
+    for (key, value) in items:
+        if isinstance(key, str):
+            if _do_decode:
+                key = key.decode(_encoding)
+        elif isinstance(key, basestring):
+            pass
+        elif isinstance(key, float):
+            key = floatstr(key, allow_nan)
+        elif isinstance(key, (int, long)):
+            key = str(key)
+        elif (key is True):
+            key = 'true'
+        elif (key is False):
+            key = 'false'
+        elif (key is None):
+            key = 'null'
+        elif self.skipkeys:
+            continue
+        else:
+            raise TypeError(('key %r is not a string' % (key,)))
+        if first:
+            first = False
+        else:
+            yield item_separator
+        yield encoder(key)
+        yield key_separator
+        for chunk in self._iterencode(value, markers):
+            yield chunk
+    if (newline_indent is not None):
+        self.current_indent_level -= 1
+        yield self._newline_indent()
+    yield '}'
+    if (markers is not None):
+        del markers[markerid]

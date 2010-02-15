@@ -1,0 +1,54 @@
+{
+  RangeVariable rangeVar=rangeVariables[0];
+  Table table=rangeVar.getTable();
+  Expression localQueryCondition=queryCondition;
+  Expression baseQueryCondition=null;
+  if (table instanceof TableDerived) {
+    QuerySpecification baseSelect=((TableDerived)table).queryExpression.getMainSelect();
+    RangeVariable baseRangeVariable=baseSelect.rangeVariables[0];
+    rangeVariables=new RangeVariable[1];
+    rangeVariables[0]=new RangeVariable(baseRangeVariable);
+    Expression[] newExprColumns=new Expression[indexLimitRowId];
+    for (int i=0; i < indexLimitVisible; i++) {
+      Expression e=exprColumns[i];
+      newExprColumns[i]=e.replaceColumnReferences(rangeVar,baseSelect.exprColumns);
+    }
+    exprColumns=newExprColumns;
+    if (localQueryCondition != null) {
+      localQueryCondition=localQueryCondition.replaceColumnReferences(rangeVar,baseSelect.exprColumns);
+    }
+    baseQueryCondition=baseSelect.queryCondition;
+    checkQueryCondition=baseSelect.checkQueryCondition;
+  }
+  queryCondition=ExpressionLogical.andExpressions(baseQueryCondition,localQueryCondition);
+  if (queryCondition != null) {
+    tempSet.clear();
+    Expression.collectAllExpressions(tempSet,queryCondition,Expression.subqueryExpressionSet,Expression.emptyExpressionSet);
+    int size=tempSet.size();
+    for (int i=0; i < size; i++) {
+      Expression e=(Expression)tempSet.get(i);
+      e.collectObjectNames(tempSet);
+    }
+    if (tempSet.contains(baseTable.getName())) {
+      isUpdatable=false;
+      isInsertable=false;
+    }
+  }
+  if (view != null) {
+switch (view.getCheckOption()) {
+case SchemaObject.ViewCheckModes.CHECK_LOCAL:
+      if (!isUpdatable) {
+        throw Error.error(ErrorCode.X_42537);
+      }
+    checkQueryCondition=localQueryCondition;
+  break;
+case SchemaObject.ViewCheckModes.CHECK_CASCADE:
+if (!isUpdatable) {
+  throw Error.error(ErrorCode.X_42537);
+}
+checkQueryCondition=queryCondition;
+break;
+}
+}
+setRangeVariableConditions();
+}

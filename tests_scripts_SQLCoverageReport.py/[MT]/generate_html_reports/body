@@ -1,0 +1,24 @@
+def generate_html_reports(report, random_seed, report_all, output_dir):
+    'report: It can be the filename of the XML report, or the actual Python\n    object of the report.\n    '
+    if isinstance(report, basestring):
+        parser = XMLParser(report)
+        result = parser.get_data()
+    else:
+        result = report
+    map(deserialize, result['Statements'])
+    if (not os.path.exists(output_dir)):
+        os.makedirs(output_dir)
+    failures = 0
+    for r in result['Statements']:
+        if (r['jni']['Status'] != 1):
+            failures += 1
+    report = ('\n<html>\n<head>\n<title>SQL Coverage Test Report</title>\n<style>\nh2 {text-transform: uppercase}\n</style>\n</head>\n\n<body>\nRandom seed: %s\n<br/>\nTotal statements: %d\n<br/>\nFailed (*not* necessarily mismatched) statements: %d\n' % (random_seed, len(result['Statements']), failures))
+    mismatches = filter(is_different, result['Statements'])
+    report += print_section('Mismatched Statements', mismatches, output_dir)
+    if report_all:
+        report += print_section('Total Statements', result['Statements'], output_dir)
+    report += '\n</body>\n</html>\n'
+    summary = open(os.path.join(output_dir, 'index.html'), 'w')
+    summary.write(report.encode('utf-8'))
+    summary.close()
+    return (failures, len(mismatches))

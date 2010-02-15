@@ -1,0 +1,20 @@
+{
+synchronized (m_pendingTxns) {
+    m_pendingTxns.addTxn(txn.txnId,txn.coordinatorId,txn);
+    if (m_pendingTxns.size() > MAX_DESIRED_PENDING) {
+      if (!m_hadBackPressure) {
+        transactionLog.trace("DTXN back pressure began");
+        m_hadBackPressure=true;
+        m_onBackPressure.run();
+      }
+    }
+  }
+  MembershipNotice notice=new MembershipNotice(m_siteId,txn.coordinatorId,txn.txnId,txn.isReadOnly);
+  try {
+    m_mailbox.send(txn.otherSiteIds,0,notice);
+  }
+ catch (  MessagingException e) {
+    throw new RuntimeException(e);
+  }
+  sendTransactionToCoordinator(txn);
+}

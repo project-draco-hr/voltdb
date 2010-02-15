@@ -1,0 +1,107 @@
+{
+  Table t=sysTables[SYSTEM_INDEXINFO];
+  if (t == null) {
+    t=createBlankTable(sysTableHsqlNames[SYSTEM_INDEXINFO]);
+    addColumn(t,"TABLE_CAT",SQL_IDENTIFIER);
+    addColumn(t,"TABLE_SCHEM",SQL_IDENTIFIER);
+    addColumn(t,"TABLE_NAME",SQL_IDENTIFIER);
+    addColumn(t,"NON_UNIQUE",Type.SQL_BOOLEAN);
+    addColumn(t,"INDEX_QUALIFIER",SQL_IDENTIFIER);
+    addColumn(t,"INDEX_NAME",SQL_IDENTIFIER);
+    addColumn(t,"TYPE",Type.SQL_SMALLINT);
+    addColumn(t,"ORDINAL_POSITION",Type.SQL_SMALLINT);
+    addColumn(t,"COLUMN_NAME",SQL_IDENTIFIER);
+    addColumn(t,"ASC_OR_DESC",CHARACTER_DATA);
+    addColumn(t,"CARDINALITY",Type.SQL_INTEGER);
+    addColumn(t,"PAGES",Type.SQL_INTEGER);
+    addColumn(t,"FILTER_CONDITION",CHARACTER_DATA);
+    addColumn(t,"ROW_CARDINALITY",Type.SQL_INTEGER);
+    HsqlName name=HsqlNameManager.newInfoSchemaObjectName(sysTableHsqlNames[SYSTEM_INDEXINFO].name,false,SchemaObject.INDEX);
+    t.createPrimaryKey(name,new int[]{3,6,5,7,4,2,1},false);
+    return t;
+  }
+  PersistentStore store=database.persistentStoreCollection.getStore(t);
+  String tableCatalog;
+  String tableSchema;
+  String tableName;
+  Boolean nonUnique;
+  String indexQualifier;
+  String indexName;
+  Integer indexType;
+  Integer cardinality;
+  Integer pages;
+  String filterCondition;
+  Integer rowCardinality;
+  Iterator tables;
+  Table table;
+  int indexCount;
+  int[] cols;
+  int col;
+  int colCount;
+  Object[] row;
+  DITableInfo ti;
+  HsqlProperties p;
+  final int itable_cat=0;
+  final int itable_schem=1;
+  final int itable_name=2;
+  final int inon_unique=3;
+  final int iindex_qualifier=4;
+  final int iindex_name=5;
+  final int itype=6;
+  final int iordinal_position=7;
+  final int icolumn_name=8;
+  final int iasc_or_desc=9;
+  final int icardinality=10;
+  final int ipages=11;
+  final int ifilter_condition=12;
+  final int irow_cardinality=13;
+  ti=new DITableInfo();
+  p=database.getProperties();
+  tables=p.isPropertyTrue("hsqldb.system_table_indexinfo") ? allTables() : database.schemaManager.databaseObjectIterator(SchemaObject.TABLE);
+  while (tables.hasNext()) {
+    table=(Table)tables.next();
+    if (table.isView() || !isAccessibleTable(table)) {
+      continue;
+    }
+    ti.setTable(table);
+    tableCatalog=table.getCatalogName().name;
+    tableSchema=table.getSchemaName().name;
+    tableName=ti.getName();
+    filterCondition=null;
+    indexQualifier=tableCatalog;
+    indexCount=table.getIndexCount();
+    for (int i=0; i < indexCount; i++) {
+      colCount=ti.getIndexVisibleColumns(i);
+      if (colCount < 1) {
+        continue;
+      }
+      indexName=ti.getIndexName(i);
+      nonUnique=ti.isIndexNonUnique(i);
+      cardinality=ti.getIndexCardinality(i);
+      pages=ValuePool.INTEGER_0;
+      rowCardinality=ti.getIndexRowCardinality(i);
+      cols=ti.getIndexColumns(i);
+      indexType=ti.getIndexType(i);
+      for (int k=0; k < colCount; k++) {
+        col=cols[k];
+        row=t.getEmptyRowData();
+        row[itable_cat]=tableCatalog;
+        row[itable_schem]=tableSchema;
+        row[itable_name]=tableName;
+        row[inon_unique]=nonUnique;
+        row[iindex_qualifier]=indexQualifier;
+        row[iindex_name]=indexName;
+        row[itype]=indexType;
+        row[iordinal_position]=ValuePool.getInt(k + 1);
+        row[icolumn_name]=ti.getColName(col);
+        row[iasc_or_desc]=ti.getIndexColDirection(i,col);
+        row[icardinality]=cardinality;
+        row[ipages]=pages;
+        row[irow_cardinality]=rowCardinality;
+        row[ifilter_condition]=filterCondition;
+        t.insertSys(store,row);
+      }
+    }
+  }
+  return t;
+}

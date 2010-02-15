@@ -1,0 +1,17 @@
+def __init__(self):
+    HostPool.__init__(self)
+    self.botoConnection = boto.connect_ec2()
+    self.botoImage = self.botoConnection.get_all_images(image_ids=['ami-2501e04c'])[0]
+    self.botoReservation = self.botoImage.run(min_count=9, max_count=9, key_name='gsg-keypair', instance_type='m1.large')
+    print 'Waiting for instances to start.'
+    for instance in self.botoReservation.instances:
+        while True:
+            instance.update()
+            if (instance.state == 'running'):
+                break
+    print 'Instances are all in running state.'
+    for instance in self.botoReservation.instances:
+        print ('copying voltbin to ' + instance.public_dns_name)
+        os.system((('scp -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ./* root@' + instance.public_dns_name) + ':/opt/voltbin'))
+    self.hostList = self.botoReservation.instances[:6]
+    self.clientList = self.botoReservation.instances[6:]

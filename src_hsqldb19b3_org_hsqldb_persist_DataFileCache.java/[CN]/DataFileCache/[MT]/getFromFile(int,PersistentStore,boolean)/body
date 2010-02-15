@@ -1,0 +1,40 @@
+{
+  CachedObject object=null;
+  boolean outOfMemory=false;
+  writeLock.lock();
+  try {
+    for (int j=0; j < 5; j++) {
+      outOfMemory=false;
+      try {
+        RowInputInterface rowInput=readObject(pos);
+        if (rowInput == null) {
+          return null;
+        }
+        object=store.get(rowInput);
+        break;
+      }
+ catch (      OutOfMemoryError err) {
+        cache.cleanUp();
+        outOfMemory=true;
+        database.logger.appLog.logContext(err,null);
+      }
+    }
+    if (outOfMemory) {
+      throw Error.error(ErrorCode.OUT_OF_MEMORY);
+    }
+    pos=object.getPos();
+    cache.put(pos,object);
+    if (keep) {
+      object.keepInMemory(true);
+    }
+    store.set(object);
+    return object;
+  }
+ catch (  HsqlException e) {
+    database.logger.appLog.logContext(e,fileName + " get pos: " + pos);
+    throw e;
+  }
+ finally {
+    writeLock.unlock();
+  }
+}

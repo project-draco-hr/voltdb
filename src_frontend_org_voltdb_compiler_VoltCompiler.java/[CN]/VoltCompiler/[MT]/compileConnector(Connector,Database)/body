@@ -1,0 +1,39 @@
+{
+  Destination dest=conn.getDestinations().getDestination();
+  if (conn == null) {
+    return;
+  }
+  if (dest.getAddress() == null || dest.getAddress().length() <= 1) {
+    throw new VoltCompilerException("In parsing project file: export destination address" + " must be a valid hostname or IP address.");
+  }
+  boolean adminstate=conn.isEnabled();
+  if (!conn.isEnabled()) {
+    compilerLog.info("Export configuration is present and is " + "configured to be disabled. Export will be disabled.");
+  }
+  if (dest == null) {
+    compilerLog.info("Export configuration does not include destination. " + "Export will be disabled.");
+    adminstate=false;
+  }
+  org.voltdb.catalog.Connector catconn=catdb.getConnectors().add("0");
+  catconn.setEnabled(adminstate);
+  catconn.setLoaderclass(conn.getClazz());
+  org.voltdb.catalog.ConnectorDestinationInfo catdest=catconn.getDestinfo().add("0");
+  catdest.setIpaddr(dest.getAddress());
+  catdest.setUsername(dest.getUsername());
+  catdest.setPassword(dest.getPassword());
+  Integer i=0;
+  if (conn.getTables() != null) {
+    for (    Tables.Table xmltable : conn.getTables().getTable()) {
+      String tablename=xmltable.getName();
+      org.voltdb.catalog.Table tableref=catdb.getTables().get(tablename);
+      if (tableref == null) {
+        compilerLog.warn("While configuring export, table " + tablename + " was not present in "+ "the catalog. Export will be disabled for this table.");
+        continue;
+      }
+      org.voltdb.catalog.ConnectorTableInfo cattable=catconn.getTableinfo().add(i.toString());
+      cattable.setAppendonly(xmltable.isExportonly());
+      cattable.setTable(tableref);
+      ++i;
+    }
+  }
+}

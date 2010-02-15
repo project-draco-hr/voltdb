@@ -1,0 +1,81 @@
+{
+  Expression e=null;
+  boolean minus=false;
+  if (dataType.isDateTimeType() || dataType.isIntervalType()) {
+switch (token.tokenType) {
+case Tokens.DATE:
+case Tokens.TIME:
+case Tokens.TIMESTAMP:
+case Tokens.INTERVAL:
+{
+        e=readDateTimeIntervalLiteral();
+        if (e.dataType.typeCode != dataType.typeCode) {
+          throw unexpectedToken();
+        }
+        Object defaultValue=e.getValue(session,dataType);
+        return new ExpressionValue(defaultValue,dataType);
+      }
+case Tokens.X_VALUE:
+    break;
+default :
+  e=XreadDateTimeValueFunctionOrNull();
+break;
+}
+}
+ else if (dataType.isNumberType()) {
+if (token.tokenType == Tokens.MINUS) {
+read();
+minus=true;
+}
+}
+ else if (dataType.isCharacterType()) {
+switch (token.tokenType) {
+case Tokens.USER:
+case Tokens.CURRENT_USER:
+case Tokens.CURRENT_ROLE:
+case Tokens.SESSION_USER:
+case Tokens.SYSTEM_USER:
+case Tokens.CURRENT_CATALOG:
+case Tokens.CURRENT_SCHEMA:
+case Tokens.CURRENT_PATH:
+FunctionSQL function=FunctionSQL.newSQLFunction(token.tokenString,compileContext);
+if (function == null) {
+throw unexpectedToken();
+}
+e=readSQLFunction(function);
+break;
+default :
+}
+}
+ else if (dataType.isBooleanType()) {
+switch (token.tokenType) {
+case Tokens.TRUE:
+read();
+return Expression.EXPR_TRUE;
+case Tokens.FALSE:
+read();
+return Expression.EXPR_FALSE;
+}
+}
+if (e == null) {
+if (token.tokenType == Tokens.NULL) {
+read();
+return new ExpressionValue(null,dataType);
+}
+if (token.tokenType == Tokens.X_VALUE) {
+e=new ExpressionValue(token.tokenValue,token.dataType);
+if (minus) {
+e=new ExpressionArithmetic(OpTypes.NEGATE,e);
+e.resolveTypes(session,null);
+}
+read();
+Object defaultValue=e.getValue(session,dataType);
+return new ExpressionValue(defaultValue,dataType);
+}
+ else {
+throw unexpectedToken();
+}
+}
+e.resolveTypes(session,null);
+return e;
+}

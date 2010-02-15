@@ -1,0 +1,67 @@
+{
+  try {
+    while (m_shouldContinue.get()) {
+      final byte[] rowsizebuf=new byte[4];
+      int bytes=0;
+      while (bytes < 4) {
+        System.out.println("Reading row size/header start");
+        int tmp=m_stream.read(rowsizebuf,bytes,4 - bytes);
+        if (tmp == -1) {
+          System.out.println("No data to read(1)");
+          return;
+        }
+        bytes+=tmp;
+      }
+      if (rowsizebuf[0] == 'V' && rowsizebuf[1] == 'B' && rowsizebuf[2] == 'I' && rowsizebuf[3] == 'N') {
+        System.out.println("Reading header.");
+        final byte[] headerbuf=new byte[12];
+        bytes=0;
+        while (bytes < 12) {
+          int tmp=m_stream.read(headerbuf,bytes,12 - bytes);
+          if (tmp == -1) {
+            System.out.println("No data to read(2)");
+            return;
+          }
+          bytes+=tmp;
+        }
+        final ByteBuffer lengthBuf=ByteBuffer.wrap(headerbuf);
+        lengthBuf.order(ByteOrder.BIG_ENDIAN);
+        final int hdrsize=lengthBuf.getInt(8);
+        System.out.println("Reading " + hdrsize + " bytes of variable header.");
+        final byte[] varheaderbuf=new byte[hdrsize];
+        bytes=0;
+        while (bytes < hdrsize) {
+          int tmp=m_stream.read(varheaderbuf,bytes,hdrsize - bytes);
+          if (tmp == -1) {
+            System.out.println("No data to read(3)");
+            return;
+          }
+          bytes+=tmp;
+        }
+      }
+ else {
+        System.out.println("Reading row tuples");
+        final ByteBuffer lengthBuf=ByteBuffer.wrap(rowsizebuf);
+        lengthBuf.order(ByteOrder.BIG_ENDIAN);
+        final int rowsize=lengthBuf.getInt();
+        if (rowsize < 0) {
+          System.out.println("No data to read (4)!");
+          return;
+        }
+        bytes=0;
+        byte[] buf=new byte[rowsize];
+        while (bytes < rowsize) {
+          int read=m_stream.read(buf,bytes,rowsize - bytes);
+          if (read < 0) {
+            System.out.println("No data to read (5)");
+            return;
+          }
+          bytes+=read;
+        }
+        m_verifier.verifyRow(rowsize,buf);
+      }
+    }
+  }
+ catch (  final IOException e1) {
+  }
+}

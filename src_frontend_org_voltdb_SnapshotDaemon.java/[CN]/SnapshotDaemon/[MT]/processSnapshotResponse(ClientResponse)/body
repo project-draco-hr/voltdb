@@ -1,0 +1,28 @@
+{
+  m_state=State.WAITING;
+  final long now=System.currentTimeMillis();
+  m_nextSnapshotTime+=m_frequencyInMillis;
+  if (m_nextSnapshotTime < now) {
+    m_nextSnapshotTime=now - 1;
+  }
+  if (response.getStatus() != ClientResponse.SUCCESS) {
+    m_state=State.FAILURE;
+    logFailureResponse("Snapshot failed",response);
+    return;
+  }
+  final VoltTable results[]=response.getResults();
+  final VoltTable result=results[0];
+  if (result.getColumnCount() == 1) {
+    boolean advanced=result.advanceRow();
+    assert(advanced);
+    assert(result.getColumnCount() == 1);
+    assert(result.getColumnType(0) == VoltType.STRING);
+    hostLog.error("Snapshot failed with failure response: " + result.getString(0));
+    return;
+  }
+  while (result.advanceRow()) {
+    if (!result.getString("RESULT").equals("SUCCESS")) {
+      hostLog.error("Snapshot save feasability test failed for host " + result.getString(0) + " table "+ result.getString(1)+ " with error message "+ result.getString(3));
+    }
+  }
+}

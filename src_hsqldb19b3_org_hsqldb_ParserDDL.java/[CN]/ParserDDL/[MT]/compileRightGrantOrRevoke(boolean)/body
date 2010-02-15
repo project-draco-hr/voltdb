@@ -1,0 +1,173 @@
+{
+  OrderedHashSet granteeList=new OrderedHashSet();
+  Grantee grantor=null;
+  Right right=null;
+  HsqlName objectName=null;
+  boolean isTable=false;
+  boolean isUsage=false;
+  boolean isExec=false;
+  boolean isAll=false;
+  boolean isGrantOption=false;
+  boolean cascade=false;
+  if (!grant) {
+    if (token.tokenType == Tokens.GRANT) {
+      read();
+      readThis(Tokens.OPTION);
+      readThis(Tokens.FOR);
+      isGrantOption=true;
+    }
+ else     if (token.tokenType == Tokens.HIERARCHY) {
+      throw unsupportedFeature();
+    }
+  }
+  if (token.tokenType == Tokens.ALL) {
+    read();
+    if (token.tokenType == Tokens.PRIVILEGES) {
+      read();
+    }
+    right=Right.fullRights;
+    isAll=true;
+  }
+ else {
+    right=new Right();
+    boolean loop=true;
+    while (loop) {
+      checkIsNotQuoted();
+      int rightType=GranteeManager.getCheckSingleRight(token.tokenString);
+      int grantType=token.tokenType;
+      OrderedHashSet columnSet=null;
+      read();
+switch (grantType) {
+case Tokens.REFERENCES:
+case Tokens.SELECT:
+case Tokens.INSERT:
+case Tokens.UPDATE:
+        if (token.tokenType == Tokens.OPENBRACKET) {
+          columnSet=readColumnNames(false);
+        }
+case Tokens.DELETE:
+case Tokens.TRIGGER:
+      if (right == null) {
+        right=new Right();
+      }
+    right.set(rightType,columnSet);
+  isTable=true;
+break;
+case Tokens.USAGE:
+if (isTable) {
+throw unexpectedToken();
+}
+right=Right.fullRights;
+isUsage=true;
+loop=false;
+continue;
+case Tokens.EXECUTE:
+if (isTable) {
+throw unexpectedToken();
+}
+right=Right.fullRights;
+isExec=true;
+loop=false;
+continue;
+}
+if (token.tokenType == Tokens.COMMA) {
+read();
+continue;
+}
+break;
+}
+}
+readThis(Tokens.ON);
+if (token.tokenString.equals(Tokens.T_CLASS)) {
+if (!isExec && !isAll) {
+throw unexpectedToken();
+}
+read();
+if (!isSimpleName() || !isDelimitedIdentifier()) {
+throw Error.error(ErrorCode.X_42569);
+}
+objectName=readNewSchemaObjectNameNoCheck(SchemaObject.FUNCTION);
+}
+ else if (token.tokenType == Tokens.TYPE || token.tokenType == Tokens.DOMAIN || token.tokenType == Tokens.SEQUENCE || token.tokenType == Tokens.CHARACTER) {
+if (!isUsage && !isAll) {
+throw unexpectedToken();
+}
+int type=0;
+switch (token.tokenType) {
+case Tokens.TYPE:
+read();
+type=SchemaObject.TYPE;
+break;
+case Tokens.DOMAIN:
+read();
+type=SchemaObject.DOMAIN;
+break;
+case Tokens.SEQUENCE:
+read();
+type=SchemaObject.SEQUENCE;
+break;
+case Tokens.CHARACTER:
+read();
+readThis(Tokens.SET);
+type=SchemaObject.CHARSET;
+break;
+}
+objectName=readNewSchemaObjectNameNoCheck(type);
+}
+ else {
+if (!isTable && !isAll) {
+throw unexpectedToken();
+}
+readIfThis(Tokens.TABLE);
+objectName=readNewSchemaObjectNameNoCheck(SchemaObject.TABLE);
+}
+if (grant) {
+readThis(Tokens.TO);
+}
+ else {
+readThis(Tokens.FROM);
+}
+while (true) {
+checkIsSimpleName();
+granteeList.add(token.tokenString);
+read();
+if (token.tokenType == Tokens.COMMA) {
+read();
+}
+ else {
+break;
+}
+}
+if (grant) {
+if (token.tokenType == Tokens.WITH) {
+read();
+readThis(Tokens.GRANT);
+readThis(Tokens.OPTION);
+isGrantOption=true;
+}
+if (token.tokenType == Tokens.GRANTED) {
+read();
+readThis(Tokens.BY);
+if (token.tokenType == Tokens.CURRENT_USER) {
+read();
+}
+ else {
+readThis(Tokens.CURRENT_ROLE);
+}
+}
+}
+ else {
+if (token.tokenType == Tokens.CASCADE) {
+cascade=true;
+read();
+}
+ else {
+readThis(Tokens.RESTRICT);
+}
+}
+int type=grant ? StatementTypes.GRANT : StatementTypes.REVOKE;
+Object[] args=new Object[]{granteeList,objectName,right,grantor,Boolean.valueOf(cascade),Boolean.valueOf(isGrantOption)};
+String sql=getLastPart();
+StatementSchema cs=new StatementSchema(sql,type,args,null,null);
+return cs;
+}

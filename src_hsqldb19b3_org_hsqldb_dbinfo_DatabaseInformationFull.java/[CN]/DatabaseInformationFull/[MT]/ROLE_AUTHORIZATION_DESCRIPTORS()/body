@@ -1,0 +1,44 @@
+{
+  Table t=sysTables[ROLE_AUTHORIZATION_DESCRIPTORS];
+  if (t == null) {
+    t=createBlankTable(sysTableHsqlNames[ROLE_AUTHORIZATION_DESCRIPTORS]);
+    addColumn(t,"ROLE_NAME",SQL_IDENTIFIER);
+    addColumn(t,"GRANTEE",SQL_IDENTIFIER);
+    addColumn(t,"GRANTOR",SQL_IDENTIFIER);
+    addColumn(t,"IS_GRANTABLE",YES_OR_NO);
+    HsqlName name=HsqlNameManager.newInfoSchemaObjectName(sysTableHsqlNames[ROLE_AUTHORIZATION_DESCRIPTORS].name,false,SchemaObject.INDEX);
+    t.createPrimaryKey(name,new int[]{0,1},true);
+    return t;
+  }
+  PersistentStore store=database.persistentStoreCollection.getStore(t);
+  String grantorName=SqlInvariants.SYSTEM_AUTHORIZATION_NAME;
+  Iterator grantees;
+  Grantee granteeObject;
+  String granteeName;
+  Iterator roles;
+  String roleName;
+  String isGrantable;
+  Object[] row;
+  final int role_name=0;
+  final int grantee=1;
+  final int grantor=2;
+  final int is_grantable=3;
+  grantees=session.getGrantee().visibleGrantees().iterator();
+  while (grantees.hasNext()) {
+    granteeObject=(Grantee)grantees.next();
+    granteeName=granteeObject.getNameString();
+    roles=granteeObject.getDirectRoles().iterator();
+    isGrantable=granteeObject.isAdmin() ? Tokens.T_YES : Tokens.T_NO;
+    ;
+    while (roles.hasNext()) {
+      Grantee role=(Grantee)roles.next();
+      row=t.getEmptyRowData();
+      row[role_name]=role.getNameString();
+      row[grantee]=granteeName;
+      row[grantor]=grantorName;
+      row[is_grantable]=isGrantable;
+      t.insertSys(store,row);
+    }
+  }
+  return t;
+}

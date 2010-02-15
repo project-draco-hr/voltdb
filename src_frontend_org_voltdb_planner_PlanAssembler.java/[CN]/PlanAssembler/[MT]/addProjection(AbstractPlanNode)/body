@@ -1,0 +1,28 @@
+{
+  assert(m_parsedSelect != null);
+  assert(m_parsedSelect.displayColumns != null);
+  PlanColumn colInfo=null;
+  rootNode.updateOutputColumns(m_catalogDb);
+  ProjectionPlanNode projectionNode=new ProjectionPlanNode(m_context,PlanAssembler.getNextPlanNodeId());
+  for (  ParsedSelectStmt.ParsedColInfo outputCol : m_parsedSelect.displayColumns) {
+    assert(outputCol.expression != null);
+    outputCol=removeAggregation(outputCol);
+    try {
+      AbstractExpression expressionWithRealOffsets=(AbstractExpression)outputCol.expression.clone();
+      calculateTupleValueColumnIndexes(expressionWithRealOffsets,rootNode.m_outputColumns);
+      colInfo=m_context.getPlanColumn(expressionWithRealOffsets,outputCol.alias);
+      projectionNode.appendOutputColumn(colInfo);
+    }
+ catch (    CloneNotSupportedException ex) {
+      throw new PlanningErrorException(ex.getMessage());
+    }
+  }
+  if (rootNode instanceof AbstractScanPlanNode) {
+    rootNode.addInlinePlanNode(projectionNode);
+    return rootNode;
+  }
+ else {
+    projectionNode.addAndLinkChild(rootNode);
+    return projectionNode;
+  }
+}

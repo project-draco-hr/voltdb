@@ -1,0 +1,46 @@
+{
+  int i=name.indexOf(':');
+  if (i != -1) {
+    if (!name.substring(0,i).equals(SqlInvariants.CLASSPATH_NAME)) {
+      throw Error.error(ErrorCode.X_46102,name);
+    }
+    name=name.substring(i + 1);
+  }
+  Method method=null;
+  Method[] methods=getMethods(name);
+  for (i=0; i < methods.length; i++) {
+    int offset=0;
+    Class[] params=methods[i].getParameterTypes();
+    if (params.length > 0 && params[0].equals(java.sql.Connection.class)) {
+      offset=1;
+      hasConnection[0]=true;
+    }
+    if (params.length - offset != types.length) {
+      continue;
+    }
+    Type methodReturnType=Type.getDefaultType(Types.getParameterSQLTypeNumber(methods[i].getReturnType()));
+    if (methodReturnType == null) {
+      continue;
+    }
+    if (methodReturnType.typeCode != returnType.typeCode) {
+      continue;
+    }
+    method=methods[i];
+    for (int j=0; j < types.length; j++) {
+      Class param=params[j + offset];
+      Type methodParamType=Type.getDefaultType(Types.getParameterSQLTypeNumber(param));
+      if (methodParamType == null) {
+        break;
+      }
+      nullability[j]=!param.isPrimitive();
+      if (types[j].typeCode != methodParamType.typeCode) {
+        method=null;
+        break;
+      }
+    }
+    if (method != null) {
+      break;
+    }
+  }
+  return method;
+}

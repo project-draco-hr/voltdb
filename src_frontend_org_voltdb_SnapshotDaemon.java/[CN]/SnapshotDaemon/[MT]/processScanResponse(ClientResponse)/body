@@ -1,0 +1,34 @@
+{
+  if (response.getStatus() != ClientResponse.SUCCESS) {
+    m_state=State.FAILURE;
+    logFailureResponse("Initial snapshot scan failed",response);
+    return null;
+  }
+  final VoltTable results[]=response.getResults();
+  if (results.length == 1) {
+    m_state=State.FAILURE;
+    final VoltTable result=results[0];
+    boolean advanced=result.advanceRow();
+    assert(advanced);
+    assert(result.getColumnCount() == 1);
+    assert(result.getColumnType(0) == VoltType.STRING);
+    hostLog.error("Initial snapshot scan failed with failure response: " + result.getString(0));
+  }
+  assert(results.length == 3);
+  final VoltTable snapshots=results[0];
+  assert(snapshots.getColumnCount() == 6);
+  final File myPath=new File(m_path);
+  while (snapshots.advanceRow()) {
+    final String path=snapshots.getString("PATH");
+    final File pathFile=new File(path);
+    if (pathFile.equals(myPath)) {
+      final String nonce=snapshots.getString("NONCE");
+      if (nonce.startsWith(m_prefixAndSeparator)) {
+        final Long created=snapshots.getLong("CREATED");
+        m_snapshots.add(new Snapshot(path,nonce,created));
+      }
+    }
+  }
+  java.util.Collections.sort(m_snapshots);
+  return deleteExtraSnapshots();
+}

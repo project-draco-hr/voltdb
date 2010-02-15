@@ -1,0 +1,52 @@
+{
+  m_fos=new FileOutputStream(file);
+  m_channel=m_fos.getChannel();
+  m_es=Executors.newSingleThreadExecutor(new ThreadFactory(){
+    @Override public Thread newThread(    Runnable r){
+      return new Thread(Thread.currentThread().getThreadGroup(),r,"Snapshot target for " + file.getName() + " host "+ hostId,131072);
+    }
+  }
+);
+  final FastSerializer fs=new FastSerializer();
+  fs.writeInt(0);
+  fs.writeByte(0);
+  for (int ii=0; ii < 4; ii++) {
+    fs.writeInt(version[ii]);
+  }
+  fs.writeLong(createTime);
+  fs.writeInt(hostId);
+  fs.writeString(clusterName);
+  fs.writeString(databaseName);
+  fs.writeString(tableName);
+  fs.writeBoolean(isReplicated);
+  if (!isReplicated) {
+    fs.writeArray(partitionIds);
+    fs.writeInt(numPartitions);
+  }
+  final BBContainer container=fs.getBBContainer();
+  write(container);
+  FastSerializer schemaSerializer=new FastSerializer();
+  schemaTable.writeExternal(schemaSerializer);
+  final BBContainer schemaContainer=schemaSerializer.getBBContainer();
+  schemaContainer.b.limit(schemaContainer.b.limit() - 4);
+  schemaContainer.b.position(schemaContainer.b.position() + 4);
+  Future<?> writeFuture=write(schemaContainer,false);
+  try {
+    writeFuture.get();
+  }
+ catch (  InterruptedException e) {
+    m_fos.close();
+    m_es.shutdown();
+    return;
+  }
+catch (  ExecutionException e) {
+    m_fos.close();
+    m_es.shutdown();
+    return;
+  }
+  if (m_writeFailed) {
+    m_fos.close();
+    m_es.shutdown();
+    throw m_writeException;
+  }
+}

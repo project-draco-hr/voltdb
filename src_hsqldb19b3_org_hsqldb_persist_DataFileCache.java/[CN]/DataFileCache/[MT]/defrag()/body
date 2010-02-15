@@ -1,0 +1,36 @@
+{
+  if (cacheReadonly) {
+    return;
+  }
+  if (fileFreePosition == INITIAL_FREE_POS) {
+    return;
+  }
+  database.logger.appLog.logContext(SimpleLog.LOG_NORMAL,"start");
+  try {
+    boolean wasNio=dataFile.wasNio();
+    cache.saveAll();
+    DataFileDefrag dfd=new DataFileDefrag(database,this,fileName);
+    dfd.process();
+    close(false);
+    deleteFile(wasNio);
+    renameDataFile(wasNio);
+    backupFile();
+    database.getProperties().setProperty(HsqlDatabaseProperties.hsqldb_cache_version,HsqlDatabaseProperties.THIS_CACHE_VERSION);
+    database.getProperties().save();
+    cache.clear();
+    cache=new Cache(this);
+    open(cacheReadonly);
+    dfd.updateTableIndexRoots();
+    dfd.updateTransactionRowIDs();
+  }
+ catch (  Throwable e) {
+    database.logger.appLog.logContext(e,null);
+    if (e instanceof HsqlException) {
+      throw (HsqlException)e;
+    }
+ else {
+      throw new HsqlException(e,Error.getMessage(ErrorCode.GENERAL_IO_ERROR),ErrorCode.GENERAL_IO_ERROR);
+    }
+  }
+  database.logger.appLog.logContext(SimpleLog.LOG_NORMAL,"end");
+}

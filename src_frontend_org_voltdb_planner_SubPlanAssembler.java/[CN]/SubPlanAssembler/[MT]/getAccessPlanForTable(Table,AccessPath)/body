@@ -1,0 +1,26 @@
+{
+  assert(table != null);
+  assert(path != null);
+  if (path.index == null)   return getScanAccessPlanForTable(table,path.otherExprs);
+  Index index=path.index;
+  IndexScanPlanNode scanNode=new IndexScanPlanNode(m_context,PlanAssembler.getNextPlanNodeId());
+  List<AbstractExpression> searchKeys=scanNode.getSearchKeyExpressions();
+  for (  AbstractExpression expr : path.indexExprs) {
+    AbstractExpression expr2=ExpressionUtil.getOtherTableExpression(expr,table.getTypeName());
+    assert(expr2 != null);
+    searchKeys.add(expr2);
+  }
+  scanNode.setKeyIterate(path.keyIterate);
+  scanNode.setLookupType(path.lookupType);
+  scanNode.setSortDirection(path.sortDirection);
+  scanNode.setTargetTableName(table.getTypeName());
+  scanNode.setTargetTableAlias(table.getTypeName());
+  scanNode.setTargetIndexName(index.getTypeName());
+  scanNode.setEndExpression(ExpressionUtil.combine(path.endExprs));
+  scanNode.setPredicate(ExpressionUtil.combine(path.otherExprs));
+  AbstractPlanNode rootNode=scanNode;
+  if (tableRequiresDistributedScan(table)) {
+    rootNode=addSendReceivePair(scanNode);
+  }
+  return rootNode;
+}

@@ -1,0 +1,40 @@
+{
+  org.voltdb.client.Client client=null;
+  try {
+    client=ClientFactory.createClient();
+    client.createConnection("localhost","program","pass");
+  }
+ catch (  java.io.IOException e) {
+    e.printStackTrace();
+    System.exit(-1);
+  }
+  boolean auctionsOver=false;
+  while (auctionsOver == false) {
+    try {
+      auctionsOver=true;
+      System.out.printf("\nAUCTION STATUS AS OF: %tT\n",new Date());
+      System.out.printf("+-----------------------------------------------------" + "-----------------------------------------------+\n");
+      System.out.printf("| %-20s | %-16s | %-16s | %5s | %8s | %9s | %-6s |\n","ITEM","BIDDER","SELLER","BIDS","PRICE","END","STATUS");
+      System.out.printf("+-----------------------------------------------------" + "-----------------------------------------------+\n");
+      for (      long auctionId : allAuctionIds) {
+        VoltTable[] statusResultSet=client.callProcedure("AuctionStatus",auctionId);
+        if (statusResultSet.length != 1)         throw new Exception("AuctionStatus returned no results");
+        VoltTable statusTable=statusResultSet[0];
+        VoltTableRow row=statusTable.fetchRow(0);
+        System.out.printf("| %-20s | %-16s | %-16s | %5d | %8.2f | %9tT | %-6s |\n",row.getString("item"),row.getString("bidder"),row.getString("seller"),row.getLong("bidcount"),row.getDouble("price"),row.getTimestampAsTimestamp("endtime").asApproximateJavaDate(),row.getString("status"));
+        if (row.getString("status").equals("OPEN"))         auctionsOver=false;
+      }
+      System.out.printf("+-----------------------------------------------------" + "-----------------------------------------------+\n");
+      Thread.sleep(1000 * statusPeriodInSeconds);
+    }
+ catch (    Exception e) {
+      e.printStackTrace();
+    }
+  }
+  try {
+    client.shutdown();
+  }
+ catch (  InterruptedException e) {
+    e.printStackTrace();
+  }
+}

@@ -1,0 +1,24 @@
+{
+  VoltTable scanResults=performScanWork()[0];
+  VoltTable clientResults=constructClientResultsTable();
+  HashMap<Long,SnapshotResult> aggregate=new HashMap<Long,SnapshotResult>();
+  while (scanResults.advanceRow()) {
+    SnapshotResult snapshotResult=aggregate.get(scanResults.getLong(4));
+    if (snapshotResult == null) {
+      aggregate.put(scanResults.getLong(4),new SnapshotResult(scanResults));
+    }
+ else {
+      snapshotResult.processRow(scanResults);
+    }
+  }
+  for (  SnapshotResult s : aggregate.values()) {
+    final double duration=(s.endTime - s.startTime) / 1000.0;
+    final double throughput=(s.size / (1024.0 * 1024.0)) / duration;
+    StringWriter sw=new StringWriter();
+    PrintWriter pw=new PrintWriter(sw);
+    pw.printf("%.2f mb/sec",throughput);
+    pw.flush();
+    clientResults.addRow(s.path,s.nonce,s.startTime,s.endTime,s.size,s.endTime - s.startTime,sw.toString());
+  }
+  return new VoltTable[]{clientResults,scanResults};
+}

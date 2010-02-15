@@ -1,0 +1,49 @@
+{
+switch (opType) {
+case OpTypes.VALUE:
+    return valueData;
+case OpTypes.SIMPLE_COLUMN:
+{
+    Object[] data=(Object[])session.sessionContext.rangeIterators[rangePosition].getCurrent();
+    return data[columnIndex];
+  }
+case OpTypes.ORDER_BY:
+return nodes[LEFT].getValue(session);
+case OpTypes.CAST:
+{
+Object value=dataType.castToType(session,nodes[LEFT].getValue(session),nodes[LEFT].dataType);
+if (dataType.userTypeModifier != null) {
+  Constraint[] constraints=dataType.userTypeModifier.getConstraints();
+  for (int i=0; i < constraints.length; i++) {
+    constraints[i].checkCheckConstraint(session,null,value);
+  }
+}
+return value;
+}
+case OpTypes.CASEWHEN:
+{
+Boolean result=(Boolean)nodes[LEFT].getValue(session);
+if (Boolean.TRUE.equals(result)) {
+return nodes[RIGHT].nodes[LEFT].getValue(session,dataType);
+}
+ else {
+return nodes[RIGHT].nodes[RIGHT].getValue(session,dataType);
+}
+}
+case OpTypes.ZONE_MODIFIER:
+{
+Object leftValue=nodes[LEFT].getValue(session);
+Object rightValue=nodes[RIGHT] == null ? null : nodes[RIGHT].getValue(session);
+if (leftValue == null) {
+return null;
+}
+if (nodes[RIGHT] != null && rightValue == null) {
+return null;
+}
+long zoneSeconds=nodes[RIGHT] == null ? session.timeZoneSeconds : ((IntervalType)nodes[RIGHT].dataType).getSeconds(rightValue);
+return ((DateTimeType)dataType).changeZone(leftValue,nodes[LEFT].dataType,(int)zoneSeconds,session.timeZoneSeconds);
+}
+default :
+throw Error.runtimeError(ErrorCode.U_S0500,"Expression");
+}
+}

@@ -1,0 +1,48 @@
+{
+  int currentMaxRows=unionType == UNION_ALL ? maxRows : Integer.MAX_VALUE;
+  Result first=leftQueryExpression.getResult(session,currentMaxRows);
+  RowSetNavigatorData navigator=(RowSetNavigatorData)first.getNavigator();
+  Result second=rightQueryExpression.getResult(session,currentMaxRows);
+  RowSetNavigatorData rightNavigator=(RowSetNavigatorData)second.getNavigator();
+  if (unionCorresponding) {
+    RowSetNavigatorData rowSet=new RowSetNavigatorData(session,this);
+    rowSet.copy(navigator,leftQueryExpression.unionColumnMap);
+    navigator=rowSet;
+    first.setNavigator(navigator);
+    first.metaData=this.getMetaData();
+    rowSet=new RowSetNavigatorData(session,this);
+    if (unionType != UNION && unionType != UNION_ALL) {
+      rowSet.copy(rightNavigator,rightQueryExpression.unionColumnMap);
+      rightNavigator=rowSet;
+    }
+  }
+switch (unionType) {
+case UNION:
+    navigator.union(rightNavigator,rightQueryExpression.unionColumnMap);
+  break;
+case UNION_ALL:
+navigator.unionAll(rightNavigator,rightQueryExpression.unionColumnMap);
+break;
+case INTERSECT:
+navigator.intersect(rightNavigator);
+break;
+case INTERSECT_ALL:
+navigator.intersectAll(rightNavigator);
+break;
+case EXCEPT:
+navigator.except(rightNavigator);
+break;
+case EXCEPT_ALL:
+navigator.exceptAll(rightNavigator);
+break;
+default :
+throw Error.runtimeError(ErrorCode.U_S0500,"QueryExpression");
+}
+if (sortAndSlice.hasOrder()) {
+RowSetNavigatorData nav=(RowSetNavigatorData)first.getNavigator();
+nav.sortUnion(sortAndSlice);
+nav.trim(sortAndSlice.getLimitStart(session),sortAndSlice.getLimitCount(session,maxRows));
+}
+navigator.reset();
+return first;
+}

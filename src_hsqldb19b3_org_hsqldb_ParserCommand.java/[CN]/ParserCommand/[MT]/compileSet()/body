@@ -1,0 +1,401 @@
+{
+  int position=super.getPosition();
+  session.setScripting(false);
+  read();
+switch (token.tokenType) {
+case Tokens.SCHEMA:
+{
+      read();
+      Expression e=XreadValueSpecificationOrNull();
+      if (e == null) {
+        HsqlName name=readSchemaName();
+        Object[] args=new Object[]{name};
+        return new StatementSession(StatementTypes.SET_SCHEMA,args);
+      }
+      if (!e.getDataType().isCharacterType()) {
+        throw Error.error(ErrorCode.X_0P000);
+      }
+      if (e.getType() != OpTypes.VALUE && (e.getType() != OpTypes.SQL_FUNCTION || !((FunctionSQL)e).isValueFunction())) {
+        throw Error.error(ErrorCode.X_0P000);
+      }
+      Expression[] args=new Expression[]{e};
+      return new StatementSession(StatementTypes.SET_SCHEMA,args);
+    }
+case Tokens.TIME:
+{
+    read();
+    return compileSetTimeZone();
+  }
+case Tokens.ROLE:
+{
+  read();
+  return compileSetRole();
+}
+case Tokens.SESSION:
+{
+read();
+return compileSessionSettings();
+}
+case Tokens.TRANSACTION:
+{
+read();
+Object[] args=processTransactionCharacteristics();
+if (args[0] == null && args[1] == null) {
+throw unexpectedToken();
+}
+return new StatementSession(StatementTypes.SET_TRANSACTION,args);
+}
+case Tokens.AUTOCOMMIT:
+{
+read();
+boolean mode=processTrueOrFalse();
+Object[] args=new Object[]{Boolean.valueOf(mode)};
+return new StatementSession(StatementTypes.SET_SESSION_AUTOCOMMIT,args);
+}
+case Tokens.READONLY:
+{
+read();
+boolean readonly=processTrueOrFalse();
+Object[] args=new Object[]{Boolean.valueOf(readonly)};
+return new StatementSession(StatementTypes.SET_SESSION_CHARACTERISTICS,args);
+}
+case Tokens.LOGSIZE:
+{
+read();
+checkDatabaseUpdateAuthorisation();
+int size=readInteger();
+Object[] args=new Object[]{new Integer(size)};
+return new StatementCommand(StatementTypes.SET_DATABASE_FILES_LOG_SIZE,args,null,null);
+}
+case Tokens.SCRIPTFORMAT:
+{
+read();
+checkDatabaseUpdateAuthorisation();
+switch (token.tokenType) {
+case Tokens.TEXT:
+case Tokens.BINARY:
+case Tokens.COMPRESSED:
+break;
+default :
+throw unexpectedToken();
+}
+int mode=ArrayUtil.find(ScriptWriterBase.LIST_SCRIPT_FORMATS,token.tokenString);
+if (mode == 0 || mode == 1 || mode == 3) {
+}
+ else {
+throw unexpectedToken();
+}
+read();
+Object[] args=new Object[]{new Integer(mode)};
+return new StatementCommand(StatementTypes.SET_DATABASE_SCRIPT_FORMAT,args,database.getCatalogName(),null);
+}
+case Tokens.IGNORECASE:
+{
+read();
+boolean mode=processTrueOrFalse();
+Object[] args=new Object[]{Boolean.valueOf(mode)};
+return new StatementCommand(StatementTypes.SET_DATABASE_SQL_IGNORECASE,args,null,null);
+}
+case Tokens.MAXROWS:
+{
+read();
+int size=readInteger();
+Object[] args=new Object[]{new Integer(size)};
+return new StatementSession(StatementTypes.SET_SESSION_RESULT_MAX_ROWS,args);
+}
+case Tokens.DEFAULT:
+{
+read();
+readThis(Tokens.TABLE);
+readThis(Tokens.TYPE);
+int type=TableBase.MEMORY_TABLE;
+switch (token.tokenType) {
+case Tokens.MEMORY:
+break;
+case Tokens.CACHED:
+type=TableBase.CACHED_TABLE;
+break;
+default :
+throw unexpectedToken();
+}
+read();
+Object[] args=new Object[]{Integer.valueOf(type)};
+return new StatementCommand(StatementTypes.SET_DATABASE_DEFAULT_TABLE_TYPE,args,null,null);
+}
+case Tokens.RESULT:
+{
+read();
+readThis(Tokens.MEMORY);
+readThis(Tokens.SIZE);
+int size=readInteger();
+Object[] args=new Object[]{new Integer(size)};
+return new StatementSession(StatementTypes.SET_SESSION_RESULT_MEMORY_ROWS,args);
+}
+case Tokens.TABLE:
+{
+read();
+Table t=readTableName();
+Object[] args=new Object[]{t.tableName,null};
+switch (token.tokenType) {
+default :
+{
+throw unexpectedToken();
+}
+case Tokens.SOURCE:
+read();
+return compileTextTableSource(t);
+case Tokens.READ:
+{
+read();
+boolean readonly=false;
+if (token.tokenType == Tokens.WRITE) {
+}
+ else {
+readThis(Tokens.ONLY);
+readonly=true;
+}
+args[1]=Boolean.valueOf(readonly);
+return new StatementCommand(StatementTypes.SET_TABLE_READONLY,args,null,t.getName());
+}
+case Tokens.READONLY:
+{
+read();
+boolean readonly=processTrueOrFalse();
+args[1]=Boolean.valueOf(readonly);
+return new StatementCommand(StatementTypes.SET_TABLE_READONLY,args,null,t.getName());
+}
+case Tokens.INDEX:
+{
+String value;
+read();
+checkIsValue();
+value=token.tokenString;
+read();
+args[1]=value;
+return new StatementCommand(StatementTypes.SET_TABLE_INDEX,args,null,null);
+}
+case Tokens.TYPE:
+{
+read();
+int newType;
+if (token.tokenType == Tokens.CACHED) {
+newType=TableBase.CACHED_TABLE;
+}
+ else if (token.tokenType == Tokens.MEMORY) {
+newType=TableBase.MEMORY_TABLE;
+}
+ else {
+throw Error.error(ErrorCode.X_42581);
+}
+read();
+args[1]=new Integer(newType);
+return new StatementCommand(StatementTypes.SET_TABLE_TYPE,args,null,t.getName());
+}
+}
+}
+case Tokens.CHECKPOINT:
+{
+read();
+readThis(Tokens.DEFRAG);
+int size=readInteger();
+Object[] args=new Object[]{new Integer(size)};
+return new StatementCommand(StatementTypes.SET_DATABASE_FILES_DEFRAG,args,null,null);
+}
+case Tokens.WRITE_DELAY:
+{
+read();
+int delay=0;
+if (token.tokenType == Tokens.TRUE) {
+delay=database.getProperties().getDefaultWriteDelay();
+read();
+}
+ else if (token.tokenType == Tokens.FALSE) {
+delay=0;
+read();
+}
+ else {
+delay=this.readInteger();
+if (delay < 0) {
+delay=0;
+}
+if (token.tokenType == Tokens.MILLIS) {
+read();
+}
+ else {
+delay*=1000;
+}
+}
+Object[] args=new Object[]{new Integer(delay)};
+return new StatementCommand(StatementTypes.SET_DATABASE_FILES_WRITE_DELAY,args,null,null);
+}
+case Tokens.PASSWORD:
+{
+String password;
+read();
+password=readPassword();
+Object[] args=new Object[]{null,password};
+return new StatementCommand(StatementTypes.SET_USER_PASSWORD,args,null,null);
+}
+case Tokens.INITIAL:
+{
+read();
+readThis(Tokens.SCHEMA);
+HsqlName schema;
+if (token.tokenType == Tokens.DEFAULT) {
+schema=null;
+}
+ else {
+schema=database.schemaManager.getSchemaHsqlName(token.tokenString);
+}
+read();
+Object[] args=new Object[]{null,schema};
+return new StatementCommand(StatementTypes.SET_USER_INITIAL_SCHEMA,args,null,null);
+}
+case Tokens.DATABASE:
+{
+read();
+String name;
+switch (token.tokenType) {
+case Tokens.BACKUP:
+{
+read();
+checkDatabaseUpdateAuthorisation();
+readThis(Tokens.INCREMENT);
+boolean flag=processTrueOrFalse();
+Object[] args=new Object[]{Boolean.valueOf(flag)};
+return new StatementCommand(StatementTypes.SET_DATABASE_FILES_BACKUP_INCREMENT,args,database.getCatalogName(),null);
+}
+case Tokens.COLLATION:
+{
+read();
+checkIsSimpleName();
+name=token.tokenString;
+read();
+Object[] args=new Object[]{name};
+return new StatementCommand(StatementTypes.SET_DATABASE_SQL_COLLATION,args,null,null);
+}
+case Tokens.DEFAULT:
+{
+return compileSetDefault();
+}
+case Tokens.EVENT:
+{
+read();
+readThis(Tokens.LOG);
+readThis(Tokens.LEVEL);
+int value=readInteger();
+Object[] args=new Object[]{Integer.valueOf(value)};
+return new StatementCommand(StatementTypes.SET_DATABASE_FILES_EVENT_LOG,args,null,null);
+}
+case Tokens.FILES:
+{
+read();
+int type=0;
+boolean flag=false;
+int value=0;
+switch (token.tokenType) {
+case Tokens.LOCK:
+{
+read();
+flag=processTrueOrFalse();
+type=StatementTypes.SET_DATABASE_FILES_LOCK;
+break;
+}
+case Tokens.READ:
+{
+read();
+type=StatementTypes.SET_DATABASE_FILES_READ_ONLY;
+if (readIfThis(Tokens.ONLY)) {
+flag=true;
+}
+ else {
+readThis(Tokens.WRITE);
+flag=false;
+}
+if (readIfThis(Tokens.FILES)) {
+type=StatementTypes.SET_DATABASE_FILES_READ_ONLY_FILES;
+}
+flag=processTrueOrFalse();
+break;
+}
+case Tokens.CACHE:
+{
+read();
+if (readIfThis(Tokens.SIZE)) {
+value=readInteger();
+type=StatementTypes.SET_DATABASE_FILES_CACHE_SIZE;
+}
+ else if (readIfThis(Tokens.ROWS)) {
+value=readInteger();
+type=StatementTypes.SET_DATABASE_FILES_CACHE_FILE_SCALE;
+}
+ else if (readIfThis(Tokens.FILE)) {
+readThis(Tokens.SCALE);
+value=readInteger();
+type=StatementTypes.SET_DATABASE_FILES_CACHE_FILE_SCALE;
+}
+break;
+}
+case Tokens.DEFRAG:
+{
+read();
+type=StatementTypes.SET_DATABASE_FILES_DEFRAG;
+value=readInteger();
+break;
+}
+case Tokens.NIO:
+{
+read();
+type=StatementTypes.SET_DATABASE_FILES_NIO;
+flag=processTrueOrFalse();
+break;
+}
+default :
+unexpectedToken();
+}
+Object[] args=new Object[]{new Integer(value),Boolean.valueOf(flag)};
+return new StatementCommand(type,args,null,null);
+}
+case Tokens.REFERENTIAL_INTEGRITY:
+{
+read();
+boolean mode=processTrueOrFalse();
+Object[] args=new Object[]{Boolean.valueOf(mode)};
+return new StatementCommand(StatementTypes.SET_DATABASE_SQL_REFERENTIAL_INTEGRITY,args,null,null);
+}
+case Tokens.TRANSACTION:
+{
+read();
+readThis(Tokens.CONTROL);
+boolean mvcc=false;
+if (token.tokenType == Tokens.MVCC) {
+read();
+mvcc=true;
+}
+ else {
+readThis(Tokens.LOCKS);
+}
+Object[] args=new Object[]{Boolean.valueOf(mvcc)};
+return new StatementCommand(StatementTypes.SET_DATABASE_TRANSACTION_CONTROL,args,null,null);
+}
+case Tokens.PROPERTY:
+{
+return compileSetProperty();
+}
+default :
+{
+throw unexpectedToken();
+}
+}
+}
+case Tokens.PROPERTY:
+{
+return compileSetProperty();
+}
+default :
+{
+rewind(position);
+return compileSetStatement(session.sessionContext.sessionVariablesRange);
+}
+}
+}

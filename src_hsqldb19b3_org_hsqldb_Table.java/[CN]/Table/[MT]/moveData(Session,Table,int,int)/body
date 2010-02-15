@@ -1,0 +1,35 @@
+{
+  Object colvalue=null;
+  ColumnSchema column=null;
+  if (adjust >= 0 && colindex != -1) {
+    column=getColumn(colindex);
+    colvalue=column.getDefaultValue(session);
+  }
+  PersistentStore store=session.sessionData.getRowStore(this);
+  try {
+    RowIterator it=from.rowIterator(session);
+    while (it.hasNext()) {
+      Row row=it.getNextRow();
+      Object[] o=row.getData();
+      Object[] data=getEmptyRowData();
+      if (adjust == 0 && colindex != -1) {
+        colvalue=column.getDataType().convertToType(session,o[colindex],from.getColumn(colindex).getDataType());
+      }
+      ArrayUtil.copyAdjustArray(o,data,colvalue,colindex,adjust);
+      systemSetIdentityColumn(session,data);
+      enforceRowConstraints(session,data);
+      Row newrow=(Row)store.getNewCachedObject(null,data);
+      if (row.rowAction != null) {
+        newrow.rowAction=row.rowAction.duplicate(newrow.getPos());
+      }
+      store.indexRow(null,newrow);
+    }
+  }
+ catch (  Throwable t) {
+    store.release();
+    if (t instanceof HsqlException) {
+      throw (HsqlException)t;
+    }
+    throw new HsqlException(t,"",0);
+  }
+}

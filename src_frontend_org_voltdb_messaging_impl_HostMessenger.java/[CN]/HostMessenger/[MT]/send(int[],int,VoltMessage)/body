@@ -1,0 +1,53 @@
+{
+  assert(m_initialized);
+  assert(message != null);
+  assert(siteIds != null);
+  final HashSet<ForeignHost> foreignHosts=new HashSet<ForeignHost>(32);
+  for (  int siteId : siteIds) {
+    ForeignHost host=presend(siteId,mailboxId,message);
+    if (host != null) {
+      foreignHosts.add(host);
+    }
+  }
+  if (foreignHosts.size() == 0)   return;
+  final FutureTask<ByteBuffer> buildMessageTask=new FutureTask<ByteBuffer>(new Callable<ByteBuffer>(){
+    public final ByteBuffer call(){
+      return message.getBufferForMessaging(heapPool).b;
+    }
+  }
+);
+  for (  ForeignHost host : foreignHosts) {
+    host.send(mailboxId,siteIds,siteIds.length,new DeferredSerialization(){
+      @Override public final BBContainer serialize(      DBBPool pool) throws IOException {
+        ByteBuffer messageBytes=null;
+        try {
+          buildMessageTask.run();
+          messageBytes=buildMessageTask.get();
+        }
+ catch (        InterruptedException e) {
+          m_logger.fatal("Should not be interrupted while serializing messages",e);
+          throw new IOException(e);
+        }
+catch (        ExecutionException e) {
+          if (e.getCause() instanceof IOException) {
+            throw (IOException)e.getCause();
+          }
+ else {
+            m_logger.fatal("Error while serializing message",e);
+            throw new IOException(e);
+          }
+        }
+        ByteBuffer view=messageBytes.duplicate();
+        view.position(0);
+        BBContainer stupidCopy=pool.acquire(view.remaining());
+        stupidCopy.b.put(view);
+        stupidCopy.b.flip();
+        return stupidCopy;
+      }
+      @Override public final void cancel(){
+      }
+    }
+);
+  }
+  foreignHosts.clear();
+}

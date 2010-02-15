@@ -1,0 +1,26 @@
+def valleak(executable):
+    'Returns (error, stdout, stderr).\n\n    error == 0 if successful, an integer > 0 if there are memory leaks or errors.'
+    valgrind_output = tempfile.NamedTemporaryFile()
+    valgrind_command = (VALGRIND, '--leak-check=full', ('--log-file-exactly=' + valgrind_output.name), '--error-exitcode=1', executable)
+    process = subprocess.Popen(valgrind_command, bufsize=(-1), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, close_fds=True)
+    process.stdin.close()
+    stdout = process.stdout.read()
+    stderr = process.stderr.read()
+    error = process.wait()
+    valgrind_error_file = open(valgrind_output.name)
+    valgrind_error = valgrind_error_file.read()
+    valgrind_error_file.close()
+    valgrind_output.close()
+    summary_start = valgrind_error.rindex('== ERROR SUMMARY:')
+    summary = valgrind_error[summary_start:]
+    append_valgrind = False
+    if (error == 0):
+        assert ('== ERROR SUMMARY: 0 errors' in summary)
+        if ('==    definitely lost:' in summary):
+            error = 1
+            append_valgrind = True
+    elif ('== ERROR SUMMARY: 0 errors' not in summary):
+        append_valgrind = True
+    if append_valgrind:
+        stderr = ((stderr + '\n\n') + valgrind_error)
+    return (error, stdout, stderr)

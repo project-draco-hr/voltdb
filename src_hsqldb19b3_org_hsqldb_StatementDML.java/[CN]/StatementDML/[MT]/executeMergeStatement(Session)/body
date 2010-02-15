@@ -1,0 +1,64 @@
+{
+  Result resultOut=null;
+  RowSetNavigator generatedNavigator=null;
+  PersistentStore store=session.sessionData.getRowStore(baseTable);
+  if (generatedIndexes != null) {
+    resultOut=Result.newUpdateCountResult(generatedResultMetaData,0);
+    generatedNavigator=resultOut.getChainedResult().getNavigator();
+  }
+  int count=0;
+  RowSetNavigatorClient newData=new RowSetNavigatorClient(8);
+  HashMappedList updateRowSet=new HashMappedList();
+  RangeVariable[] joinRangeIterators=targetRangeVariables;
+  RangeIterator[] rangeIterators=new RangeIterator[joinRangeIterators.length];
+  for (int i=0; i < joinRangeIterators.length; i++) {
+    rangeIterators[i]=joinRangeIterators[i].getIterator(session);
+  }
+  for (int currentIndex=0; 0 <= currentIndex; ) {
+    RangeIterator it=rangeIterators[currentIndex];
+    boolean beforeFirst=it.isBeforeFirst();
+    if (it.next()) {
+      if (currentIndex < joinRangeIterators.length - 1) {
+        currentIndex++;
+        continue;
+      }
+    }
+ else {
+      if (currentIndex == 1 && beforeFirst) {
+        Object[] data=getMergeInsertData(session);
+        if (data != null) {
+          newData.add(data);
+        }
+      }
+      it.reset();
+      currentIndex--;
+      continue;
+    }
+    if (updateExpressions != null) {
+      Row row=it.getCurrentRow();
+      Object[] data=getUpdatedData(session,baseTable,updateColumnMap,updateExpressions,baseTable.getColumnTypes(),row.getData());
+      updateRowSet.add(row,data);
+    }
+  }
+  if (updateRowSet.size() > 0) {
+    count=update(session,baseTable,updateRowSet);
+  }
+  newData.beforeFirst();
+  while (newData.hasNext()) {
+    Object[] data=(Object[])newData.getNext();
+    baseTable.insertRow(session,store,data);
+    if (generatedNavigator != null) {
+      Object[] generatedValues=getGeneratedColumns(data);
+      generatedNavigator.add(generatedValues);
+    }
+  }
+  baseTable.fireAfterTriggers(session,Trigger.INSERT_AFTER,newData);
+  count+=newData.getSize();
+  if (resultOut == null) {
+    return Result.getUpdateCountResult(count);
+  }
+ else {
+    resultOut.setUpdateCount(count);
+    return resultOut;
+  }
+}

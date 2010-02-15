@@ -1,0 +1,58 @@
+{
+  while (true) {
+    int degree;
+    if (token.tokenType == Tokens.OPENBRACKET) {
+      read();
+      int oldCount=colNames.size();
+      readColumnNames(colNames,rangeVars);
+      degree=colNames.size() - oldCount;
+      readThis(Tokens.CLOSEBRACKET);
+    }
+ else {
+      ColumnSchema column=readColumnName(rangeVars);
+      if (!colNames.add(column.getName().name)) {
+        throw Error.error(ErrorCode.X_42578,column.getName().name);
+      }
+      degree=1;
+    }
+    readThis(Tokens.EQUALS);
+    int position=getPosition();
+    int brackets=readOpenBrackets();
+    if (token.tokenType == Tokens.SELECT) {
+      rewind(position);
+      SubQuery sq=XreadSubqueryBody(false,OpTypes.ROW_SUBQUERY);
+      if (degree != sq.queryExpression.getColumnCount()) {
+        throw Error.error(ErrorCode.X_42546);
+      }
+      Expression e=new Expression(OpTypes.ROW_SUBQUERY,sq);
+      expressions.add(e);
+      if (token.tokenType == Tokens.COMMA) {
+        read();
+        continue;
+      }
+      break;
+    }
+    if (brackets > 0) {
+      rewind(position);
+    }
+    if (degree > 1) {
+      readThis(Tokens.OPENBRACKET);
+      Expression e=readRow();
+      readThis(Tokens.CLOSEBRACKET);
+      int rowDegree=e.getType() == OpTypes.ROW ? e.nodes.length : 1;
+      if (degree != rowDegree) {
+        throw Error.error(ErrorCode.X_42546);
+      }
+      expressions.add(e);
+    }
+ else {
+      Expression e=XreadValueExpressionWithContext();
+      expressions.add(e);
+    }
+    if (token.tokenType == Tokens.COMMA) {
+      read();
+      continue;
+    }
+    break;
+  }
+}

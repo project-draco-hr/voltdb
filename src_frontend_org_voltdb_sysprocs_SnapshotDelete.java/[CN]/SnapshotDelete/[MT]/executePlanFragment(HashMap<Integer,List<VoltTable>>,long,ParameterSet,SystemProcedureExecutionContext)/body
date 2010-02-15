@@ -1,0 +1,43 @@
+{
+  errorString=null;
+  VoltTable result=constructFragmentResultsTable();
+  if (fragmentId == SysProcFragmentId.PF_snapshotDelete) {
+    assert(params.toArray()[0] != null);
+    assert(params.toArray()[0] instanceof String[]);
+    assert(((String[])params.toArray()[0]).length > 0);
+    assert(params.toArray()[1] != null);
+    assert(params.toArray()[1] instanceof String[]);
+    assert(((String[])params.toArray()[1]).length > 0);
+    assert(((String[])params.toArray()[0]).length == ((String[])params.toArray()[1]).length);
+    final String paths[]=(String[])params.toArray()[0];
+    final String nonces[]=(String[])params.toArray()[1];
+    for (int ii=0; ii < paths.length; ii++) {
+      List<File> relevantFiles=retrieveRelevantFiles(paths[ii],nonces[ii]);
+      if (relevantFiles == null) {
+        result.addRow(context.getSite().getHost().getTypeName(),paths[ii],nonces[ii],"",0,"FALSE","FAILURE",errorString);
+      }
+ else {
+        for (        final File f : relevantFiles) {
+          long size=f.length();
+          boolean deleted=f.delete();
+          result.addRow(context.getSite().getHost().getTypeName(),paths[ii],nonces[ii],f.getName(),size,deleted ? "TRUE" : "FALSE","SUCESS","");
+        }
+      }
+    }
+    return new DependencyPair(DEP_snapshotDelete,result);
+  }
+ else   if (fragmentId == SysProcFragmentId.PF_snapshotDeleteResults) {
+    final VoltTable results=constructFragmentResultsTable();
+    TRACE_LOG.trace("Aggregating Snapshot Delete  results");
+    assert(dependencies.size() > 0);
+    List<VoltTable> dep=dependencies.get(DEP_snapshotDelete);
+    for (    VoltTable table : dep) {
+      while (table.advanceRow()) {
+        results.add(table);
+      }
+    }
+    return new DependencyPair(DEP_snapshotDeleteResults,results);
+  }
+  assert(false);
+  return null;
+}

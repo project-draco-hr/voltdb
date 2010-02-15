@@ -1,0 +1,42 @@
+{
+  try {
+    if (m_executor != null) {
+      m_executor.shutdown();
+      try {
+        m_executor.awaitTermination(60,TimeUnit.SECONDS);
+synchronized (m_networkThreads) {
+          for (          final Thread t : m_networkThreads) {
+            if (t != null) {
+              t.join();
+            }
+          }
+        }
+      }
+ catch (      InterruptedException e) {
+        m_logger.error(null,e);
+      }
+    }
+    Set<SelectionKey> keys=m_selector.keys();
+    for (    SelectionKey key : keys) {
+      VoltPort port=(VoltPort)key.attachment();
+      if (port != null) {
+        unregisterChannel(port);
+      }
+    }
+synchronized (m_poolsToClearOnShutdown) {
+      for (      DBBPool p : m_poolsToClearOnShutdown) {
+        p.clear();
+      }
+      m_poolsToClearOnShutdown.clear();
+    }
+    try {
+      m_selector.close();
+    }
+ catch (    IOException e) {
+      m_logger.error(null,e);
+    }
+  }
+  finally {
+    this.notifyAll();
+  }
+}

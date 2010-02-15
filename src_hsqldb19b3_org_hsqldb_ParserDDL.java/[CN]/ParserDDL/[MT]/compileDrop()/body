@@ -1,0 +1,189 @@
+{
+  int objectTokenType;
+  int objectType;
+  int statementType;
+  boolean canCascade=false;
+  boolean cascade=false;
+  boolean useIfExists=false;
+  boolean ifExists=false;
+  HsqlName readName=null;
+  HsqlName writeName=null;
+  read();
+  objectTokenType=this.token.tokenType;
+switch (objectTokenType) {
+case Tokens.INDEX:
+{
+      read();
+      statementType=StatementTypes.DROP_INDEX;
+      objectType=SchemaObject.INDEX;
+      useIfExists=true;
+      break;
+    }
+case Tokens.ASSERTION:
+{
+    read();
+    statementType=StatementTypes.DROP_ASSERTION;
+    objectType=SchemaObject.ASSERTION;
+    canCascade=true;
+    break;
+  }
+case Tokens.PROCEDURE:
+{
+  read();
+  statementType=StatementTypes.DROP_ROUTINE;
+  objectType=SchemaObject.PROCEDURE;
+  canCascade=true;
+  break;
+}
+case Tokens.FUNCTION:
+{
+read();
+statementType=StatementTypes.DROP_ROUTINE;
+objectType=SchemaObject.FUNCTION;
+canCascade=true;
+break;
+}
+case Tokens.SCHEMA:
+{
+read();
+statementType=StatementTypes.DROP_SCHEMA;
+objectType=SchemaObject.SCHEMA;
+useIfExists=true;
+canCascade=true;
+break;
+}
+case Tokens.SEQUENCE:
+{
+read();
+statementType=StatementTypes.DROP_SEQUENCE;
+objectType=SchemaObject.SEQUENCE;
+canCascade=true;
+useIfExists=true;
+break;
+}
+case Tokens.TRIGGER:
+{
+read();
+statementType=StatementTypes.DROP_TRIGGER;
+objectType=SchemaObject.TRIGGER;
+canCascade=false;
+break;
+}
+case Tokens.USER:
+{
+read();
+statementType=StatementTypes.DROP_USER;
+objectType=SchemaObject.GRANTEE;
+canCascade=true;
+break;
+}
+case Tokens.ROLE:
+{
+read();
+statementType=StatementTypes.DROP_ROLE;
+objectType=SchemaObject.GRANTEE;
+canCascade=true;
+break;
+}
+case Tokens.DOMAIN:
+read();
+statementType=StatementTypes.DROP_DOMAIN;
+objectType=SchemaObject.DOMAIN;
+canCascade=true;
+break;
+case Tokens.TYPE:
+read();
+statementType=StatementTypes.DROP_TYPE;
+objectType=SchemaObject.TYPE;
+canCascade=true;
+break;
+case Tokens.CHARACTER:
+read();
+readThis(Tokens.SET);
+statementType=StatementTypes.DROP_CHARACTER_SET;
+objectType=SchemaObject.CHARSET;
+canCascade=false;
+break;
+case Tokens.VIEW:
+read();
+statementType=StatementTypes.DROP_VIEW;
+objectType=SchemaObject.VIEW;
+canCascade=true;
+useIfExists=true;
+break;
+case Tokens.TABLE:
+read();
+statementType=StatementTypes.DROP_TABLE;
+objectType=SchemaObject.TABLE;
+canCascade=true;
+useIfExists=true;
+break;
+default :
+throw unexpectedToken();
+}
+checkIsIdentifier();
+HsqlName name=null;
+switch (objectTokenType) {
+case Tokens.USER:
+{
+checkIsSimpleName();
+checkDatabaseUpdateAuthorisation();
+Grantee grantee=database.getUserManager().get(token.tokenString);
+name=grantee.getName();
+read();
+break;
+}
+case Tokens.ROLE:
+{
+checkIsSimpleName();
+checkDatabaseUpdateAuthorisation();
+Grantee role=database.getGranteeManager().getRole(token.tokenString);
+name=role.getName();
+read();
+break;
+}
+case Tokens.SCHEMA:
+{
+name=readNewSchemaName();
+writeName=database.getCatalogName();
+break;
+}
+default :
+name=readNewSchemaObjectNameNoCheck(objectType);
+try {
+String schemaName=name.schema == null ? session.getSchemaName(null) : name.schema.name;
+SchemaObject object=database.schemaManager.getSchemaObject(name.name,schemaName,objectType);
+if (cascade) {
+writeName=database.getCatalogName();
+}
+ else {
+writeName=object.getName();
+if (writeName.parent != null) {
+writeName=writeName.parent;
+}
+if (writeName.type != SchemaObject.TABLE) {
+writeName=null;
+}
+}
+}
+ catch (HsqlException e) {
+}
+}
+if (useIfExists && token.tokenType == Tokens.IF) {
+read();
+readThis(Tokens.EXISTS);
+ifExists=true;
+}
+if (canCascade) {
+if (token.tokenType == Tokens.CASCADE) {
+cascade=true;
+read();
+}
+ else if (token.tokenType == Tokens.RESTRICT) {
+read();
+}
+}
+Object[] args=new Object[]{name,new Integer(objectType),Boolean.valueOf(cascade),Boolean.valueOf(ifExists)};
+String sql=getLastPart();
+return new StatementSchema(sql,statementType,args,readName,writeName);
+}

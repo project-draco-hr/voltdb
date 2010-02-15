@@ -1,0 +1,52 @@
+{
+  assert(jarPath != null);
+  assert(sitesPerHost >= 1);
+  assert(hostCount >= 1);
+  assert(leaderAddress != null);
+  DocumentBuilderFactory docFactory;
+  DocumentBuilder docBuilder;
+  Document doc;
+  try {
+    docFactory=DocumentBuilderFactory.newInstance();
+    docBuilder=docFactory.newDocumentBuilder();
+    doc=docBuilder.newDocument();
+  }
+ catch (  final ParserConfigurationException e) {
+    e.printStackTrace();
+    return false;
+  }
+  final Element project=doc.createElement("project");
+  doc.appendChild(project);
+  final Element security=doc.createElement("security");
+  security.setAttribute("enabled",new Boolean(m_securityEnabled).toString());
+  project.appendChild(security);
+  final Element database=doc.createElement("database");
+  database.setAttribute("name","database");
+  project.appendChild(database);
+  buildDatabaseElement(doc,database);
+  StreamResult result;
+  try {
+    final Transformer transformer=TransformerFactory.newInstance().newTransformer();
+    transformer.setOutputProperty(OutputKeys.INDENT,"yes");
+    result=new StreamResult(new StringWriter());
+    final DOMSource domSource=new DOMSource(doc);
+    transformer.transform(domSource,result);
+  }
+ catch (  final TransformerConfigurationException e) {
+    e.printStackTrace();
+    return false;
+  }
+catch (  final TransformerFactoryConfigurationError e) {
+    e.printStackTrace();
+    return false;
+  }
+catch (  final TransformerException e) {
+    e.printStackTrace();
+    return false;
+  }
+  final File projectFile=writeStringToTempFile(result.getWriter().toString());
+  final String projectPath=projectFile.getPath();
+  final ClusterConfig cluster_config=new ClusterConfig(hostCount,sitesPerHost,replication,leaderAddress);
+  final boolean success=compiler.compile(projectPath,cluster_config,jarPath,m_compilerDebugPrintStream,m_procInfoOverrides);
+  return success;
+}

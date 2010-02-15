@@ -1,0 +1,45 @@
+{
+  if (!isNative) {
+    VoltTable[] batch_results=queryResults.toArray(new VoltTable[queryResults.size()]);
+    queryResults.clear();
+    return batch_results;
+  }
+  assert(batchQueryStmtIndex == batchQueryArgsIndex);
+  if (ProcedureProfiler.profilingLevel == ProcedureProfiler.Level.INTRUSIVE) {
+    if (ProcedureProfiler.workloadTrace != null && m_workloadXactHandle != null) {
+      m_workloadBatchId=ProcedureProfiler.workloadTrace.getNextBatchId(m_workloadXactHandle);
+      for (int i=0; i < batchQueryStmtIndex; i++) {
+        Object queryHandle=ProcedureProfiler.workloadTrace.startQuery(m_workloadXactHandle,batchQueryStmts[i].catStmt,batchQueryArgs[i],m_workloadBatchId);
+        m_workloadQueryHandles.add(queryHandle);
+      }
+    }
+  }
+  VoltTable[] retval=null;
+  if (ProcedureProfiler.profilingLevel == ProcedureProfiler.Level.INTRUSIVE) {
+    retval=executeQueriesInIndividualBatches(batchQueryStmtIndex,batchQueryStmts,batchQueryArgs,isFinalSQL);
+  }
+ else   if (catProc.getSinglepartition() == false) {
+    boolean duplicate=false;
+    for (int i=0; i < batchQueryStmtIndex; i++) {
+      for (int j=i + 1; i < batchQueryStmtIndex; i++) {
+        if (batchQueryStmts[i] == batchQueryStmts[j])         duplicate=true;
+      }
+    }
+    if (duplicate)     retval=executeQueriesInIndividualBatches(batchQueryStmtIndex,batchQueryStmts,batchQueryArgs,isFinalSQL);
+ else     retval=executeQueriesInABatch(batchQueryStmtIndex,batchQueryStmts,batchQueryArgs,isFinalSQL);
+  }
+ else {
+    retval=executeQueriesInABatch(batchQueryStmtIndex,batchQueryStmts,batchQueryArgs,isFinalSQL);
+  }
+  if (ProcedureProfiler.profilingLevel == ProcedureProfiler.Level.INTRUSIVE) {
+    if (ProcedureProfiler.workloadTrace != null) {
+      for (      Object handle : m_workloadQueryHandles) {
+        if (handle != null)         ProcedureProfiler.workloadTrace.stopQuery(handle);
+      }
+      m_workloadQueryHandles.clear();
+    }
+  }
+  batchQueryStmtIndex=0;
+  batchQueryArgsIndex=0;
+  return retval;
+}

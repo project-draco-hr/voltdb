@@ -1,0 +1,143 @@
+{
+  QuerySpecification select=(QuerySpecification)queryExpression;
+  try {
+    getResult(session);
+  }
+ catch (  HsqlException e) {
+    throw new HSQLParseException(e.getMessage());
+  }
+catch (  Exception e) {
+  }
+  StringBuffer sb=new StringBuffer();
+  String indent=orig_indent + HSQLInterface.XML_INDENT;
+  sb.append(orig_indent).append("<select");
+  if (select.isDistinctSelect)   sb.append(" distinct=\"true\"");
+  if (select.isGrouped)   sb.append(" grouped=\"true\"");
+  if (select.isAggregated)   sb.append(" aggregated=\"true\"");
+  if ((select.sortAndSlice != null) && (select.sortAndSlice.limitCondition != null)) {
+    Expression limitCondition=select.sortAndSlice.limitCondition;
+    Integer offset=null;
+    Integer limit=null;
+    assert(limitCondition.nodes.length == 2);
+    try {
+      offset=(Integer)limitCondition.nodes[0].getValue(session);
+      limit=(Integer)limitCondition.nodes[1].getValue(session);
+    }
+ catch (    HsqlException ex) {
+      ex.printStackTrace();
+    }
+    sb.append(" limit=\"" + limit + "\"");
+    if (offset > 0)     sb.append(" offset=\"" + offset + "\"");
+  }
+  sb.append(">\n");
+  sb.append(indent + "<columns>\n");
+  ArrayList<Expression> simpleCols=new ArrayList<Expression>();
+  ArrayList<Expression> otherCols=new ArrayList<Expression>();
+  ArrayList<Expression> orderByCols=new ArrayList<Expression>();
+  ArrayList<Expression> groupByCols=new ArrayList<Expression>();
+  ArrayList<Pair<Integer,SimpleName>> aliases=new ArrayList<Pair<Integer,SimpleName>>();
+  for (int i=0; i < select.exprColumns.length; i++) {
+    final Expression expr=select.exprColumns[i];
+    if (expr.alias != null) {
+      if (expr instanceof ExpressionColumn) {
+        ExpressionColumn exprColumn=(ExpressionColumn)expr;
+        if (exprColumn.alias != null && exprColumn.columnName == null) {
+          aliases.add(Pair.of(expr.columnIndex,expr.alias));
+        }
+      }
+ else       if (expr.columnIndex > -1) {
+        aliases.add(Pair.of(expr.columnIndex,expr.alias));
+      }
+    }
+    if (isGroupByColumn(select,i)) {
+      groupByCols.add(expr);
+    }
+ else     if (expr.opType == OpTypes.SIMPLE_COLUMN) {
+      simpleCols.add(select.exprColumns[i]);
+    }
+ else     if (expr.opType == OpTypes.ORDER_BY) {
+      orderByCols.add(expr);
+    }
+ else {
+      otherCols.add(expr);
+    }
+  }
+  for (  Pair<Integer,SimpleName> alias : aliases) {
+    select.exprColumns[alias.getFirst()].alias=alias.getSecond();
+  }
+  for (  Expression otherCol : otherCols)   sb.append(otherCol.voltGetXML(session,indent + HSQLInterface.XML_INDENT)).append("\n");
+  sb.append(indent + "</columns>\n");
+  sb.append(indent + "<parameters>\n");
+  for (int i=0; i < parameters.length; i++) {
+    sb.append(indent + HSQLInterface.XML_INDENT + "<parameter index='").append(i).append("'");
+    ExpressionColumn param=parameters[i];
+    sb.append(" id='").append(param.getUniqueId()).append("'");
+    sb.append(" type='").append(Types.getTypeName(param.getDataType().typeCode)).append("'");
+    sb.append(" />\n");
+  }
+  sb.append(indent + "</parameters>\n");
+  sb.append(indent + "<tablescans>\n");
+  for (int i=0; i < rangeVariables.length; i++)   sb.append(rangeVariables[i].voltGetXML(session,indent + HSQLInterface.XML_INDENT)).append("\n");
+  sb.append(indent + "</tablescans>\n");
+  if (select.queryCondition != null) {
+    sb.append(indent).append("<querycondition>\n");
+    sb.append(select.queryCondition.voltGetXML(session,indent + HSQLInterface.XML_INDENT)).append("\n");
+    sb.append(indent).append("</querycondition>\n");
+  }
+ else {
+    Expression cond=null;
+    for (int rvi=0; rvi < select.rangeVariables.length; ++rvi) {
+      RangeVariable rv=rangeVariables[rvi];
+      if (rv.nonIndexJoinCondition != null) {
+        if (cond != null) {
+          cond=new ExpressionLogical(OpTypes.AND,cond,rv.nonIndexJoinCondition);
+        }
+ else {
+          cond=rv.nonIndexJoinCondition;
+        }
+      }
+ else       if (rv.isJoinIndex) {
+        if (rv.indexCondition != null) {
+          if (cond != null) {
+            cond=new ExpressionLogical(OpTypes.AND,cond,rv.indexCondition);
+          }
+ else {
+            cond=rv.indexCondition;
+          }
+        }
+        if (rv.indexEndCondition != null) {
+          if (cond != null) {
+            cond=new ExpressionLogical(OpTypes.AND,cond,rv.indexCondition);
+          }
+ else {
+            cond=rv.indexCondition;
+          }
+        }
+      }
+    }
+    if (cond != null) {
+      sb.append(indent).append("<querycondition>\n");
+      sb.append(cond.voltGetXML(session,indent + HSQLInterface.XML_INDENT)).append("\n");
+      sb.append(indent).append("</querycondition>\n");
+    }
+  }
+  if (select.havingCondition != null) {
+    sb.append(indent).append("<havingcondition>\n");
+    sb.append(select.havingCondition.voltGetXML(session,indent + HSQLInterface.XML_INDENT)).append("\n");
+    sb.append(indent).append("</havingcondition>\n");
+  }
+  if (select.isGrouped) {
+    sb.append(indent + "<groupcolumns>\n");
+    for (    Expression groupByCol : groupByCols) {
+      sb.append(groupByCol.voltGetXML(session,indent + HSQLInterface.XML_INDENT)).append("\n");
+    }
+    sb.append(indent + "</groupcolumns>\n");
+  }
+  if (orderByCols.size() > 0) {
+    sb.append(indent + "<ordercolumns>\n");
+    for (    Expression orderByCol : orderByCols)     sb.append(orderByCol.voltGetXML(session,indent + HSQLInterface.XML_INDENT)).append("\n");
+    sb.append(indent + "</ordercolumns>\n");
+  }
+  sb.append(orig_indent).append("</select>");
+  return sb.toString();
+}

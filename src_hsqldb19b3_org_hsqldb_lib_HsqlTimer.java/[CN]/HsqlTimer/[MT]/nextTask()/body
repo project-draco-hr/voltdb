@@ -1,0 +1,44 @@
+{
+  try {
+    while (!this.isShutdown || Thread.interrupted()) {
+      long now;
+      long next;
+      long wait;
+      Task task;
+synchronized (this.taskQueue) {
+        task=this.taskQueue.peekTask();
+        if (task == null) {
+          break;
+        }
+        now=System.currentTimeMillis();
+        next=task.next;
+        wait=(next - now);
+        if (wait > 0) {
+          this.taskQueue.park(wait);
+          continue;
+        }
+ else {
+          this.taskQueue.removeTask();
+        }
+      }
+      long period=task.period;
+      if (period > 0) {
+        if (task.relative) {
+          final long late=(now - next);
+          if (late > period) {
+            period=0;
+          }
+ else           if (late > 0) {
+            period-=late;
+          }
+        }
+        task.updateSchedule(now,now + period);
+        this.taskQueue.addTask(task);
+      }
+      return task;
+    }
+  }
+ catch (  InterruptedException e) {
+  }
+  return null;
+}

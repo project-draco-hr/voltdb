@@ -1,0 +1,48 @@
+{
+  while ((!shutdownAllowed) || (m_site.m_shouldContinue)) {
+    boolean moreWork=(m_current != null) || ((m_current=m_transactionQueue.poll()) != null);
+    while (moreWork) {
+      assert(m_current != null);
+      if (m_current.doWork()) {
+        m_site.completeTransaction(m_current.isReadOnly);
+        TransactionState ts=m_transactionsById.remove(m_current.txnId);
+        assert(ts != null);
+        m_lastCompletedTxnId=m_current.txnId;
+        moreWork=(m_current=m_transactionQueue.poll()) != null;
+      }
+ else {
+        moreWork=false;
+        if (m_current.shouldResumeProcedure()) {
+          Map<Integer,List<VoltTable>> retval=m_current.getPreviousStackFrameDropDependendencies();
+          assert(retval != null);
+          assert(shutdownAllowed == false);
+          return retval;
+        }
+      }
+    }
+    VoltMessage message=m_mailbox.recvBlocking();
+    if (message == null)     continue;
+    if (message instanceof InitiateTask) {
+      messageArrived((InitiateTask)message);
+    }
+ else     if (message instanceof FragmentTask) {
+      messageArrived((FragmentTask)message);
+    }
+ else     if (message instanceof FragmentResponse) {
+      messageArrived((FragmentResponse)message);
+    }
+ else     if (message instanceof MembershipNotice) {
+      processTransactionMembership((MembershipNotice)message);
+    }
+ else     if (message instanceof DebugMessage) {
+      DebugMessage dmsg=(DebugMessage)message;
+      if (dmsg.shouldDump)       DumpManager.putDump(m_site.m_dumpId,m_site.m_currentDumpTimestamp,true,m_site.getDumpContents());
+    }
+ else {
+      hostLog.l7dlog(Level.FATAL,LogKeys.org_voltdb_dtxn_SimpleDtxnConnection_UnkownMessageClass.name(),new Object[]{message.getClass().getName()},null);
+      VoltDB.crashVoltDB();
+    }
+  }
+  assert(shutdownAllowed);
+  return null;
+}

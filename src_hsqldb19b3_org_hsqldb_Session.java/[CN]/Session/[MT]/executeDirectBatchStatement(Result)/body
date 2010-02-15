@@ -1,0 +1,37 @@
+{
+  int[] updateCounts;
+  int count;
+  count=0;
+  RowSetNavigator nav=cmd.initialiseNavigator();
+  updateCounts=new int[nav.getSize()];
+  Result error=null;
+  isBatch=true;
+  while (nav.hasNext()) {
+    Result in;
+    Object[] data=(Object[])nav.getNext();
+    String sql=(String)data[0];
+    try {
+      in=executeDirectStatement(sql);
+    }
+ catch (    Throwable t) {
+      in=Result.newErrorResult(t);
+    }
+    if (in.isUpdateCount()) {
+      updateCounts[count++]=in.getUpdateCount();
+    }
+ else     if (in.isData()) {
+      updateCounts[count++]=ResultConstants.SUCCESS_NO_INFO;
+    }
+ else     if (in.isError()) {
+      updateCounts=ArrayUtil.arraySlice(updateCounts,0,count);
+      error=in;
+      break;
+    }
+ else {
+      throw Error.runtimeError(ErrorCode.U_S0500,"Session");
+    }
+  }
+  isBatch=false;
+  sessionData.updateLobUsageForBatch();
+  return Result.newBatchedExecuteResponse(updateCounts,null,error);
+}

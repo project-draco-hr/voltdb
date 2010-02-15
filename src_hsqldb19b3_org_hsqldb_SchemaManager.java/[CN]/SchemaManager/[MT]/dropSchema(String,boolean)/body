@@ -1,0 +1,38 @@
+{
+  Schema schema=(Schema)schemaMap.get(name);
+  if (schema == null) {
+    throw Error.error(ErrorCode.X_42501,name);
+  }
+  if (cascade) {
+    OrderedHashSet externalReferences=new OrderedHashSet();
+    getCascadingSchemaReferences(schema.getName(),externalReferences);
+    removeSchemaObjects(externalReferences);
+  }
+ else {
+    if (!schema.isEmpty()) {
+      throw Error.error(ErrorCode.X_2B000);
+    }
+  }
+  Iterator tableIterator=schema.schemaObjectIterator(SchemaObject.TABLE);
+  while (tableIterator.hasNext()) {
+    Table table=((Table)tableIterator.next());
+    database.getGranteeManager().removeDbObject(table.getName());
+    table.releaseTriggers();
+    database.persistentStoreCollection.releaseStore(table);
+  }
+  Iterator sequenceIterator=schema.schemaObjectIterator(SchemaObject.SEQUENCE);
+  while (sequenceIterator.hasNext()) {
+    NumberSequence sequence=((NumberSequence)sequenceIterator.next());
+    database.getGranteeManager().removeDbObject(sequence.getName());
+  }
+  schema.clearStructures();
+  schemaMap.remove(name);
+  if (defaultSchemaHsqlName.name.equals(name)) {
+    HsqlName hsqlName=database.nameManager.newHsqlName(name,false,SchemaObject.SCHEMA);
+    schema=new Schema(hsqlName,database.getGranteeManager().getDBARole());
+    defaultSchemaHsqlName=schema.name;
+    schemaMap.put(schema.name.name,schema);
+  }
+  database.getUserManager().removeSchemaReference(name);
+  database.getSessionManager().removeSchemaReference(schema);
+}

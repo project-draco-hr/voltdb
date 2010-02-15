@@ -1,0 +1,106 @@
+{
+  RowSetNavigatorData navigator=new RowSetNavigatorData(session,(QuerySpecification)this);
+  Result result=Result.newResult(navigator);
+  result.metaData=resultMetaData;
+  result.setDataResultConcurrency(isUpdatable);
+  int fullJoinIndex=0;
+  RangeIterator[] rangeIterators=new RangeIterator[rangeVariables.length];
+  for (int i=0; i < rangeVariables.length; i++) {
+    rangeIterators[i]=rangeVariables[i].getIterator(session);
+  }
+  for (int currentIndex=0; ; ) {
+    if (currentIndex < fullJoinIndex) {
+      boolean end=true;
+      for (int i=fullJoinIndex + 1; i < rangeVariables.length; i++) {
+        if (rangeVariables[i].isRightJoin) {
+          rangeIterators[i]=rangeVariables[i].getFullIterator(session,(RangeIteratorMain)rangeIterators[i]);
+          fullJoinIndex=i;
+          currentIndex=i;
+          end=false;
+          break;
+        }
+      }
+      if (end) {
+        break;
+      }
+    }
+    RangeIterator it=rangeIterators[currentIndex];
+    if (it.next()) {
+      if (currentIndex < rangeVariables.length - 1) {
+        currentIndex++;
+        continue;
+      }
+    }
+ else {
+      it.reset();
+      currentIndex--;
+      continue;
+    }
+    session.sessionData.startRowProcessing();
+    Object[] data=new Object[indexLimitData];
+    for (int i=0; i < indexStartAggregates; i++) {
+      if (isAggregated && aggregateCheck[i]) {
+        continue;
+      }
+ else {
+        data[i]=exprColumns[i].getValue(session);
+      }
+    }
+    for (int i=indexLimitVisible; i < indexLimitRowId; i++) {
+      data[i]=it.getRowidObject();
+    }
+    Object[] groupData=null;
+    if (isAggregated || isGrouped) {
+      groupData=navigator.getGroupData(data);
+      if (groupData != null) {
+        data=groupData;
+      }
+    }
+    for (int i=indexStartAggregates; i < indexLimitExpressions; i++) {
+      data[i]=((ExpressionAggregate)exprColumns[i]).updateAggregatingValue(session,data[i]);
+    }
+    if (groupData == null) {
+      navigator.add(data);
+    }
+    if (isAggregated || isGrouped) {
+      continue;
+    }
+    if (navigator.getSize() >= limitcount) {
+      break;
+    }
+  }
+  navigator.reset();
+  if (!isGrouped && !isAggregated) {
+    return result;
+  }
+  if (isAggregated) {
+    if (!isGrouped && navigator.getSize() == 0) {
+      Object[] data=new Object[exprColumns.length];
+      navigator.add(data);
+    }
+    RangeIteratorBase it=new RangeIteratorBase(session,navigator.store,navigator.table,resultRangePosition);
+    session.sessionContext.setRangeIterator(it);
+    while (it.next()) {
+      for (int i=indexStartAggregates; i < indexLimitExpressions; i++) {
+        ExpressionAggregate aggregate=(ExpressionAggregate)exprColumns[i];
+        it.currentData[i]=aggregate.getAggregatedValue(session,it.currentData[i]);
+      }
+      for (int i=0; i < indexStartAggregates; i++) {
+        if (aggregateCheck[i]) {
+          it.currentData[i]=exprColumns[i].getValue(session);
+        }
+      }
+    }
+  }
+  navigator.reset();
+  if (havingCondition != null) {
+    while (navigator.hasNext()) {
+      Object[] data=(Object[])navigator.getNext();
+      if (!Boolean.TRUE.equals(data[indexLimitVisible + groupByColumnCount])) {
+        navigator.remove();
+      }
+    }
+    navigator.reset();
+  }
+  return result;
+}

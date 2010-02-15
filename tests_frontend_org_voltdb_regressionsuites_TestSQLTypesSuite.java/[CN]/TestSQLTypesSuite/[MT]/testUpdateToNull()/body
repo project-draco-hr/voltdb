@@ -1,0 +1,40 @@
+{
+  final Client client=this.getClient();
+  final Object params[]=new Object[COLS + 2];
+  for (int k=0; k < COLS; ++k) {
+    params[0]="";
+    params[1]=pkey.incrementAndGet();
+    for (int i=0; i < COLS; i++) {
+      params[i + 2]=m_midValues[i];
+      assert(params[i + 2] != null);
+    }
+    params[0]="ALLOW_NULLS";
+    client.callProcedure("Insert",params);
+    for (int i=0; i < COLS; i++) {
+      params[i + 2]=(i == k) ? m_nullValues[i] : m_midValues[i];
+      assert(params[i + 2] != null);
+    }
+    try {
+      client.callProcedure("Update",params);
+    }
+ catch (    final ProcCallException e) {
+      e.printStackTrace();
+      fail();
+    }
+catch (    final NoConnectionsException e) {
+      e.printStackTrace();
+      fail();
+    }
+    final VoltTable[] result=client.callProcedure("Select","ALLOW_NULLS",pkey.get());
+    final VoltTableRow row=result[0].fetchRow(0);
+    for (int i=0; i < COLS; ++i) {
+      final Object obj=row.get(i + 1,m_types[i]);
+      if (i == k) {
+        assertTrue(row.wasNull());
+      }
+ else {
+        assertTrue(comparisonHelper(obj,params[i + 2],m_types[i]));
+      }
+    }
+  }
+}

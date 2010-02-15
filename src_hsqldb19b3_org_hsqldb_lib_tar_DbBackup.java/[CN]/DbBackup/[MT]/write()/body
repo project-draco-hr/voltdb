@@ -1,0 +1,52 @@
+{
+  File propertiesFile=new File(dbDir,instanceName + ".properties");
+  File scriptFile=new File(dbDir,instanceName + ".script");
+  File[] componentFiles=new File[]{propertiesFile,scriptFile,new File(dbDir,instanceName + ".backup"),new File(dbDir,instanceName + ".data"),new File(dbDir,instanceName + ".log")};
+  boolean[] existList=new boolean[componentFiles.length];
+  long startTime=new java.util.Date().getTime();
+  for (int i=0; i < existList.length; i++) {
+    existList[i]=componentFiles[i].exists();
+    if (i < 2 && !existList[i]) {
+      throw new FileNotFoundException(RB.singleton.getString(RB.FILE_MISSING,componentFiles[i].getAbsolutePath()));
+    }
+  }
+  if (abortUponModify) {
+    Properties p=new Properties();
+    p.load(new FileInputStream(propertiesFile));
+    String modifiedString=p.getProperty("modified");
+    if (modifiedString != null && (modifiedString.equalsIgnoreCase("yes") || modifiedString.equalsIgnoreCase("true"))) {
+      throw new IllegalStateException(RB.singleton.getString(RB.MODIFIED_PROPERTY,modifiedString));
+    }
+  }
+  TarGenerator generator=new TarGenerator(archiveFile,overWrite,new Integer(DbBackup.generateBufferBlockValue(componentFiles)));
+  for (int i=0; i < componentFiles.length; i++) {
+    if (!componentFiles[i].exists()) {
+      continue;
+    }
+    generator.queueEntry(componentFiles[i].getName(),componentFiles[i]);
+  }
+  generator.write();
+  if (abortUponModify) {
+    try {
+      for (int i=0; i < componentFiles.length; i++) {
+        if (componentFiles[i].exists()) {
+          if (!existList[i]) {
+            throw new FileNotFoundException(RB.singleton.getString(RB.FILE_DISAPPEARED,componentFiles[i].getAbsolutePath()));
+          }
+          if (componentFiles[i].lastModified() > startTime) {
+            throw new FileNotFoundException(RB.singleton.getString(RB.FILE_CHANGED,componentFiles[i].getAbsolutePath()));
+          }
+        }
+ else         if (existList[i]) {
+          throw new FileNotFoundException(RB.singleton.getString(RB.FILE_APPEARED,componentFiles[i].getAbsolutePath()));
+        }
+      }
+    }
+ catch (    IllegalStateException ise) {
+      if (!archiveFile.delete()) {
+        System.out.println(RB.singleton.getString(RB.CLEANUP_RMFAIL,archiveFile.getAbsolutePath()));
+      }
+      throw ise;
+    }
+  }
+}

@@ -1,0 +1,80 @@
+{
+  Expression condition=null;
+  boolean truncate=false;
+  boolean restartIdentity=false;
+switch (token.tokenType) {
+case Tokens.TRUNCATE:
+{
+      read();
+      readThis(Tokens.TABLE);
+      truncate=true;
+      break;
+    }
+case Tokens.DELETE:
+{
+    read();
+    readThis(Tokens.FROM);
+    break;
+  }
+}
+RangeVariable[] rangeVariables={readSimpleRangeVariable(StatementTypes.DELETE_WHERE)};
+Table table=rangeVariables[0].getTable();
+Table baseTable=table.getBaseTable();
+if (!table.isUpdatable()) {
+throw Error.error(ErrorCode.X_42000);
+}
+if (truncate) {
+switch (token.tokenType) {
+case Tokens.CONTINUE:
+{
+    read();
+    readThis(Tokens.IDENTITY);
+    break;
+  }
+case Tokens.RESTART:
+{
+  read();
+  readThis(Tokens.IDENTITY);
+  restartIdentity=true;
+  break;
+}
+}
+for (int i=0; i < table.constraintList.length; i++) {
+if (table.constraintList[i].getConstraintType() == Constraint.MAIN) {
+throw Error.error(ErrorCode.X_23501);
+}
+}
+}
+if (truncate && table != baseTable) {
+throw Error.error(ErrorCode.X_42000);
+}
+if (!truncate && token.tokenType == Tokens.WHERE) {
+read();
+condition=XreadBooleanValueExpression();
+HsqlList unresolved=condition.resolveColumnReferences(outerRanges,null);
+unresolved=Expression.resolveColumnSet(rangeVariables,unresolved,null);
+ExpressionColumn.checkColumnsResolved(unresolved);
+condition.resolveTypes(session,null);
+if (condition.isParam()) {
+condition.dataType=Type.SQL_BOOLEAN;
+}
+if (condition.getDataType() != Type.SQL_BOOLEAN) {
+throw Error.error(ErrorCode.X_42568);
+}
+}
+if (table != baseTable) {
+QuerySpecification select=((TableDerived)table).getQueryExpression().getMainSelect();
+if (condition != null) {
+condition=condition.replaceColumnReferences(rangeVariables[0],select.exprColumns);
+}
+rangeVariables[0]=new RangeVariable(select.rangeVariables[0]);
+condition=ExpressionLogical.andExpressions(select.queryCondition,condition);
+}
+if (condition != null) {
+RangeVariableResolver resolver=new RangeVariableResolver(rangeVariables,condition,compileContext);
+resolver.processConditions();
+rangeVariables=resolver.rangeVariables;
+}
+StatementDMQL cs=new StatementDML(session,table,rangeVariables,compileContext,restartIdentity);
+return cs;
+}

@@ -1,0 +1,27 @@
+{
+  int count=0;
+  Expression[] colExpressions=updateExpressions;
+  HashMappedList rowset=new HashMappedList();
+  Type[] colTypes=baseTable.getColumnTypes();
+  RangeIteratorBase it=RangeVariable.getIterator(session,targetRangeVariables);
+  Expression checkCondition=null;
+  if (targetTable != baseTable) {
+    checkCondition=((TableDerived)targetTable).getQueryExpression().getMainSelect().checkQueryCondition;
+  }
+  while (it.next()) {
+    session.sessionData.startRowProcessing();
+    Row row=it.getCurrentRow();
+    Object[] data=row.getData();
+    Object[] newData=getUpdatedData(session,baseTable,updateColumnMap,colExpressions,colTypes,data);
+    if (checkCondition != null) {
+      it.currentData=newData;
+      boolean check=checkCondition.testCondition(session);
+      if (!check) {
+        throw Error.error(ErrorCode.X_44000);
+      }
+    }
+    rowset.add(row,newData);
+  }
+  count=update(session,baseTable,rowset);
+  return Result.getUpdateCountResult(count);
+}

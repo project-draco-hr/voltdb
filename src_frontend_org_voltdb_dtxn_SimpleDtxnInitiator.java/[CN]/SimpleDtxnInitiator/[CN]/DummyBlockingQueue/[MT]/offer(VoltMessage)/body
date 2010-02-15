@@ -1,0 +1,67 @@
+{
+  assert(message instanceof InitiateResponse);
+  final InitiateResponse r=(InitiateResponse)message;
+  InFlightTxnState state;
+  int sites_left=-1;
+synchronized (m_initiator.m_pendingTxns) {
+    state=m_initiator.m_pendingTxns.getTxn(r.getTxnId(),r.getCoordinatorSiteId());
+    sites_left=m_initiator.m_pendingTxns.getTxnIdSize(r.getTxnId());
+    if (m_initiator.m_pendingTxns.size() < (MAX_DESIRED_PENDING * .8)) {
+      if (m_initiator.m_hadBackPressure) {
+        transactionLog.trace("DTXN backpressure ended");
+        m_initiator.m_hadBackPressure=false;
+        m_initiator.m_offBackPressure.run();
+      }
+    }
+  }
+  assert(state.coordinatorId == r.getCoordinatorSiteId());
+  assert(m_initiator.m_siteId == r.getInitiatorSiteId());
+  boolean first_response=false;
+  VoltTable[] first_results=null;
+synchronized (m_txnIdResponses) {
+    if (!m_txnIdResponses.containsKey(r.getTxnId())) {
+      ClientResponseImpl curr_response=(ClientResponseImpl)r.getClientResponseData();
+      m_txnIdResponses.put(r.getTxnId(),curr_response.getResults());
+      first_response=true;
+    }
+ else {
+      first_results=m_txnIdResponses.get(r.getTxnId());
+    }
+  }
+  if (first_response) {
+  }
+ else {
+    assert(first_results != null);
+    ClientResponseImpl curr_response=(ClientResponseImpl)r.getClientResponseData();
+    VoltTable[] curr_results=curr_response.getResults();
+    if (first_results.length != curr_results.length) {
+      String msg="Mismatched result count received for transaction: " + r.getTxnId();
+      msg+="\n  from execution site: " + r.getCoordinatorSiteId();
+      msg+="\n  Expected number of results: " + first_results.length;
+      msg+="\n  Mismatched number of results: " + curr_results.length;
+      throw new RuntimeException(msg);
+    }
+    for (int i=0; i < first_results.length; ++i) {
+      if (!first_results[i].hasSameContents(curr_results[i])) {
+        String msg="Mismatched results received for transaction: " + r.getTxnId();
+        msg+="\n  from execution site: " + r.getCoordinatorSiteId();
+        msg+="\n  Expected results: " + first_results[i].toString();
+        msg+="\n  Mismatched results: " + curr_results[i].toString();
+        throw new RuntimeException(msg);
+      }
+    }
+  }
+  if (sites_left == 0) {
+synchronized (m_initiator.m_pendingTxns) {
+      m_initiator.m_pendingTxns.removeTxnId(r.getTxnId());
+    }
+synchronized (m_txnIdResponses) {
+      m_txnIdResponses.remove(r.getTxnId());
+    }
+    r.setClientHandle(state.invocation.getClientHandle());
+    final Connection c=(Connection)state.clientData;
+    assert(c != null);
+    c.writeStream().enqueue(r.getClientResponseData());
+  }
+  return true;
+}

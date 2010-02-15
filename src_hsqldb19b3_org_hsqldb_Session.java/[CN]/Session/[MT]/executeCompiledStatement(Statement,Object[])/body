@@ -1,0 +1,79 @@
+{
+  Result r;
+  if (abortTransaction) {
+    rollback(false);
+    return Result.newErrorResult(Error.error(ErrorCode.X_40001));
+  }
+  currentStatement=cs;
+  if (cs.isAutoCommitStatement()) {
+    try {
+      if (isReadOnly()) {
+        throw Error.error(ErrorCode.X_25006);
+      }
+      commit(false);
+    }
+ catch (    HsqlException e) {
+    }
+  }
+  if (!cs.isTransactionStatement()) {
+    r=cs.execute(this);
+    currentStatement=null;
+    return r;
+  }
+  while (true) {
+    beginAction(cs);
+    if (abortTransaction) {
+      rollback(false);
+      currentStatement=null;
+      return Result.newErrorResult(Error.error(ErrorCode.X_40001));
+    }
+    try {
+      latch.await();
+    }
+ catch (    InterruptedException e) {
+    }
+    if (abortTransaction) {
+      rollback(false);
+      currentStatement=null;
+      return Result.newErrorResult(Error.error(ErrorCode.X_40001));
+    }
+    sessionContext.pushDynamicArguments(pvals);
+    r=cs.execute(this);
+    sessionContext.popDynamicArguments();
+    lockStatement=currentStatement;
+    endAction(r);
+    if (abortTransaction) {
+      rollback(false);
+      currentStatement=null;
+      return Result.newErrorResult(Error.error(ErrorCode.X_40001));
+    }
+    if (redoAction) {
+      redoAction=false;
+      try {
+        latch.await();
+      }
+ catch (      InterruptedException e) {
+        System.out.println("interrupted");
+      }
+    }
+ else {
+      break;
+    }
+  }
+  if (sessionContext.depth == 0 && (isAutoCommit || cs.isAutoCommitStatement())) {
+    try {
+      if (r.isError()) {
+        rollback(false);
+      }
+ else {
+        commit(false);
+      }
+    }
+ catch (    Exception e) {
+      currentStatement=null;
+      return Result.newErrorResult(Error.error(ErrorCode.X_40001));
+    }
+  }
+  currentStatement=null;
+  return r;
+}

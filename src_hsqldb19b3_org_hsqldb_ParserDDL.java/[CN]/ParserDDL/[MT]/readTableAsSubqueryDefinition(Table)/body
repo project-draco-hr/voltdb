@@ -1,0 +1,56 @@
+{
+  HsqlName readName=null;
+  boolean withData=true;
+  HsqlName[] columnNames=null;
+  Statement statement=null;
+  if (token.tokenType == Tokens.OPENBRACKET) {
+    columnNames=readColumnNames(table.getName());
+  }
+  readThis(Tokens.AS);
+  readThis(Tokens.OPENBRACKET);
+  QueryExpression queryExpression=XreadQueryExpression();
+  queryExpression.setAsTopLevel();
+  queryExpression.resolve(session);
+  readThis(Tokens.CLOSEBRACKET);
+  readThis(Tokens.WITH);
+  if (token.tokenType == Tokens.NO) {
+    read();
+    withData=false;
+  }
+ else   if (table.getTableType() == TableBase.TEXT_TABLE) {
+    throw unexpectedTokenRequire(Tokens.T_NO);
+  }
+  readThis(Tokens.DATA);
+  if (token.tokenType == Tokens.ON) {
+    if (!table.isTemp()) {
+      throw unexpectedToken();
+    }
+    read();
+    readThis(Tokens.COMMIT);
+    if (token.tokenType == Tokens.DELETE) {
+    }
+ else     if (token.tokenType == Tokens.PRESERVE) {
+      table.persistenceScope=TableBase.SCOPE_SESSION;
+    }
+    read();
+    readThis(Tokens.ROWS);
+  }
+  TableUtil.setColumnsInSchemaTable(table,queryExpression.getResultColumnNames(),queryExpression.getColumnTypes());
+  if (columnNames != null) {
+    if (columnNames.length != queryExpression.getColumnCount()) {
+      throw Error.error(ErrorCode.X_42593);
+    }
+    for (int i=0; i < columnNames.length; i++) {
+      table.getColumn(i).getName().rename(columnNames[i]);
+    }
+  }
+  table.createPrimaryKey();
+  if (withData) {
+    statement=new StatementQuery(session,queryExpression,compileContext);
+  }
+  Object[] args=new Object[]{table,null,statement};
+  String sql=getLastPart();
+  StatementSchema st=new StatementSchema(sql,StatementTypes.CREATE_TABLE,args,null,null);
+  st.readTableNames=statement.getTableNamesForRead();
+  return st;
+}

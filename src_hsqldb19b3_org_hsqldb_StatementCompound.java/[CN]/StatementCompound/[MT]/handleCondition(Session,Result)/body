@@ -1,0 +1,45 @@
+{
+  String sqlState=null;
+  if (result.isError()) {
+    sqlState=result.getSubString();
+  }
+ else   if (session.getLastWarnings() != null) {
+    sqlState=session.getLastWarnings().getSQLState();
+  }
+ else {
+    return result;
+  }
+  if (sqlState != null) {
+    for (int i=0; i < handlers.length; i++) {
+      StatementHandler handler=handlers[i];
+      session.clearWarnings();
+      if (handler.handlesCondition(result.getSubString())) {
+        session.resetSchema();
+switch (handler.handlerType) {
+case StatementHandler.CONTINUE:
+          result=Result.updateZeroResult;
+        break;
+case StatementHandler.UNDO:
+      session.rollbackToSavepoint();
+    result=Result.newPSMResult(StatementTypes.LEAVE,null,null);
+  break;
+case StatementHandler.EXIT:
+result=Result.newPSMResult(StatementTypes.LEAVE,null,null);
+break;
+}
+Result actionResult=handler.statement.execute(session);
+if (actionResult.isError()) {
+result=actionResult;
+handleCondition(session,result);
+}
+ else {
+return result;
+}
+}
+}
+if (parent != null) {
+return parent.handleCondition(session,result);
+}
+}
+return result;
+}

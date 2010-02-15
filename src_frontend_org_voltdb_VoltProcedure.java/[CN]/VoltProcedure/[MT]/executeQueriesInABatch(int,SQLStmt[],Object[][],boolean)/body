@@ -1,0 +1,44 @@
+{
+  assert(batchStmts != null);
+  assert(batchArgs != null);
+  assert(batchStmts.length > 0);
+  assert(batchArgs.length > 0);
+  if (stmtCount == 0)   return new VoltTable[]{};
+  if (ProcedureProfiler.profilingLevel == ProcedureProfiler.Level.INTRUSIVE) {
+    assert(batchStmts.length == 1);
+    assert(batchStmts[0].numFragGUIDs == 1);
+    ProcedureProfiler.startStatementCounter(batchStmts[0].fragGUIDs[0]);
+  }
+ else   ProcedureProfiler.startStatementCounter(-1);
+  final int batchSize=stmtCount;
+  int fragmentIdIndex=0;
+  int parameterSetIndex=0;
+  boolean slowPath=false;
+  for (int i=0; i < batchSize; ++i) {
+    final SQLStmt stmt=batchStmts[i];
+    if (stmt.catStmt == null) {
+      String msg="SQLStmt objects cannot be instantiated after";
+      msg+=" VoltDB initialization. User may have instantiated a SQLStmt";
+      msg+=" inside a stored procedure's run method.";
+      throw new RuntimeException(msg);
+    }
+    slowPath=slowPath || !(stmt.catStmt.getSinglepartition());
+    final Object[] args=batchArgs[i];
+    final ParameterSet params=getCleanParams(stmt,args);
+    final int numFrags=stmt.numFragGUIDs;
+    final long fragGUIDs[]=stmt.fragGUIDs;
+    for (int ii=0; ii < numFrags; ii++) {
+      fragmentIds[fragmentIdIndex++]=fragGUIDs[ii];
+      parameterSets[parameterSetIndex++]=params;
+    }
+  }
+  if (slowPath)   return slowPath(batchSize,batchStmts,batchArgs,finalTask);
+  VoltTable[] results=null;
+  try {
+    results=m_site.ee.executeQueryPlanFragmentsAndGetResults(fragmentIds,fragmentIdIndex,parameterSets,parameterSetIndex,m_site.getCurrentTxnId(),m_site.lastCommittedTxnId,catProc.getReadonly() ? Long.MAX_VALUE : m_site.getNextUndoToken());
+  }
+  finally {
+    ProcedureProfiler.stopStatementCounter();
+  }
+  return results;
+}

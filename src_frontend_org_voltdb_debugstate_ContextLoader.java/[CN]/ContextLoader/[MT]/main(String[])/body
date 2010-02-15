@@ -1,0 +1,55 @@
+{
+  if (args.length != 1) {
+    System.out.println("Please pass the path to dump(s) as a command line argument.");
+    return;
+  }
+  File dumpsDir=new File(args[0]);
+  if (dumpsDir.isDirectory() == false) {
+    System.out.println("Path does not point to a valid directory");
+    return;
+  }
+  File[] dumps=dumpsDir.listFiles();
+  ArrayList<File> validDumps=new ArrayList<File>();
+  boolean isDump=true;
+  for (  File dump : dumps)   if (dump.isDirectory())   isDump=false;
+  if (isDump) {
+    validDumps.add(dumpsDir);
+  }
+ else {
+    for (    File dump : dumps) {
+      if (dump.isDirectory() == false)       continue;
+      validDumps.add(dump);
+    }
+  }
+  File dump=null;
+  if (validDumps.size() == 0) {
+    System.out.println("No valid dumps found. Possible empty directory error.");
+    return;
+  }
+ else   if (validDumps.size() > 1) {
+    dump=chooseDump(validDumps);
+  }
+ else {
+    dump=validDumps.get(0);
+  }
+  assert(dump != null);
+  VoltThreadContext[] contexts=loadDump(dump);
+  SystemState state=new SystemState();
+  ArrayList<PlannerThreadContext> ptcs=new ArrayList<PlannerThreadContext>();
+  ArrayList<InitiatorContext> ics=new ArrayList<InitiatorContext>();
+  ArrayList<ExecutorContext> ecs=new ArrayList<ExecutorContext>();
+  for (  VoltThreadContext c : contexts) {
+    if (c instanceof PlannerThreadContext)     ptcs.add((PlannerThreadContext)c);
+ else     if (c instanceof InitiatorContext)     ics.add((InitiatorContext)c);
+ else     if (c instanceof ExecutorContext)     ecs.add((ExecutorContext)c);
+ else     assert(false);
+  }
+  state.planners=ptcs.toArray(new PlannerThreadContext[0]);
+  Arrays.sort(state.planners);
+  state.initiators=ics.toArray(new InitiatorContext[0]);
+  Arrays.sort(state.initiators);
+  state.executors=ecs.toArray(new ExecutorContext[0]);
+  Arrays.sort(state.executors);
+  long blockedTxnId=findBlockedTxnId(state);
+  dumpAllMessagesAboutBlockedTxn(state,blockedTxnId);
+}

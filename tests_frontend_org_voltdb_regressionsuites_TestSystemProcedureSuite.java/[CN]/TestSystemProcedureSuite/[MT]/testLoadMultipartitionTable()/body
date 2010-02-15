@@ -1,0 +1,37 @@
+{
+  Client client=getClient();
+  VoltTable partitioned_table=new VoltTable(new VoltTable.ColumnInfo("W_ID",org.voltdb.VoltType.get((byte)3)),new VoltTable.ColumnInfo("W_NAME",org.voltdb.VoltType.get((byte)9)),new VoltTable.ColumnInfo("W_STREET_1",org.voltdb.VoltType.get((byte)9)),new VoltTable.ColumnInfo("W_STREET_2",org.voltdb.VoltType.get((byte)9)),new VoltTable.ColumnInfo("W_CITY",org.voltdb.VoltType.get((byte)9)),new VoltTable.ColumnInfo("W_STATE",org.voltdb.VoltType.get((byte)9)),new VoltTable.ColumnInfo("W_ZIP",org.voltdb.VoltType.get((byte)9)),new VoltTable.ColumnInfo("W_TAX",org.voltdb.VoltType.get((byte)8)),new VoltTable.ColumnInfo("W_YTD",org.voltdb.VoltType.get((byte)8)));
+  for (int i=1; i < 21; i++) {
+    Object[] row=new Object[]{new Byte((byte)i),"name_" + i,"street1_" + i,"street2_" + i,"city_" + i,"ma","zip_" + i,new Double(i),new Double(i)};
+    partitioned_table.addRow(row);
+  }
+  VoltTable replicated_table=new VoltTable(new VoltTable.ColumnInfo("I_ID",VoltType.INTEGER),new VoltTable.ColumnInfo("I_IM_ID",VoltType.INTEGER),new VoltTable.ColumnInfo("I_NAME",VoltType.STRING),new VoltTable.ColumnInfo("I_PRICE",VoltType.FLOAT),new VoltTable.ColumnInfo("I_DATA",VoltType.STRING));
+  for (int i=1; i < 21; i++) {
+    Object[] row=new Object[]{i,i,"name_" + i,new Double(i),"data_" + i};
+    replicated_table.addRow(row);
+  }
+  try {
+    client.callProcedure("@LoadMultipartitionTable","WAREHOUSE",partitioned_table);
+    client.callProcedure("@LoadMultipartitionTable","ITEM",replicated_table);
+    VoltTable results[]=client.callProcedure("@Statistics","table");
+    int foundItem=0;
+    int foundWarehouse=0;
+    System.out.println(results[0]);
+    while (results[0].advanceRow()) {
+      if (results[0].getString(2).equals("WAREHOUSE")) {
+        ++foundWarehouse;
+        assertTrue(5 == results[0].getLong(4) || 10 == results[0].getLong(4));
+      }
+      if (results[0].getString(2).equals("ITEM")) {
+        ++foundItem;
+        assertTrue(10 == results[0].getLong(4) || 20 == results[0].getLong(4));
+      }
+    }
+    assertTrue(2 == foundWarehouse || 4 == foundWarehouse);
+    assertTrue(2 == foundItem || 4 == foundItem);
+  }
+ catch (  Exception e) {
+    System.out.println(e.getMessage());
+    fail();
+  }
+}

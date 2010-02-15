@@ -1,0 +1,148 @@
+{
+  if (exprList.isEmpty()) {
+    return;
+  }
+  colIndexSetEqual.clear();
+  colIndexSetOther.clear();
+  for (int j=0, size=exprList.size(); j < size; j++) {
+    Expression e=(Expression)exprList.get(j);
+    if (rangeVar.hasIndexCondition()) {
+      rangeVar.addCondition(e,isJoin);
+      exprList.set(j,null);
+      continue;
+    }
+    if (e.getIndexableExpression(rangeVar) == null) {
+      rangeVar.addCondition(e,isJoin);
+      exprList.set(j,null);
+      continue;
+    }
+    int type=e.getType();
+switch (type) {
+default :
+{
+        int colIndex=e.getLeftNode().getColumnIndex();
+        colIndexSetOther.add(colIndex);
+        break;
+      }
+case OpTypes.EQUAL:
+    if (e.exprSubType == OpTypes.ANY_QUANTIFIED) {
+      Index index=rangeVar.rangeTable.getIndexForColumn(e.getLeftNode().nodes[0].getColumnIndex());
+      if (index != null && inExpressions[rangeVarIndex] == null) {
+        inExpressions[rangeVarIndex]=e;
+        inExpressionCount++;
+      }
+ else {
+        rangeVar.addCondition(e,isJoin);
+      }
+      exprList.set(j,null);
+      continue;
+    }
+case OpTypes.IS_NULL:
+{
+    int colIndex=e.getLeftNode().getColumnIndex();
+    colIndexSetEqual.add(colIndex);
+    break;
+  }
+case OpTypes.NOT:
+{
+  int colIndex=e.getLeftNode().getLeftNode().getColumnIndex();
+  colIndexSetOther.add(colIndex);
+  break;
+}
+}
+}
+boolean isEqual=true;
+Index idx=rangeVar.rangeTable.getIndexForColumns(colIndexSetEqual);
+if (idx == null) {
+isEqual=false;
+idx=rangeVar.rangeTable.getIndexForColumns(colIndexSetOther);
+}
+if (idx == null && rangeVar.rangeTable.isSessionBased) {
+if (!colIndexSetEqual.isEmpty()) {
+int[] cols=colIndexSetEqual.toArray();
+idx=rangeVar.rangeTable.getIndexForColumns(cols);
+}
+if (idx == null && !colIndexSetOther.isEmpty()) {
+int[] cols=colIndexSetOther.toArray();
+idx=rangeVar.rangeTable.getIndexForColumns(cols);
+}
+}
+if (idx == null) {
+for (int j=0, size=exprList.size(); j < size; j++) {
+Expression e=(Expression)exprList.get(j);
+if (e != null) {
+rangeVar.addCondition(e,isJoin);
+}
+}
+return;
+}
+int[] cols=idx.getColumns();
+int colCount=cols.length;
+if (isEqual && colCount > 1) {
+Expression[] firstRowExpressions=new Expression[cols.length];
+for (int j=0; j < exprList.size(); j++) {
+Expression e=(Expression)exprList.get(j);
+if (e == null) {
+continue;
+}
+int type=e.getType();
+if (type == OpTypes.EQUAL) {
+int offset=ArrayUtil.find(cols,e.getLeftNode().getColumnIndex());
+if (offset != -1 && firstRowExpressions[offset] == null) {
+  firstRowExpressions[offset]=e;
+  exprList.set(j,null);
+  continue;
+}
+}
+rangeVar.addCondition(e,isJoin);
+exprList.set(j,null);
+}
+boolean hasNull=false;
+for (int i=0; i < firstRowExpressions.length; i++) {
+Expression e=firstRowExpressions[i];
+if (e == null) {
+if (colCount == cols.length) {
+  colCount=i;
+}
+hasNull=true;
+continue;
+}
+if (hasNull) {
+rangeVar.addCondition(e,isJoin);
+firstRowExpressions[i]=null;
+}
+}
+rangeVar.addIndexCondition(firstRowExpressions,idx,colCount,isJoin);
+return;
+}
+for (int j=0; j < exprList.size(); j++) {
+Expression e=(Expression)exprList.get(j);
+if (e == null) {
+continue;
+}
+if (rangeVar.hasIndexCondition()) {
+rangeVar.addCondition(e,isJoin);
+exprList.set(j,null);
+continue;
+}
+boolean isIndexed=false;
+if (e.getType() == OpTypes.NOT && cols[0] == e.getLeftNode().getLeftNode().getColumnIndex()) {
+isIndexed=true;
+}
+if (cols[0] == e.getLeftNode().getColumnIndex()) {
+if (e.getRightNode() != null && !e.getRightNode().isCorrelated()) {
+isIndexed=true;
+}
+if (e.getType() == OpTypes.IS_NULL) {
+isIndexed=true;
+}
+}
+if (isIndexed) {
+rangeVar.addIndexCondition(e,idx,isJoin);
+}
+ else {
+rangeVar.addCondition(e,isJoin);
+}
+exprList.set(j,null);
+}
+}

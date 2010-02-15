@@ -1,0 +1,73 @@
+{
+  if (joinOrder.length == 1)   return getAccessPlanForTable(joinOrder[0],accessPath[0]);
+  Table[] subJoinOrder=Arrays.copyOfRange(joinOrder,1,joinOrder.length);
+  AccessPath[] subAccessPath=Arrays.copyOfRange(accessPath,1,accessPath.length);
+  AbstractPlanNode subPlan=getSelectSubPlanForAccessPath(subJoinOrder,subAccessPath);
+  ArrayList<AbstractExpression> joinClauses=accessPath[0].joinExprs;
+  AbstractPlanNode nljAccessPlan=getAccessPlanForTable(joinOrder[0],accessPath[0]);
+  boolean accessPlanIsSendReceive=false;
+  AbstractPlanNode accessPlanTemp=nljAccessPlan;
+  if (nljAccessPlan instanceof ReceivePlanNode) {
+    accessPlanIsSendReceive=true;
+    nljAccessPlan=nljAccessPlan.getChild(0).getChild(0);
+    nljAccessPlan.clearParents();
+  }
+  AbstractPlanNode retval=null;
+  if (nljAccessPlan instanceof IndexScanPlanNode) {
+    NestLoopIndexPlanNode nlijNode=new NestLoopIndexPlanNode(m_context,PlanAssembler.getNextPlanNodeId());
+    nlijNode.setJoinType(JoinType.INNER);
+    IndexScanPlanNode innerNode=(IndexScanPlanNode)nljAccessPlan;
+    subPlan.updateOutputColumns(m_db);
+    final List<Integer> outputColumns=subPlan.m_outputColumns;
+    final int offset=outputColumns.size();
+    if (innerNode.getPredicate() != null) {
+      try {
+        innerNode.setPredicate(ExpressionUtil.clone(innerNode.getPredicate()));
+      }
+ catch (      Exception e) {
+        e.printStackTrace();
+      }
+      ExpressionUtil.setAndOffsetColumnIndexes(m_context,innerNode.getPredicate(),offset,joinOrder[0].getTypeName(),outputColumns);
+    }
+    if (innerNode.getEndExpression() != null) {
+      try {
+        innerNode.setEndExpression(ExpressionUtil.clone(innerNode.getEndExpression()));
+      }
+ catch (      Exception e) {
+        e.printStackTrace();
+      }
+      ExpressionUtil.setAndOffsetColumnIndexes(m_context,innerNode.getEndExpression(),offset,joinOrder[0].getTypeName(),outputColumns);
+    }
+    ArrayList<AbstractExpression> searchKeyExpressions=new ArrayList<AbstractExpression>(innerNode.getSearchKeyExpressions());
+    innerNode.getSearchKeyExpressions().clear();
+    for (int ctr=0, cnt=searchKeyExpressions.size(); ctr < cnt; ctr++) {
+      AbstractExpression expr=null;
+      try {
+        expr=ExpressionUtil.clone(searchKeyExpressions.get(ctr));
+      }
+ catch (      Exception e) {
+        e.printStackTrace();
+        System.exit(-1);
+      }
+      ExpressionUtil.setColumnIndexes(m_context,expr,outputColumns);
+      innerNode.getSearchKeyExpressions().add(expr);
+    }
+    nlijNode.addInlinePlanNode(nljAccessPlan);
+    nlijNode.addAndLinkChild(subPlan);
+    retval=nlijNode;
+  }
+ else {
+    NestLoopPlanNode nljNode=new NestLoopPlanNode(m_context,PlanAssembler.getNextPlanNodeId());
+    if ((joinClauses != null) && (joinClauses.size() > 0))     nljNode.setPredicate(ExpressionUtil.combine(joinClauses));
+    nljNode.setJoinType(JoinType.LEFT);
+    nljNode.addAndLinkChild(nljAccessPlan);
+    nljNode.addAndLinkChild(subPlan);
+    retval=nljNode;
+  }
+  if (accessPlanIsSendReceive) {
+    accessPlanTemp.getChild(0).clearChildren();
+    accessPlanTemp.getChild(0).addAndLinkChild(retval);
+    retval=accessPlanTemp;
+  }
+  return retval;
+}

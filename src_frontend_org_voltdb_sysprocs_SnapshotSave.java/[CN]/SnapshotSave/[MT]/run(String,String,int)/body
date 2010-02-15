@@ -1,0 +1,49 @@
+{
+  final long startTime=System.currentTimeMillis();
+  HOST_LOG.info("Saving database to path: " + path + ", ID: "+ nonce+ " at "+ System.currentTimeMillis());
+  if (path == null || path.equals("")) {
+    ColumnInfo[] result_columns=new ColumnInfo[1];
+    int ii=0;
+    result_columns[ii++]=new ColumnInfo("ERR_MSG",VoltType.STRING);
+    VoltTable results[]=new VoltTable[]{new VoltTable(result_columns)};
+    results[0].addRow("Provided path was null or the empty string");
+    return results;
+  }
+  if (nonce == null || nonce.equals("")) {
+    ColumnInfo[] result_columns=new ColumnInfo[1];
+    int ii=0;
+    result_columns[ii++]=new ColumnInfo("ERR_MSG",VoltType.STRING);
+    VoltTable results[]=new VoltTable[]{new VoltTable(result_columns)};
+    results[0].addRow("Provided nonce was null or the empty string");
+    return results;
+  }
+  if (nonce.contains("-") || nonce.contains(",")) {
+    ColumnInfo[] result_columns=new ColumnInfo[1];
+    int ii=0;
+    result_columns[ii++]=new ColumnInfo("ERR_MSG",VoltType.STRING);
+    VoltTable results[]=new VoltTable[]{new VoltTable(result_columns)};
+    results[0].addRow("Provided nonce " + nonce + " contains a prohitibited character (- or ,)");
+    return results;
+  }
+  VoltTable[] results;
+  results=performSaveFeasibilityWork(path,nonce);
+  while (results[0].advanceRow()) {
+    if (results[0].getString(2).equals("FAILURE")) {
+      return results;
+    }
+  }
+  results=performSnapshotCreationWork(path,nonce,startTime);
+  while (results[0].advanceRow()) {
+    if (results[0].getString(3).equals("FAILURE")) {
+      return results;
+    }
+  }
+  if (block != 0) {
+    HOST_LOG.info("Blocking until snapshot completes");
+    results=performSaveToDiskWork();
+  }
+  final long finishTime=System.currentTimeMillis();
+  final long duration=finishTime - startTime;
+  HOST_LOG.info("Snapshot initiation took " + duration);
+  return results;
+}

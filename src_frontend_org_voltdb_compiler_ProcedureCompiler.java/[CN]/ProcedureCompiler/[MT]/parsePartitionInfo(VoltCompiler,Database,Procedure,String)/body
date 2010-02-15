@@ -1,0 +1,41 @@
+{
+  assert(procedure.getSinglepartition() == true);
+  if (info.length() == 0) {
+    String msg="Missing or Truncated PartitionInfo in attribute for procedure: " + procedure.getClassname();
+    throw compiler.new VoltCompilerException(msg);
+  }
+  String[] parts=info.split(":");
+  if (parts.length != 2) {
+    String msg="Possibly invalid PartitionInfo in attribute for procedure: " + procedure.getClassname();
+    throw compiler.new VoltCompilerException(msg);
+  }
+  String columnInfo=parts[0].trim();
+  int paramIndex=Integer.parseInt(parts[1].trim());
+  int paramCount=procedure.getParameters().size();
+  if ((paramIndex < 0) || (paramIndex >= paramCount)) {
+    String msg="PartitionInfo specifies invalid column for procedure: " + procedure.getClassname();
+    throw compiler.new VoltCompilerException(msg);
+  }
+  procedure.setPartitionparameter(paramIndex);
+  parts=columnInfo.split("\\.");
+  if (parts.length != 2) {
+    String msg="Possibly invalid PartitionInfo in attribute for procedure: " + procedure.getClassname();
+    throw compiler.new VoltCompilerException(msg);
+  }
+  String tableName=parts[0].trim();
+  String columnName=parts[1].trim();
+  CatalogMap<Table> tables=db.getTables();
+  for (  Table table : tables) {
+    if (table.getTypeName().equalsIgnoreCase(tableName)) {
+      CatalogMap<Column> columns=table.getColumns();
+      for (      Column column : columns) {
+        if (column.getTypeName().equalsIgnoreCase(columnName)) {
+          procedure.setPartitioncolumn(column);
+          return;
+        }
+      }
+    }
+  }
+  String msg="Unable to locate partition column in PartitionInfo for procedure: " + procedure.getClassname();
+  throw compiler.new VoltCompilerException(msg);
+}

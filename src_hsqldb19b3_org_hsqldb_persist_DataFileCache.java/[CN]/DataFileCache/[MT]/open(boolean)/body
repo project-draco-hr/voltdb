@@ -1,0 +1,64 @@
+{
+  fileFreePosition=0;
+  database.logger.appLog.logContext(SimpleLog.LOG_NORMAL,"start");
+  try {
+    boolean preexists=database.isFilesInJar();
+    long freesize=0;
+    if (!preexists && fa.isStreamElement(fileName)) {
+      if (database.isStoredFileAccess()) {
+        preexists=true;
+      }
+      if (!preexists) {
+        File f=new File(fileName);
+        preexists=f.length() > INITIAL_FREE_POS;
+      }
+    }
+    if (preexists) {
+      String version=database.getProperties().getProperty(HsqlDatabaseProperties.hsqldb_cache_version);
+      boolean v17=HsqlDatabaseProperties.VERSION_STRING_1_7_0.equals(version);
+      boolean v18=HsqlDatabaseProperties.VERSION_STRING_1_8_0.equals(version);
+      if (!v17) {
+        throw Error.error(ErrorCode.WRONG_DATABASE_FILE_VERSION);
+      }
+    }
+    boolean isNio=database.getProperties().isPropertyTrue(HsqlDatabaseProperties.hsqldb_nio_data_file);
+    int fileType=isNio ? ScaledRAFile.DATA_FILE_NIO : ScaledRAFile.DATA_FILE_RAF;
+    if (database.isFilesInJar()) {
+      fileType=ScaledRAFile.DATA_FILE_JAR;
+    }
+    String cname=database.getURLProperties().getProperty("storage_class_name");
+    String skey=database.getURLProperties().getProperty("storage_key");
+    dataFile=ScaledRAFile.newScaledRAFile(database,fileName,readonly,fileType,cname,skey);
+    if (preexists) {
+      dataFile.seek(FLAGS_POS);
+      int flags=dataFile.readInt();
+      hasRowInfo=BitMap.isSet(flags,FLAG_ROWINFO);
+      dataFile.seek(LONG_EMPTY_SIZE);
+      freesize=dataFile.readLong();
+      dataFile.seek(LONG_FREE_POS_POS);
+      fileFreePosition=dataFile.readLong();
+      if (fileFreePosition < INITIAL_FREE_POS) {
+        fileFreePosition=INITIAL_FREE_POS;
+      }
+      if (!readonly && fileFreePosition != INITIAL_FREE_POS && incBackup) {
+        shadowFile=new RAShadowFile(database,dataFile,backupFileName,fileFreePosition,1 << 14);
+      }
+    }
+ else {
+      fileFreePosition=INITIAL_FREE_POS;
+      dataFile.seek(LONG_FREE_POS_POS);
+      dataFile.writeLong(INITIAL_FREE_POS);
+      dataFile.seek(FLAGS_POS);
+      dataFile.writeInt(0);
+    }
+    initBuffers();
+    fileModified=false;
+    freeBlocks=new DataFileBlockManager(maxFreeBlocks,cacheFileScale,freesize);
+    database.logger.appLog.logContext(SimpleLog.LOG_NORMAL,"end");
+  }
+ catch (  Throwable e) {
+    database.logger.appLog.logContext(e,"failed");
+    close(false);
+    throw Error.error(ErrorCode.FILE_IO_ERROR,ErrorCode.M_DataFileCache_open,new Object[]{e,fileName});
+  }
+}

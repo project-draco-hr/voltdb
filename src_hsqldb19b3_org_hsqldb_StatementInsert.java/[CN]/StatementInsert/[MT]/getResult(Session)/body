@@ -1,0 +1,44 @@
+{
+  Table table=baseTable;
+  Result resultOut=null;
+  RowSetNavigator generatedNavigator=null;
+  PersistentStore store=session.sessionData.getRowStore(baseTable);
+  if (generatedIndexes != null) {
+    resultOut=Result.newUpdateCountResult(generatedResultMetaData,0);
+    generatedNavigator=resultOut.getChainedResult().getNavigator();
+  }
+  RowSetNavigator newDataNavigator=queryExpression == null ? getInsertValuesNavigator(session) : getInsertSelectNavigator(session);
+  Expression checkCondition=null;
+  RangeIteratorBase checkIterator=null;
+  if (targetTable != baseTable) {
+    QuerySpecification select=((TableDerived)targetTable).getQueryExpression().getMainSelect();
+    checkCondition=select.checkQueryCondition;
+    if (checkCondition != null) {
+      checkIterator=select.rangeVariables[0].getIterator(session);
+    }
+  }
+  while (newDataNavigator.hasNext()) {
+    Object[] data=newDataNavigator.getNext();
+    if (checkCondition != null) {
+      checkIterator.currentData=data;
+      boolean check=checkCondition.testCondition(session);
+      if (!check) {
+        throw Error.error(ErrorCode.X_44000);
+      }
+    }
+    table.insertRow(session,store,data);
+    if (generatedNavigator != null) {
+      Object[] generatedValues=getGeneratedColumns(data);
+      generatedNavigator.add(generatedValues);
+    }
+  }
+  newDataNavigator.beforeFirst();
+  table.fireAfterTriggers(session,Trigger.INSERT_AFTER,newDataNavigator);
+  if (resultOut == null) {
+    resultOut=Result.getUpdateCountResult(newDataNavigator.getSize());
+  }
+ else {
+    resultOut.setUpdateCount(newDataNavigator.getSize());
+  }
+  return resultOut;
+}

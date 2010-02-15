@@ -1,0 +1,116 @@
+{
+  Table t=sysTables[DOMAINS];
+  if (t == null) {
+    t=createBlankTable(sysTableHsqlNames[DOMAINS]);
+    addColumn(t,"DOMAIN_CATALOG",SQL_IDENTIFIER);
+    addColumn(t,"DOMAIN_SCHEMA",SQL_IDENTIFIER);
+    addColumn(t,"DOMAIN_NAME",SQL_IDENTIFIER);
+    addColumn(t,"DATA_TYPE",SQL_IDENTIFIER);
+    addColumn(t,"CHARACTER_MAXIMUM_LENGTH",CARDINAL_NUMBER);
+    addColumn(t,"CHARACTER_OCTET_LENGTH",CARDINAL_NUMBER);
+    addColumn(t,"CHARACTER_SET_CATALOG",SQL_IDENTIFIER);
+    addColumn(t,"CHARACTER_SET_SCHEMA",SQL_IDENTIFIER);
+    addColumn(t,"CHARACTER_SET_NAME",SQL_IDENTIFIER);
+    addColumn(t,"COLLATION_CATALOG",SQL_IDENTIFIER);
+    addColumn(t,"COLLATION_SCHEMA",SQL_IDENTIFIER);
+    addColumn(t,"COLLATION_NAME",SQL_IDENTIFIER);
+    addColumn(t,"NUMERIC_PRECISION",CARDINAL_NUMBER);
+    addColumn(t,"NUMERIC_PRECISION_RADIX",CARDINAL_NUMBER);
+    addColumn(t,"NUMERIC_SCALE",CARDINAL_NUMBER);
+    addColumn(t,"DATETIME_PRECISION",CARDINAL_NUMBER);
+    addColumn(t,"INTERVAL_TYPE",CHARACTER_DATA);
+    addColumn(t,"INTERVAL_PRECISION",CARDINAL_NUMBER);
+    addColumn(t,"DOMAIN_DEFAULT",CHARACTER_DATA);
+    addColumn(t,"MAXIMUM_CARDINALITY",SQL_IDENTIFIER);
+    addColumn(t,"DTD_IDENTIFIER",SQL_IDENTIFIER);
+    addColumn(t,"DECLARED_DATA_TYPE",CHARACTER_DATA);
+    addColumn(t,"DECLARED_NUMERIC_PRECISION",CARDINAL_NUMBER);
+    addColumn(t,"DECLARED_NUMERIC_SCLAE",CARDINAL_NUMBER);
+    HsqlName name=HsqlNameManager.newInfoSchemaObjectName(sysTableHsqlNames[DOMAINS].name,false,SchemaObject.INDEX);
+    t.createPrimaryKey(name,new int[]{0,1,2,4,5,6},false);
+    return t;
+  }
+  final int domain_catalog=0;
+  final int domain_schema=1;
+  final int domain_name=2;
+  final int data_type=3;
+  final int character_maximum_length=4;
+  final int character_octet_length=5;
+  final int character_set_catalog=6;
+  final int character_set_schema=7;
+  final int character_set_name=8;
+  final int collation_catalog=9;
+  final int collation_schema=10;
+  final int collation_name=11;
+  final int numeric_precision=12;
+  final int numeric_precision_radix=13;
+  final int numeric_scale=14;
+  final int datetime_precision=15;
+  final int interval_type=16;
+  final int interval_precision=17;
+  final int domain_default=18;
+  final int maximum_cardinality=19;
+  final int dtd_identifier=20;
+  final int declared_data_type=21;
+  final int declared_numeric_precision=22;
+  final int declared_numeric_scale=23;
+  PersistentStore store=database.persistentStoreCollection.getStore(t);
+  Iterator it=database.schemaManager.databaseObjectIterator(SchemaObject.DOMAIN);
+  while (it.hasNext()) {
+    Type domain=(Type)it.next();
+    if (!domain.isDomainType()) {
+      continue;
+    }
+    if (!session.getGrantee().isAccessible(domain)) {
+      continue;
+    }
+    Object[] data=t.getEmptyRowData();
+    data[domain_catalog]=database.getCatalogName().name;
+    data[domain_schema]=domain.getSchemaName().name;
+    data[domain_name]=domain.getName().name;
+    data[data_type]=domain.getFullNameString();
+    if (domain.isCharacterType()) {
+      data[character_maximum_length]=ValuePool.getLong(domain.precision);
+      data[character_octet_length]=ValuePool.getLong(domain.precision * 2);
+      data[character_set_catalog]=database.getCatalogName().name;
+      data[character_set_schema]=((CharacterType)domain).getCharacterSet().getSchemaName().name;
+      data[character_set_name]=((CharacterType)domain).getCharacterSet().getName().name;
+      data[collation_catalog]=database.getCatalogName().name;
+      data[collation_schema]=((CharacterType)domain).getCollation().getSchemaName().name;
+      data[collation_name]=((CharacterType)domain).getCollation().getName().name;
+    }
+ else     if (domain.isNumberType()) {
+      data[numeric_precision]=ValuePool.getLong(((NumberType)domain).getPrecision());
+      data[declared_numeric_precision]=data[numeric_precision];
+      if (domain.typeCode != Types.SQL_DOUBLE) {
+        data[numeric_scale]=ValuePool.getLong(domain.scale);
+        data[declared_numeric_scale]=data[numeric_scale];
+      }
+      data[numeric_precision_radix]=ValuePool.getLong(((NumberType)domain).getPrecisionRadix());
+    }
+ else     if (domain.isBooleanType()) {
+    }
+ else     if (domain.isDateTimeType()) {
+      data[datetime_precision]=ValuePool.getLong(domain.scale);
+    }
+ else     if (domain.isIntervalType()) {
+      data[interval_precision]=ValuePool.getLong(domain.precision);
+      data[interval_type]=domain.getFullNameString();
+      data[datetime_precision]=ValuePool.getLong(domain.scale);
+    }
+ else     if (domain.isBinaryType()) {
+      data[character_maximum_length]=ValuePool.getLong(domain.precision);
+      data[character_octet_length]=ValuePool.getLong(domain.precision);
+    }
+ else     if (domain.isBitType()) {
+      data[character_maximum_length]=ValuePool.getLong(domain.precision);
+      data[character_octet_length]=ValuePool.getLong(domain.precision);
+    }
+    Expression defaultExpression=domain.userTypeModifier.getDefaultClause();
+    if (defaultExpression != null) {
+      data[domain_default]=defaultExpression.getSQL();
+    }
+    t.insertSys(store,data);
+  }
+  return t;
+}

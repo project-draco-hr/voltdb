@@ -1,0 +1,42 @@
+{
+  final long now=System.currentTimeMillis();
+  final long delta=now - lastGeneratedWork;
+  if (now < 1) {
+    return;
+  }
+  int txnsToCreate=(int)(delta * m_txnsPerMillisecond);
+  if (txnsToCreate < 1) {
+    return;
+  }
+  if (txnsToCreate > 5000) {
+    txnsToCreate=5000;
+  }
+  lastGeneratedWork=now;
+  int abortedAssignmentCount=0;
+synchronized (m_connections) {
+    int txnsForConnection[]=new int[m_connections.size()];
+    for (int ii=txnsToCreate; ii > 0; ii--) {
+      for (int zz=0; zz < 10; zz++) {
+        final int connectionIndex=r.nextInt(m_connections.size());
+        if (m_connections.get(connectionIndex).pushback()) {
+          if (zz == 9) {
+            abortedAssignmentCount++;
+          }
+          continue;
+        }
+        txnsForConnection[connectionIndex]++;
+        break;
+      }
+      if (abortedAssignmentCount == 100) {
+        break;
+      }
+    }
+    for (int ii=0; ii < txnsForConnection.length; ii++) {
+      if (txnsForConnection[ii] != 0) {
+        final Connection c=m_connections.get(ii);
+        c.invocationsToCreate.addAndGet(txnsForConnection[ii]);
+        c.enableWriteSelection();
+      }
+    }
+  }
+}

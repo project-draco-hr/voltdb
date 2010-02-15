@@ -1,0 +1,59 @@
+{
+  long threshold;
+  boolean canRead=true;
+  if (type == RowActionBase.ACTION_DELETE_FINAL) {
+    return false;
+  }
+ else   if (type == RowActionBase.ACTION_NONE) {
+    return true;
+  }
+  canRead=type == RowActionBase.ACTION_DELETE;
+  RowActionBase action=this;
+  if (session == null) {
+    threshold=Long.MAX_VALUE;
+  }
+ else {
+switch (session.isolationMode) {
+case SessionInterface.TX_READ_COMMITTED:
+      threshold=session.actionTimestamp;
+    break;
+case SessionInterface.TX_REPEATABLE_READ:
+case SessionInterface.TX_SERIALIZABLE:
+default :
+  threshold=session.transactionTimestamp;
+break;
+}
+}
+do {
+if (action.rolledback) {
+action=action.next;
+continue;
+}
+if (session == action.session) {
+if (action.type == RowActionBase.ACTION_DELETE) {
+canRead=false;
+}
+ else if (action.type == RowActionBase.ACTION_INSERT) {
+canRead=true;
+}
+action=action.next;
+continue;
+}
+ else if (action.commitTimestamp == 0) {
+action=action.next;
+continue;
+}
+if (action.commitTimestamp < threshold) {
+if (action.type == RowActionBase.ACTION_DELETE) {
+canRead=false;
+}
+ else if (action.type == RowActionBase.ACTION_INSERT) {
+canRead=true;
+}
+}
+action=action.next;
+continue;
+}
+ while (action != null);
+return canRead;
+}

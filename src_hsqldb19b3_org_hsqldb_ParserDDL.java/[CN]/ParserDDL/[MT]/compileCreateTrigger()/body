@@ -1,0 +1,352 @@
+{
+  Table table;
+  boolean isForEachRow=false;
+  boolean isNowait=false;
+  boolean hasQueueSize=false;
+  Integer queueSize=TriggerDef.defaultQueueSize;
+  String beforeOrAfter;
+  int beforeOrAfterType;
+  String operation;
+  int operationType;
+  String className;
+  TriggerDef td;
+  HsqlName name;
+  HsqlName otherName=null;
+  OrderedHashSet columns=null;
+  int[] updateColumnIndexes=null;
+  read();
+  name=readNewSchemaObjectName(SchemaObject.TRIGGER);
+switch (token.tokenType) {
+case Tokens.INSTEAD:
+    beforeOrAfter=token.tokenString;
+  beforeOrAfterType=token.tokenType;
+read();
+readThis(Tokens.OF);
+break;
+case Tokens.BEFORE:
+case Tokens.AFTER:
+beforeOrAfter=token.tokenString;
+beforeOrAfterType=token.tokenType;
+read();
+break;
+default :
+throw unexpectedToken();
+}
+switch (token.tokenType) {
+case Tokens.INSERT:
+case Tokens.DELETE:
+operation=token.tokenString;
+operationType=token.tokenType;
+read();
+break;
+case Tokens.UPDATE:
+operation=token.tokenString;
+operationType=token.tokenType;
+read();
+if (token.tokenType == Tokens.OF && beforeOrAfterType != Tokens.INSTEAD) {
+read();
+columns=readColumnNames(false);
+}
+break;
+default :
+throw unexpectedToken();
+}
+readThis(Tokens.ON);
+table=readTableName();
+if (token.tokenType == Tokens.BEFORE) {
+read();
+checkIsSimpleName();
+otherName=readNewSchemaObjectName(SchemaObject.TRIGGER);
+}
+name.setSchemaIfNull(table.getSchemaName());
+checkSchemaUpdateAuthorisation(name.schema);
+if (beforeOrAfterType == Tokens.INSTEAD) {
+if (!table.isView() || ((View)table).getCheckOption() == SchemaObject.ViewCheckModes.CHECK_CASCADE) {
+throw Error.error(ErrorCode.X_42538,name.schema.name);
+}
+}
+ else {
+if (table.isView()) {
+throw Error.error(ErrorCode.X_42538,name.schema.name);
+}
+}
+if (name.schema != table.getSchemaName()) {
+throw Error.error(ErrorCode.X_42505,name.schema.name);
+}
+name.parent=table.getName();
+database.schemaManager.checkSchemaObjectNotExists(name);
+if (columns != null) {
+updateColumnIndexes=table.getColumnIndexes(columns);
+for (int i=0; i < updateColumnIndexes.length; i++) {
+if (updateColumnIndexes[i] == -1) {
+throw Error.error(ErrorCode.X_42544,(String)columns.get(i));
+}
+}
+}
+Expression condition=null;
+String oldTableName=null;
+String newTableName=null;
+String oldRowName=null;
+String newRowName=null;
+Table[] transitions=new Table[4];
+RangeVariable[] rangeVars=new RangeVariable[4];
+HsqlArrayList compiledStatements=new HsqlArrayList();
+String conditionSQL=null;
+String procedureSQL=null;
+if (token.tokenType == Tokens.REFERENCING) {
+read();
+if (token.tokenType != Tokens.OLD && token.tokenType != Tokens.NEW) {
+throw unexpectedToken();
+}
+while (true) {
+if (token.tokenType == Tokens.OLD) {
+if (operationType == Tokens.INSERT) {
+throw unexpectedToken();
+}
+read();
+if (token.tokenType == Tokens.TABLE) {
+if (oldTableName != null || beforeOrAfterType == Tokens.BEFORE) {
+throw unexpectedToken();
+}
+read();
+readIfThis(Tokens.AS);
+checkIsSimpleName();
+oldTableName=token.tokenString;
+String n=oldTableName;
+if (n.equals(newTableName) || n.equals(oldRowName) || n.equals(newRowName)) {
+throw unexpectedToken();
+}
+HsqlName hsqlName=database.nameManager.newHsqlName(table.getSchemaName(),n,isDelimitedIdentifier(),SchemaObject.TRANSITION);
+Table transition=new Table(table,hsqlName);
+RangeVariable range=new RangeVariable(transition,null,null,null,compileContext);
+transitions[TriggerDef.OLD_TABLE]=transition;
+rangeVars[TriggerDef.OLD_TABLE]=range;
+}
+ else if (token.tokenType == Tokens.ROW) {
+if (oldRowName != null) {
+throw unexpectedToken();
+}
+read();
+readIfThis(Tokens.AS);
+checkIsSimpleName();
+oldRowName=token.tokenString;
+String n=oldRowName;
+if (n.equals(newTableName) || n.equals(oldTableName) || n.equals(newRowName)) {
+throw unexpectedToken();
+}
+isForEachRow=true;
+HsqlName hsqlName=database.nameManager.newHsqlName(table.getSchemaName(),n,isDelimitedIdentifier(),SchemaObject.TRANSITION);
+Table transition=new Table(table,hsqlName);
+RangeVariable range=new RangeVariable(transition,null,null,null,compileContext);
+transitions[TriggerDef.OLD_ROW]=transition;
+rangeVars[TriggerDef.OLD_ROW]=range;
+}
+ else {
+throw unexpectedToken();
+}
+}
+ else if (token.tokenType == Tokens.NEW) {
+if (operationType == Tokens.DELETE) {
+throw unexpectedToken();
+}
+read();
+if (token.tokenType == Tokens.TABLE) {
+if (newTableName != null || beforeOrAfterType == Tokens.BEFORE) {
+throw unexpectedToken();
+}
+read();
+readIfThis(Tokens.AS);
+checkIsSimpleName();
+newTableName=token.tokenString;
+String n=newTableName;
+if (n.equals(oldTableName) || n.equals(oldRowName) || n.equals(newRowName)) {
+throw unexpectedToken();
+}
+HsqlName hsqlName=database.nameManager.newHsqlName(table.getSchemaName(),n,isDelimitedIdentifier(),SchemaObject.TRANSITION);
+Table transition=new Table(table,hsqlName);
+RangeVariable range=new RangeVariable(transition,null,null,null,compileContext);
+transitions[TriggerDef.NEW_TABLE]=transition;
+rangeVars[TriggerDef.NEW_TABLE]=range;
+}
+ else if (token.tokenType == Tokens.ROW) {
+if (newRowName != null) {
+throw unexpectedToken();
+}
+read();
+readIfThis(Tokens.AS);
+checkIsSimpleName();
+newRowName=token.tokenString;
+isForEachRow=true;
+String n=newRowName;
+if (n.equals(oldTableName) || n.equals(newTableName) || n.equals(oldRowName)) {
+throw unexpectedToken();
+}
+HsqlName hsqlName=database.nameManager.newHsqlName(table.getSchemaName(),n,isDelimitedIdentifier(),SchemaObject.TRANSITION);
+Table transition=new Table(table,hsqlName);
+RangeVariable range=new RangeVariable(transition,null,null,null,compileContext);
+transitions[TriggerDef.NEW_ROW]=transition;
+rangeVars[TriggerDef.NEW_ROW]=range;
+}
+ else {
+throw unexpectedToken();
+}
+}
+ else {
+break;
+}
+read();
+}
+}
+if (isForEachRow && token.tokenType != Tokens.FOR) {
+throw unexpectedToken();
+}
+if (token.tokenType == Tokens.FOR) {
+read();
+readThis(Tokens.EACH);
+if (token.tokenType == Tokens.ROW) {
+isForEachRow=true;
+}
+ else if (token.tokenType == Tokens.STATEMENT) {
+if (isForEachRow) {
+throw unexpectedToken();
+}
+}
+ else {
+throw unexpectedToken();
+}
+read();
+}
+if (rangeVars[TriggerDef.OLD_TABLE] != null) {
+}
+if (rangeVars[TriggerDef.NEW_TABLE] != null) {
+}
+if (Tokens.T_NOWAIT.equals(token.tokenString)) {
+read();
+isNowait=true;
+}
+ else if (Tokens.T_QUEUE.equals(token.tokenString)) {
+read();
+queueSize=readInteger();
+hasQueueSize=true;
+}
+if (token.tokenType == Tokens.WHEN && beforeOrAfterType != Tokens.INSTEAD) {
+read();
+readThis(Tokens.OPENBRACKET);
+int position=getPosition();
+isCheckOrTriggerCondition=true;
+condition=XreadBooleanValueExpression();
+conditionSQL=getLastPart(position);
+isCheckOrTriggerCondition=false;
+readThis(Tokens.CLOSEBRACKET);
+HsqlList unresolved=condition.resolveColumnReferences(rangeVars,null);
+ExpressionColumn.checkColumnsResolved(unresolved);
+condition.resolveTypes(session,null);
+if (condition.getDataType() != Type.SQL_BOOLEAN) {
+throw Error.error(ErrorCode.X_42568);
+}
+}
+if (token.tokenType == Tokens.CALL) {
+read();
+checkIsSimpleName();
+checkIsDelimitedIdentifier();
+className=token.tokenString;
+read();
+td=new TriggerDef(name,beforeOrAfter,operation,isForEachRow,table,transitions,rangeVars,condition,conditionSQL,updateColumnIndexes,className,isNowait,queueSize);
+String sql=getLastPart();
+Object[] args=new Object[]{td,otherName};
+return new StatementSchema(sql,StatementTypes.CREATE_TRIGGER,args,null,table.getName());
+}
+if (isNowait) {
+throw unexpectedToken(Tokens.T_NOWAIT);
+}
+if (hasQueueSize) {
+throw unexpectedToken(Tokens.T_QUEUE);
+}
+boolean isBlock=false;
+if (readIfThis(Tokens.BEGIN)) {
+readThis(Tokens.ATOMIC);
+isBlock=true;
+}
+int position=getPosition();
+while (true) {
+StatementDMQL cs=null;
+switch (token.tokenType) {
+case Tokens.INSERT:
+if (beforeOrAfterType == Tokens.BEFORE) {
+throw unexpectedToken();
+}
+cs=compileInsertStatement(rangeVars);
+compiledStatements.add(cs);
+if (isBlock) {
+readThis(Tokens.SEMICOLON);
+}
+break;
+case Tokens.UPDATE:
+if (beforeOrAfterType == Tokens.BEFORE) {
+throw unexpectedToken();
+}
+cs=compileUpdateStatement(rangeVars);
+compiledStatements.add(cs);
+if (isBlock) {
+readThis(Tokens.SEMICOLON);
+}
+break;
+case Tokens.DELETE:
+if (beforeOrAfterType == Tokens.BEFORE) {
+throw unexpectedToken();
+}
+cs=compileDeleteStatement(rangeVars);
+compiledStatements.add(cs);
+if (isBlock) {
+readThis(Tokens.SEMICOLON);
+}
+break;
+case Tokens.MERGE:
+if (beforeOrAfterType == Tokens.BEFORE) {
+throw unexpectedToken();
+}
+cs=compileMergeStatement(rangeVars);
+compiledStatements.add(cs);
+if (isBlock) {
+readThis(Tokens.SEMICOLON);
+}
+break;
+case Tokens.SET:
+if (beforeOrAfterType != Tokens.BEFORE || operationType == Tokens.DELETE) {
+throw unexpectedToken();
+}
+cs=compileTriggerSetStatement(table,rangeVars);
+compiledStatements.add(cs);
+if (isBlock) {
+readThis(Tokens.SEMICOLON);
+}
+break;
+case Tokens.END:
+break;
+default :
+throw unexpectedToken();
+}
+if (!isBlock || token.tokenType == Tokens.END) {
+break;
+}
+}
+procedureSQL=getLastPart(position);
+if (isBlock) {
+readThis(Tokens.END);
+}
+StatementDMQL[] csArray=new StatementDMQL[compiledStatements.size()];
+compiledStatements.toArray(csArray);
+OrderedHashSet references=compileContext.getSchemaObjectNames();
+for (int i=0; i < csArray.length; i++) {
+Table targetTable=csArray[i].targetTable;
+boolean[] check=csArray[i].getInsertOrUpdateColumnCheckList();
+if (check != null) {
+targetTable.getColumnNames(check,references);
+}
+}
+references.remove(table.getName());
+td=new TriggerDefSQL(name,beforeOrAfter,operation,isForEachRow,table,transitions,rangeVars,condition,conditionSQL,updateColumnIndexes,csArray,procedureSQL,references);
+String sql=getLastPart();
+Object[] args=new Object[]{td,otherName};
+return new StatementSchema(sql,StatementTypes.CREATE_TRIGGER,args,null,table.getName());
+}

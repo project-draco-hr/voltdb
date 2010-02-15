@@ -1,0 +1,18 @@
+def do_define(self, command):
+    if (not command):
+        return self.help_define()
+    parsed = command.split()
+    self.safe_print('Defining stored procedure:', parsed[0])
+    if (getattr(self.__class__, ('do_' + parsed[0]), None) != None):
+        self.safe_print(parsed[0], 'is already defined')
+    try:
+        method_name = '_'.join(['stored', parsed[0]])
+        proc_name = '_'.join(['procedure', parsed[0]])
+        code = ('\n                def %s(self, command):\n                    self.safe_print("Executing stored procedure: %s")\n                    try:\n                        self.response = self.%s.call(self.prepare_params(self.%s, command))\n                        self.safe_print(self.response)\n                    except SyntaxError, strerr:\n                        self.safe_print(strerr)\n                   ' % (method_name, parsed[0], proc_name, proc_name))
+        tmp = {}
+        exec code.strip() in tmp
+        setattr(self.__class__, ('do_' + parsed[0]), tmp[method_name])
+        setattr(self.__class__, proc_name, VoltProcedure(self.fs, parsed[0], [self.__class__.TYPES[i] for i in parsed[1:]]))
+    except KeyError as strerr:
+        self.safe_print('Unsupported type', strerr)
+        self.help_define()

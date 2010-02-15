@@ -1,0 +1,46 @@
+{
+  read();
+  HsqlName name=readNewSchemaObjectName(SchemaObject.VIEW);
+  name.setSchemaIfNull(session.getCurrentSchemaHsqlName());
+  HsqlName[] colList=null;
+  if (token.tokenType == Tokens.OPENBRACKET) {
+    colList=readColumnNames(name);
+  }
+  readThis(Tokens.AS);
+  startRecording();
+  int position=getPosition();
+  QueryExpression queryExpression;
+  try {
+    queryExpression=XreadQueryExpression();
+  }
+ catch (  HsqlException e) {
+    queryExpression=XreadJoinedTable();
+  }
+  Token[] statement=getRecordedStatement();
+  String sql=getLastPart(position);
+  int check=SchemaObject.ViewCheckModes.CHECK_NONE;
+  if (token.tokenType == Tokens.WITH) {
+    read();
+    check=SchemaObject.ViewCheckModes.CHECK_CASCADE;
+    if (readIfThis(Tokens.LOCAL)) {
+      check=SchemaObject.ViewCheckModes.CHECK_LOCAL;
+    }
+ else {
+      readIfThis(Tokens.CASCADED);
+    }
+    readThis(Tokens.CHECK);
+    readThis(Tokens.OPTION);
+  }
+  View view=new View(session,database,name,colList,sql,check);
+  queryExpression.setAsTopLevel();
+  queryExpression.setView(view);
+  queryExpression.resolve(session);
+  view.compile(session);
+  checkSchemaUpdateAuthorisation(name.schema);
+  database.schemaManager.checkSchemaObjectNotExists(name);
+  String statementSQL=Token.getSQL(statement);
+  view.statement=statementSQL;
+  String fullSQL=getLastPart();
+  Object[] args=new Object[]{view};
+  return new StatementSchema(fullSQL,StatementTypes.CREATE_VIEW,args,null,null);
+}

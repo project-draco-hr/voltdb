@@ -1,0 +1,22 @@
+{
+  if (notice.getTxnId() <= m_lastCompletedTxnId) {
+    return null;
+  }
+  m_transactionQueue.gotTransaction(notice.getInitiatorSiteId(),notice.getTxnId());
+  if (notice.isHeartBeat())   return null;
+  if ((m_current != null) && (m_current.txnId == notice.getTxnId()))   return m_current;
+  TransactionState state=m_transactionsById.get(notice.getTxnId());
+  if (state == null) {
+    if (notice instanceof InitiateTask) {
+      InitiateTask it=(InitiateTask)notice;
+      if (it.isSinglePartition())       state=new SinglePartitionTxnState(m_mailbox,this,m_site,it);
+ else       state=new MultiPartitionParticipantTxnState(m_mailbox,this,m_site,it);
+    }
+ else {
+      state=new MultiPartitionParticipantTxnState(m_mailbox,this,m_site,notice);
+    }
+    m_transactionQueue.add(state);
+    m_transactionsById.put(state.txnId,state);
+  }
+  return state;
+}

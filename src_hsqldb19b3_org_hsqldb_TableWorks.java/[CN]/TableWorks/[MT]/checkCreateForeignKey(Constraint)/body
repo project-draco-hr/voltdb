@@ -1,0 +1,45 @@
+{
+  if (c.core.mainName == table.getName()) {
+    if (ArrayUtil.haveCommonElement(c.core.refCols,c.core.mainCols,c.core.refCols.length)) {
+      throw Error.error(ErrorCode.X_42527);
+    }
+  }
+  boolean check=c.core.updateAction == Constraint.SET_DEFAULT || c.core.deleteAction == Constraint.SET_DEFAULT;
+  if (check) {
+    for (int i=0; i < c.core.refCols.length; i++) {
+      ColumnSchema col=table.getColumn(c.core.refCols[i]);
+      Expression defExpr=col.getDefaultExpression();
+      if (defExpr == null) {
+        String columnName=col.getName().statementName;
+        throw Error.error(ErrorCode.X_42521,columnName);
+      }
+    }
+  }
+  check=c.core.updateAction == Constraint.SET_NULL || c.core.deleteAction == Constraint.SET_NULL;
+  if (check) {
+    for (int i=0; i < c.core.refCols.length; i++) {
+      ColumnSchema col=table.getColumn(c.core.refCols[i]);
+      if (!col.isNullable()) {
+        String columnName=col.getName().statementName;
+        throw Error.error(ErrorCode.X_42520,columnName);
+      }
+    }
+  }
+  database.schemaManager.checkSchemaObjectNotExists(c.getName());
+  if (table.getConstraint(c.getName().name) != null) {
+    throw Error.error(ErrorCode.X_42504,c.getName().statementName);
+  }
+  if (table.getFKConstraintForColumns(c.core.mainTable,c.core.mainCols,c.core.refCols) != null) {
+    throw Error.error(ErrorCode.X_42528,c.getName().statementName);
+  }
+  if (c.core.mainTable.isTemp() != table.isTemp()) {
+    throw Error.error(ErrorCode.X_42524,c.getName().statementName);
+  }
+  if (c.core.mainTable.getUniqueConstraintForColumns(c.core.mainCols,c.core.refCols) == null) {
+    throw Error.error(ErrorCode.X_42529,c.getMain().getName().statementName);
+  }
+  c.core.mainTable.checkColumnsMatch(c.core.mainCols,table,c.core.refCols);
+  boolean[] checkList=c.core.mainTable.getColumnCheckList(c.core.mainCols);
+  Grantee grantee=session.getGrantee();
+  grantee.checkReferences(c.core.mainTable,checkList);
+}

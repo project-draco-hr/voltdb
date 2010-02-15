@@ -1,0 +1,77 @@
+{
+  String name=token.tokenString;
+  boolean isSimpleQuoted=isDelimitedSimpleName();
+  String prefix=token.namePrefix;
+  String prePrefix=token.namePrePrefix;
+  if (isUndelimitedSimpleName()) {
+    FunctionSQL function=FunctionCustom.newCustomFunction(token.tokenString,token.tokenType);
+    if (function != null) {
+      int pos=getPosition();
+      try {
+        return readSQLFunction(function);
+      }
+ catch (      HsqlException ex) {
+        ex.setLevel(compileContext.subQueryDepth);
+        if (lastError == null || lastError.getLevel() < ex.getLevel()) {
+          lastError=ex;
+        }
+        rewind(pos);
+      }
+    }
+ else     if (isReservedKey()) {
+      function=FunctionSQL.newSQLFunction(name,compileContext);
+      if (function != null) {
+        return readSQLFunction(function);
+      }
+    }
+  }
+  read();
+  if (token.tokenType != Tokens.OPENBRACKET) {
+    Expression column=new ExpressionColumn(prePrefix,prefix,name);
+    return column;
+  }
+  checkValidCatalogName(prePrefix);
+  prefix=session.getSchemaName(prefix);
+  RoutineSchema routineSchema=(RoutineSchema)database.schemaManager.findSchemaObject(name,prefix,SchemaObject.FUNCTION);
+  if (routineSchema == null && isSimpleQuoted) {
+    HsqlName schema=database.schemaManager.getDefaultSchemaHsqlName();
+    routineSchema=(RoutineSchema)database.schemaManager.findSchemaObject(name,schema.name,SchemaObject.FUNCTION);
+    if (routineSchema == null) {
+      Method[] methods=Routine.getMethods(name);
+      Routine[] routines=Routine.newRoutines(methods);
+      HsqlName routineName=database.nameManager.newHsqlName(schema,name,true,SchemaObject.FUNCTION);
+      for (int i=0; i < routines.length; i++) {
+        routines[i].setName(routineName);
+        session.database.schemaManager.addSchemaObject(routines[i]);
+      }
+      routineSchema=(RoutineSchema)database.schemaManager.findSchemaObject(name,schema.name,SchemaObject.FUNCTION);
+    }
+  }
+  if (routineSchema == null) {
+    throw Error.error(ErrorCode.X_42501,name);
+  }
+  HsqlArrayList list=new HsqlArrayList();
+  readThis(Tokens.OPENBRACKET);
+  if (token.tokenType == Tokens.CLOSEBRACKET) {
+    read();
+  }
+ else {
+    while (true) {
+      Expression e=XreadValueExpression();
+      list.add(e);
+      if (token.tokenType == Tokens.COMMA) {
+        read();
+      }
+ else {
+        readThis(Tokens.CLOSEBRACKET);
+        break;
+      }
+    }
+  }
+  FunctionSQLInvoked function=new FunctionSQLInvoked(routineSchema);
+  Expression[] arguments=new Expression[list.size()];
+  list.toArray(arguments);
+  function.setArguments(arguments);
+  compileContext.addRoutine(function);
+  return function;
+}

@@ -1,0 +1,41 @@
+{
+  HashSet path=session.sessionContext.getConstraintPath();
+  HashMappedList tableUpdateList=session.sessionContext.getTableUpdateList();
+  for (int i=0; i < updateList.size(); i++) {
+    Row row=(Row)updateList.getKey(i);
+    Object[] data=(Object[])updateList.get(i);
+    table.setIdentityColumn(session,data);
+    if (table.triggerLists[Trigger.UPDATE_BEFORE].length != 0) {
+      table.fireBeforeTriggers(session,Trigger.UPDATE_BEFORE,row.getData(),data,updateColumnMap);
+    }
+    table.enforceRowConstraints(session,data);
+  }
+  if (table.isView) {
+    return updateList.size();
+  }
+  if (session.database.isReferentialIntegrity()) {
+    for (int i=0; i < updateList.size(); i++) {
+      Object[] data=(Object[])updateList.get(i);
+      Row row=(Row)updateList.getKey(i);
+      checkCascadeUpdate(session,table,tableUpdateList,row,data,updateColumnMap,null,path);
+    }
+  }
+  HashMappedList triggeredList=(HashMappedList)tableUpdateList.get(table);
+  if (triggeredList != null) {
+    for (int i=0; i < triggeredList.size(); i++) {
+      Row row=(Row)triggeredList.getKey(i);
+      Object[] data=(Object[])triggeredList.get(i);
+      mergeKeepUpdate(session,updateList,updateColumnMap,table.colTypes,row,data);
+    }
+    triggeredList.clear();
+  }
+  for (int i=0; i < tableUpdateList.size(); i++) {
+    Table targetTable=(Table)tableUpdateList.getKey(i);
+    HashMappedList updateListT=(HashMappedList)tableUpdateList.get(i);
+    targetTable.updateRowSet(session,updateListT,null,true);
+    updateListT.clear();
+  }
+  table.updateRowSet(session,updateList,updateColumnMap,false);
+  path.clear();
+  return updateList.size();
+}

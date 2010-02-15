@@ -1,0 +1,23 @@
+{
+  if (path == null || path.equals("")) {
+    ColumnInfo[] result_columns=new ColumnInfo[1];
+    int ii=0;
+    result_columns[ii++]=new ColumnInfo("ERR_MSG",VoltType.STRING);
+    VoltTable results[]=new VoltTable[]{new VoltTable(result_columns)};
+    results[0].addRow("Provided path was null or the empty string");
+    return results;
+  }
+  VoltTable scanResults=performSnapshotScanWork(path)[0];
+  VoltTable clientResults=constructClientResultsTable();
+  VoltTable diskFreeResults=performDiskFreeScanWork(path)[0];
+  HashMap<String,Snapshot> aggregates=new HashMap<String,Snapshot>();
+  while (scanResults.advanceRow()) {
+    if (scanResults.getString("RESULT").equals("SUCCESS") && scanResults.getString("READABLE").equals("TRUE") && scanResults.getString("COMPLETED").equals("TRUE")) {
+      hashToSnapshot(scanResults,aggregates);
+    }
+  }
+  for (  Snapshot s : aggregates.values()) {
+    clientResults.addRow(s.m_path,s.m_nonce,s.m_createTime,s.size(),s.tables(),s.complete());
+  }
+  return new VoltTable[]{clientResults,diskFreeResults,scanResults};
+}

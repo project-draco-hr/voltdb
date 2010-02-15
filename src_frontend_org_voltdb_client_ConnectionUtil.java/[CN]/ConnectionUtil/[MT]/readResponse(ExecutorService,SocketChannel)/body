@@ -1,0 +1,34 @@
+{
+  return executor.submit(new Callable<ClientResponse>(){
+    @Override public ClientResponse call() throws Exception {
+      ByteBuffer lengthBuffer=ByteBuffer.allocate(4);
+      do {
+        final int read=channel.read(lengthBuffer);
+        if (read == -1) {
+          throw new EOFException();
+        }
+        if (lengthBuffer.hasRemaining()) {
+          Thread.yield();
+        }
+      }
+ while (lengthBuffer.hasRemaining());
+      lengthBuffer.flip();
+      ByteBuffer message=ByteBuffer.allocate(lengthBuffer.getInt());
+      do {
+        final int read=channel.read(message);
+        if (read == -1) {
+          throw new EOFException();
+        }
+        if (lengthBuffer.hasRemaining()) {
+          Thread.yield();
+        }
+      }
+ while (message.hasRemaining());
+      message.flip();
+      FastDeserializer fds=new FastDeserializer(message);
+      ClientResponseImpl response=fds.readObject(ClientResponseImpl.class);
+      return response;
+    }
+  }
+);
+}

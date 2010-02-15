@@ -1,0 +1,38 @@
+{
+  PooledConnection pooledConnection=null;
+synchronized (this) {
+    if (!initialized) {
+      if (initialSize > maxPoolSize) {
+        throw new SQLException("Initial size of " + initialSize + " exceeds max. pool size of "+ maxPoolSize);
+      }
+      logInfo("Pre-initializing " + initialSize + " physical connections");
+      for (int i=0; i < initialSize; i++) {
+        connectionsInactive.add(createNewConnection());
+      }
+      initialized=true;
+    }
+    long loginTimeoutExpiration=calculateLoginTimeoutExpiration();
+    while (pooledConnection == null) {
+      if (this.isPoolClosed) {
+        throw new SQLException("The pool is closed. You cannot get anymore connections from it.");
+      }
+      pooledConnection=dequeueFirstIfAny();
+      if (pooledConnection != null) {
+        return wrapConnectionAndMarkAsInUse(pooledConnection);
+      }
+      if (poolHasSpaceForNewConnections()) {
+        pooledConnection=createNewConnection();
+        return wrapConnectionAndMarkAsInUse(pooledConnection);
+      }
+      if (this.sessionTimeout > 0) {
+        reclaimAbandonedConnections();
+        pooledConnection=dequeueFirstIfAny();
+        if (pooledConnection != null) {
+          return wrapConnectionAndMarkAsInUse(pooledConnection);
+        }
+      }
+      doWait(loginTimeoutExpiration);
+    }
+    return wrapConnectionAndMarkAsInUse(pooledConnection);
+  }
+}

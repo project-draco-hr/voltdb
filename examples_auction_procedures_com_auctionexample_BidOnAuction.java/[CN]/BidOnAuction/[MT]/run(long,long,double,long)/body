@@ -1,0 +1,33 @@
+{
+  voltQueueSQL(getHighBid,itemId);
+  VoltTable highBidResult=voltExecuteSQL()[0];
+  long prevBidderID=-1;
+  double prevBidPrice=-1;
+  long prevBidTime=-1;
+  if (highBidResult.getRowCount() == 1) {
+    prevBidderID=highBidResult.fetchRow(0).getLong("BIDDERID");
+    prevBidPrice=highBidResult.fetchRow(0).getDouble("BIDPRICE");
+    prevBidTime=highBidResult.fetchRow(0).getTimestampAsLong("BIDTIME");
+  }
+  voltQueueSQL(getSellerID,itemId);
+  VoltTable getSellerResult=voltExecuteSQL()[0];
+  long currentSellerID=getSellerResult.fetchRow(0).getLong("SELLERID");
+  voltQueueSQL(getEndTime,itemId);
+  VoltTable getEndTimeResult=voltExecuteSQL()[0];
+  long endTime=getEndTimeResult.fetchRow(0).getTimestampAsLong("ENDTIME");
+  TimestampType currentTime=new TimestampType();
+  long bidTest=SUCCESSFULL_BID;
+  if (userId == currentSellerID)   bidTest=USER_IS_SELLER;
+ else   if (userId == prevBidderID)   bidTest=USER_IS_REBIDDING;
+ else   if (currentTime.getTime() > endTime)   bidTest=POST_CLOSE_BID;
+ else   if (newBidAmount <= prevBidPrice)   bidTest=LOW_BID;
+ else   if (prevBidTime >= currentTime.getTime())   bidTest=OLD_BID;
+  if (bidTest == 0) {
+    voltQueueSQL(insertBid,newBidId,itemId,userId,currentTime,newBidAmount);
+    voltQueueSQL(updateAuctionBid,newBidId,itemId);
+    final VoltTable[] results=voltExecuteSQL();
+    if (results[0].asScalarLong() != 1)     throw new VoltAbortException("Failed to insert Bid.");
+    if (results[1].asScalarLong() != 1)     throw new VoltAbortException("Failed to update Auction.");
+  }
+  return bidTest;
+}

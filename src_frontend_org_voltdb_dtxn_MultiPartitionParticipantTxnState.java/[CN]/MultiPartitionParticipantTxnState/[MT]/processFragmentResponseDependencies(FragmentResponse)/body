@@ -1,0 +1,28 @@
+{
+  int depCount=response.getTableCount();
+  for (int i=0; i < depCount; i++) {
+    int dependencyId=response.getTableDependencyIdAtIndex(i);
+    VoltTable payload=response.getTableAtIndex(i);
+    assert(payload != null);
+    assert(m_missingDependencies != null);
+    WorkUnit w=m_missingDependencies.get(dependencyId);
+    if (w == null) {
+      throw new SimpleDtxnConnection.FragmentFailureException();
+    }
+    w.putDependency(dependencyId,response.getExecutorSiteId(),payload);
+    if (w.allDependenciesSatisfied()) {
+      for (      int depId : w.getDependencyIds())       m_missingDependencies.remove(depId);
+      if ((w.shouldResumeProcedure()) && (m_readyWorkUnits.peekLast() != null) && (m_readyWorkUnits.peekLast().shouldResumeProcedure())) {
+        ArrayDeque<WorkUnit> deque=new ArrayDeque<WorkUnit>();
+        while ((m_readyWorkUnits.peekLast() != null) && (m_readyWorkUnits.peekLast().shouldResumeProcedure())) {
+          deque.add(m_readyWorkUnits.pollLast());
+        }
+        deque.add(w);
+        while (deque.size() > 0)         m_readyWorkUnits.add(deque.pollLast());
+      }
+ else {
+        m_readyWorkUnits.add(w);
+      }
+    }
+  }
+}

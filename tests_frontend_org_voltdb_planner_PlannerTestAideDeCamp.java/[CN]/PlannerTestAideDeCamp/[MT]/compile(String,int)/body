@@ -1,0 +1,80 @@
+{
+  Statement catalogStmt=proc.getStatements().add("stmt-" + String.valueOf(compileCounter++));
+  catalogStmt.setSqltext(sql);
+  catalogStmt.setSinglepartition(false);
+  catalogStmt.setBatched(false);
+  catalogStmt.setParamnum(paramCount);
+  QueryType qtype=QueryType.SELECT;
+  catalogStmt.setReadonly(true);
+  if (sql.toLowerCase().startsWith("insert")) {
+    qtype=QueryType.INSERT;
+    catalogStmt.setReadonly(false);
+  }
+  if (sql.toLowerCase().startsWith("update")) {
+    qtype=QueryType.UPDATE;
+    catalogStmt.setReadonly(false);
+  }
+  if (sql.toLowerCase().startsWith("delete")) {
+    qtype=QueryType.DELETE;
+    catalogStmt.setReadonly(false);
+  }
+  catalogStmt.setQuerytype(qtype.getValue());
+  String name=catalogStmt.getParent().getTypeName() + "-" + catalogStmt.getTypeName();
+  DatabaseEstimates estimates=new DatabaseEstimates();
+  TrivialCostModel costModel=new TrivialCostModel();
+  QueryPlanner planner=new QueryPlanner(catalog.getClusters().get("cluster"),db,hsql,estimates,true,false);
+  CompiledPlan plan=null;
+  plan=planner.compilePlan(costModel,catalogStmt.getSqltext(),catalogStmt.getTypeName(),catalogStmt.getParent().getTypeName(),catalogStmt.getSinglepartition(),null);
+  if (plan == null) {
+    String msg="planner.compilePlan returned null plan";
+    String plannerMsg=planner.getErrorMessage();
+    if (plannerMsg != null) {
+      msg+=" with error: \"" + plannerMsg + "\"";
+    }
+    throw new NullPointerException(msg);
+  }
+  for (  ParameterInfo param : plan.parameters) {
+    StmtParameter catalogParam=catalogStmt.getParameters().add(String.valueOf(param.index));
+    catalogParam.setJavatype(param.type.getValue());
+    catalogParam.setIndex(param.index);
+  }
+  int index=0;
+  for (  Integer plancol : plan.columns) {
+    PlanColumn planColumn=planner.getPlannerContext().get(plancol);
+    Column column=catalogStmt.getOutput_columns().add(String.valueOf(index));
+    column.setNullable(false);
+    column.setIndex(index);
+    column.setName(planColumn.displayName());
+    column.setType(planColumn.type().getValue());
+    column.setSize(planColumn.width());
+    index++;
+  }
+  CompiledPlan.Fragment fragment=plan.fragments.get(0);
+  PlanNodeList nodeList=new PlanNodeList(fragment.planGraph);
+  List<Pair<Integer,VoltType>> parameters=nodeList.getParameters();
+  for (  ParameterInfo param : plan.parameters) {
+    Pair<Integer,VoltType> parameter=new Pair<Integer,VoltType>(param.index,param.type);
+    parameters.add(parameter);
+  }
+  String json=null;
+  try {
+    JSONObject jobj=new JSONObject(nodeList.toJSONString());
+    json=jobj.toString(4);
+  }
+ catch (  JSONException e2) {
+    e2.printStackTrace();
+    System.exit(-1);
+  }
+  try {
+    PrintStream plansJSONOut=BuildDirectoryUtils.getDebugOutputPrintStream("statement-plans",name + "_json.txt");
+    plansJSONOut.print(json);
+    plansJSONOut.close();
+    PrintStream plansDOTOut=BuildDirectoryUtils.getDebugOutputPrintStream("statement-plans",name + ".dot");
+    plansDOTOut.print(nodeList.toDOTString("name"));
+    plansDOTOut.close();
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+  }
+  return nodeList.getRootPlanNode();
+}

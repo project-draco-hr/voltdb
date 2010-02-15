@@ -1,0 +1,67 @@
+{
+  String command="";
+  final InputStreamReader reader=new InputStreamReader(System.in);
+  final BufferedReader in=new BufferedReader(reader);
+  if (m_controlState == ControlState.PREPARING) {
+    System.out.printf("%d,%s\n",System.currentTimeMillis(),ControlState.READY.display);
+    m_controlState=ControlState.READY;
+  }
+ else {
+    System.err.println("Error - not starting prepared!");
+    System.err.println(m_controlState.display + " " + m_reason);
+  }
+  while (true) {
+    try {
+      command=in.readLine();
+    }
+ catch (    final IOException e) {
+      System.err.println("Error on standard input: " + e.getMessage());
+      System.exit(-1);
+    }
+    if (command.equalsIgnoreCase("START")) {
+      if (m_controlState != ControlState.READY) {
+        setState(ControlState.ERROR,"START when not READY.");
+        answerWithError();
+        continue;
+      }
+      answerStart();
+      m_controlState=ControlState.RUNNING;
+    }
+ else     if (command.equalsIgnoreCase("POLL")) {
+      if (m_controlState != ControlState.RUNNING) {
+        setState(ControlState.ERROR,"POLL when not RUNNING.");
+        answerWithError();
+        continue;
+      }
+      answerPoll();
+    }
+ else     if (command.equalsIgnoreCase("STOP")) {
+      if (m_controlState == ControlState.RUNNING) {
+        try {
+          NullCallback cb=new NullCallback();
+          while (!m_voltClient.callProcedure(cb,"@Shutdown")) {
+            m_voltClient.backpressureBarrier();
+          }
+        }
+ catch (        final IOException e) {
+        }
+ finally {
+          return;
+        }
+      }
+      System.err.println("Error: STOP when not RUNNING");
+      System.exit(-1);
+    }
+ else     if (command.equalsIgnoreCase("STOP_IMMEDIATELY")) {
+      if (m_controlState == ControlState.RUNNING) {
+        System.exit(0);
+      }
+      System.err.println("Error: STOP_IMMEDIATELY when not running");
+      System.exit(-1);
+    }
+ else {
+      System.err.println("Error on standard input: unknown command " + command);
+      System.exit(-1);
+    }
+  }
+}

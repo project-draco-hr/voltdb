@@ -1,0 +1,300 @@
+{
+  String create="CREATE " + TTable.Stmts.sType + " "+ Dest.helper.formatName(TTable.Stmts.sDestTable);
+  String insert="";
+  ResultSet ImportedKeys=null;
+  boolean importedkeys=false;
+  String alterCreate=new String("");
+  String alterDrop=new String("");
+  String ConstraintName=new String("");
+  String RefTableName=new String("");
+  String foreignKeyName=new String("");
+  String columnName=new String("");
+  TTable.Stmts.sDestDrop="DROP " + TTable.Stmts.sType + " "+ Dest.helper.formatName(TTable.Stmts.sDestTable)+ ";";
+  if (TTable.Stmts.sType.compareTo("TABLE") == 0) {
+    TTable.Stmts.sDestDelete="DELETE FROM " + Dest.helper.formatName(TTable.Stmts.sDestTable) + ";";
+    create+="(";
+  }
+ else   if (TTable.Stmts.sType.compareTo("VIEW") == 0) {
+    TTable.Stmts.bDelete=false;
+    TTable.Stmts.sDestDelete="";
+    create+=" AS SELECT ";
+  }
+  if (TTable.Stmts.sType.compareTo("TABLE") == 0) {
+    insert="INSERT INTO " + Dest.helper.formatName(TTable.Stmts.sDestTable) + " VALUES(";
+  }
+ else   if (TTable.Stmts.sType.compareTo("VIEW") == 0) {
+    TTable.Stmts.bInsert=false;
+    insert="";
+  }
+  if (TTable.Stmts.sType.compareTo("VIEW") == 0) {
+    TTable.Stmts.bTransfer=false;
+    TTable.Stmts.bCreate=true;
+    TTable.Stmts.bDelete=false;
+    TTable.Stmts.bDrop=true;
+    TTable.Stmts.bCreateIndex=false;
+    TTable.Stmts.bDropIndex=false;
+    TTable.Stmts.bInsert=false;
+    TTable.Stmts.bAlter=false;
+    return;
+  }
+  ImportedKeys=null;
+  try {
+    ImportedKeys=meta.getImportedKeys(TTable.Stmts.sDatabaseToConvert,TTable.Stmts.sSchema,TTable.Stmts.sSourceTable);
+  }
+ catch (  SQLException e) {
+    ImportedKeys=null;
+  }
+  try {
+    if (ImportedKeys != null) {
+      while (ImportedKeys.next()) {
+        importedkeys=true;
+        if (!ImportedKeys.getString(12).equals(ConstraintName)) {
+          if (!ConstraintName.equals("")) {
+            alterCreate+=Dest.helper.formatIdentifier(columnName.substring(0,columnName.length() - 1)) + ") REFERENCES " + Dest.helper.formatName(RefTableName);
+            if (foreignKeyName.length() > 0) {
+              alterCreate+=" (" + Dest.helper.formatIdentifier(foreignKeyName.substring(0,foreignKeyName.length() - 1)) + ")";
+            }
+            alterCreate+=";";
+            alterDrop=alterDrop.substring(0,alterDrop.length() - 1) + ";";
+            foreignKeyName="";
+            columnName="";
+          }
+          RefTableName=ImportedKeys.getString(3);
+          ConstraintName=ImportedKeys.getString(12);
+          alterCreate+="ALTER TABLE " + Dest.helper.formatName(TTable.Stmts.sDestTable) + " ADD CONSTRAINT ";
+          if ((TTable.Stmts.bFKForced) && (!ConstraintName.startsWith("FK_"))) {
+            alterCreate+=Dest.helper.formatIdentifier("FK_" + ConstraintName) + " ";
+          }
+ else {
+            alterCreate+=Dest.helper.formatIdentifier(ConstraintName) + " ";
+          }
+          alterCreate+="FOREIGN KEY (";
+          alterDrop+="ALTER TABLE " + Dest.helper.formatName(TTable.Stmts.sDestTable) + " DROP CONSTRAINT ";
+          if ((TTable.Stmts.bFKForced) && (!ConstraintName.startsWith("FK_"))) {
+            alterDrop+=Dest.helper.formatIdentifier("FK_" + ConstraintName) + " ";
+          }
+ else {
+            alterDrop+=Dest.helper.formatIdentifier(ConstraintName) + " ";
+          }
+        }
+        columnName+=ImportedKeys.getString(8) + ",";
+        foreignKeyName+=ImportedKeys.getString(4) + ",";
+      }
+      ImportedKeys.close();
+    }
+    if (importedkeys) {
+      alterCreate+=columnName.substring(0,columnName.length() - 1) + ") REFERENCES " + Dest.helper.formatName(RefTableName);
+      if (foreignKeyName.length() > 0) {
+        alterCreate+=" (" + Dest.helper.formatIdentifier(foreignKeyName.substring(0,foreignKeyName.length() - 1)) + ")";
+      }
+      alterCreate+=";";
+      alterDrop=alterDrop.substring(0,alterDrop.length() - 1) + ";";
+      TTable.Stmts.sDestDrop=alterDrop + TTable.Stmts.sDestDrop;
+    }
+  }
+ catch (  SQLException e) {
+    throw new DataAccessPointException(e.getMessage());
+  }
+  boolean primarykeys=false;
+  String PrimaryKeysConstraint=new String();
+  PrimaryKeysConstraint="";
+  ResultSet PrimaryKeys=null;
+  try {
+    PrimaryKeys=meta.getPrimaryKeys(TTable.Stmts.sDatabaseToConvert,TTable.Stmts.sSchema,TTable.Stmts.sSourceTable);
+  }
+ catch (  SQLException e) {
+    PrimaryKeys=null;
+  }
+  try {
+    if (PrimaryKeys != null) {
+      while (PrimaryKeys.next()) {
+        if (primarykeys) {
+          PrimaryKeysConstraint+=", ";
+        }
+ else {
+          if (PrimaryKeys.getString(6) != null) {
+            PrimaryKeysConstraint=" CONSTRAINT " + Dest.helper.formatIdentifier(PrimaryKeys.getString(6));
+          }
+          PrimaryKeysConstraint+=" PRIMARY KEY (";
+        }
+        PrimaryKeysConstraint+=Dest.helper.formatIdentifier(PrimaryKeys.getString(4));
+        primarykeys=true;
+      }
+      PrimaryKeys.close();
+      if (primarykeys) {
+        PrimaryKeysConstraint+=") ";
+      }
+    }
+  }
+ catch (  SQLException e) {
+    throw new DataAccessPointException(e.getMessage());
+  }
+  boolean indices=false;
+  ResultSet Indices=null;
+  String IndiceName=new String("");
+  String CreateIndex=new String("");
+  String DropIndex=new String("");
+  try {
+    Indices=meta.getIndexInfo(TTable.Stmts.sDatabaseToConvert,TTable.Stmts.sSchema,TTable.Stmts.sSourceTable,false,false);
+  }
+ catch (  SQLException e) {
+    Indices=null;
+  }
+  try {
+    if (Indices != null) {
+      while (Indices.next()) {
+        String tmpIndexName=null;
+        try {
+          tmpIndexName=Indices.getString(6);
+        }
+ catch (        SQLException e) {
+          tmpIndexName=null;
+        }
+        if (tmpIndexName == null) {
+          continue;
+        }
+        if (!tmpIndexName.equals(IndiceName)) {
+          if (!IndiceName.equals("")) {
+            CreateIndex=CreateIndex.substring(0,CreateIndex.length() - 1) + ");";
+            DropIndex+=";";
+          }
+          IndiceName=tmpIndexName;
+          DropIndex+="DROP INDEX ";
+          if ((TTable.Stmts.bIdxForced) && (!IndiceName.startsWith("Idx_"))) {
+            DropIndex+=Dest.helper.formatIdentifier("Idx_" + IndiceName);
+          }
+ else {
+            DropIndex+=Dest.helper.formatIdentifier(IndiceName);
+          }
+          CreateIndex+="CREATE ";
+          if (!Indices.getBoolean(4)) {
+            CreateIndex+="UNIQUE ";
+          }
+          CreateIndex+="INDEX ";
+          if ((TTable.Stmts.bIdxForced) && (!IndiceName.startsWith("Idx_"))) {
+            CreateIndex+=Dest.helper.formatIdentifier("Idx_" + IndiceName);
+          }
+ else {
+            CreateIndex+=Dest.helper.formatIdentifier(IndiceName);
+          }
+          CreateIndex+=" ON " + Dest.helper.formatName(TTable.Stmts.sDestTable) + "(";
+        }
+        CreateIndex+=Dest.helper.formatIdentifier(Indices.getString(9)) + ",";
+        indices=true;
+      }
+      Indices.close();
+      if (indices) {
+        CreateIndex=CreateIndex.substring(0,CreateIndex.length() - 1) + ");";
+        DropIndex+=";";
+      }
+    }
+  }
+ catch (  SQLException e) {
+    throw new DataAccessPointException(e.getMessage());
+  }
+  Vector v=new Vector();
+  tracer.trace("Reading source columns for table " + TTable.Stmts.sSourceTable);
+  ResultSet col=null;
+  int colnum=1;
+  Statement stmt=null;
+  ResultSet select_rs=null;
+  ResultSetMetaData select_rsmdata=null;
+  try {
+    stmt=conn.createStatement();
+    select_rs=stmt.executeQuery(TTable.Stmts.sSourceSelect);
+    select_rsmdata=select_rs.getMetaData();
+    col=meta.getColumns(TTable.Stmts.sDatabaseToConvert,TTable.Stmts.sSchema,TTable.Stmts.sSourceTable,null);
+  }
+ catch (  SQLException eSchema) {
+    if (TTable.Stmts.sSchema.equals("")) {
+      try {
+        col=meta.getColumns(TTable.Stmts.sDatabaseToConvert,null,TTable.Stmts.sSourceTable,null);
+      }
+ catch (      SQLException eSchema1) {
+      }
+    }
+  }
+  try {
+    while (col.next()) {
+      String name=Dest.helper.formatIdentifier(col.getString(4));
+      int type=col.getShort(5);
+      String source=col.getString(6);
+      int column_size=col.getInt(7);
+      String DefaultVal=col.getString(13);
+      boolean rsmdata_NoNulls=(select_rsmdata.isNullable(colnum) == java.sql.DatabaseMetaData.columnNoNulls);
+      boolean rsmdata_isAutoIncrement=false;
+      try {
+        rsmdata_isAutoIncrement=select_rsmdata.isAutoIncrement(colnum);
+      }
+ catch (      SQLException e) {
+        rsmdata_isAutoIncrement=false;
+      }
+      int rsmdata_precision=select_rsmdata.getPrecision(colnum);
+      int rsmdata_scale=select_rsmdata.getScale(colnum);
+      type=helper.convertFromType(type);
+      type=Dest.helper.convertToType(type);
+      Integer inttype=new Integer(type);
+      String datatype=(String)TTable.hTypes.get(inttype);
+      if (datatype == null) {
+        datatype=source;
+        tracer.trace("No mapping for type: " + name + " type: "+ type+ " source: "+ source);
+      }
+      if (type == Types.NUMERIC) {
+        datatype+="(" + Integer.toString(rsmdata_precision);
+        if (rsmdata_scale > 0) {
+          datatype+="," + Integer.toString(rsmdata_scale);
+        }
+        datatype+=")";
+      }
+ else       if (type == Types.CHAR) {
+        datatype+="(" + Integer.toString(column_size) + ")";
+      }
+ else       if (rsmdata_isAutoIncrement) {
+        datatype="SERIAL";
+      }
+      if (DefaultVal != null) {
+        if (type == Types.CHAR || type == Types.VARCHAR || type == Types.LONGVARCHAR || type == Types.BINARY || type == Types.DATE || type == Types.TIME || type == Types.TIMESTAMP) {
+          DefaultVal="\'" + DefaultVal + "\'";
+        }
+        datatype+=" DEFAULT " + DefaultVal;
+      }
+      if (rsmdata_NoNulls) {
+        datatype+=" NOT NULL ";
+      }
+      v.addElement(inttype);
+      datatype=helper.fixupColumnDefRead(TTable,select_rsmdata,datatype,col,colnum);
+      datatype=Dest.helper.fixupColumnDefWrite(TTable,select_rsmdata,datatype,col,colnum);
+      create+=name + " " + datatype+ ",";
+      insert+="?,";
+      colnum++;
+    }
+    select_rs.close();
+    stmt.close();
+    col.close();
+  }
+ catch (  SQLException e) {
+    throw new DataAccessPointException(e.getMessage());
+  }
+  if (primarykeys) {
+    create+=PrimaryKeysConstraint + ",";
+  }
+  TTable.Stmts.sDestCreate=create.substring(0,create.length() - 1) + ")";
+  TTable.Stmts.sDestInsert=insert.substring(0,insert.length() - 1) + ")";
+  if (importedkeys) {
+    TTable.Stmts.bAlter=true;
+    TTable.Stmts.sDestAlter=alterCreate;
+  }
+ else {
+    TTable.Stmts.bAlter=false;
+  }
+  if (indices) {
+    TTable.Stmts.bCreateIndex=true;
+    TTable.Stmts.bDropIndex=true;
+    TTable.Stmts.sDestCreateIndex=CreateIndex;
+    TTable.Stmts.sDestDropIndex=DropIndex;
+  }
+ else {
+    TTable.Stmts.bCreateIndex=false;
+    TTable.Stmts.bDropIndex=false;
+  }
+}

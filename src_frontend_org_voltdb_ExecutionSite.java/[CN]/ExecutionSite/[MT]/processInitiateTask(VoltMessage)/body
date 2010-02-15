@@ -1,0 +1,27 @@
+{
+  final InitiateTask itask=(InitiateTask)task;
+  doSnapshotWork();
+  m_currentSPTask=itask;
+  m_currentInitiatorSiteId=itask.getInitiatorSiteId();
+  final VoltProcedure wrapper=procs.get(itask.getStoredProcedureName());
+  assert(wrapper != null);
+  final InitiateResponse response=new InitiateResponse(itask);
+  try {
+    final ClientResponseImpl cr=wrapper.call(itask.getParameters());
+    response.setResults(cr,itask);
+  }
+ catch (  final ExpectedProcedureException e) {
+    log.l7dlog(Level.TRACE,LogKeys.org_voltdb_ExecutionSite_ExpectedProcedureException.name(),e);
+    response.setResults(new ClientResponseImpl(ClientResponse.GRACEFUL_FAILURE,new VoltTable[]{},e.toString()));
+  }
+catch (  final Exception e) {
+    hostLog.l7dlog(Level.TRACE,LogKeys.host_ExecutionSite_UnexpectedProcedureException.name(),e);
+    VoltDB.crashVoltDB();
+  }
+  log.l7dlog(Level.TRACE,LogKeys.org_voltdb_ExecutionSite_SendingCompletedWUToDtxn.name(),null);
+  if (m_currentTxnId > lastCommittedTxnId) {
+    lastCommittedTxnId=m_currentTxnId;
+  }
+  m_currentSPTask=null;
+  return response;
+}

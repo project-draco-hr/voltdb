@@ -1,0 +1,59 @@
+{
+  System.gc();
+  System.out.println("Start the test with " + Runtime.getRuntime().freeMemory() + " free");
+  byte junkData[]=new byte[2048];
+  long numRequests=40000;
+  long sleepTime=20000;
+  final ArrayDeque<Future<Long>> pendingRequests=new ArrayDeque<Future<Long>>();
+  final ArrayDeque<Future<ClientResponse>> pendingResponses=new ArrayDeque<Future<ClientResponse>>();
+  final ArrayDeque<SocketChannel> connections=new ArrayDeque<SocketChannel>();
+  for (int ii=0; ii < 4; ii++) {
+    final SocketChannel channel=getClientChannel();
+    connections.add(channel);
+  }
+  for (int ii=0; ii < numRequests; ii++) {
+    final SocketChannel channel=connections.poll();
+    pendingRequests.offer(ConnectionUtil.sendInvocation(channel,"GoSleep",ii == 0 ? sleepTime : 0,0,junkData));
+    pendingResponses.offer(ConnectionUtil.readResponse(channel));
+    connections.offer(channel);
+  }
+  System.out.println("Sent " + numRequests + " requests with the first requesting a sleep of "+ (sleepTime / 1000)+ " seconds");
+  Thread.sleep(10000);
+  System.out.println("Slept 10 seconds so the server could transfer invocations");
+  long pendingRequestCount=0;
+  Future<Long> f=null;
+  while ((f=pendingRequests.poll()) != null) {
+    if (!f.isDone()) {
+      pendingRequestCount++;
+    }
+ else {
+      f.get();
+    }
+  }
+  pendingRequests.clear();
+  System.out.println("Counted " + pendingRequestCount + " requests that didn't make it on the wire");
+  assertTrue(pendingRequestCount > 30000);
+  long responseCount=0;
+  int lastPercentComplete=0;
+  Future<ClientResponse> response=null;
+  while ((response=pendingResponses.poll()) != null) {
+    response.get();
+    responseCount++;
+    int percentComplete=(int)Math.floor((responseCount / (double)numRequests) * 100);
+    if (percentComplete > lastPercentComplete) {
+      lastPercentComplete=percentComplete;
+      if (lastPercentComplete % 5 == 0) {
+        System.out.println(lastPercentComplete + "% complete reading responses with " + Runtime.getRuntime().freeMemory()+ " free");
+      }
+    }
+  }
+  System.out.println("Read all the responses for the transactions that couldn't previously make it on the wire");
+  assertEquals(responseCount,numRequests);
+  for (  SocketChannel channel : connections) {
+    ConnectionUtil.sendInvocation(channel,"GoSleep",0).get();
+  }
+  for (  final SocketChannel channel : connections) {
+    ConnectionUtil.readResponse(channel).get();
+  }
+  System.out.println("Was able to queue and read across the other 4 connections");
+}

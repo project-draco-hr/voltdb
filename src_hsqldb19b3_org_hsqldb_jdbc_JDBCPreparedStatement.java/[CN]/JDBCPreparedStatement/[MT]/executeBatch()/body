@@ -1,0 +1,41 @@
+{
+  checkClosed();
+  connection.clearWarningsNoCheck();
+  checkStatementType(StatementTypes.RETURN_COUNT);
+  if (!isBatch) {
+    throw Util.sqlExceptionSQL(ErrorCode.X_07506);
+  }
+  generatedResult=null;
+  int batchCount=resultOut.getNavigator().getSize();
+  resultIn=null;
+  try {
+    resultIn=connection.sessionProxy.execute(resultOut);
+  }
+ catch (  HsqlException e) {
+    throw Util.sqlException(e);
+  }
+ finally {
+    performPostExecute();
+    resultOut.getNavigator().clear();
+    isBatch=false;
+  }
+  if (resultIn.isError()) {
+    throw Util.sqlException(resultIn);
+  }
+  RowSetNavigator navigator=resultIn.getNavigator();
+  int[] updateCounts=new int[navigator.getSize()];
+  for (int i=0; i < updateCounts.length; i++) {
+    Object[] data=(Object[])navigator.getNext();
+    updateCounts[i]=((Integer)data[0]).intValue();
+  }
+  if (updateCounts.length != batchCount) {
+    if (errorResult == null) {
+      throw new BatchUpdateException(updateCounts);
+    }
+ else {
+      errorResult.getMainString();
+      throw new BatchUpdateException(errorResult.getMainString(),errorResult.getSubString(),errorResult.getErrorCode(),updateCounts);
+    }
+  }
+  return updateCounts;
+}

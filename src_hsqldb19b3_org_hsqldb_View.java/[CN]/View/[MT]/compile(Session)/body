@@ -1,0 +1,43 @@
+{
+  if (!database.schemaManager.schemaExists(compileTimeSchema.name)) {
+    compileTimeSchema=session.getSchemaHsqlName(null);
+  }
+  session.setSchema(compileTimeSchema.name);
+  ParserDQL p=new ParserDQL(session,new Scanner(statement));
+  p.read();
+  viewSubQuery=p.XreadViewSubquery(this);
+  queryExpression=viewSubQuery.queryExpression;
+  if (getColumnCount() == 0) {
+    if (columnNames == null) {
+      columnNames=viewSubQuery.queryExpression.getResultColumnNames();
+    }
+    if (columnNames.length != viewSubQuery.queryExpression.getColumnCount()) {
+      throw Error.error(ErrorCode.X_42593,tableName.statementName);
+    }
+    TableUtil.setColumnsInSchemaTable(this,columnNames,queryExpression.getColumnTypes());
+  }
+  viewSubqueries=p.compileContext.getSubqueries();
+  for (int i=0; i < viewSubqueries.length; i++) {
+    if (viewSubqueries[i].parentView == null) {
+      viewSubqueries[i].parentView=this;
+    }
+  }
+  viewSubQuery.getTable().view=this;
+  viewSubQuery.getTable().columnList=columnList;
+  schemaObjectNames=p.compileContext.getSchemaObjectNames();
+  baseTable=queryExpression.getBaseTable();
+  if (baseTable == null) {
+    return;
+  }
+switch (check) {
+case SchemaObject.ViewCheckModes.CHECK_NONE:
+    break;
+case SchemaObject.ViewCheckModes.CHECK_LOCAL:
+  checkExpression=queryExpression.getCheckCondition();
+break;
+case SchemaObject.ViewCheckModes.CHECK_CASCADE:
+break;
+default :
+throw Error.runtimeError(ErrorCode.U_S0500,"View");
+}
+}

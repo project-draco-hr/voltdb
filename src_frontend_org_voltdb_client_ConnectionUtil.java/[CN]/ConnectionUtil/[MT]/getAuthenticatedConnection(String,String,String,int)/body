@@ -1,0 +1,85 @@
+{
+  boolean success=false;
+  InetSocketAddress addr=new InetSocketAddress(host,port);
+  SocketChannel aChannel=SocketChannel.open(addr);
+  assert(aChannel.isConnected());
+  if (!aChannel.isConnected()) {
+    throw new IOException("Failed to open host " + host);
+  }
+  try {
+    aChannel.configureBlocking(true);
+    aChannel.socket().setTcpNoDelay(true);
+    MessageDigest md=null;
+    try {
+      md=MessageDigest.getInstance("SHA-1");
+    }
+ catch (    NoSuchAlgorithmException e) {
+      e.printStackTrace();
+      System.exit(-1);
+    }
+    byte passwordHash[]=md.digest(password.getBytes());
+    FastSerializer fs=new FastSerializer();
+    fs.writeInt(0);
+    fs.writeByte(0);
+    fs.writeString(program);
+    fs.write(passwordHash);
+    final ByteBuffer fsBuffer=fs.getBuffer();
+    final ByteBuffer b=ByteBuffer.allocate(fsBuffer.remaining());
+    b.put(fsBuffer);
+    final int size=fsBuffer.limit() - 4;
+    b.flip();
+    b.putInt(size);
+    b.position(0);
+    boolean successfulWrite=false;
+    IOException writeException=null;
+    try {
+      for (int ii=0; ii < 4 && b.hasRemaining(); ii++) {
+        aChannel.write(b);
+      }
+      if (!b.hasRemaining()) {
+        successfulWrite=true;
+      }
+    }
+ catch (    IOException e) {
+      writeException=e;
+    }
+    ByteBuffer loginResponse=ByteBuffer.allocate(6);
+    int read=aChannel.read(loginResponse);
+    byte loginResponseCode=0;
+    if (read == -1) {
+      if (writeException != null) {
+        throw writeException;
+      }
+      if (!successfulWrite) {
+        throw new IOException("Unable to write authentication info to serer");
+      }
+      throw new IOException("Authentication rejected");
+    }
+ else {
+      loginResponse.flip();
+      loginResponse.position(5);
+      loginResponseCode=loginResponse.get();
+    }
+    if (loginResponseCode != 0) {
+      aChannel.close();
+switch (loginResponseCode) {
+case 1:
+        throw new IOException("Server has too many connections");
+case 2:
+      throw new IOException("Connection timed out during authentication. " + "Buy a faster computer and stop using VMWare");
+default :
+    throw new IOException("Authentication rejected");
+}
+}
+aChannel.configureBlocking(false);
+aChannel.socket().setTcpNoDelay(false);
+aChannel.socket().setKeepAlive(true);
+success=true;
+}
+  finally {
+if (!success) {
+aChannel.close();
+}
+}
+return aChannel;
+}

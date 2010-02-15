@@ -1,0 +1,48 @@
+{
+  System.gc();
+  System.out.println("Have " + (Runtime.getRuntime().freeMemory() / 1024) + "kb available");
+  final ThreadLocal<ConnectionUtil.ExecutorPair> m_executors=new ThreadLocal<ConnectionUtil.ExecutorPair>(){
+    @Override protected ConnectionUtil.ExecutorPair initialValue(){
+      return new ConnectionUtil.ExecutorPair();
+    }
+  }
+;
+  final ExecutorService executor=Executors.newFixedThreadPool(4,new ThreadFactory(){
+    private int harasserCount=0;
+    @Override public Thread newThread(    Runnable r){
+      return new Thread(Thread.currentThread().getThreadGroup(),r,"Harasser " + harasserCount++,131072);
+    }
+  }
+);
+  int numHarassments=2000;
+  final int numRequests=4000;
+  ArrayList<Future<Object>> harassments=new ArrayList<Future<Object>>();
+  for (int ii=0; ii < numHarassments; ii++) {
+    harassments.add(executor.submit(new Callable<Object>(){
+      @Override public Object call() throws Exception {
+        final SocketChannel sc=getClientChannel(true);
+        final ArrayList<Future<Long>> requests=new ArrayList<Future<Long>>();
+        final ExecutorService m_executor=m_executors.get().m_writeExecutor;
+        for (int ii=0; ii < numRequests; ii++) {
+          requests.add(ConnectionUtil.sendInvocation(m_executor,sc,"GoSleep",0,1,null));
+        }
+        for (        Future<Long> request : requests) {
+          request.get();
+        }
+        sc.close();
+        return null;
+      }
+    }
+));
+  }
+  int harassmentsComplete=0;
+  for (  Future<Object> harassment : harassments) {
+    harassmentsComplete++;
+    if (harassmentsComplete % 100 == 0) {
+      System.out.println("Completed " + harassmentsComplete + " harassments with "+ (Runtime.getRuntime().freeMemory() / 1024)+ " kb free memory");
+    }
+    harassment.get();
+  }
+  executor.shutdown();
+  executor.awaitTermination(1,TimeUnit.DAYS);
+}

@@ -1,0 +1,41 @@
+{
+  if (runtimeFileDelim == null) {
+    runtimeFileDelim=new Character(System.getProperty("file.separator").charAt(0));
+  }
+  String instanceName=new File(dbPath).getName();
+  if (destPath == null || destPath.length() < 1) {
+    throw Error.error(ErrorCode.X_2200F,"0-length destination path");
+  }
+  char lastChar=destPath.charAt(destPath.length() - 1);
+  boolean generateName=(lastChar == '/' || lastChar == runtimeFileDelim.charValue());
+  String defaultCompressionSuffix=compressed ? ".tar.gz" : ".tar";
+  File archiveFile=generateName ? (new File(destPath.substring(0,destPath.length() - 1),instanceName + '-' + backupFileFormat.format(new java.util.Date())+ defaultCompressionSuffix)) : (new File(destPath));
+  boolean nameImpliesCompress=archiveFile.getName().endsWith(".tar.gz") || archiveFile.getName().endsWith(".tgz");
+  if ((!nameImpliesCompress) && !archiveFile.getName().endsWith(".tar")) {
+    throw Error.error(ErrorCode.UNSUPPORTED_FILENAME_SUFFIX,0,new String[]{archiveFile.getName(),".tar, .tar.gz, .tgz"});
+  }
+  if (compressed != nameImpliesCompress) {
+    throw Error.error(ErrorCode.COMPRESSION_SUFFIX_MISMATCH,0,new Object[]{new Boolean(compressed),archiveFile.getName()});
+  }
+  log.closeForBackup();
+  try {
+    appLog.logContext(SimpleLog.LOG_NORMAL,"Initiating backup of instance '" + instanceName + "'");
+    DbBackup backup=new DbBackup(archiveFile,dbPath);
+    backup.setAbortUponModify(false);
+    backup.write();
+    appLog.logContext(SimpleLog.LOG_NORMAL,"Successfully backed up instance '" + instanceName + "' to '"+ destPath+ "'");
+  }
+ catch (  IllegalArgumentException iae) {
+    throw Error.error(ErrorCode.X_HV00A,iae.getMessage());
+  }
+catch (  IOException ioe) {
+    throw Error.error(ErrorCode.FILE_IO_ERROR,ioe.getMessage());
+  }
+catch (  TarMalformatException tme) {
+    throw Error.error(ErrorCode.FILE_IO_ERROR,tme.getMessage());
+  }
+ finally {
+    log.openAfterBackup();
+    needsCheckpoint=false;
+  }
+}

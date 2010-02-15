@@ -1,0 +1,70 @@
+{
+  BlobData b;
+  if (a == null) {
+    return null;
+  }
+switch (otherType.typeCode) {
+case Types.SQL_VARCHAR:
+case Types.SQL_CHAR:
+{
+      b=session.getScanner().convertToBit((String)a);
+      otherType=getBitType(Types.SQL_BIT_VARYING,b.length(session));
+      break;
+    }
+case Types.SQL_BIT:
+case Types.SQL_BIT_VARYING:
+case Types.SQL_BINARY:
+case Types.SQL_VARBINARY:
+case Types.SQL_BLOB:
+  b=(BlobData)a;
+break;
+default :
+throw Error.error(ErrorCode.X_22501);
+}
+if (b.bitLength(session) > precision) {
+if (!cast) {
+throw Error.error(ErrorCode.X_22001);
+}
+session.addWarning(Error.error(ErrorCode.W_01004));
+}
+int bytePrecision=(int)((precision + 7) / 8);
+if (otherType.typeCode == Types.SQL_BLOB) {
+byte[] bytes=b.getBytes(session,0,bytePrecision);
+b=new BinaryData(bytes,precision);
+}
+switch (typeCode) {
+case Types.SQL_BIT:
+{
+if (b.bitLength(session) == precision) {
+return b;
+}
+if (b.length(session) > bytePrecision) {
+byte[] data=b.getBytes(session,0,bytePrecision);
+b=new BinaryData(data,precision);
+}
+ else if (b.length(session) <= bytePrecision) {
+byte[] data=(byte[])ArrayUtil.resizeArray(b.getBytes(),bytePrecision);
+b=new BinaryData(data,precision);
+}
+break;
+}
+case Types.SQL_BIT_VARYING:
+{
+if (b.bitLength(session) <= precision) {
+return b;
+}
+if (b.length(session) > bytePrecision) {
+byte[] data=b.getBytes(session,0,bytePrecision);
+b=new BinaryData(data,precision);
+}
+break;
+}
+default :
+throw Error.error(ErrorCode.X_22501);
+}
+byte[] data=b.getBytes();
+for (int i=(int)precision; i < b.length(session) * 8; i++) {
+BitMap.unset(data,i);
+}
+return b;
+}

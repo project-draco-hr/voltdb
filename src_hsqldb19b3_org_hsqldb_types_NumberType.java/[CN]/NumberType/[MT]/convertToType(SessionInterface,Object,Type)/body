@@ -1,0 +1,79 @@
+{
+  if (a == null) {
+    return a;
+  }
+  if (otherType.typeCode == typeCode) {
+switch (typeCode) {
+case Types.SQL_NUMERIC:
+case Types.SQL_DECIMAL:
+      if (otherType.scale == scale && otherType.precision <= precision) {
+        return a;
+      }
+    break;
+default :
+  return a;
+}
+}
+if (otherType.isIntervalType()) {
+int endType=((IntervalType)otherType).endIntervalType;
+switch (endType) {
+case Types.SQL_INTERVAL_YEAR:
+case Types.SQL_INTERVAL_MONTH:
+case Types.SQL_INTERVAL_DAY:
+case Types.SQL_INTERVAL_HOUR:
+case Types.SQL_INTERVAL_MINUTE:
+{
+  Long value=ValuePool.getLong(((IntervalType)otherType).convertToLong(a));
+  return convertToType(session,value,Type.SQL_BIGINT);
+}
+case Types.SQL_INTERVAL_SECOND:
+{
+long seconds=((IntervalSecondData)a).units;
+long nanos=((IntervalSecondData)a).nanos;
+BigDecimal value=((DTIType)otherType).getSecondPart(seconds,nanos);
+return value;
+}
+}
+}
+switch (otherType.typeCode) {
+case Types.SQL_CLOB:
+a=((ClobData)a).getSubString(session,0L,(int)((ClobData)a).length(session));
+case Types.SQL_CHAR:
+case Types.SQL_VARCHAR:
+case Types.VARCHAR_IGNORECASE:
+{
+a=session.getScanner().convertToNumber((String)a,this);
+return convertToDefaultType(session,a);
+}
+case Types.TINYINT:
+case Types.SQL_SMALLINT:
+case Types.SQL_INTEGER:
+case Types.SQL_BIGINT:
+case Types.SQL_REAL:
+case Types.SQL_FLOAT:
+case Types.SQL_DOUBLE:
+case Types.SQL_NUMERIC:
+case Types.SQL_DECIMAL:
+break;
+default :
+throw Error.error(ErrorCode.X_42561);
+}
+switch (this.typeCode) {
+case Types.TINYINT:
+case Types.SQL_SMALLINT:
+case Types.SQL_INTEGER:
+return convertToInt(a,this.typeCode);
+case Types.SQL_BIGINT:
+return convertToLong(a);
+case Types.SQL_REAL:
+case Types.SQL_FLOAT:
+case Types.SQL_DOUBLE:
+return convertToDouble(a);
+case Types.SQL_NUMERIC:
+case Types.SQL_DECIMAL:
+BigDecimal value=convertToDecimal(a);
+return convertToTypeLimits(session,value);
+default :
+throw Error.error(ErrorCode.X_42561);
+}
+}

@@ -1,0 +1,50 @@
+{
+  final HsqlProperties props=DatabaseURL.parseURL(url,true,false);
+  if (props == null) {
+    throw Util.invalidArgument();
+  }
+ else   if (props.isEmpty()) {
+    return null;
+  }
+  props.addProperties(info);
+  long timeout=DriverManager.getLoginTimeout();
+  if (timeout == 0) {
+    return new JDBCConnection(props);
+  }
+  String connType=props.getProperty("connection_type");
+  if (DatabaseURL.isInProcessDatabaseType(connType)) {
+    return new JDBCConnection(props);
+  }
+  final JDBCConnection[] conn=new JDBCConnection[1];
+  final SQLException[] ex=new SQLException[1];
+  Thread t=new Thread(){
+    public void run(){
+      try {
+        conn[0]=new JDBCConnection(props);
+      }
+ catch (      SQLException se) {
+        ex[0]=se;
+      }
+    }
+  }
+;
+  t.start();
+  final long start=System.currentTimeMillis();
+  try {
+    t.join(1000 * timeout);
+  }
+ catch (  InterruptedException ie) {
+  }
+  try {
+    t.stop();
+  }
+ catch (  Exception e) {
+  }
+  if (ex[0] != null) {
+    throw ex[0];
+  }
+  if (conn[0] != null) {
+    return conn[0];
+  }
+  throw Util.sqlException(ErrorCode.X_08501);
+}

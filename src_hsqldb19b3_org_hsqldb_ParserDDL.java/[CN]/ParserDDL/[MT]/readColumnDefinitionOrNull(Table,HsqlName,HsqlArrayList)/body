@@ -1,0 +1,78 @@
+{
+  boolean isIdentity=false;
+  boolean isPKIdentity=false;
+  boolean identityAlways=false;
+  Expression generateExpr=null;
+  boolean isNullable=true;
+  Expression defaultExpr=null;
+  Type typeObject;
+  NumberSequence sequence=null;
+  if (token.tokenType == Tokens.IDENTITY) {
+    read();
+    isIdentity=true;
+    isPKIdentity=true;
+    typeObject=Type.SQL_INTEGER;
+    sequence=new NumberSequence(null,0,1,typeObject);
+  }
+ else   if (token.tokenType == Tokens.COMMA) {
+    ;
+    return null;
+  }
+ else {
+    typeObject=readTypeDefinition(true);
+  }
+  if (isIdentity) {
+  }
+ else   if (token.tokenType == Tokens.DEFAULT) {
+    read();
+    defaultExpr=readDefaultClause(typeObject);
+  }
+ else   if (token.tokenType == Tokens.GENERATED && !isIdentity) {
+    read();
+    if (token.tokenType == Tokens.BY) {
+      read();
+      readThis(Tokens.DEFAULT);
+    }
+ else {
+      readThis(Tokens.ALWAYS);
+      identityAlways=true;
+    }
+    readThis(Tokens.AS);
+    if (token.tokenType == Tokens.IDENTITY) {
+      read();
+      sequence=new NumberSequence(null,typeObject);
+      sequence.setAlways(identityAlways);
+      if (token.tokenType == Tokens.OPENBRACKET) {
+        read();
+        readSequenceOptions(sequence,false,false);
+        readThis(Tokens.CLOSEBRACKET);
+      }
+      isIdentity=true;
+    }
+ else     if (token.tokenType == Tokens.OPENBRACKET) {
+      read();
+      generateExpr=XreadValueExpression();
+      readThis(Tokens.CLOSEBRACKET);
+    }
+  }
+  ColumnSchema column=new ColumnSchema(hsqlName,typeObject,isNullable,false,defaultExpr);
+  readColumnConstraints(table,column,constraintList);
+  if (token.tokenType == Tokens.IDENTITY && !isIdentity) {
+    read();
+    isIdentity=true;
+    isPKIdentity=true;
+    sequence=new NumberSequence(null,0,1,typeObject);
+  }
+  if (isIdentity) {
+    column.setIdentity(sequence);
+  }
+  if (isPKIdentity && !column.isPrimaryKey()) {
+    OrderedHashSet set=new OrderedHashSet();
+    set.add(column.getName().name);
+    HsqlName constName=database.nameManager.newAutoName("PK",table.getSchemaName(),table.getName(),SchemaObject.CONSTRAINT);
+    Constraint c=new Constraint(constName,set,Constraint.PRIMARY_KEY);
+    constraintList.set(0,c);
+    column.setPrimaryKey(true);
+  }
+  return column;
+}

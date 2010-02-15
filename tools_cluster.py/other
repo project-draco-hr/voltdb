@@ -1,0 +1,38 @@
+import sys
+from subprocess import Popen, PIPE
+LOCKFILE = '/dev/shm/reserved'
+CHECK_UMASK = "umask -S | sed 's/.*,//g' | grep -v w"
+if (len(sys.argv) < 3):
+    usage()
+option = sys.argv[1]
+machines = sys.argv[2:]
+for machine in machines:
+    if (0 != system(['ssh', machine, CHECK_UMASK])):
+        print machine, 'is not a valid machine'
+        sys.exit((-1))
+if (option == 'release'):
+    for machine in machines:
+        if (0 != system(['ssh', machine, ('ls ' + LOCKFILE)])):
+            print machine, 'was not reserved'
+            print 'not releasing any machines'
+            sys.exit((-1))
+        if (0 != system(['ssh', machine, ('touch -c ' + LOCKFILE)])):
+            print machine, 'is reserved by someone else'
+            print 'not releasing any machines'
+            sys.exit((-1))
+    delete_lockfiles(machines)
+elif (option == 'reserve'):
+    reserved = []
+    for machine in machines:
+        if (0 == system(['ssh', machine, ('test -O ' + LOCKFILE)])):
+            print machine, 'was already reserved by this user'
+            pass
+        elif (0 == system(['ssh', machine, ('touch ' + LOCKFILE)])):
+            reserved.append(machine)
+            print 'reserved', machine
+        else:
+            print machine, 'could not be reserved'
+            delete_lockfiles(reserved)
+            sys.exit((-1))
+else:
+    usage()

@@ -1,0 +1,29 @@
+{
+  int recvDests[]=null;
+  int mailboxId=in.getInt();
+  if (mailboxId == -1) {
+    int readyHost=in.getInt();
+    byte hostnameBytes[]=new byte[in.remaining()];
+    in.get(hostnameBytes);
+    m_remoteHostname=new String(hostnameBytes);
+    m_hostMessenger.hostIsReady(readyHost);
+    return;
+  }
+  assert(mailboxId > -1);
+  int destCount=in.getInt();
+  assert(destCount > 0 && destCount < 1024);
+  recvDests=new int[destCount];
+  for (int i=0; i < destCount; i++) {
+    recvDests[i]=in.getInt();
+  }
+  int datalen=in.limit() - in.position();
+  assert(in.limit() != datalen + VoltMessage.HEADER_SIZE);
+  ByteBuffer raw=ByteBuffer.allocate(datalen + VoltMessage.HEADER_SIZE);
+  raw.position(VoltMessage.HEADER_SIZE);
+  raw.put(in);
+  raw.position(VoltMessage.HEADER_SIZE);
+  VoltMessage message=VoltMessage.createMessageFromBuffer(raw,true);
+  for (int i=0; i < destCount; i++) {
+    deliverMessage(recvDests[i],mailboxId,message);
+  }
+}

@@ -1,0 +1,70 @@
+{
+  boolean containsAggregateExpression=false;
+  HashAggregatePlanNode aggNode=null;
+  for (  ParsedSelectStmt.ParsedColInfo col : m_parsedSelect.displayColumns) {
+    if (col.expression.getExpressionType() == ExpressionType.AGGREGATE_SUM || col.expression.getExpressionType() == ExpressionType.AGGREGATE_COUNT || col.expression.getExpressionType() == ExpressionType.AGGREGATE_COUNT_STAR || col.expression.getExpressionType() == ExpressionType.AGGREGATE_MIN || col.expression.getExpressionType() == ExpressionType.AGGREGATE_MAX || col.expression.getExpressionType() == ExpressionType.AGGREGATE_AVG) {
+      containsAggregateExpression=true;
+    }
+  }
+  if (m_parsedSelect.grouped)   containsAggregateExpression=true;
+  if (containsAggregateExpression) {
+    aggNode=new HashAggregatePlanNode(m_context,getNextPlanNodeId());
+    for (    ParsedSelectStmt.ParsedColInfo col : m_parsedSelect.groupByColumns) {
+      aggNode.getGroupByColumns().add(col.index);
+      aggNode.getGroupByColumnNames().add(col.alias);
+      PlanColumn groupByColumn=root.findMatchingOutputColumn(col.tableName,col.columnName,col.alias);
+      aggNode.appendGroupByColumn(groupByColumn);
+    }
+    int outputColumnIndex=0;
+    for (    ParsedSelectStmt.ParsedColInfo col : m_parsedSelect.displayColumns) {
+      AbstractExpression rootExpr=col.expression;
+      ExpressionType agg_expression_type=rootExpr.getExpressionType();
+      if (rootExpr.getExpressionType() == ExpressionType.AGGREGATE_SUM || rootExpr.getExpressionType() == ExpressionType.AGGREGATE_MIN || rootExpr.getExpressionType() == ExpressionType.AGGREGATE_MAX || rootExpr.getExpressionType() == ExpressionType.AGGREGATE_AVG || rootExpr.getExpressionType() == ExpressionType.AGGREGATE_COUNT || rootExpr.getExpressionType() == ExpressionType.AGGREGATE_COUNT_STAR) {
+        PlanColumn aggregateColumn=null;
+        if (rootExpr.getLeft() instanceof TupleValueExpression) {
+          TupleValueExpression nested=(TupleValueExpression)rootExpr.getLeft();
+          if (((AggregateExpression)rootExpr).m_distinct) {
+            root=addDistinctNode(root,nested);
+          }
+          aggregateColumn=root.findMatchingOutputColumn(nested.getTableName(),nested.getColumnName(),nested.getColumnAlias());
+        }
+ else         if (rootExpr.getExpressionType() == ExpressionType.AGGREGATE_COUNT && rootExpr.getLeft() == null) {
+          aggregateColumn=m_context.get(root.m_outputColumns.get(0));
+          agg_expression_type=ExpressionType.AGGREGATE_COUNT_STAR;
+        }
+ else {
+          throw new PlanningErrorException("Expressions in aggregates currently unsupported");
+        }
+        aggNode.getAggregateColumnGuids().add(aggregateColumn.guid());
+        aggNode.getAggregateColumnNames().add(aggregateColumn.displayName());
+        aggNode.getAggregateTypes().add(agg_expression_type);
+        PlanColumn colInfo=m_context.getPlanColumn(rootExpr,col.alias);
+        aggNode.appendOutputColumn(colInfo);
+        aggNode.getAggregateOutputColumns().add(outputColumnIndex);
+      }
+ else {
+        PlanColumn passThruColumn=root.findMatchingOutputColumn(col.tableName,col.columnName,col.alias);
+        aggNode.appendOutputColumn(passThruColumn);
+      }
+      outputColumnIndex++;
+    }
+    aggNode.addAndLinkChild(root);
+    root=aggNode;
+  }
+  if (aggNode == null && m_parsedSelect.distinct) {
+    if (m_parsedSelect.displayColumns.size() > 1) {
+      throw new PlanningErrorException("Multiple DISTINCT columns currently unsupported");
+    }
+    for (    ParsedSelectStmt.ParsedColInfo col : m_parsedSelect.displayColumns) {
+      if (col.expression instanceof TupleValueExpression) {
+        TupleValueExpression colexpr=(TupleValueExpression)(col.expression);
+        root=addDistinctNode(root,colexpr);
+        root=addProjection(root);
+      }
+ else {
+        throw new PlanningErrorException("DISTINCT of an expression currently unsupported");
+      }
+    }
+  }
+  return root;
+}

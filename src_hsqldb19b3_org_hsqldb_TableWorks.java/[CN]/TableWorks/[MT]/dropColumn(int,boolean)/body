@@ -1,0 +1,56 @@
+{
+  OrderedHashSet constraintNameSet=new OrderedHashSet();
+  OrderedHashSet dependentConstraints=table.getDependentConstraints(colIndex);
+  OrderedHashSet cascadingConstraints=table.getContainingConstraints(colIndex);
+  OrderedHashSet indexNameSet=table.getContainingIndexNames(colIndex);
+  HsqlName columnName=table.getColumn(colIndex).getName();
+  OrderedHashSet referencingObjects=database.schemaManager.getReferencingObjects(table.getName(),columnName);
+  if (table.isText() && !table.isEmpty(session)) {
+    throw Error.error(ErrorCode.X_S0521);
+  }
+  if (!cascade) {
+    if (!cascadingConstraints.isEmpty()) {
+      Constraint c=(Constraint)cascadingConstraints.get(0);
+      HsqlName name=c.getName();
+      throw Error.error(ErrorCode.X_42536,name.getSchemaQualifiedStatementName());
+    }
+    if (!referencingObjects.isEmpty()) {
+      for (int i=0; i < referencingObjects.size(); i++) {
+        HsqlName name=(HsqlName)referencingObjects.get(i);
+        throw Error.error(ErrorCode.X_42536,name.getSchemaQualifiedStatementName());
+      }
+    }
+  }
+  dependentConstraints.addAll(cascadingConstraints);
+  cascadingConstraints.clear();
+  OrderedHashSet tableSet=new OrderedHashSet();
+  for (int i=0; i < dependentConstraints.size(); i++) {
+    Constraint c=(Constraint)dependentConstraints.get(i);
+    if (c.constType == Constraint.FOREIGN_KEY) {
+      tableSet.add(c.getMain());
+      constraintNameSet.add(c.getMainName());
+      constraintNameSet.add(c.getRefName());
+      indexNameSet.add(c.getRefIndex().getName());
+    }
+    if (c.constType == Constraint.MAIN) {
+      tableSet.add(c.getRef());
+      constraintNameSet.add(c.getMainName());
+      constraintNameSet.add(c.getRefName());
+      indexNameSet.add(c.getRefIndex().getName());
+    }
+    constraintNameSet.add(c.getName());
+  }
+  tableSet=makeNewTables(tableSet,constraintNameSet,indexNameSet);
+  Table tn=table.moveDefinition(session,table.tableType,null,null,null,colIndex,-1,constraintNameSet,indexNameSet);
+  tn.moveData(session,table,colIndex,-1);
+  database.schemaManager.removeSchemaObjects(referencingObjects);
+  database.schemaManager.removeSchemaObjects(constraintNameSet);
+  setNewTableInSchema(tn);
+  setNewTablesInSchema(tableSet);
+  updateConstraints(tn,emptySet);
+  updateConstraints(tableSet,constraintNameSet);
+  database.persistentStoreCollection.releaseStore(table);
+  database.schemaManager.recompileDependentObjects(tableSet);
+  database.schemaManager.recompileDependentObjects(tn);
+  table=tn;
+}

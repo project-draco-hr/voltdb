@@ -1,0 +1,95 @@
+def genjava(classes, prepath, postpath, package):
+    pkgdir = package.replace('.', '/')
+    os.system(interp('rm -drf $postpath/*', locals()))
+    os.system(interp('mkdir -p $postpath/', locals()))
+    os.system(interp('cp $prepath/Catalog.java $postpath', locals()))
+    os.system(interp('cp $prepath/CatalogType.java $postpath', locals()))
+    os.system(interp('cp $prepath/CatalogMap.java $postpath', locals()))
+    os.system(interp('cp $prepath/CatalogException.java $postpath', locals()))
+    os.system(interp('cp $prepath/CatalogDiffEngine.java $postpath', locals()))
+    for cls in classes:
+        clsname = cls.name
+        javapath = (((postpath + '/') + clsname) + '.java')
+        f = file(javapath, 'w')
+        if (not f):
+            raise OSError(("Can't create file %s for writing" % javapath))
+        write = writer(f)
+        write(gpl_header)
+        write(auto_gen_warning)
+        write('package', (package + ';\n'))
+        if cls.has_comment():
+            write('/**\n *', cls.comment, '\n */')
+        write(interp('public class $clsname extends CatalogType {\n', locals()))
+        for field in cls.fields:
+            ftype = javatypify(field.type)
+            fname = field.name
+            if (ftype == 'String'):
+                write(interp('    String m_$fname = new String();', locals()))
+            elif (field.type[(-1)] == '?'):
+                pass
+            else:
+                write(interp('    $ftype m_$fname;', locals()))
+        write('')
+        write('    void setBaseValues(Catalog catalog, CatalogType parent, String path, String name) {')
+        write('        super.setBaseValues(catalog, parent, path, name);')
+        for field in cls.fields:
+            ftype = javatypify(field.type)
+            fname = field.name
+            realtype = field.type[:(-1)]
+            if (field.type[(-1)] == '*'):
+                write(interp('        m_$fname = new $ftype(catalog, this, path + "/" + "$fname", $realtype.class);', locals()))
+                write(interp('        m_childCollections.put("$fname", m_$fname);', locals()))
+            elif (field.type[(-1)] == '?'):
+                write(interp('        m_fields.put("$fname", null);', locals()))
+            else:
+                write(interp('        m_fields.put("$fname", m_$fname);', locals()))
+        write('    }\n')
+        write('    void update() {')
+        for field in cls.fields:
+            ftype = javatypify(field.type)
+            fobjtype = javaobjectify(field.type)
+            fname = field.name
+            realtype = field.type[:(-1)]
+            methname = fname.capitalize()
+            if (field.type[(-1)] == '?'):
+                pass
+            elif (field.type[(-1)] != '*'):
+                write(interp('        m_$fname = ($fobjtype) m_fields.get("$fname");', locals()))
+        write('    }\n')
+        for field in cls.fields:
+            ftype = javatypify(field.type)
+            fname = field.name
+            realtype = field.type[:(-1)]
+            methname = fname.capitalize()
+            if field.has_comment():
+                write('    /** GETTER:', field.comment, '*/')
+            write(interp('    public $ftype get$methname() {', locals()))
+            if (field.type[(-1)] == '?'):
+                write(interp('        Object o = getField("$fname");', locals()))
+                write(interp('        if (o instanceof UnresolvedInfo) {', locals()))
+                write(interp('            UnresolvedInfo ui = (UnresolvedInfo) o;', locals()))
+                write(interp('            $ftype retval = ($ftype) m_catalog.getItemForRef(ui.path);', locals()))
+                write(interp('            assert(retval != null);', locals()))
+                write(interp('            m_fields.put("$fname", retval);', locals()))
+                write(interp('            return retval;', locals()))
+                write(interp('        }', locals()))
+                write(interp('        return ($ftype) o;', locals()))
+            else:
+                write(interp('        return m_$fname;', locals()))
+            write('    }\n')
+        for field in cls.fields:
+            ftype = javatypify(field.type)
+            fname = field.name
+            realtype = field.type[:(-1)]
+            methname = fname.capitalize()
+            if (field.type[(-1)] == '*'):
+                continue
+            if field.has_comment():
+                write('    /** SETTER:', field.comment, '*/')
+            write(interp('    public void set$methname($ftype value) {', locals()))
+            if (field.type[(-1)] == '?'):
+                write(interp('        m_fields.put("$fname", value);', locals()))
+            else:
+                write(interp('        m_$fname = value; m_fields.put("$fname", value);', locals()))
+            write('    }\n')
+        write('}')

@@ -1,0 +1,36 @@
+{
+  Object[] data=getLobHeader(session,lobID);
+  if (data == null) {
+    Result.newErrorResult(Error.error(ErrorCode.X_0F502));
+  }
+  long newLobID=getNewLobID(session);
+  Object params[]=new Object[data.length];
+  params[0]=Long.valueOf(newLobID);
+  params[1]=data[1];
+  params[2]=data[2];
+  params[3]=data[3];
+  Result result=session.executeCompiledStatement(createLob,params);
+  if (result.isError()) {
+    return result;
+  }
+  long length=((Long)data[1]).longValue();
+  long byteLength=length;
+  int lobType=((Integer)data[1]).intValue();
+  if (lobType == Types.SQL_CLOB) {
+    byteLength*=2;
+  }
+  int newBlockCount=(int)byteLength / lobBlockSize;
+  if (byteLength % lobBlockSize != 0) {
+    newBlockCount++;
+  }
+  createBlockAddresses(session,newLobID,0,newBlockCount);
+  int[][] sourceBlocks=getBlockAddresses(session,lobID,0,Integer.MAX_VALUE);
+  int[][] targetBlocks=getBlockAddresses(session,newLobID,0,Integer.MAX_VALUE);
+  try {
+    copyBlockSet(sourceBlocks,targetBlocks);
+  }
+ catch (  HsqlException e) {
+    return Result.newErrorResult(e);
+  }
+  return ResultLob.newLobSetResponse(newLobID,length);
+}

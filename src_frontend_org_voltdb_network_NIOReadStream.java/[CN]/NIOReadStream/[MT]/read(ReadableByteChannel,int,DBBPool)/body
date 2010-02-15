@@ -1,0 +1,32 @@
+{
+  int bytesRead=0;
+  int lastRead=0;
+  while (bytesRead < maxBytes) {
+    if (m_writeBuffer == null) {
+      m_writeBuffer=pool.acquire(BUFFER_SIZE);
+    }
+    lastRead=channel.read(m_writeBuffer.b);
+    if (lastRead > 0) {
+      m_totalAvailable+=lastRead;
+      bytesRead+=lastRead;
+      m_writeBuffer.b.flip();
+      m_readBuffers.add(m_writeBuffer);
+      m_writeBuffer=null;
+    }
+    if (lastRead < 0 && bytesRead == 0) {
+      m_writeBuffer.discard();
+      m_writeBuffer=null;
+      return -1;
+    }
+    if (lastRead < BUFFER_SIZE) {
+      if (bytesRead > 0) {
+        m_globalAvailable.addAndGet(bytesRead);
+      }
+      return m_totalAvailable;
+    }
+  }
+  if (bytesRead > 0) {
+    m_globalAvailable.addAndGet(bytesRead);
+  }
+  return m_totalAvailable;
+}

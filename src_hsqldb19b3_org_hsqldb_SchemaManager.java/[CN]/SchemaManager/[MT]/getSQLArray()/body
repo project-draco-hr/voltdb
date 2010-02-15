@@ -1,0 +1,69 @@
+{
+  OrderedHashSet resolved=new OrderedHashSet();
+  OrderedHashSet unresolved=new OrderedHashSet();
+  HsqlArrayList list=new HsqlArrayList();
+  Iterator schemas=schemaMap.values().iterator();
+  while (schemas.hasNext()) {
+    Schema schema=(Schema)schemas.next();
+    if (isSystemSchema(schema.name.name)) {
+      continue;
+    }
+    if (isLobsSchema(schema.name.name)) {
+      continue;
+    }
+    list.addAll(schema.getSQLArray(resolved,unresolved));
+  }
+  while (true) {
+    Iterator it=unresolved.iterator();
+    if (!it.hasNext()) {
+      break;
+    }
+    while (it.hasNext()) {
+      SchemaObject object=(SchemaObject)it.next();
+      OrderedHashSet references=object.getReferences();
+      boolean isResolved=true;
+      for (int j=0; j < references.size(); j++) {
+        HsqlName name=(HsqlName)references.get(j);
+        if (name.type == SchemaObject.COLUMN || name.type == SchemaObject.CONSTRAINT) {
+          name=name.parent;
+        }
+        if (!resolved.contains(name)) {
+          isResolved=false;
+          break;
+        }
+      }
+      if (isResolved) {
+        if (object.getType() == SchemaObject.TABLE) {
+          list.addAll(((Table)object).getSQL(resolved,unresolved));
+        }
+ else {
+          list.add(object.getSQL());
+          resolved.add(object.getName());
+        }
+        it.remove();
+      }
+    }
+  }
+  schemas=schemaMap.values().iterator();
+  while (schemas.hasNext()) {
+    Schema schema=(Schema)schemas.next();
+    if (database.schemaManager.isSystemSchema(schema.name.name)) {
+      continue;
+    }
+    if (database.schemaManager.isLobsSchema(schema.name.name)) {
+    }
+    list.addAll(schema.getTriggerSQL());
+    list.addAll(schema.getSequenceRestartSQL());
+  }
+  if (defaultSchemaHsqlName != null) {
+    StringBuffer sb=new StringBuffer();
+    sb.append(Tokens.T_SET).append(' ').append(Tokens.T_DATABASE);
+    sb.append(' ').append(Tokens.T_DEFAULT).append(' ');
+    sb.append(Tokens.T_INITIAL).append(' ').append(Tokens.T_SCHEMA);
+    sb.append(' ').append(defaultSchemaHsqlName.statementName);
+    list.add(sb.toString());
+  }
+  String[] array=new String[list.size()];
+  list.toArray(array);
+  return array;
+}

@@ -1,0 +1,45 @@
+{
+  long csid;
+  Statement cs;
+  int[] updateCounts;
+  int count;
+  csid=cmd.getStatementID();
+  cs=database.compiledStatementManager.getStatement(this,csid);
+  if (cs == null) {
+    return Result.newErrorResult(Error.error(ErrorCode.X_07501));
+  }
+  count=0;
+  RowSetNavigator nav=cmd.initialiseNavigator();
+  updateCounts=new int[nav.getSize()];
+  Result generatedResult=null;
+  if (cs.hasGeneratedColumns()) {
+    generatedResult=Result.newDataResult(cs.generatedResultMetaData());
+  }
+  Result error=null;
+  isBatch=true;
+  while (nav.hasNext()) {
+    Object[] pvals=(Object[])nav.getNext();
+    Result in=executeCompiledStatement(cs,pvals);
+    if (in.isUpdateCount()) {
+      if (cs.hasGeneratedColumns()) {
+        Object generatedRow=in.getNavigator().getNext();
+        generatedResult.getNavigator().add(generatedRow);
+      }
+      updateCounts[count++]=in.getUpdateCount();
+    }
+ else     if (in.isData()) {
+      updateCounts[count++]=ResultConstants.SUCCESS_NO_INFO;
+    }
+ else     if (in.isError()) {
+      updateCounts=ArrayUtil.arraySlice(updateCounts,0,count);
+      error=in;
+      break;
+    }
+ else {
+      throw Error.runtimeError(ErrorCode.U_S0500,"Session");
+    }
+  }
+  isBatch=false;
+  sessionData.updateLobUsageForBatch();
+  return Result.newBatchedExecuteResponse(updateCounts,generatedResult,error);
+}

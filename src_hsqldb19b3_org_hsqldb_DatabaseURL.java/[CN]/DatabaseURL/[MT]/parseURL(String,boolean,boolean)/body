@@ -1,0 +1,141 @@
+{
+  String urlImage=url.toLowerCase(Locale.ENGLISH);
+  HsqlProperties props=new HsqlProperties();
+  HsqlProperties extraProps=null;
+  String arguments=null;
+  int pos=0;
+  if (hasPrefix) {
+    if (urlImage.startsWith(S_URL_PREFIX)) {
+      pos=S_URL_PREFIX.length();
+    }
+ else {
+      return props;
+    }
+  }
+  String type=null;
+  int port=0;
+  String database;
+  String path;
+  boolean isNetwork=false;
+  props.setProperty("url",url);
+  int postUrlPos=url.length();
+  int semiPos=url.indexOf(';',pos);
+  if (semiPos > -1) {
+    arguments=urlImage.substring(semiPos + 1,urlImage.length());
+    postUrlPos=semiPos;
+    extraProps=HsqlProperties.delimitedArgPairsToProps(arguments,"=",";",null);
+    props.addProperties(extraProps);
+  }
+  if (postUrlPos == pos + 1 && urlImage.startsWith(S_DOT,pos)) {
+    type=S_DOT;
+  }
+ else   if (urlImage.startsWith(S_MEM,pos)) {
+    type=S_MEM;
+  }
+ else   if (urlImage.startsWith(S_FILE,pos)) {
+    type=S_FILE;
+  }
+ else   if (urlImage.startsWith(S_RES,pos)) {
+    type=S_RES;
+  }
+ else   if (urlImage.startsWith(S_ALIAS,pos)) {
+    type=S_ALIAS;
+  }
+  if (type == null) {
+    type=S_FILE;
+  }
+ else   if (type == S_DOT) {
+    type=S_MEM;
+  }
+ else {
+    pos+=type.length();
+  }
+  props.setProperty("connection_type",type);
+  if (isNetwork) {
+    String pathSeg=null;
+    String hostSeg=null;
+    String portSeg=null;
+    int slashPos=url.indexOf('/',pos);
+    if (slashPos > 0 && slashPos < postUrlPos) {
+      pathSeg=url.substring(slashPos,postUrlPos);
+      postUrlPos=slashPos;
+    }
+    if (postUrlPos <= pos) {
+      return null;
+    }
+    if (url.charAt(pos) == '[') {
+      int endIpv6=url.indexOf(']',pos + 2);
+      if (endIpv6 < 0 || endIpv6 >= postUrlPos) {
+        return null;
+      }
+      hostSeg=urlImage.substring(pos + 1,endIpv6);
+      if (postUrlPos > endIpv6 + 1) {
+        portSeg=url.substring(endIpv6 + 1,postUrlPos);
+      }
+    }
+ else {
+      int colPos=url.indexOf(':',pos + 1);
+      hostSeg=urlImage.substring(pos,(colPos > 0) ? colPos : postUrlPos);
+      if (colPos > -1 && postUrlPos > colPos + 1) {
+        portSeg=url.substring(colPos,postUrlPos);
+      }
+    }
+    if (portSeg != null) {
+      if (portSeg.length() < 2 || portSeg.charAt(0) != ':') {
+        return null;
+      }
+      try {
+        port=Integer.parseInt(portSeg.substring(1));
+      }
+ catch (      NumberFormatException e) {
+        return null;
+      }
+    }
+    if (noPath) {
+      path="";
+      database=pathSeg;
+    }
+ else     if (pathSeg == null) {
+      path="/";
+      database="";
+    }
+ else {
+      int lastSlashPos=pathSeg.lastIndexOf('/');
+      if (lastSlashPos < 1) {
+        path="/";
+        database=pathSeg.substring(1).toLowerCase(Locale.ENGLISH);
+      }
+ else {
+        path=pathSeg.substring(0,lastSlashPos);
+        database=pathSeg.substring(lastSlashPos + 1);
+      }
+    }
+    props.setProperty("port",port);
+    props.setProperty("host",hostSeg);
+    props.setProperty("path",path);
+    if (!noPath && extraProps != null) {
+      String filePath=extraProps.getProperty("filepath");
+      if (filePath != null && database.length() != 0) {
+        database+=";" + filePath;
+      }
+    }
+  }
+ else {
+    if (type == S_MEM || type == S_RES) {
+      database=urlImage.substring(pos,postUrlPos).toLowerCase();
+      if (type == S_RES) {
+        if (database.indexOf('/') != 0) {
+          database='/' + database;
+        }
+      }
+    }
+ else {
+      database=url.substring(pos,postUrlPos);
+    }
+    if (database.length() == 0) {
+      return null;
+    }
+  }
+  props.setProperty("database",database);
+  return props;
+}

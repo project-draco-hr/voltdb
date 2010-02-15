@@ -1,0 +1,155 @@
+{
+  if (m_readOnly) {
+    throw new IllegalStateException("Table is read-only. Make a copy before changing.");
+  }
+  assert(verifyTableInvariants());
+  if (m_colCount == 0) {
+    throw new IllegalStateException("table has no columns defined");
+  }
+  if (values.length != m_colCount) {
+    throw new IllegalArgumentException(values.length + " arguments but table has " + m_colCount+ " columns");
+  }
+  final int pos=m_buffer.position();
+  try {
+    m_buffer.position(pos + 2);
+    int typePos=2 + 2;
+    for (int col=0; col < m_colCount; col++) {
+      Object value=values[col];
+      VoltType columnType=VoltType.get(m_buffer.get(typePos + col));
+      try {
+        if (VoltType.isNullVoltType(value)) {
+switch (columnType) {
+case TINYINT:
+            m_buffer.put(VoltType.NULL_TINYINT);
+          break;
+case SMALLINT:
+        m_buffer.putShort(VoltType.NULL_SMALLINT);
+      break;
+case INTEGER:
+    m_buffer.putInt(VoltType.NULL_INTEGER);
+  break;
+case TIMESTAMP:
+m_buffer.putLong(VoltType.NULL_BIGINT);
+break;
+case BIGINT:
+m_buffer.putLong(VoltType.NULL_BIGINT);
+break;
+case FLOAT:
+m_buffer.putDouble(VoltType.NULL_FLOAT);
+break;
+case STRING:
+m_buffer.putShort(NULL_STRING_INDICATOR);
+break;
+case DECIMAL:
+VoltDecimalHelper.serializeNull(m_buffer);
+break;
+default :
+throw new VoltTypeException("Unsupported type: " + columnType);
+}
+}
+ else {
+switch (columnType) {
+case TINYINT:
+if (value instanceof BigDecimal) throw new ClassCastException();
+final Number n1=(Number)value;
+if (columnType.wouldCastOverflow(n1)) {
+throw new VoltTypeException("Cast of " + n1.doubleValue() + " to "+ columnType.toString()+ " would overflow");
+}
+m_buffer.put(n1.byteValue());
+break;
+case SMALLINT:
+if (value instanceof BigDecimal) throw new ClassCastException();
+final Number n2=(Number)value;
+if (columnType.wouldCastOverflow(n2)) {
+throw new VoltTypeException("Cast to " + columnType.toString() + " would overflow");
+}
+m_buffer.putShort(n2.shortValue());
+break;
+case INTEGER:
+if (value instanceof BigDecimal) throw new ClassCastException();
+final Number n3=(Number)value;
+if (columnType.wouldCastOverflow(n3)) {
+throw new VoltTypeException("Cast to " + columnType.toString() + " would overflow");
+}
+m_buffer.putInt(n3.intValue());
+break;
+case BIGINT:
+if (value instanceof BigDecimal) throw new ClassCastException();
+final Number n4=(Number)value;
+if (columnType.wouldCastOverflow(n4)) {
+throw new VoltTypeException("Cast to " + columnType.toString() + " would overflow");
+}
+m_buffer.putLong(n4.longValue());
+break;
+case FLOAT:
+if (value instanceof BigDecimal) throw new ClassCastException();
+final Number n5=(Number)value;
+if (columnType.wouldCastOverflow(n5)) {
+throw new VoltTypeException("Cast to " + columnType.toString() + " would overflow");
+}
+m_buffer.putDouble(n5.doubleValue());
+break;
+case STRING:
+{
+if (value instanceof byte[]) {
+assert(testForUTF8Encoding((byte[])value));
+writeStringToBuffer((byte[])value,m_buffer);
+}
+ else {
+writeStringToBuffer((String)value,ROWDATA_ENCODING,m_buffer);
+}
+break;
+}
+case TIMESTAMP:
+{
+if (value instanceof TimestampType) {
+m_buffer.putLong(((TimestampType)value).getTime());
+}
+ else if (value instanceof BigDecimal) {
+throw new ClassCastException();
+}
+ else {
+m_buffer.putLong(((Number)value).longValue());
+}
+break;
+}
+case DECIMAL:
+{
+VoltDecimalHelper.serializeBigDecimal((BigDecimal)value,m_buffer);
+break;
+}
+default :
+throw new VoltTypeException("Unsupported type: " + columnType);
+}
+}
+}
+ catch (VoltTypeException vte) {
+m_buffer.position(pos);
+throw vte;
+}
+catch (ClassCastException cce) {
+m_buffer.position(pos);
+throw new VoltTypeException("Value for column " + col + " ("+ getColumnName(col)+ ") is type "+ value.getClass().getSimpleName()+ " when type "+ columnType+ " was expected.");
+}
+}
+m_rowCount++;
+m_buffer.putInt(m_rowStart,m_rowCount);
+final short rowsize=(short)(m_buffer.position() - pos);
+assert(rowsize >= 2);
+m_buffer.putShort(pos,rowsize);
+}
+ catch (BufferOverflowException e) {
+m_buffer.position(pos);
+expandBuffer();
+addRow(values);
+}
+catch (IllegalArgumentException e) {
+if (m_buffer.limit() - m_buffer.position() < 32) {
+m_buffer.position(pos);
+expandBuffer();
+addRow(values);
+}
+ else throw e;
+}
+assert(verifyTableInvariants());
+}

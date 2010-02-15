@@ -1,0 +1,53 @@
+{
+  VoltDB.instance().readBuildInfo();
+  String testDir=BuildDirectoryUtils.getBuildDirectoryPath();
+  String catalogJar=testDir + File.separator + JAR;
+  TPCCProjectBuilder pb=new TPCCProjectBuilder();
+  pb.addDefaultSchema();
+  pb.addDefaultPartitioning();
+  pb.addProcedures(MultiSiteSelect.class,InsertNewOrder.class);
+  pb.compile(catalogJar,2,0);
+  String serializedCatalog=CatalogUtil.loadCatalogFromJar(catalogJar,null);
+  catalog=new Catalog();
+  catalog.execute(serializedCatalog);
+  cluster=catalog.getClusters().get("cluster");
+  CatalogMap<Procedure> procedures=cluster.getDatabases().get("database").getProcedures();
+  Procedure insertProc=procedures.get("InsertNewOrder");
+  assert(insertProc != null);
+  selectProc=procedures.get("MultiSiteSelect");
+  assert(selectProc != null);
+  site1=new MockSite();
+  ee1=new ExecutionEngineJNI(site1,cluster.getRelativeIndex(),1);
+  ee1.loadCatalog(catalog);
+  site2=new MockSite();
+  ee2=new ExecutionEngineJNI(site2,cluster.getRelativeIndex(),2);
+  ee2.loadCatalog(catalog);
+  selectStmt=selectProc.getStatements().get("selectAll");
+  assert(selectStmt != null);
+  int i=0;
+  for (  PlanFragment f : selectStmt.getFragments()) {
+    if (i == 0)     selectTopFrag=f;
+ else     selectBottomFrag=f;
+    i++;
+  }
+  assert(selectTopFrag != null);
+  assert(selectBottomFrag != null);
+  if (selectTopFrag.getHasdependencies() == false) {
+    PlanFragment temp=selectTopFrag;
+    selectTopFrag=selectBottomFrag;
+    selectBottomFrag=temp;
+  }
+  Statement insertStmt=insertProc.getStatements().get("insert");
+  assert(insertStmt != null);
+  PlanFragment insertFrag=null;
+  for (  PlanFragment f : insertStmt.getFragments())   insertFrag=f;
+  ParameterSet params=new ParameterSet();
+  params.m_params=new Object[]{1L,1L,1L};
+  VoltTable[] results=ee2.executeQueryPlanFragmentsAndGetResults(new long[]{CatalogUtil.getUniqueIdForFragment(insertFrag)},1,new ParameterSet[]{params},1,1,0,Long.MAX_VALUE);
+  assert(results.length == 1);
+  assert(results[0].asScalarLong() == 1L);
+  params.m_params=new Object[]{2L,2L,2L};
+  results=ee1.executeQueryPlanFragmentsAndGetResults(new long[]{CatalogUtil.getUniqueIdForFragment(insertFrag)},1,new ParameterSet[]{params},1,2,1,Long.MAX_VALUE);
+  assert(results.length == 1);
+  assert(results[0].asScalarLong() == 1L);
+}

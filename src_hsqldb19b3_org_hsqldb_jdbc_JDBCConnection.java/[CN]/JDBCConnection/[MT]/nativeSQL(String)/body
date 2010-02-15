@@ -1,0 +1,66 @@
+{
+  checkClosed();
+  if (sql == null || sql.length() == 0 || sql.indexOf('{') == -1) {
+    return sql;
+  }
+  int state=0;
+  int len=sql.length();
+  int nest=0;
+  StringBuffer sb=new StringBuffer(sql.length());
+  String msg;
+  final int outside_all=0;
+  final int outside_escape_inside_single_quotes=1;
+  final int outside_escape_inside_double_quotes=2;
+  final int inside_escape=3;
+  final int inside_escape_inside_single_quotes=4;
+  final int inside_escape_inside_double_quotes=5;
+  sb.append(sql);
+  for (int i=0; i < len; i++) {
+    char c=sb.charAt(i);
+switch (state) {
+case outside_all:
+      if (c == '\'') {
+        state=outside_escape_inside_single_quotes;
+      }
+ else       if (c == '"') {
+        state=outside_escape_inside_double_quotes;
+      }
+ else       if (c == '{') {
+        i=onStartEscapeSequence(sql,sb,i);
+        nest++;
+        state=inside_escape;
+      }
+    break;
+case outside_escape_inside_single_quotes:
+case inside_escape_inside_single_quotes:
+  if (c == '\'') {
+    state-=1;
+  }
+break;
+case outside_escape_inside_double_quotes:
+case inside_escape_inside_double_quotes:
+if (c == '"') {
+state-=2;
+}
+break;
+case inside_escape:
+if (c == '\'') {
+state=inside_escape_inside_single_quotes;
+}
+ else if (c == '"') {
+state=inside_escape_inside_double_quotes;
+}
+ else if (c == '}') {
+sb.setCharAt(i,' ');
+nest--;
+state=(nest == 0) ? outside_all : inside_escape;
+}
+ else if (c == '{') {
+i=onStartEscapeSequence(sql,sb,i);
+nest++;
+state=inside_escape;
+}
+}
+}
+return sb.toString();
+}

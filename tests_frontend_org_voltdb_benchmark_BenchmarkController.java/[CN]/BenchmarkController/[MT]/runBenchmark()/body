@@ -1,0 +1,34 @@
+{
+  m_currentResults=new BenchmarkResults(m_config.interval,m_config.duration,m_clients.size());
+  m_statusThread=new ClientStatusThread();
+  m_pollCount=m_config.duration / m_config.interval;
+  m_statusThread.start();
+  long nextIntervalTime=m_config.interval;
+  while (m_clientsNotReady.get() > 0)   Thread.yield();
+  for (  String clientName : m_clients)   m_clientPSM.writeToProcess(clientName,"START\n");
+  long startTime=System.currentTimeMillis();
+  nextIntervalTime+=startTime;
+  long nowTime=startTime;
+  while (m_pollIndex.get() < m_pollCount) {
+    if (nowTime >= nextIntervalTime) {
+      m_pollIndex.incrementAndGet();
+      for (      String clientName : m_clients)       m_clientPSM.writeToProcess(clientName,"POLL\n");
+      nextIntervalTime=m_config.interval * (m_pollIndex.get() + 1) + startTime;
+    }
+    try {
+      Thread.sleep(100);
+    }
+ catch (    InterruptedException e) {
+      e.printStackTrace();
+    }
+    nowTime=System.currentTimeMillis();
+  }
+  for (  String clientName : m_clients)   m_clientPSM.writeToProcess(clientName,"STOP\n");
+  for (  String clientName : m_clients)   m_clientPSM.joinProcess(clientName);
+  try {
+    m_statusThread.join(1000);
+  }
+ catch (  InterruptedException e) {
+    benchmarkLog.warn(e);
+  }
+}

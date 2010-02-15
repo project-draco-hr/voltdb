@@ -1,0 +1,36 @@
+{
+  NodeConnection cxn=null;
+  boolean backpressure=true;
+synchronized (this) {
+    final int totalConnections=m_connections.size();
+    if (totalConnections == 0) {
+      throw new NoConnectionsException("No connections.");
+    }
+    for (int i=0; i < totalConnections; ++i) {
+      cxn=m_connections.get(Math.abs(++m_nextConnection % totalConnections));
+      if (!cxn.hadBackPressure() || ignoreBackpressure) {
+        backpressure=false;
+        break;
+      }
+    }
+    if (backpressure) {
+      cxn=null;
+      for (      ClientStatusListener s : m_listeners) {
+        s.backpressure(true);
+      }
+    }
+  }
+  if (cxn != null) {
+    final FastSerializer fs=new FastSerializer(m_pool,expectedSerializedSize);
+    BBContainer c=null;
+    try {
+      c=fs.writeObjectForMessaging(invocation);
+    }
+ catch (    IOException e) {
+      fs.getBBContainer().discard();
+      throw new RuntimeException(e);
+    }
+    cxn.createWork(invocation.getHandle(),c,cb);
+  }
+  return !backpressure;
+}

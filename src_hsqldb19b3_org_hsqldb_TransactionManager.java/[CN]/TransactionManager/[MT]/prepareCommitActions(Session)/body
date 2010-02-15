@@ -1,0 +1,30 @@
+{
+  Object[] list=session.rowActionList.getArray();
+  int limit=session.rowActionList.size();
+  if (session.abortTransaction) {
+    return false;
+  }
+  try {
+    writeLock.lock();
+    for (int i=0; i < limit; i++) {
+      RowAction rowact=(RowAction)list[i];
+      if (!rowact.canCommit(session,session.tempSet)) {
+        return false;
+      }
+    }
+    session.actionTimestamp=nextChangeTimestamp();
+    for (int i=0; i < limit; i++) {
+      RowAction action=(RowAction)list[i];
+      action.prepareCommit(session);
+    }
+    for (int i=0; i < session.tempSet.size(); i++) {
+      Session current=(Session)session.tempSet.get(i);
+      current.abortTransaction=true;
+    }
+    return true;
+  }
+  finally {
+    writeLock.unlock();
+    session.tempSet.clear();
+  }
+}

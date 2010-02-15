@@ -1,0 +1,51 @@
+{
+  int num_partitioned_items_per_chunk=120;
+  int num_partitioned_chunks=10;
+  Client client=getClient();
+  loadLargePartitionedTable(client,"PARTITION_TESTER",num_partitioned_items_per_chunk,num_partitioned_chunks);
+  VoltTable change_table=new VoltTable(new ColumnInfo("ID",VoltType.INTEGER),new ColumnInfo("BYEBYE",VoltType.INTEGER));
+  for (int i=0; i < 10; i++) {
+    Object[] row=new Object[]{i,i};
+    change_table.addRow(row);
+  }
+  loadTable(client,"CHANGE_COLUMNS",change_table);
+  VoltTable[] results=null;
+  results=saveTables(client);
+  m_config.shutDown();
+  CatalogChangeSingleProcessServer config=(CatalogChangeSingleProcessServer)m_config;
+  SaveRestoreTestProjectBuilder project=new SaveRestoreTestProjectBuilder();
+  project.addDefaultProcedures();
+  project.addDefaultPartitioning();
+  project.addSchema(SaveRestoreTestProjectBuilder.class.getResource("saverestore-altered-ddl.sql"));
+  config.recompile(project);
+  m_config.startUp();
+  client=getClient();
+  try {
+    results=client.callProcedure("@SnapshotRestore",TMPDIR,TESTNONCE);
+  }
+ catch (  Exception ex) {
+    ex.printStackTrace();
+    fail("SnapshotRestore exception: " + ex.getMessage());
+  }
+  results=client.callProcedure("@Statistics","table");
+  boolean found_gets_created=false;
+  while (results[0].advanceRow()) {
+    if (results[0].getString(2).equals("GETS_REMOVED")) {
+      fail("Table GETS_REMOVED got reloaded");
+    }
+    if (results[0].getString(2).equals("GETS_CREATED")) {
+      found_gets_created=true;
+    }
+  }
+  VoltTable[] change_results=client.callProcedure("SaveRestoreSelect","CHANGE_COLUMNS");
+  assertEquals(3,change_results[0].getColumnCount());
+  for (int i=0; i < 10; i++) {
+    VoltTableRow row=change_results[0].fetchRow(i);
+    assertEquals(i,row.getLong("ID"));
+    assertEquals(1234,row.getLong("HASDEFAULT"));
+    row.getLong("HASNULL");
+    assertTrue(row.wasNull());
+  }
+  assertTrue(found_gets_created);
+  config.revertCompile();
+}

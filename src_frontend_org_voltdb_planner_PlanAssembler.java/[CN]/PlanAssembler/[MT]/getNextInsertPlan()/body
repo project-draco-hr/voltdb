@@ -1,0 +1,39 @@
+{
+  if (plansGenerated > 0)   return null;
+  assert(m_parsedInsert.tableList.size() == 1);
+  Table targetTable=m_parsedInsert.tableList.get(0);
+  if (m_singlePartition && (targetTable.getIsreplicated())) {
+    String msg="Trying to insert into replicated table '" + targetTable.getTypeName() + "'";
+    msg+=" in a single-partition procedure.";
+    throw new PlanningErrorException(msg);
+  }
+  InsertPlanNode insertNode=new InsertPlanNode(m_context,getNextPlanNodeId());
+  insertNode.setTargetTableName(targetTable.getTypeName());
+  insertNode.setMultiPartition(m_singlePartition == false);
+  MaterializePlanNode materializeNode=new MaterializePlanNode(m_context,getNextPlanNodeId());
+  List<Column> columns=CatalogUtil.getSortedCatalogItems(targetTable.getColumns(),"index");
+  for (  Column column : columns) {
+    AbstractExpression expr=m_parsedInsert.columns.get(column);
+    if (expr == null) {
+      throw new PlanningErrorException("INSERT statements which only " + "insert a subset of the columns " + "are currently unsupported.");
+    }
+    expr.setValueSize(column.getSize());
+    expr.setValueType(VoltType.get((byte)column.getType()));
+    PlanColumn colInfo=m_context.getPlanColumn(expr,column.getTypeName());
+    materializeNode.appendOutputColumn(colInfo);
+  }
+  insertNode.addAndLinkChild(materializeNode);
+  AbstractPlanNode rootNode=insertNode;
+  if (m_singlePartition == false) {
+    rootNode=insertCountInDMLPlan(rootNode);
+    SendPlanNode sendNode=new SendPlanNode(m_context,getNextPlanNodeId());
+    sendNode.isMultiPartition=true;
+    sendNode.addAndLinkChild(rootNode);
+    ReceivePlanNode recvNode=new ReceivePlanNode(m_context,getNextPlanNodeId());
+    recvNode.addAndLinkChild(sendNode);
+    rootNode=recvNode;
+    recvNode.updateOutputColumns(m_catalogDb);
+    rootNode=addSumAndSendToDMLNode(rootNode);
+  }
+  return rootNode;
+}

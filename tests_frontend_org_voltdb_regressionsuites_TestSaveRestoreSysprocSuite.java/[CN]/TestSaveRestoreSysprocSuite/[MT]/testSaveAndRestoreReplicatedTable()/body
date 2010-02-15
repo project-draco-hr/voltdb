@@ -1,0 +1,28 @@
+{
+  int num_replicated_items_per_chunk=100;
+  int num_replicated_chunks=10;
+  Client client=getClient();
+  loadLargeReplicatedTable(client,"REPLICATED_TESTER",num_replicated_items_per_chunk,num_replicated_chunks);
+  VoltTable[] results=null;
+  results=saveTables(client);
+  m_config.shutDown();
+  m_config.startUp();
+  client=getClient();
+  try {
+    client.callProcedure("@SnapshotRestore",TMPDIR,TESTNONCE);
+  }
+ catch (  Exception ex) {
+    ex.printStackTrace();
+    fail("SnapshotRestore exception: " + ex.getMessage());
+  }
+  checkTable(client,"REPLICATED_TESTER","RT_ID",num_replicated_items_per_chunk * num_replicated_chunks);
+  results=client.callProcedure("@Statistics","table");
+  int foundItem=0;
+  while (results[0].advanceRow()) {
+    if (results[0].getString(2).equals("REPLICATED_TESTER")) {
+      ++foundItem;
+      assertEquals((num_replicated_chunks * num_replicated_items_per_chunk),results[0].getLong(4));
+    }
+  }
+  assertEquals(3,foundItem);
+}

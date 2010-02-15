@@ -1,0 +1,49 @@
+{
+  String host=args.get("elhost");
+  if (host == null)   return;
+  System.out.println("Verifying results at Vertica site:");
+  System.out.println("Waiting 10 seconds for final \"tick\"s...");
+  System.out.flush();
+  try {
+    Thread.sleep(6000);
+  }
+ catch (  InterruptedException e1) {
+    e1.printStackTrace();
+  }
+  Connection vdbConn;
+  Statement stmt;
+  String jdbcConnectionString="jdbc:vertica://" + host + ":"+ String.valueOf(verticaPort)+ "/"+ dbName;
+  try {
+    Class.forName("com.vertica.Driver");
+    vdbConn=DriverManager.getConnection(jdbcConnectionString,"dbadmin","");
+    stmt=vdbConn.createStatement();
+  }
+ catch (  Exception e) {
+    return;
+  }
+  boolean success=true;
+  for (  Entry<Integer,HashMap<Character,long[]>> entry : expectedValues.entrySet()) {
+    int clientNum=entry.getKey();
+    HashMap<Character,long[]> values=entry.getValue();
+    long[] valuesA=sumTableForClient(stmt,clientNum,'A');
+    long[] valuesB=sumTableForClient(stmt,clientNum,'B');
+    long[] valuesC=sumTableForClient(stmt,clientNum,'C');
+    long[] valuesD=sumTableForClient(stmt,clientNum,'D');
+    long[] expectedValuesA=values.get('A');
+    long[] expectedValuesB=values.get('B');
+    long[] expectedValuesC=values.get('C');
+    long[] expectedValuesD=values.get('D');
+    success&=checkValues('A',clientNum,valuesA,expectedValuesA);
+    success&=checkValues('B',clientNum,valuesB,expectedValuesB);
+    success&=checkValues('C',clientNum,valuesC,expectedValuesC);
+    success&=checkValues('D',clientNum,valuesD,expectedValuesD);
+  }
+  if (success)   System.out.println("*** Verified ***");
+  try {
+    stmt.close();
+    vdbConn.close();
+  }
+ catch (  SQLException e) {
+    e.printStackTrace();
+  }
+}

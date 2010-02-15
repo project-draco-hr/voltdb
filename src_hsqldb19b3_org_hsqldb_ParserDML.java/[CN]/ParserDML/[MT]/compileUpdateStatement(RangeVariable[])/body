@@ -1,0 +1,54 @@
+{
+  read();
+  Expression[] updateExpressions;
+  int[] columnMap;
+  boolean[] columnCheckList;
+  OrderedHashSet colNames=new OrderedHashSet();
+  HsqlArrayList exprList=new HsqlArrayList();
+  RangeVariable[] rangeVariables={readSimpleRangeVariable(StatementTypes.UPDATE_WHERE)};
+  Table table=rangeVariables[0].rangeTable;
+  Table baseTable=table.getBaseTable();
+  readThis(Tokens.SET);
+  readSetClauseList(rangeVariables,colNames,exprList);
+  columnMap=table.getColumnIndexes(colNames);
+  columnCheckList=table.getColumnCheckList(columnMap);
+  updateExpressions=new Expression[exprList.size()];
+  exprList.toArray(updateExpressions);
+  Expression condition=null;
+  if (token.tokenType == Tokens.WHERE) {
+    read();
+    condition=XreadBooleanValueExpression();
+    HsqlList unresolved=condition.resolveColumnReferences(outerRanges,null);
+    unresolved=Expression.resolveColumnSet(rangeVariables,unresolved,null);
+    ExpressionColumn.checkColumnsResolved(unresolved);
+    condition.resolveTypes(session,null);
+    if (condition.isParam()) {
+      condition.dataType=Type.SQL_BOOLEAN;
+    }
+ else     if (condition.getDataType() != Type.SQL_BOOLEAN) {
+      throw Error.error(ErrorCode.X_42568);
+    }
+  }
+  resolveUpdateExpressions(table,rangeVariables,columnMap,updateExpressions,outerRanges);
+  if (table != baseTable) {
+    QuerySpecification select=((TableDerived)table).getQueryExpression().getMainSelect();
+    if (condition != null) {
+      condition=condition.replaceColumnReferences(rangeVariables[0],select.exprColumns);
+    }
+    rangeVariables[0]=new RangeVariable(select.rangeVariables[0]);
+    condition=ExpressionLogical.andExpressions(select.queryCondition,condition);
+  }
+  if (condition != null) {
+    RangeVariableResolver resolver=new RangeVariableResolver(rangeVariables,condition,compileContext);
+    resolver.processConditions();
+    rangeVariables=resolver.rangeVariables;
+  }
+  if (table != baseTable) {
+    int[] baseColumnMap=table.getBaseTableColumnMap();
+    int[] newColumnMap=new int[columnMap.length];
+    ArrayUtil.projectRow(baseColumnMap,columnMap,newColumnMap);
+    columnMap=newColumnMap;
+  }
+  StatementDMQL cs=new StatementDML(session,table,rangeVariables,columnMap,updateExpressions,columnCheckList,compileContext);
+  return cs;
+}

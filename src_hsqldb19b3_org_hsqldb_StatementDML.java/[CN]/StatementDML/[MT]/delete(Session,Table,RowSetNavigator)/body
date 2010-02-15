@@ -1,0 +1,52 @@
+{
+  if (table.fkMainConstraints.length == 0) {
+    deleteRows(session,table,oldRows);
+    oldRows.beforeFirst();
+    if (table.hasTrigger(Trigger.DELETE_AFTER)) {
+      table.fireAfterTriggers(session,Trigger.DELETE_AFTER,oldRows);
+    }
+    return oldRows.getSize();
+  }
+  HashSet path=session.sessionContext.getConstraintPath();
+  HashMappedList tableUpdateList=session.sessionContext.getTableUpdateList();
+  if (session.database.isReferentialIntegrity()) {
+    oldRows.beforeFirst();
+    while (oldRows.hasNext()) {
+      oldRows.next();
+      Row row=oldRows.getCurrentRow();
+      path.clear();
+      checkCascadeDelete(session,table,tableUpdateList,row,false,path);
+    }
+  }
+  if (session.database.isReferentialIntegrity()) {
+    oldRows.beforeFirst();
+    while (oldRows.hasNext()) {
+      oldRows.next();
+      Row row=oldRows.getCurrentRow();
+      path.clear();
+      checkCascadeDelete(session,table,tableUpdateList,row,true,path);
+    }
+  }
+  oldRows.beforeFirst();
+  while (oldRows.hasNext()) {
+    oldRows.next();
+    Row row=oldRows.getCurrentRow();
+    if (!row.isDeleted(session)) {
+      table.deleteNoRefCheck(session,row);
+    }
+  }
+  for (int i=0; i < tableUpdateList.size(); i++) {
+    Table targetTable=(Table)tableUpdateList.getKey(i);
+    HashMappedList updateList=(HashMappedList)tableUpdateList.get(i);
+    if (updateList.size() > 0) {
+      targetTable.updateRowSet(session,updateList,null,true);
+      updateList.clear();
+    }
+  }
+  oldRows.beforeFirst();
+  if (table.hasTrigger(Trigger.DELETE_AFTER)) {
+    table.fireAfterTriggers(session,Trigger.DELETE_AFTER,oldRows);
+  }
+  path.clear();
+  return oldRows.getSize();
+}

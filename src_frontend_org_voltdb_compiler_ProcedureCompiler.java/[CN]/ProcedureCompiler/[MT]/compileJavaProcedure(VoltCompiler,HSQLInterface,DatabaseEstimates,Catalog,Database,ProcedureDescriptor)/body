@@ -1,0 +1,132 @@
+{
+  final String className=procedureDescriptor.m_className;
+  Class<?> procClass=null;
+  try {
+    procClass=Class.forName(className);
+  }
+ catch (  ClassNotFoundException e) {
+    String msg="Cannot load class for procedure: " + className;
+    throw compiler.new VoltCompilerException(msg);
+  }
+  String[] parts=className.split("\\.");
+  String shortName=parts[parts.length - 1];
+  final Procedure procedure=db.getProcedures().add(shortName);
+  for (  String userName : procedureDescriptor.m_authUsers) {
+    final User user=db.getUsers().get(userName);
+    if (user == null) {
+      throw compiler.new VoltCompilerException("Procedure " + className + " has a user "+ userName+ " that does not exist");
+    }
+    final UserRef userRef=procedure.getAuthusers().add(userName);
+    userRef.setUser(user);
+  }
+  for (  String groupName : procedureDescriptor.m_authGroups) {
+    final Group group=db.getGroups().get(groupName);
+    if (group == null) {
+      throw compiler.new VoltCompilerException("Procedure " + className + " has a group "+ groupName+ " that does not exist");
+    }
+    final GroupRef groupRef=procedure.getAuthgroups().add(groupName);
+    groupRef.setGroup(group);
+  }
+  procedure.setClassname(className);
+  procedure.setSystemproc(false);
+  procedure.setHasjava(true);
+  ProcInfoData info=compiler.getProcInfoOverride(shortName);
+  if (info == null) {
+    info=new ProcInfoData();
+    ProcInfo annotationInfo=procClass.getAnnotation(ProcInfo.class);
+    if (annotationInfo != null) {
+      info.partitionInfo=annotationInfo.partitionInfo();
+      info.singlePartition=annotationInfo.singlePartition();
+    }
+  }
+  assert(info != null);
+  if (info.singlePartition == false) {
+    if ((info.partitionInfo != null) && (info.partitionInfo.length() > 0)) {
+      String msg="Procedure: " + shortName + " is annotated as multi-partition";
+      msg+=" but partitionInfo has non-empty value: \"" + info.partitionInfo + "\"";
+      throw compiler.new VoltCompilerException(msg);
+    }
+  }
+  VoltProcedure procInstance=null;
+  try {
+    procInstance=(VoltProcedure)procClass.newInstance();
+  }
+ catch (  InstantiationException e1) {
+    e1.printStackTrace();
+  }
+catch (  IllegalAccessException e1) {
+    e1.printStackTrace();
+  }
+  boolean procHasWriteStmts=false;
+  Field[] fields=procClass.getFields();
+  for (  Field f : fields) {
+    if (f.getType() == SQLStmt.class) {
+      SQLStmt stmt=null;
+      try {
+        stmt=(SQLStmt)f.get(procInstance);
+      }
+ catch (      IllegalArgumentException e) {
+        e.printStackTrace();
+      }
+catch (      IllegalAccessException e) {
+        e.printStackTrace();
+      }
+      Statement catalogStmt=procedure.getStatements().add(f.getName());
+      StatementCompiler.compile(compiler,hsql,catalog,db,estimates,catalogStmt,stmt.getText(),info.singlePartition);
+      if (catalogStmt.getReadonly() == false)       procHasWriteStmts=true;
+    }
+  }
+  procedure.setReadonly(procHasWriteStmts == false);
+  Method procMethod=null;
+  Method[] methods=procClass.getMethods();
+  for (  final Method m : methods) {
+    String name=m.getName();
+    if (name.equals("run")) {
+      if (procMethod != null) {
+        String msg="Procedure: " + shortName + " has multiple run(...) methods. ";
+        msg+="Only a single run(...) method is supported.";
+        throw compiler.new VoltCompilerException(msg);
+      }
+      procMethod=m;
+    }
+  }
+  if (procMethod == null) {
+    String msg="Procedure: " + shortName + " has no run(...) method.";
+    throw compiler.new VoltCompilerException(msg);
+  }
+  if ((procMethod.getReturnType() != VoltTable[].class) && (procMethod.getReturnType() != VoltTable.class) && (procMethod.getReturnType() != long.class)&& (procMethod.getReturnType() != Long.class)) {
+    String msg="Procedure: " + shortName + " has run(...) method that doesn't return long, Long, VoltTable or VoltTable[].";
+    throw compiler.new VoltCompilerException(msg);
+  }
+  CatalogMap<ProcParameter> params=procedure.getParameters();
+  Class<?>[] paramTypes=procMethod.getParameterTypes();
+  for (int i=0; i < paramTypes.length; i++) {
+    Class<?> cls=paramTypes[i];
+    ProcParameter param=params.add(String.valueOf(i));
+    param.setIndex(i);
+    if (cls.isArray()) {
+      param.setIsarray(true);
+      cls=cls.getComponentType();
+    }
+ else     param.setIsarray(false);
+    VoltType type;
+    try {
+      type=VoltType.typeFromClass(cls);
+    }
+ catch (    RuntimeException e) {
+      String msg="Procedure: " + shortName + " has a parameter with invalid type: ";
+      msg+=cls.getSimpleName();
+      throw compiler.new VoltCompilerException(msg);
+    }
+    param.setType(type.getValue());
+  }
+  procedure.setSinglepartition(info.singlePartition);
+  if (info.singlePartition) {
+    parsePartitionInfo(compiler,db,procedure,info.partitionInfo);
+    if (procedure.getPartitionparameter() >= paramTypes.length) {
+      String msg="PartitionInfo parameter not a valid parameter for procedure: " + procedure.getClassname();
+      throw compiler.new VoltCompilerException(msg);
+    }
+  }
+  VoltCompiler.addClassToJar(procClass,compiler);
+}

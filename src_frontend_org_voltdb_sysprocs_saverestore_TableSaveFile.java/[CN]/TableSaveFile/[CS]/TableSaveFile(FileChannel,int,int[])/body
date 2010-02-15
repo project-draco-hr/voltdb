@@ -1,0 +1,67 @@
+{
+  if (relevantPartitionIds == null) {
+    m_relevantPartitionIds=null;
+  }
+ else {
+    m_relevantPartitionIds=new HashSet<Integer>();
+    for (    Integer i : relevantPartitionIds) {
+      m_relevantPartitionIds.add(i);
+    }
+  }
+  m_chunkReads=new Semaphore(readAheadChunks);
+  m_saveFile=dataIn;
+  final ByteBuffer lengthBuffer=ByteBuffer.allocate(4);
+  while (lengthBuffer.hasRemaining()) {
+    final int read=m_saveFile.read(lengthBuffer);
+    if (read == -1) {
+      throw new EOFException();
+    }
+  }
+  lengthBuffer.flip();
+  int length=lengthBuffer.getInt();
+  final ByteBuffer saveRestoreHeader=ByteBuffer.allocate(length);
+  while (saveRestoreHeader.hasRemaining()) {
+    final int read=m_saveFile.read(saveRestoreHeader);
+    if (read == -1 || read < length) {
+      throw new EOFException();
+    }
+  }
+  saveRestoreHeader.flip();
+  FastDeserializer fd=new FastDeserializer(saveRestoreHeader);
+  m_completed=fd.readByte() == 1 ? true : false;
+  for (int ii=0; ii < 4; ii++) {
+    m_versionNum[ii]=fd.readInt();
+  }
+  m_createTime=fd.readLong();
+  m_hostId=fd.readInt();
+  m_clusterName=fd.readString();
+  m_databaseName=fd.readString();
+  m_tableName=fd.readString();
+  m_isReplicated=fd.readBoolean();
+  if (!m_isReplicated) {
+    m_partitionIds=(int[])fd.readArray(int.class);
+    m_totalPartitions=fd.readInt();
+  }
+ else {
+    m_partitionIds=new int[]{0};
+    m_totalPartitions=1;
+  }
+  lengthBuffer.clear();
+  lengthBuffer.limit(2);
+{
+    final int read=m_saveFile.read(lengthBuffer);
+    if (read == -1) {
+      throw new EOFException();
+    }
+  }
+  lengthBuffer.flip();
+  length=lengthBuffer.getShort();
+  m_tableHeader=ByteBuffer.allocate(length);
+  m_tableHeader.putShort((short)length);
+  while (m_tableHeader.hasRemaining()) {
+    final int read=m_saveFile.read(m_tableHeader);
+    if (read == -1) {
+      throw new EOFException();
+    }
+  }
+}

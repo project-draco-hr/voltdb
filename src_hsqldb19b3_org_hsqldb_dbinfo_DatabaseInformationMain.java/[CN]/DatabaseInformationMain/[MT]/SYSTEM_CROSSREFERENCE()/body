@@ -1,0 +1,127 @@
+{
+  Table t=sysTables[SYSTEM_CROSSREFERENCE];
+  if (t == null) {
+    t=createBlankTable(sysTableHsqlNames[SYSTEM_CROSSREFERENCE]);
+    addColumn(t,"PKTABLE_CAT",SQL_IDENTIFIER);
+    addColumn(t,"PKTABLE_SCHEM",SQL_IDENTIFIER);
+    addColumn(t,"PKTABLE_NAME",SQL_IDENTIFIER);
+    addColumn(t,"PKCOLUMN_NAME",SQL_IDENTIFIER);
+    addColumn(t,"FKTABLE_CAT",SQL_IDENTIFIER);
+    addColumn(t,"FKTABLE_SCHEM",SQL_IDENTIFIER);
+    addColumn(t,"FKTABLE_NAME",SQL_IDENTIFIER);
+    addColumn(t,"FKCOLUMN_NAME",SQL_IDENTIFIER);
+    addColumn(t,"KEY_SEQ",Type.SQL_SMALLINT);
+    addColumn(t,"UPDATE_RULE",Type.SQL_SMALLINT);
+    addColumn(t,"DELETE_RULE",Type.SQL_SMALLINT);
+    addColumn(t,"FK_NAME",SQL_IDENTIFIER);
+    addColumn(t,"PK_NAME",SQL_IDENTIFIER);
+    addColumn(t,"DEFERRABILITY",Type.SQL_SMALLINT);
+    HsqlName name=HsqlNameManager.newInfoSchemaObjectName(sysTableHsqlNames[SYSTEM_CROSSREFERENCE].name,false,SchemaObject.INDEX);
+    t.createPrimaryKey(name,new int[]{4,5,6,8,11},false);
+    return t;
+  }
+  PersistentStore store=database.persistentStoreCollection.getStore(t);
+  String pkTableCatalog;
+  String pkTableSchema;
+  String pkTableName;
+  String pkColumnName;
+  String fkTableCatalog;
+  String fkTableSchema;
+  String fkTableName;
+  String fkColumnName;
+  Integer keySequence;
+  Integer updateRule;
+  Integer deleteRule;
+  String fkName;
+  String pkName;
+  Integer deferrability;
+  Iterator tables;
+  Table table;
+  Table fkTable;
+  Table pkTable;
+  int columnCount;
+  int[] mainCols;
+  int[] refCols;
+  Constraint[] constraints;
+  Constraint constraint;
+  int constraintCount;
+  HsqlArrayList fkConstraintsList;
+  Object[] row;
+  DITableInfo pkInfo;
+  DITableInfo fkInfo;
+  final int ipk_table_cat=0;
+  final int ipk_table_schem=1;
+  final int ipk_table_name=2;
+  final int ipk_column_name=3;
+  final int ifk_table_cat=4;
+  final int ifk_table_schem=5;
+  final int ifk_table_name=6;
+  final int ifk_column_name=7;
+  final int ikey_seq=8;
+  final int iupdate_rule=9;
+  final int idelete_rule=10;
+  final int ifk_name=11;
+  final int ipk_name=12;
+  final int ideferrability=13;
+  tables=database.schemaManager.databaseObjectIterator(SchemaObject.TABLE);
+  pkInfo=new DITableInfo();
+  fkInfo=new DITableInfo();
+  fkConstraintsList=new HsqlArrayList();
+  while (tables.hasNext()) {
+    table=(Table)tables.next();
+    if (table.isView() || !isAccessibleTable(table)) {
+      continue;
+    }
+    constraints=table.getConstraints();
+    constraintCount=constraints.length;
+    for (int i=0; i < constraintCount; i++) {
+      constraint=(Constraint)constraints[i];
+      if (constraint.getConstraintType() == Constraint.FOREIGN_KEY && isAccessibleTable(constraint.getRef())) {
+        fkConstraintsList.add(constraint);
+      }
+    }
+  }
+  for (int i=0; i < fkConstraintsList.size(); i++) {
+    constraint=(Constraint)fkConstraintsList.get(i);
+    pkTable=constraint.getMain();
+    pkInfo.setTable(pkTable);
+    pkTableName=pkInfo.getName();
+    fkTable=constraint.getRef();
+    fkInfo.setTable(fkTable);
+    fkTableName=fkInfo.getName();
+    pkTableCatalog=pkTable.getCatalogName().name;
+    pkTableSchema=pkTable.getSchemaName().name;
+    fkTableCatalog=fkTable.getCatalogName().name;
+    fkTableSchema=fkTable.getSchemaName().name;
+    mainCols=constraint.getMainColumns();
+    refCols=constraint.getRefColumns();
+    columnCount=refCols.length;
+    fkName=constraint.getRefName().name;
+    pkName=constraint.getMainName().name;
+    deferrability=ValuePool.getInt(constraint.getDeferability());
+    deleteRule=ValuePool.getInt(constraint.getDeleteAction());
+    updateRule=ValuePool.getInt(constraint.getUpdateAction());
+    for (int j=0; j < columnCount; j++) {
+      keySequence=ValuePool.getInt(j + 1);
+      pkColumnName=pkInfo.getColName(mainCols[j]);
+      fkColumnName=fkInfo.getColName(refCols[j]);
+      row=t.getEmptyRowData();
+      row[ipk_table_cat]=pkTableCatalog;
+      row[ipk_table_schem]=pkTableSchema;
+      row[ipk_table_name]=pkTableName;
+      row[ipk_column_name]=pkColumnName;
+      row[ifk_table_cat]=fkTableCatalog;
+      row[ifk_table_schem]=fkTableSchema;
+      row[ifk_table_name]=fkTableName;
+      row[ifk_column_name]=fkColumnName;
+      row[ikey_seq]=keySequence;
+      row[iupdate_rule]=updateRule;
+      row[idelete_rule]=deleteRule;
+      row[ifk_name]=fkName;
+      row[ipk_name]=pkName;
+      row[ideferrability]=deferrability;
+      t.insertSys(store,row);
+    }
+  }
+  return t;
+}

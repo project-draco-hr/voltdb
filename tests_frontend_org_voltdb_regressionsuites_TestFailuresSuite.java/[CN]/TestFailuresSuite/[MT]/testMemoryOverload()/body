@@ -1,0 +1,44 @@
+{
+  if (isHSQL())   return;
+  final int STRLEN=30000;
+  int totalBytes=0;
+  int expectedMaxSuccessBytes=10000000;
+  int expectedRows=0;
+  System.out.println("STARTING testMemoryOverload");
+  Client client=getClient();
+  String longStringPart="volt!";
+  StringBuilder sb=new StringBuilder();
+  while (sb.length() < STRLEN)   sb.append(longStringPart);
+  String longString=sb.toString();
+  assertEquals(STRLEN,longString.length());
+  VoltTable[] results=null;
+  while (totalBytes < expectedMaxSuccessBytes) {
+    results=client.callProcedure("InsertBigString",expectedRows++,longString);
+    assertEquals(1,results.length);
+    assertEquals(1,results[0].asScalarLong());
+    totalBytes+=STRLEN;
+  }
+  results=client.callProcedure("WorkWithBigString",expectedRows++,longString);
+  assertEquals(1,results.length);
+  assertEquals(expectedRows,results[0].getRowCount());
+  totalBytes+=STRLEN;
+  while (totalBytes < (expectedMaxSuccessBytes + 1024 * 1024)) {
+    results=client.callProcedure("InsertBigString",expectedRows++,longString);
+    assertEquals(1,results.length);
+    assertEquals(1,results[0].asScalarLong());
+    totalBytes+=STRLEN;
+  }
+  try {
+    results=client.callProcedure("WorkWithBigString",expectedRows++,longString);
+    fail();
+  }
+ catch (  ProcCallException e) {
+    assertTrue(totalBytes > expectedMaxSuccessBytes);
+    return;
+  }
+catch (  IOException e) {
+    fail(e.toString());
+    return;
+  }
+  fail();
+}

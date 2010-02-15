@@ -1,0 +1,62 @@
+{
+  Object[] list=session.rowActionList.getArray();
+  int limit=session.rowActionList.size();
+  boolean canComplete=true;
+  writeLock.lock();
+  try {
+    for (int i=session.actionIndex; i < limit; i++) {
+      RowAction rowact=(RowAction)list[i];
+      if (rowact.complete(session,session.tempSet)) {
+        continue;
+      }
+      canComplete=false;
+      if (session.isolationMode == SessionInterface.TX_REPEATABLE_READ || session.isolationMode == SessionInterface.TX_SERIALIZABLE) {
+        session.abortTransaction=true;
+        break;
+      }
+    }
+    for (int i=session.actionIndex; canComplete && i < limit; i++) {
+      RowAction action=(RowAction)list[i];
+      if (!action.table.isLogged) {
+        continue;
+      }
+      Row row=action.memoryRow;
+      if (row == null) {
+        PersistentStore store=session.sessionData.getRowStore(action.table);
+        row=(Row)store.get(action.getPos(),false);
+      }
+      Object[] data=row.getData();
+      try {
+        int actionType=action.getActionType(session.actionTimestamp);
+        if (actionType == RowActionBase.ACTION_INSERT) {
+          database.logger.writeInsertStatement(session,action.table,data);
+        }
+ else         if (actionType == RowActionBase.ACTION_DELETE) {
+          database.logger.writeDeleteStatement(session,action.table,data);
+        }
+ else         if (actionType == RowActionBase.ACTION_NONE) {
+        }
+ else {
+          throw Error.runtimeError(ErrorCode.U_S0500,"TransactionManager");
+        }
+      }
+ catch (      HsqlException e) {
+      }
+    }
+    if (!canComplete && !session.abortTransaction) {
+      session.redoAction=true;
+      rollbackAction(session);
+      if (!session.tempSet.isEmpty()) {
+        session.latch.setCount(session.tempSet.size());
+        for (int i=0; i < session.tempSet.size(); i++) {
+          Session current=(Session)session.tempSet.get(i);
+          current.waitingSessions.add(session);
+        }
+      }
+    }
+  }
+  finally {
+    writeLock.unlock();
+    session.tempSet.clear();
+  }
+}

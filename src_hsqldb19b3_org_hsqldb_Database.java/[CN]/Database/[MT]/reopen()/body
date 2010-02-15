@@ -1,0 +1,72 @@
+{
+  boolean isNew;
+  setState(DATABASE_OPENING);
+  try {
+    databaseProperties=new HsqlDatabaseProperties(this);
+    isNew=!DatabaseURL.isFileBasedDatabaseType(databaseType) || !databaseProperties.checkFileExists();
+    if (isNew && urlProperties.isPropertyTrue(HsqlDatabaseProperties.url_ifexists)) {
+      throw Error.error(ErrorCode.DATABASE_NOT_EXISTS,sName);
+    }
+    databaseProperties.load();
+    databaseProperties.setURLProperties(urlProperties);
+    compiledStatementManager.reset();
+    nameManager=new HsqlNameManager(this);
+    granteeManager=new GranteeManager(this);
+    userManager=new UserManager(this);
+    schemaManager=new SchemaManager(this);
+    persistentStoreCollection=new PersistentStoreCollectionDatabase();
+    bReferentialIntegrity=true;
+    sessionManager=new SessionManager(this);
+    txManager=new TransactionManager(this);
+    collation=collation.getDefaultInstance();
+    dbInfo=DatabaseInformation.newDatabaseInformation(this);
+    databaseProperties.setDatabaseVariables();
+    String version=databaseProperties.getProperty(HsqlDatabaseProperties.db_version);
+    if (version.substring(0,3).equals("1.7")) {
+      schemaManager.createPublicSchema();
+    }
+    lobManager.createSchema();
+    if (DatabaseURL.isFileBasedDatabaseType(databaseType)) {
+      logger.openLog(this);
+    }
+    if (version.substring(0,3).equals("1.7") || version.substring(0,5).equals("1.8.0")) {
+      HsqlName name=schemaManager.findSchemaHsqlName(SqlInvariants.PUBLIC_SCHEMA);
+      if (name != null) {
+        schemaManager.setDefaultSchemaHsqlName(name);
+      }
+    }
+    if (isNew) {
+      String tableType=urlProperties.getProperty(HsqlDatabaseProperties.hsqldb_default_table_type,"MEMORY");
+      if ("CACHED".equalsIgnoreCase(tableType)) {
+        schemaManager.setDefaultTableType(TableBase.CACHED_TABLE);
+      }
+      HsqlName name=nameManager.newHsqlName("SA",false,SchemaObject.GRANTEE);
+      userManager.createUser(name,"");
+      Session session=sessionManager.getSysSession();
+      granteeManager.grant(name.name,SqlInvariants.DBA_ADMIN_ROLE_NAME,granteeManager.getDBARole());
+      logger.writeToLog(session,"CREATE USER SA PASSWORD \'\' ADMIN");
+      schemaManager.createPublicSchema();
+      logger.writeToLog(session,"CREATE SCHEMA PUBLIC AUTHORIZATION DBA");
+      logger.writeToLog(session,"SET DATABASE DEFAULT INITIAL SCHEMA PUBLIC");
+      if (schemaManager.getDefaultTableType() == Table.CACHED_TABLE) {
+        logger.writeToLog(session,"SET DATABASE DEFAULT TABLE TYPE CACHED");
+      }
+      lobManager.initialiseLobSpace();
+      logger.synchLogForce();
+    }
+    lobManager.open();
+    dbInfo.setWithContent(true);
+  }
+ catch (  Throwable e) {
+    logger.closeLog(Database.CLOSEMODE_IMMEDIATELY);
+    logger.releaseLock();
+    setState(DATABASE_SHUTDOWN);
+    clearStructures();
+    DatabaseManager.removeDatabase(this);
+    if (!(e instanceof HsqlException)) {
+      e=Error.error(ErrorCode.GENERAL_ERROR,e.toString());
+    }
+    throw (HsqlException)e;
+  }
+  setState(DATABASE_ONLINE);
+}

@@ -1,0 +1,89 @@
+{
+  if (m_snapshotTableTasks == null || m_snapshotBufferIsLoaned) {
+    return;
+  }
+  while (!m_snapshotTableTasks.isEmpty()) {
+    final SnapshotTableTask currentTask=m_snapshotTableTasks.peek();
+    assert(currentTask != null);
+    final int headerSize=currentTask.m_target.getHeaderSize();
+    m_snapshotBuffer.clear();
+    m_snapshotBuffer.position(headerSize);
+    final int serialized=ee.cowSerializeMore(m_stupidSnapshotContainer,currentTask.m_tableId);
+    if (serialized < 0) {
+      hostLog.error("Failure while serialize data from a table for COW snapshot");
+      VoltDB.crashVoltDB();
+    }
+    if (serialized == 0) {
+      final SnapshotTableTask t=m_snapshotTableTasks.poll();
+      if (t.m_isReplicated) {
+        final Thread terminatorThread=new Thread("Replicated SnapshotDataTarget terminator "){
+          @Override public void run(){
+            try {
+              t.m_target.close();
+            }
+ catch (            IOException e) {
+              throw new RuntimeException(e);
+            }
+catch (            InterruptedException e) {
+              throw new RuntimeException(e);
+            }
+          }
+        }
+;
+        if (m_snapshotTargetTerminators != null) {
+          m_snapshotTargetTerminators.add(terminatorThread);
+        }
+        terminatorThread.start();
+      }
+      continue;
+    }
+    m_snapshotBuffer.limit(headerSize + serialized);
+    m_snapshotBuffer.position(0);
+    m_snapshotBufferIsLoaned=true;
+    try {
+      currentTask.m_target.write(new BBContainer(m_snapshotBuffer,m_snapshotBufferAddress){
+        @Override public void discard(){
+          m_snapshotBufferIsLoaned=false;
+synchronized (m_stupidSnapshotContainer) {
+            m_stupidSnapshotContainer.notify();
+          }
+        }
+      }
+);
+    }
+ catch (    IOException e) {
+      throw new RuntimeException(e);
+    }
+    break;
+  }
+  if (m_snapshotTableTasks.isEmpty()) {
+    final ArrayList<SnapshotDataTarget> snapshotTargets=m_snapshotTargets;
+    m_snapshotTargets=null;
+    m_snapshotTableTasks=null;
+    final int result=ExecutionSitesCurrentlySnapshotting.decrementAndGet();
+    if (result == 0) {
+      final Thread terminatorThread=new Thread("Snapshot terminator"){
+        @Override public void run(){
+          for (          final SnapshotDataTarget t : snapshotTargets) {
+            try {
+              t.close();
+            }
+ catch (            IOException e) {
+              throw new RuntimeException(e);
+            }
+catch (            InterruptedException e) {
+              throw new RuntimeException(e);
+            }
+          }
+        }
+      }
+;
+      if (m_snapshotTargetTerminators != null) {
+        m_snapshotTargetTerminators.add(terminatorThread);
+      }
+      terminatorThread.start();
+      ExecutionSitesCurrentlySnapshotting.decrementAndGet();
+    }
+  }
+  return;
+}

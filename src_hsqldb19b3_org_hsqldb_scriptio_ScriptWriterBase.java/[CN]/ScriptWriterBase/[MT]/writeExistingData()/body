@@ -1,0 +1,38 @@
+{
+  currentSession.loggedSchema=null;
+  Iterator schemas=database.schemaManager.allSchemaNameIterator();
+  while (schemas.hasNext()) {
+    String schema=(String)schemas.next();
+    Iterator tables=database.schemaManager.databaseObjectIterator(schema,SchemaObject.TABLE);
+    while (tables.hasNext()) {
+      Table t=(Table)tables.next();
+      boolean script=false;
+switch (t.getTableType()) {
+case TableBase.MEMORY_TABLE:
+        script=true;
+      break;
+case TableBase.CACHED_TABLE:
+    script=includeCachedData;
+  break;
+case TableBase.TEXT_TABLE:
+script=includeCachedData && !t.isReadOnly();
+break;
+}
+try {
+if (script) {
+schemaToLog=t.getName().schema;
+writeTableInit(t);
+RowIterator it=t.rowIterator(currentSession);
+while (it.hasNext()) {
+writeRow(currentSession,t,it.getNextRow().getData());
+}
+writeTableTerm(t);
+}
+}
+ catch (Exception e) {
+throw Error.error(ErrorCode.FILE_IO_ERROR,e.toString());
+}
+}
+}
+writeDataTerm();
+}

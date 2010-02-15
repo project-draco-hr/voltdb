@@ -1,0 +1,69 @@
+{
+  if (ProcedureProfiler.profilingLevel != ProcedureProfiler.Level.DISABLED)   profiler.startCounter(catProc);
+  statsCollector.beginProcedure();
+  batchQueryStmtIndex=0;
+  batchQueryArgsIndex=0;
+  VoltTable[] results=new VoltTable[0];
+  byte status=ClientResponseImpl.SUCCESS;
+  if (paramList.length != paramTypesLength) {
+    String msg="PROCEDURE " + catProc.getTypeName() + " EXPECTS "+ String.valueOf(paramTypesLength)+ " PARAMS, BUT RECEIVED "+ String.valueOf(paramList.length);
+    status=ClientResponseImpl.GRACEFUL_FAILURE;
+    return getErrorResponse(status,msg,null);
+  }
+  for (int i=0; i < paramTypesLength; i++) {
+    try {
+      paramList[i]=tryToMakeCompatible(i,paramList[i]);
+    }
+ catch (    Exception e) {
+      String msg="PROCEDURE " + catProc.getTypeName() + " TYPE ERROR FOR PARAMETER "+ i+ ": "+ e.getMessage();
+      status=ClientResponseImpl.GRACEFUL_FAILURE;
+      return getErrorResponse(status,msg,null);
+    }
+  }
+  if ((ProcedureProfiler.profilingLevel == ProcedureProfiler.Level.INTRUSIVE) && (ProcedureProfiler.workloadTrace != null)) {
+    m_workloadQueryHandles=new HashSet<Object>();
+    m_workloadXactHandle=ProcedureProfiler.workloadTrace.startTransaction(this,catProc,paramList);
+  }
+  ClientResponseImpl retval=null;
+  if (catProc.getHasjava()) {
+    try {
+      m_site.currentProc=this;
+      if (log.isEnabledFor(Level.TRACE)) {
+        log.trace("invoking... procMethod=" + procMethod.getName() + ", class="+ getClass().getName());
+      }
+      try {
+        Object rawResult=procMethod.invoke(this,paramList);
+        results=getResultsFromRawResults(rawResult);
+        if (results == null)         results=new VoltTable[0];
+      }
+ catch (      IllegalAccessException e) {
+        throw new InvocationTargetException(e);
+      }
+      log.trace("invoked");
+    }
+ catch (    InvocationTargetException itex) {
+      Throwable ex=itex.getCause();
+      if (ex instanceof Error) {
+        throw (Error)ex;
+      }
+      retval=getErrorResponse(ex);
+    }
+  }
+ else {
+    assert(catProc.getStatements().size() == 1);
+    if (!isNative) {
+      VoltTable table=hsql.runSQLWithSubstitutions(m_cachedSingleStmt[0],paramList);
+      results=new VoltTable[]{table};
+    }
+ else {
+      results=executeQueriesInABatch(1,m_cachedSingleStmt,new Object[][]{paramList},true);
+    }
+  }
+  if (ProcedureProfiler.profilingLevel != ProcedureProfiler.Level.DISABLED)   profiler.stopCounter();
+  statsCollector.endProcedure();
+  if ((ProcedureProfiler.profilingLevel == ProcedureProfiler.Level.INTRUSIVE) && (ProcedureProfiler.workloadTrace != null && m_workloadXactHandle != null)) {
+    ProcedureProfiler.workloadTrace.stopTransaction(m_workloadXactHandle);
+  }
+  if (retval == null)   retval=new ClientResponseImpl(status,results,null);
+  return retval;
+}

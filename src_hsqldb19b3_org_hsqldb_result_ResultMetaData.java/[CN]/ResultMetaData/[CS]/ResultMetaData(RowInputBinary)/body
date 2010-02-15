@@ -1,0 +1,80 @@
+{
+  type=in.readInt();
+  columnCount=in.readInt();
+switch (type) {
+case UPDATE_RESULT_METADATA:
+case SIMPLE_RESULT_METADATA:
+{
+      columnTypes=new Type[columnCount];
+      for (int i=0; i < columnCount; i++) {
+        int type=in.readType();
+        columnTypes[i]=Type.getDefaultType(type);
+      }
+      return;
+    }
+case GENERATED_INDEX_METADATA:
+{
+    colIndexes=new int[columnCount];
+    for (int i=0; i < columnCount; i++) {
+      colIndexes[i]=in.readInt();
+    }
+    return;
+  }
+case GENERATED_NAME_METADATA:
+{
+  columnLabels=new String[columnCount];
+  for (int i=0; i < columnCount; i++) {
+    columnLabels[i]=in.readString();
+  }
+  return;
+}
+case PARAM_METADATA:
+{
+columnTypes=new Type[columnCount];
+columnLabels=new String[columnCount];
+paramModes=new byte[columnCount];
+paramNullable=new byte[columnCount];
+for (int i=0; i < columnCount; i++) {
+  columnTypes[i]=readDataType(in);
+  columnLabels[i]=in.readString();
+  decodeParamColumnAttrs(in.readByte(),i);
+}
+return;
+}
+case RESULT_METADATA:
+{
+extendedColumnCount=in.readInt();
+columnTypes=new Type[extendedColumnCount];
+columnLabels=new String[columnCount];
+columns=new ColumnBase[columnCount];
+if (columnCount != extendedColumnCount) {
+colIndexes=new int[columnCount];
+}
+for (int i=0; i < extendedColumnCount; i++) {
+Type type=readDataType(in);
+columnTypes[i]=type;
+}
+for (int i=0; i < columnCount; i++) {
+columnLabels[i]=in.readString();
+String catalog=in.readString();
+String schema=in.readString();
+String table=in.readString();
+String name=in.readString();
+ColumnBase column=new ColumnBase(catalog,schema,table,name);
+column.setType(columnTypes[i]);
+decodeTableColumnAttrs(in.readByte(),column);
+columns[i]=column;
+}
+if (columnCount != extendedColumnCount) {
+for (int i=0; i < columnCount; i++) {
+  colIndexes[i]=in.readInt();
+}
+}
+return;
+}
+default :
+{
+throw Error.runtimeError(ErrorCode.U_S0500,"");
+}
+}
+}

@@ -1,0 +1,37 @@
+{
+  RowActionBase action;
+  boolean readCommitted=session.isolationMode == SessionInterface.TX_READ_COMMITTED;
+  boolean result=true;
+  action=this;
+  do {
+    if (action.rolledback || action.type == ACTION_NONE) {
+      action=action.next;
+      continue;
+    }
+    if (action.session == session) {
+      if (action.actionTimestamp == 0) {
+        action.actionTimestamp=session.actionTimestamp;
+      }
+    }
+ else {
+      if (action.prepared) {
+        return false;
+      }
+      if (readCommitted) {
+        if (action.commitTimestamp > session.actionTimestamp) {
+          result=false;
+        }
+ else         if (action.commitTimestamp == 0 && action.actionTimestamp != 0) {
+          set.add(action.session);
+          result=false;
+        }
+      }
+ else       if (action.commitTimestamp > session.transactionTimestamp) {
+        return false;
+      }
+    }
+    action=action.next;
+  }
+ while (action != null);
+  return result;
+}

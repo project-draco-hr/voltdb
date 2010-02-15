@@ -1,0 +1,71 @@
+{
+  final String INSERT_NODE_NAME="insert";
+  final String UPDATE_NODE_NAME="update";
+  final String DELETE_NODE_NAME="delete";
+  final String SELECT_NODE_NAME="select";
+  AbstractParsedStmt retval=null;
+  StringInputStream input=new StringInputStream(xmlSQL);
+  HSQLXMLErrorHandler errHandler=new HSQLXMLErrorHandler();
+  Document doc=null;
+  DocumentBuilderFactory factory=DocumentBuilderFactory.newInstance();
+  try {
+    DocumentBuilder builder=factory.newDocumentBuilder();
+    builder.setErrorHandler(errHandler);
+    doc=builder.parse(input);
+  }
+ catch (  SAXParseException sxe) {
+    System.err.println(sxe.getMessage() + ": " + String.valueOf(sxe.getLineNumber()));
+    throw new InputMismatchException("XML Parsing failure during planning");
+  }
+catch (  SAXException sxe) {
+    System.err.println(sxe.getMessage());
+    throw new InputMismatchException("XML Parsing failure during planning");
+  }
+catch (  ParserConfigurationException e) {
+    System.err.println(e.getMessage());
+    throw new InputMismatchException("XML Parsing failure during planning");
+  }
+catch (  IOException e) {
+    System.err.println(e.getMessage());
+    throw new InputMismatchException("XML Parsing failure during planning");
+  }
+  if (doc == null) {
+    System.err.println("Unexpected error parsing hsql parsed stmt xml");
+    System.exit(-1);
+  }
+  Node docElement=doc.getDocumentElement();
+  assert(docElement.getNodeName().equalsIgnoreCase("statement"));
+  Node stmtTypeElement=docElement.getFirstChild();
+  while (stmtTypeElement.getNodeType() != Node.ELEMENT_NODE)   stmtTypeElement=stmtTypeElement.getNextSibling();
+  if (stmtTypeElement.getNodeName().equalsIgnoreCase(INSERT_NODE_NAME)) {
+    retval=new ParsedInsertStmt();
+  }
+ else   if (stmtTypeElement.getNodeName().equalsIgnoreCase(UPDATE_NODE_NAME)) {
+    retval=new ParsedUpdateStmt();
+  }
+ else   if (stmtTypeElement.getNodeName().equalsIgnoreCase(DELETE_NODE_NAME)) {
+    retval=new ParsedDeleteStmt();
+  }
+ else   if (stmtTypeElement.getNodeName().equalsIgnoreCase(SELECT_NODE_NAME)) {
+    retval=new ParsedSelectStmt();
+  }
+ else {
+    throw new RuntimeException("Unexpected Element: " + stmtTypeElement.getNodeName());
+  }
+  NodeList children=stmtTypeElement.getChildNodes();
+  for (int i=0; i < children.getLength(); i++) {
+    Node node=children.item(i);
+    if (node.getNodeName().equalsIgnoreCase("parameters")) {
+      retval.parseParameters(node,db);
+    }
+    if (node.getNodeName().equalsIgnoreCase("tablescans")) {
+      retval.parseTables(node,db);
+    }
+  }
+  retval.parse(stmtTypeElement,db);
+  retval.analyzeWhereExpression(db);
+  assert(retval.multiTableSelectionList.size() == 0);
+  assert(retval.noTableSelectionList.size() == 0);
+  retval.sql=sql;
+  return retval;
+}

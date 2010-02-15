@@ -1,0 +1,61 @@
+def runTests(CTX):
+    failedTests = []
+    retval = os.system(('make --directory=%s test -j4' % CTX.OUTPUT_PREFIX))
+    if (retval != 0):
+        return (-1)
+    CATALOG_PATH = os.environ['M1CATALOG_PATH']
+    TESTOBJECTS_DIR = os.environ['TEST_DIR']
+    TEST_PREFIX = CTX.TEST_PREFIX.rstrip('/')
+    OUTPUT_PREFIX = CTX.OUTPUT_PREFIX.rstrip('/')
+    tests = []
+    for dir in CTX.TESTS.keys():
+        input = CTX.TESTS[dir].split()
+        tests += [((((TEST_PREFIX + '/') + dir) + '/') + x) for x in input]
+    successes = 0
+    failures = 0
+    noValgrindTests = ['CopyOnWriteTest', 'harness_test', 'serializeio_test']
+    for test in tests:
+        (binname, objectname, sourcename) = namesForTestCode(test)
+        targetpath = ((OUTPUT_PREFIX + '/') + binname)
+        retval = 0
+        if (test.endswith('CopyOnWriteTest') and (CTX.LEVEL == 'MEMCHECK_NOFREELIST')):
+            continue
+        if os.path.exists((targetpath + '.py')):
+            retval = os.system((('/usr/bin/env python ' + targetpath) + '.py'))
+        else:
+            isValgrindTest = True
+            for test in noValgrindTests:
+                if (targetpath.find(test) != (-1)):
+                    isValgrindTest = False
+            if ((CTX.PLATFORM == 'Linux') and isValgrindTest):
+                process = Popen(executable='valgrind', args=['valgrind', '--leak-check=full', '--show-reachable=yes', '--error-exitcode=-1', targetpath], stderr=PIPE, bufsize=(-1))
+                allHeapBlocksFreed = False
+                out_err = process.stderr.readlines()
+                retval = process.wait()
+                for str in out_err:
+                    if (str.find('All heap blocks were freed') != (-1)):
+                        allHeapBlocksFreed = True
+                if (not allHeapBlocksFreed):
+                    print 'Not all heap blocks were freed'
+                    retval = (-1)
+                if (retval == (-1)):
+                    for str in out_err:
+                        print str
+                sys.stdout.flush()
+            else:
+                retval = os.system(targetpath)
+        if (retval == 0):
+            successes += 1
+        else:
+            failedTests += [binname]
+            failures += 1
+    print '==============================================================================='
+    print ('TESTING COMPLETE (PASSED: %d, FAILED: %d)' % (successes, failures))
+    for test in failedTests:
+        print (((('TEST: ' + test) + ' in DIRECTORY: ') + CTX.OUTPUT_PREFIX) + ' FAILED')
+    if (failures == 0):
+        print '*** SUCCESS ***'
+    else:
+        print '!!! FAILURE !!!'
+    print '==============================================================================='
+    return failures

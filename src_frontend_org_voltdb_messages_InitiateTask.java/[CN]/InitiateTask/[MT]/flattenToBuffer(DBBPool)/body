@@ -1,0 +1,29 @@
+{
+  FastSerializer fs=new FastSerializer();
+  try {
+    fs.writeObject(m_invocation);
+  }
+ catch (  IOException e) {
+    e.printStackTrace();
+    assert(false);
+  }
+  ByteBuffer invocationBytes=fs.getBuffer();
+  super.flattenToBuffer(pool);
+  assert(m_buffer != null);
+  int startPos=m_buffer.limit();
+  int msgsize=m_buffer.limit() - (HEADER_SIZE + 1);
+  msgsize+=1 + 2 + invocationBytes.remaining();
+  if (m_nonCoordinatorSites != null)   msgsize+=m_nonCoordinatorSites.length * 4;
+  setBufferSize(msgsize + 1,pool);
+  m_buffer.position(HEADER_SIZE);
+  m_buffer.put(INITIATE_TASK_ID);
+  m_buffer.position(startPos);
+  m_buffer.put(m_isSinglePartition ? (byte)1 : (byte)0);
+  if (m_nonCoordinatorSites == null)   m_buffer.putShort((short)0);
+ else {
+    m_buffer.putShort((short)m_nonCoordinatorSites.length);
+    for (int i=0; i < m_nonCoordinatorSites.length; i++)     m_buffer.putInt(m_nonCoordinatorSites[i]);
+  }
+  m_buffer.put(invocationBytes);
+  m_buffer.limit(m_buffer.position());
+}

@@ -1,0 +1,48 @@
+{
+  Table t=sysTables[DOMAIN_CONSTRAINTS];
+  if (t == null) {
+    t=createBlankTable(sysTableHsqlNames[DOMAIN_CONSTRAINTS]);
+    addColumn(t,"CONSTRAINT_CATALOG",SQL_IDENTIFIER);
+    addColumn(t,"CONSTRAINT_SCHEMA",SQL_IDENTIFIER);
+    addColumn(t,"CONSTRAINT_NAME",SQL_IDENTIFIER);
+    addColumn(t,"DOMAIN_CATALOG",SQL_IDENTIFIER);
+    addColumn(t,"DOMAIN_SCHEMA",SQL_IDENTIFIER);
+    addColumn(t,"DOMAIN_NAME",SQL_IDENTIFIER);
+    addColumn(t,"IS_DEFERRABLE",YES_OR_NO);
+    addColumn(t,"INITIALLY_DEFERRED",YES_OR_NO);
+    HsqlName name=HsqlNameManager.newInfoSchemaObjectName(sysTableHsqlNames[DOMAIN_CONSTRAINTS].name,false,SchemaObject.INDEX);
+    t.createPrimaryKey(name,new int[]{0,1,2,4,5,6},false);
+    return t;
+  }
+  final int constraint_catalog=0;
+  final int constraint_schema=1;
+  final int constraint_name=2;
+  final int domain_catalog=3;
+  final int domain_schema=4;
+  final int domain_name=5;
+  final int is_deferrable=6;
+  final int initially_deferred=7;
+  PersistentStore store=database.persistentStoreCollection.getStore(t);
+  Iterator it=database.schemaManager.databaseObjectIterator(SchemaObject.DOMAIN);
+  while (it.hasNext()) {
+    Type domain=(Type)it.next();
+    if (!domain.isDomainType()) {
+      continue;
+    }
+    if (!session.getGrantee().isFullyAccessibleByRole(domain)) {
+      continue;
+    }
+    Constraint[] constraints=domain.userTypeModifier.getConstraints();
+    for (int i=0; i < constraints.length; i++) {
+      Object[] data=t.getEmptyRowData();
+      data[constraint_catalog]=data[domain_catalog]=database.getCatalogName().name;
+      data[constraint_schema]=data[domain_schema]=domain.getSchemaName().name;
+      data[constraint_name]=constraints[i].getName().name;
+      data[domain_name]=domain.getName().name;
+      data[is_deferrable]=Tokens.T_NO;
+      data[initially_deferred]=Tokens.T_NO;
+      t.insertSys(store,data);
+    }
+  }
+  return t;
+}

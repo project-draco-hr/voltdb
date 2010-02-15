@@ -1,0 +1,75 @@
+{
+  readLock.lock();
+  try {
+    if (compare == OpTypes.SMALLER || compare == OpTypes.SMALLER_EQUAL) {
+      return findFirstRowNotNull(session,store);
+    }
+    boolean isEqual=compare == OpTypes.EQUAL || compare == OpTypes.IS_NULL;
+    NodeAVL x=getAccessor(store);
+    int iTest=1;
+    if (compare == OpTypes.GREATER) {
+      iTest=0;
+    }
+    if (value == null && !isEqual) {
+      return emptyIterator;
+    }
+    boolean check=compare == OpTypes.GREATER || compare == OpTypes.EQUAL || compare == OpTypes.GREATER_EQUAL;
+    if (!check) {
+      Error.runtimeError(ErrorCode.U_S0500,"Index.findFirst");
+    }
+    while (x != null) {
+      boolean t=colTypes[0].compare(value,x.getRow(store).getData()[colIndex[0]]) >= iTest;
+      if (t) {
+        NodeAVL r=x.getRight(store);
+        if (r == null) {
+          break;
+        }
+        x=r;
+      }
+ else {
+        NodeAVL l=x.getLeft(store);
+        if (l == null) {
+          break;
+        }
+        x=l;
+      }
+    }
+    while (x != null) {
+      Object colvalue=x.getRow(store).getData()[colIndex[0]];
+      int result=colTypes[0].compare(value,colvalue);
+      if (result >= iTest) {
+        x=next(store,x);
+      }
+ else {
+        if (isEqual) {
+          if (result != 0) {
+            x=null;
+          }
+        }
+ else         if (colvalue == null) {
+          x=next(store,x);
+          continue;
+        }
+        break;
+      }
+    }
+    if (session == null || x == null) {
+      return getIterator(session,store,x);
+    }
+    while (x != null) {
+      Row row=x.getRow(store);
+      if (compare == OpTypes.EQUAL && colTypes[0].compare(value,row.getData()[colIndex[0]]) != 0) {
+        x=null;
+        break;
+      }
+      if (session.database.txManager.canRead(session,row)) {
+        break;
+      }
+      x=next(store,x);
+    }
+    return getIterator(session,store,x);
+  }
+  finally {
+    readLock.unlock();
+  }
+}

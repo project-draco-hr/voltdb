@@ -1,0 +1,89 @@
+{
+  for (int i=0, size=table.fkMainConstraints.length; i < size; i++) {
+    Constraint c=table.fkMainConstraints[i];
+    RowIterator refiterator=c.findFkRef(session,row.getData(),delete);
+    if (!refiterator.hasNext()) {
+      continue;
+    }
+    try {
+      if (c.core.deleteAction == Constraint.NO_ACTION || c.core.deleteAction == Constraint.RESTRICT) {
+        if (c.core.mainTable == c.core.refTable) {
+          Row refrow=refiterator.getNextRow();
+          if (row.equals(refrow)) {
+            continue;
+          }
+        }
+        int errorCode=c.core.deleteAction == Constraint.NO_ACTION ? ErrorCode.X_23501 : ErrorCode.X_23001;
+        String[] info=new String[]{c.core.refName.name,c.core.refTable.getName().name};
+        throw Error.error(errorCode,ErrorCode.CONSTRAINT,info);
+      }
+      Table reftable=c.getRef();
+      boolean hasref=reftable.fkMainConstraints.length > 0;
+      if (!delete && !hasref) {
+        continue;
+      }
+      Index refindex=c.getRefIndex();
+      int[] m_columns=c.getMainColumns();
+      int[] r_columns=c.getRefColumns();
+      Object[] mdata=row.getData();
+      boolean isUpdate=c.getDeleteAction() == Constraint.SET_NULL || c.getDeleteAction() == Constraint.SET_DEFAULT;
+      HashMappedList rowSet=null;
+      if (isUpdate) {
+        rowSet=(HashMappedList)tableUpdateList.get(reftable);
+        if (rowSet == null) {
+          rowSet=new HashMappedList();
+          tableUpdateList.add(reftable,rowSet);
+        }
+      }
+      for (; ; ) {
+        Row refrow=refiterator.getNextRow();
+        if (refrow == null || refrow.isDeleted(session) || refindex.compareRowNonUnique(mdata,m_columns,refrow.getData()) != 0) {
+          break;
+        }
+        if (isUpdate) {
+          Object[] rnd=reftable.getEmptyRowData();
+          System.arraycopy(refrow.getData(),0,rnd,0,rnd.length);
+          if (c.getDeleteAction() == Constraint.SET_NULL) {
+            for (int j=0; j < r_columns.length; j++) {
+              rnd[r_columns[j]]=null;
+            }
+          }
+ else {
+            for (int j=0; j < r_columns.length; j++) {
+              ColumnSchema col=reftable.getColumn(r_columns[j]);
+              rnd[r_columns[j]]=col.getDefaultValue(session);
+            }
+          }
+          if (hasref && path.add(c)) {
+            checkCascadeUpdate(session,reftable,null,refrow,rnd,r_columns,null,path);
+            path.remove(c);
+          }
+          if (delete) {
+            if (reftable != table || !refrow.equals(row)) {
+              mergeUpdate(rowSet,refrow,rnd,r_columns);
+            }
+          }
+        }
+ else         if (hasref) {
+          if (reftable != table) {
+            if (path.add(c)) {
+              checkCascadeDelete(session,reftable,tableUpdateList,refrow,delete,path);
+              path.remove(c);
+            }
+          }
+ else {
+            if (refrow != row) {
+              checkCascadeDelete(session,reftable,tableUpdateList,refrow,delete,path);
+            }
+          }
+        }
+        if (delete && !isUpdate && !refrow.isDeleted(session)) {
+          reftable.deleteRowAsTriggeredAction(session,refrow);
+        }
+      }
+    }
+  finally {
+      refiterator.release();
+    }
+  }
+}

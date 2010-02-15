@@ -1,0 +1,47 @@
+{
+  int i=name.lastIndexOf('.');
+  if (i == -1) {
+    throw Error.error(ErrorCode.X_42501,name);
+  }
+  String classname=name.substring(0,i);
+  String methodname=name.substring(i + 1);
+  Class classinstance=null;
+  try {
+    classinstance=Class.forName(classname);
+  }
+ catch (  Exception e) {
+    throw Error.error(ErrorCode.X_42501,ErrorCode.M_Message_Pair,new Object[]{classname,e});
+  }
+  Method[] methods=classinstance.getMethods();
+  HsqlArrayList list=new HsqlArrayList();
+  for (i=0; i < methods.length; i++) {
+    int offset=0;
+    Method m=methods[i];
+    int modifiers=m.getModifiers();
+    if (!m.getName().equals(methodname) || !Modifier.isStatic(modifiers) || !Modifier.isPublic(modifiers)) {
+      continue;
+    }
+    Class[] params=methods[i].getParameterTypes();
+    if (params.length > 0 && params[0].equals(java.sql.Connection.class)) {
+      offset=1;
+    }
+    for (int j=offset; j < params.length; j++) {
+      Class param=params[j];
+      Type methodParamType=Type.getDefaultTypeWithSize(Types.getParameterSQLTypeNumber(param));
+      if (methodParamType == null) {
+        m=null;
+        break;
+      }
+    }
+    if (m == null) {
+      continue;
+    }
+    Type methodReturnType=Type.getDefaultTypeWithSize(Types.getParameterSQLTypeNumber(m.getReturnType()));
+    if (methodReturnType != null) {
+      list.add(methods[i]);
+    }
+  }
+  methods=new Method[list.size()];
+  list.toArray(methods);
+  return methods;
+}

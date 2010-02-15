@@ -1,0 +1,90 @@
+{
+  Constraint constraint=table.getConstraint(name);
+  if (constraint == null) {
+    throw Error.error(ErrorCode.X_42501,name);
+  }
+switch (constraint.getConstraintType()) {
+case Constraint.MAIN:
+    throw Error.error(ErrorCode.X_28502);
+case Constraint.PRIMARY_KEY:
+case Constraint.UNIQUE:
+{
+    OrderedHashSet dependentConstraints=table.getDependentConstraints(constraint);
+    if (!cascade && !dependentConstraints.isEmpty()) {
+      Constraint c=(Constraint)dependentConstraints.get(0);
+      throw Error.error(ErrorCode.X_42533,c.getName().getSchemaQualifiedStatementName());
+    }
+    OrderedHashSet tableSet=new OrderedHashSet();
+    OrderedHashSet constraintNameSet=new OrderedHashSet();
+    OrderedHashSet indexNameSet=new OrderedHashSet();
+    for (int i=0; i < dependentConstraints.size(); i++) {
+      Constraint c=(Constraint)dependentConstraints.get(i);
+      Table t=c.getMain();
+      if (t != table) {
+        tableSet.add(t);
+      }
+      t=c.getRef();
+      if (t != table) {
+        tableSet.add(t);
+      }
+      constraintNameSet.add(c.getMainName());
+      constraintNameSet.add(c.getRefName());
+      indexNameSet.add(c.getRefIndex().getName());
+    }
+    constraintNameSet.add(constraint.getName());
+    if (constraint.getConstraintType() == Constraint.UNIQUE) {
+      indexNameSet.add(constraint.getMainIndex().getName());
+    }
+    Table tn=table.moveDefinition(session,table.tableType,null,null,null,-1,0,constraintNameSet,indexNameSet);
+    tn.moveData(session,table,-1,0);
+    tableSet=makeNewTables(tableSet,constraintNameSet,indexNameSet);
+    if (constraint.getConstraintType() == Constraint.PRIMARY_KEY) {
+      int[] cols=constraint.getMainColumns();
+      for (int i=0; i < cols.length; i++) {
+        tn.getColumn(cols[i]).setPrimaryKey(false);
+        tn.setColumnTypeVars(cols[i]);
+      }
+    }
+    database.schemaManager.removeSchemaObjects(constraintNameSet);
+    setNewTableInSchema(tn);
+    setNewTablesInSchema(tableSet);
+    updateConstraints(tn,emptySet);
+    updateConstraints(tableSet,constraintNameSet);
+    database.persistentStoreCollection.releaseStore(table);
+    database.schemaManager.recompileDependentObjects(tableSet);
+    database.schemaManager.recompileDependentObjects(tn);
+    table=tn;
+    break;
+  }
+case Constraint.FOREIGN_KEY:
+{
+  OrderedHashSet constraints=new OrderedHashSet();
+  Table mainTable=constraint.getMain();
+  HsqlName mainName=constraint.getMainName();
+  boolean isSelf=mainTable == table;
+  constraints.add(mainName);
+  constraints.add(constraint.getRefName());
+  OrderedHashSet indexes=new OrderedHashSet();
+  indexes.add(constraint.getRefIndex().getName());
+  Table tn=table.moveDefinition(session,table.tableType,null,null,null,-1,0,constraints,indexes);
+  tn.moveData(session,table,-1,0);
+  database.schemaManager.removeSchemaObject(constraint.getName());
+  setNewTableInSchema(tn);
+  if (!isSelf) {
+    mainTable.removeConstraint(mainName.name);
+  }
+  database.persistentStoreCollection.releaseStore(table);
+  database.schemaManager.recompileDependentObjects(table);
+  table=tn;
+  break;
+}
+case Constraint.CHECK:
+database.schemaManager.removeSchemaObject(constraint.getName());
+if (constraint.isNotNull()) {
+ColumnSchema column=table.getColumn(constraint.notNullColumnIndex);
+column.setNullable(false);
+table.setColumnTypeVars(constraint.notNullColumnIndex);
+}
+break;
+}
+}

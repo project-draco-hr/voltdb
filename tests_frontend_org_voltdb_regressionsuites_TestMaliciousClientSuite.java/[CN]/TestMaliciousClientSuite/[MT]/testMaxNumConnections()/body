@@ -1,0 +1,40 @@
+{
+  final ExecutorService executor=Executors.newFixedThreadPool(8,new ThreadFactory(){
+    private int harasserCount=0;
+    @Override public Thread newThread(    Runnable r){
+      return new Thread(Thread.currentThread().getThreadGroup(),r,"Harasser " + harasserCount++,131072);
+    }
+  }
+);
+  ArrayList<Future<SocketChannel>> attempts=new ArrayList<Future<SocketChannel>>();
+  final int connectionsToAttempt=20000;
+  for (int ii=0; ii < connectionsToAttempt; ii++) {
+    attempts.add(executor.submit(new Callable<SocketChannel>(){
+      @Override public SocketChannel call() throws Exception {
+        return getClientChannel(true);
+      }
+    }
+));
+  }
+  for (  Future<SocketChannel> attempt : attempts) {
+    try {
+      attempt.get();
+    }
+ catch (    Exception e) {
+    }
+  }
+  int successfulAttempts=0;
+  for (  Future<SocketChannel> attempt : attempts) {
+    try {
+      final SocketChannel sc=attempt.get();
+      successfulAttempts++;
+      sc.close();
+    }
+ catch (    Exception e) {
+    }
+  }
+  executor.shutdown();
+  executor.awaitTermination(1,TimeUnit.DAYS);
+  assertTrue(successfulAttempts < 10000);
+  System.out.println("Had " + successfulAttempts + " successful connection attempts");
+}

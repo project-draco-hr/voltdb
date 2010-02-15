@@ -1,0 +1,45 @@
+{
+  int blockLimit=(int)(length / lobBlockSize);
+  int byteLimitOffset=(int)(length % lobBlockSize);
+  if (byteLimitOffset == 0) {
+    byteLimitOffset=lobBlockSize;
+  }
+ else {
+    blockLimit++;
+  }
+  createBlockAddresses(session,lobID,0,blockLimit);
+  int[][] blockAddresses=getBlockAddresses(session,lobID,0,blockLimit);
+  byte[] dataBytes=new byte[lobBlockSize];
+  for (int i=0; i < blockAddresses.length; i++) {
+    for (int j=0; j < blockAddresses[i][1]; j++) {
+      int localLength=lobBlockSize;
+      if (i == blockAddresses.length - 1 && j == blockAddresses[i][1] - 1) {
+        localLength=byteLimitOffset;
+        for (int k=localLength; k < lobBlockSize; k++) {
+          dataBytes[k]=0;
+        }
+      }
+      try {
+        int count=0;
+        while (localLength > 0) {
+          int read=inputStream.read(dataBytes,count,localLength);
+          if (read == -1) {
+            return Result.newErrorResult(new EOFException());
+          }
+          localLength-=read;
+          count+=read;
+        }
+      }
+ catch (      IOException e) {
+        return Result.newErrorResult(e);
+      }
+      try {
+        lobStore.setBlockBytes(dataBytes,blockAddresses[i][0] + j,1);
+      }
+ catch (      HsqlException e) {
+        return Result.newErrorResult(e);
+      }
+    }
+  }
+  return ResultLob.newLobSetResponse(lobID,0);
+}

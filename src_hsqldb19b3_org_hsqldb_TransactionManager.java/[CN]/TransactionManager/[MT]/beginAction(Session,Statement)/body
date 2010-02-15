@@ -1,0 +1,35 @@
+{
+synchronized (liveTransactionTimestamps) {
+    session.actionTimestamp=nextChangeTimestamp();
+    if (!session.isTransaction) {
+      session.transactionTimestamp=session.actionTimestamp;
+      session.isTransaction=true;
+      liveTransactionTimestamps.addLast(session.actionTimestamp);
+      try {
+        if (this.mvcc) {
+          database.logger.writeToLog(session,session.getStartTransactionSQL());
+        }
+      }
+ catch (      HsqlException e) {
+      }
+    }
+  }
+  if (session.isReadOnly()) {
+    return;
+  }
+  if (!mvcc) {
+    if (session.hasLocks()) {
+      return;
+    }
+    try {
+      writeLock.lock();
+      boolean canProceed=beginActionTPL(session,cs);
+      if (!canProceed) {
+        session.abortTransaction=true;
+      }
+    }
+  finally {
+      writeLock.unlock();
+    }
+  }
+}

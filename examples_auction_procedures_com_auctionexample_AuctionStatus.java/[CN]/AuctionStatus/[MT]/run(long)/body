@@ -1,0 +1,36 @@
+{
+  VoltTable retval=new VoltTable(new VoltTable.ColumnInfo("item",VoltType.STRING),new VoltTable.ColumnInfo("bidder",VoltType.STRING),new VoltTable.ColumnInfo("seller",VoltType.STRING),new VoltTable.ColumnInfo("bidcount",VoltType.BIGINT),new VoltTable.ColumnInfo("price",VoltType.FLOAT),new VoltTable.ColumnInfo("endtime",VoltType.TIMESTAMP),new VoltTable.ColumnInfo("status",VoltType.STRING));
+  voltQueueSQL(getItemInfo,itemId);
+  VoltTable itemTable=voltExecuteSQL()[0];
+  VoltTableRow itemRow=itemTable.fetchRow(0);
+  long sellerId=itemRow.getLong("SELLERID");
+  String itemName=itemRow.getString("ITEMNAME");
+  long endTime=itemRow.getTimestampAsLong("ENDTIME");
+  long highBidId=itemRow.getLong("HIGHBIDID");
+  voltQueueSQL(getBidInfo,highBidId);
+  VoltTable statusTable=voltExecuteSQL()[0];
+  VoltTableRow row=statusTable.fetchRow(0);
+  long bidderId=row.getLong("BIDDERID");
+  double bidPrice=row.getDouble("BIDPRICE");
+  voltQueueSQL(getBidCount,itemId);
+  VoltTable bidCountTable=voltExecuteSQL()[0];
+  VoltTableRow bidCountRow=bidCountTable.fetchRow(0);
+  long bidCount=bidCountRow.getLong(0) - 1;
+  voltQueueSQL(getUserName,sellerId);
+  if (bidderId >= 0) {
+    voltQueueSQL(getUserName,bidderId);
+  }
+  VoltTable[] nameTables=voltExecuteSQL();
+  VoltTableRow sellerNameRow=nameTables[0].fetchRow(0);
+  String sellerName=sellerNameRow.getString("FIRSTNAME") + " " + sellerNameRow.getString("LASTNAME");
+  String bidderName="NO BIDDER";
+  if (bidderId >= 0) {
+    VoltTableRow bidderNameRow=nameTables[1].fetchRow(0);
+    bidderName=bidderNameRow.getString("FIRSTNAME") + " " + bidderNameRow.getString("LASTNAME");
+  }
+  String status="OPEN";
+  long now=new TimestampType().getTime();
+  if (endTime < now)   status="CLOSED";
+  retval.addRow(itemName,bidderName,sellerName,bidCount,bidPrice,endTime,status);
+  return new VoltTable[]{retval};
+}

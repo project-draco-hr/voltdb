@@ -1,0 +1,39 @@
+{
+  VoltTable new_table=CatalogUtil.getVoltTable(outputTableSchema);
+  Map<Integer,Integer> column_copy_index_map=computeColumnCopyIndexMap(inputTable,new_table);
+  while (inputTable.advanceRow()) {
+    Object[] coerced_values=new Object[new_table.getColumnCount()];
+    for (int i=0; i < new_table.getColumnCount(); i++) {
+      if (column_copy_index_map.containsKey(i)) {
+        int orig_column_index=column_copy_index_map.get(i);
+        coerced_values[i]=inputTable.get(orig_column_index,inputTable.getColumnType(orig_column_index));
+      }
+ else {
+        Column catalog_column=outputTableSchema.getColumns().get(new_table.getColumnName(i));
+        VoltType default_type=VoltType.get((byte)catalog_column.getDefaulttype());
+        if (default_type != VoltType.INVALID) {
+          try {
+            coerced_values[i]=VoltTypeUtil.getObjectFromString(default_type,catalog_column.getDefaultvalue());
+          }
+ catch (          ParseException e) {
+            String message="Column: ";
+            message+=new_table.getColumnName(i);
+            message+=" has an unparseable default: ";
+            message+=catalog_column.getDefaultvalue();
+            message+=" for VoltType: ";
+            message+=default_type.toString();
+            throw new VoltTypeException(message);
+          }
+        }
+ else         if (catalog_column.getNullable()) {
+          coerced_values[i]=null;
+        }
+ else {
+          throw new VoltTypeException("Column: " + new_table.getColumnName(i) + " has no default "+ "and null is not permitted");
+        }
+      }
+    }
+    new_table.addRow(coerced_values);
+  }
+  return new_table;
+}

@@ -1,0 +1,89 @@
+{
+  errorString=null;
+  if (fragmentId == SysProcFragmentId.PF_snapshotScan) {
+    final VoltTable results=constructFragmentResultsTable();
+    assert(params.toArray()[0] != null);
+    assert(params.toArray()[0] instanceof String);
+    final String path=(String)params.toArray()[0];
+    List<File> relevantFiles=retrieveRelevantFiles(path);
+    if (relevantFiles == null) {
+      results.addRow(context.getSite().getHost().getTypeName(),"","",0,"","FALSE",0,"","",0,"","FAILURE",errorString);
+    }
+ else {
+      for (      final File f : relevantFiles) {
+        if (f.canRead()) {
+          try {
+            FileInputStream savefile_input=new FileInputStream(f);
+            try {
+              TableSaveFile savefile=new TableSaveFile(savefile_input.getChannel(),1,null);
+              String partitions="";
+              for (              int partition : savefile.getPartitionIds()) {
+                partitions=partitions + "," + partition;
+              }
+              if (partitions.startsWith(",")) {
+                partitions=partitions.substring(1);
+              }
+              results.addRow(context.getSite().getHost().getTypeName(),f.getParent(),f.getName(),savefile.getCreateTime(),savefile.getTableName(),savefile.getCompleted() ? "TRUE" : "FALSE",f.length(),savefile.isReplicated() ? "TRUE" : "FALSE",partitions,savefile.getTotalPartitions(),f.canRead() ? "TRUE" : "FALSE","SUCCESS","");
+            }
+ catch (            IOException e) {
+              HOST_LOG.warn(e);
+            }
+ finally {
+              savefile_input.close();
+            }
+          }
+ catch (          IOException e) {
+            HOST_LOG.warn(e);
+          }
+        }
+ else {
+          results.addRow(context.getSite().getHost().getTypeName(),f.getParent(),f.getName(),f.lastModified(),"","FALSE",f.length(),"FALSE","",-1,f.canRead() ? "TRUE" : "FALSE","SUCCESS","");
+        }
+      }
+    }
+    return new DependencyPair(DEP_snapshotScan,results);
+  }
+ else   if (fragmentId == SysProcFragmentId.PF_snapshotScanResults) {
+    final VoltTable results=constructFragmentResultsTable();
+    TRACE_LOG.trace("Aggregating Snapshot Scan  results");
+    assert(dependencies.size() > 0);
+    List<VoltTable> dep=dependencies.get(DEP_snapshotScan);
+    for (    VoltTable table : dep) {
+      while (table.advanceRow()) {
+        results.add(table);
+      }
+    }
+    return new DependencyPair(DEP_snapshotScanResults,results);
+  }
+ else   if (fragmentId == SysProcFragmentId.PF_hostDiskFreeScan) {
+    assert(params.toArray()[0] != null);
+    assert(params.toArray()[0] instanceof String);
+    final String path=(String)params.toArray()[0];
+    final VoltTable results=constructDiskFreeResultsTable();
+    File dir=new File(path);
+    if (dir.isDirectory()) {
+      final long free=dir.getUsableSpace();
+      final long total=dir.getTotalSpace();
+      final long used=total - free;
+      results.addRow(context.getSite().getHost().getTypeName(),path,total,free,used,"SUCCESS","");
+    }
+ else {
+      results.addRow(context.getSite().getHost().getTypeName(),path,0,0,0,"FAILURE","Path is not a directory");
+    }
+    return new DependencyPair(DEP_hostDiskFreeScan,results);
+  }
+ else   if (fragmentId == SysProcFragmentId.PF_hostDiskFreeScanResults) {
+    final VoltTable results=constructDiskFreeResultsTable();
+    TRACE_LOG.trace("Aggregating disk free results");
+    assert(dependencies.size() > 0);
+    List<VoltTable> dep=dependencies.get(DEP_hostDiskFreeScan);
+    for (    VoltTable table : dep) {
+      while (table.advanceRow()) {
+        results.add(table);
+      }
+    }
+    return new DependencyPair(DEP_hostDiskFreeScanResults,results);
+  }
+  assert(false);
+  return null;
+}

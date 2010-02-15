@@ -1,0 +1,43 @@
+{
+  session.tempSet.clear();
+  if (cs == null || session.abortTransaction) {
+    return true;
+  }
+  HsqlName[] nameList=cs.getTableNamesForWrite();
+  for (int i=0; i < nameList.length; i++) {
+    HsqlName name=nameList[i];
+    if (name.schema == SqlInvariants.SYSTEM_SCHEMA_HSQLNAME) {
+      continue;
+    }
+    Session holder=(Session)tableWriteLocks.get(name);
+    if (holder != null && holder != session) {
+      session.tempSet.add(holder);
+    }
+    Iterator it=tableReadLocks.get(name);
+    while (it.hasNext()) {
+      holder=(Session)it.next();
+      if (holder != session) {
+        session.tempSet.add(holder);
+      }
+    }
+  }
+  nameList=cs.getTableNamesForRead();
+  for (int i=0; i < nameList.length; i++) {
+    HsqlName name=nameList[i];
+    if (name.schema == SqlInvariants.SYSTEM_SCHEMA_HSQLNAME) {
+      continue;
+    }
+    Session holder=(Session)tableWriteLocks.get(name);
+    if (holder != null && holder != session) {
+      session.tempSet.add(holder);
+    }
+  }
+  for (int i=0; i < session.waitingSessions.size(); i++) {
+    Session current=(Session)session.waitingSessions.get(i);
+    if (session.tempSet.contains(current)) {
+      session.tempSet.clear();
+      return false;
+    }
+  }
+  return true;
+}

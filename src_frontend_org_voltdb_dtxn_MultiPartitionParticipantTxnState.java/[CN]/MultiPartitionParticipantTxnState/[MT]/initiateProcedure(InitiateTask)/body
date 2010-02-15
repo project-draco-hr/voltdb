@@ -1,0 +1,26 @@
+{
+  assert(m_isCoordinator);
+  InitiateResponse response=m_site.processInitiateTask(itask);
+  FragmentTask ftask=new FragmentTask(initiatorSiteId,coordinatorSiteId,txnId,true,new long[]{},null,new ByteBuffer[]{},true);
+  ftask.setShouldUndo(response.shouldCommit() == false);
+  assert(ftask.isFinalTask() == true);
+  try {
+    m_mbox.send(m_nonCoordinatingSites,0,ftask);
+  }
+ catch (  MessagingException e) {
+    throw new RuntimeException(e);
+  }
+  if (!response.shouldCommit()) {
+    if (m_missingDependencies != null)     m_missingDependencies.clear();
+    if (!isReadOnly) {
+      m_site.rollbackTransaction(isReadOnly);
+    }
+  }
+  try {
+    m_mbox.send(initiatorSiteId,0,response);
+  }
+ catch (  MessagingException e) {
+    throw new RuntimeException(e);
+  }
+  m_done=true;
+}

@@ -1,0 +1,98 @@
+{
+  if (a == null) {
+    return null;
+  }
+switch (otherType.typeCode) {
+case Types.SQL_CLOB:
+    a=a.toString();
+case Types.SQL_CHAR:
+case Types.SQL_VARCHAR:
+case Types.VARCHAR_IGNORECASE:
+{
+    return session.getScanner().convertToDatetimeInterval((String)a,this);
+  }
+case Types.TINYINT:
+case Types.SQL_SMALLINT:
+case Types.SQL_INTEGER:
+case Types.SQL_BIGINT:
+case Types.SQL_REAL:
+case Types.SQL_FLOAT:
+case Types.SQL_DOUBLE:
+case Types.SQL_NUMERIC:
+case Types.SQL_DECIMAL:
+{
+  if (a instanceof BigDecimal) {
+    if (!NumberType.isInLongLimits((BigDecimal)a)) {
+      throw Error.error(ErrorCode.X_22015);
+    }
+  }
+  long value=((Number)a).longValue();
+switch (this.endIntervalType) {
+case Types.SQL_INTERVAL_YEAR:
+    return IntervalMonthData.newIntervalYear(value,this);
+case Types.SQL_INTERVAL_MONTH:
+  return IntervalMonthData.newIntervalMonth(value,this);
+case Types.SQL_INTERVAL_DAY:
+return IntervalSecondData.newIntervalDay(value,this);
+case Types.SQL_INTERVAL_HOUR:
+return IntervalSecondData.newIntervalHour(value,this);
+case Types.SQL_INTERVAL_MINUTE:
+return IntervalSecondData.newIntervalMinute(value,this);
+case Types.SQL_INTERVAL_SECOND:
+{
+int nanos=0;
+if (scale > 0 && a instanceof BigDecimal) {
+nanos=(int)NumberType.scaledDecimal(a,DTIType.maxFractionPrecision);
+}
+return new IntervalSecondData(value,nanos,this);
+}
+default :
+throw Error.error(ErrorCode.X_42561);
+}
+}
+case Types.SQL_INTERVAL_YEAR:
+{
+long months=(((IntervalMonthData)a).units / 12) * 12;
+return new IntervalMonthData(months,this);
+}
+case Types.SQL_INTERVAL_YEAR_TO_MONTH:
+case Types.SQL_INTERVAL_MONTH:
+{
+long months=((IntervalMonthData)a).units;
+return new IntervalMonthData(months,this);
+}
+case Types.SQL_INTERVAL_DAY:
+{
+long seconds=((IntervalSecondData)a).units;
+seconds=(seconds / DTIType.yearToSecondFactors[2]) * DTIType.yearToSecondFactors[2];
+return new IntervalSecondData(seconds,0,this);
+}
+case Types.SQL_INTERVAL_DAY_TO_HOUR:
+case Types.SQL_INTERVAL_HOUR:
+case Types.SQL_INTERVAL_DAY_TO_MINUTE:
+case Types.SQL_INTERVAL_HOUR_TO_MINUTE:
+case Types.SQL_INTERVAL_MINUTE:
+{
+long seconds=((IntervalSecondData)a).units;
+seconds=(seconds / DTIType.yearToSecondFactors[endPartIndex]) * DTIType.yearToSecondFactors[endPartIndex];
+return new IntervalSecondData(seconds,0,this);
+}
+case Types.SQL_INTERVAL_DAY_TO_SECOND:
+case Types.SQL_INTERVAL_HOUR_TO_SECOND:
+case Types.SQL_INTERVAL_MINUTE_TO_SECOND:
+case Types.SQL_INTERVAL_SECOND:
+{
+long seconds=((IntervalSecondData)a).units;
+int nanos=((IntervalSecondData)a).nanos;
+if (scale == 0) {
+nanos=0;
+}
+ else {
+nanos=(nanos / (DTIType.nanoScaleFactors[scale])) * (DTIType.nanoScaleFactors[scale]);
+}
+return new IntervalSecondData(seconds,nanos,this);
+}
+default :
+throw Error.error(ErrorCode.X_42561);
+}
+}

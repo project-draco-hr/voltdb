@@ -1,0 +1,81 @@
+{
+  int variableCount=routine.getVariableCount();
+  Result result;
+  int extraArg=routine.javaMethodWithConnection ? 1 : 0;
+  Object[] data=ValuePool.emptyObjectArray;
+  Object returnValue=null;
+  boolean push=routine.isPSM() || routine.dataImpact != Routine.NO_SQL;
+  if (extraArg + nodes.length > 0) {
+    data=new Object[nodes.length + extraArg];
+    if (extraArg > 0) {
+      data[0]=session.getInternalConnection();
+    }
+  }
+  for (int i=0; i < nodes.length; i++) {
+    Expression e=nodes[i];
+    Object value=e.getValue(session,e.dataType);
+    if (value == null) {
+      if (routine.isNullInputOutput()) {
+        return null;
+      }
+      if (!routine.parameterNullable[i]) {
+        throw Error.error(ErrorCode.X_39004);
+      }
+    }
+    if (routine.isPSM()) {
+      data[i]=value;
+    }
+ else {
+      data[i + extraArg]=e.dataType.convertSQLToJava(session,value);
+    }
+  }
+  if (push) {
+    session.sessionContext.push();
+  }
+  if (routine.isPSM()) {
+    session.sessionContext.routineArguments=data;
+    session.sessionContext.routineVariables=ValuePool.emptyObjectArray;
+    if (variableCount > 0) {
+      session.sessionContext.routineVariables=new Object[variableCount];
+    }
+    result=routine.statement.execute(session);
+    if (result.isError()) {
+    }
+ else     if (result.isSimpleValue()) {
+      returnValue=result.getValueObject();
+    }
+ else {
+      result=Result.newErrorResult(Error.error(ErrorCode.X_2F005,routine.getName().name),null);
+    }
+  }
+ else {
+    try {
+      returnValue=routine.javaMethod.invoke(null,data);
+      if (routine.returnsTable()) {
+      }
+ else {
+        returnValue=dataType.convertJavaToSQL(session,returnValue);
+      }
+      result=Result.updateZeroResult;
+    }
+ catch (    InvocationTargetException e) {
+      result=Result.newErrorResult(Error.error(ErrorCode.X_46000,routine.getName().name),null);
+    }
+catch (    IllegalAccessException e) {
+      result=Result.newErrorResult(Error.error(ErrorCode.X_46000,routine.getName().name),null);
+    }
+catch (    Throwable e) {
+      result=Result.newErrorResult(Error.error(ErrorCode.X_46000,routine.getName().name),null);
+    }
+  }
+  if (push) {
+    if (result.isError()) {
+      session.rollbackToSavepoint();
+    }
+    session.sessionContext.pop();
+  }
+  if (result.isError()) {
+    throw result.getException();
+  }
+  return returnValue;
+}

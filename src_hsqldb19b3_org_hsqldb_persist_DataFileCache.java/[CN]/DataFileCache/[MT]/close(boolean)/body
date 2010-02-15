@@ -1,0 +1,52 @@
+{
+  SimpleLog appLog=database.logger.appLog;
+  try {
+    if (cacheReadonly) {
+      if (dataFile != null) {
+        dataFile.close();
+        dataFile=null;
+      }
+      return;
+    }
+    StopWatch sw=new StopWatch();
+    appLog.sendLine(SimpleLog.LOG_NORMAL,"DataFileCache.close(" + write + ") : start");
+    if (write) {
+      cache.saveAll();
+      Error.printSystemOut("saveAll: " + sw.elapsedTime());
+      appLog.sendLine(SimpleLog.LOG_NORMAL,"DataFileCache.close() : save data");
+      if (fileModified || freeBlocks.isModified()) {
+        dataFile.seek(LONG_EMPTY_SIZE);
+        dataFile.writeLong(freeBlocks.getLostBlocksSize());
+        dataFile.seek(LONG_FREE_POS_POS);
+        dataFile.writeLong(fileFreePosition);
+        dataFile.seek(FLAGS_POS);
+        int flag=BitMap.set(0,FLAG_ISSAVED);
+        if (hasRowInfo) {
+          flag=BitMap.set(flag,FLAG_ROWINFO);
+        }
+        dataFile.writeInt(flag);
+        appLog.sendLine(SimpleLog.LOG_NORMAL,"DataFileCache.close() : flags");
+        if (dataFile.length() != fileFreePosition) {
+          dataFile.seek(fileFreePosition);
+        }
+        appLog.sendLine(SimpleLog.LOG_NORMAL,"DataFileCache.close() : seek end");
+        Error.printSystemOut("pos and flags: " + sw.elapsedTime());
+      }
+    }
+    if (dataFile != null) {
+      dataFile.close();
+      appLog.sendLine(SimpleLog.LOG_NORMAL,"DataFileCache.close() : close");
+      dataFile=null;
+      Error.printSystemOut("close: " + sw.elapsedTime());
+    }
+    boolean empty=fileFreePosition == INITIAL_FREE_POS;
+    if (empty) {
+      fa.removeElement(fileName);
+      fa.removeElement(backupFileName);
+    }
+  }
+ catch (  Throwable e) {
+    appLog.logContext(e,null);
+    throw Error.error(ErrorCode.FILE_IO_ERROR,ErrorCode.M_DataFileCache_close,new Object[]{e,fileName});
+  }
+}

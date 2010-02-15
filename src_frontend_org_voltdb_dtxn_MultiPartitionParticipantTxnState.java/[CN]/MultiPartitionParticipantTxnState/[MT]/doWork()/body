@@ -1,0 +1,45 @@
+{
+  if (m_done)   return true;
+  if (!m_hasStartedWork) {
+    m_site.beginNewTxn(txnId,isReadOnly);
+    m_hasStartedWork=true;
+  }
+  WorkUnit wu=m_readyWorkUnits.poll();
+  while (wu != null) {
+    if (wu.shouldResumeProcedure()) {
+      assert(m_stackFrameDropWUs != null);
+      m_stackFrameDropWUs.remove(wu);
+      m_shouldResumeProcedure=true;
+      m_previousStackFrameDropDependencies=wu.getDependencies();
+      for (      WorkUnit sfd : m_stackFrameDropWUs) {
+        sfd.m_stackCount--;
+        if (sfd.allDependenciesSatisfied()) {
+          m_readyWorkUnits.add(sfd);
+        }
+      }
+      return false;
+    }
+    VoltMessage payload=wu.getPayload();
+    if (payload == null) {
+      if ((m_dirty == false) || (wu.commitEvenIfDirty))       m_done=true;
+    }
+ else     if (payload instanceof InitiateTask)     initiateProcedure((InitiateTask)payload);
+ else     if (payload instanceof FragmentTask)     processFragmentWork((FragmentTask)payload,wu.getDependencies());
+    wu=m_readyWorkUnits.poll();
+    if ((!m_done) && (m_isCoordinator) && (wu == null)&& (isReadOnly == true)) {
+      assert(m_missingDependencies != null);
+      boolean hasTransactionalWork=false;
+      for (      WorkUnit pendingWu : m_missingDependencies.values()) {
+        if (pendingWu.nonTransactional == false)         hasTransactionalWork=true;
+      }
+      if (!hasTransactionalWork) {
+        boolean success=false;
+        do {
+          success=m_conn.tryToSneakInASinglePartitionProcedure();
+        }
+ while (success && ((wu=m_readyWorkUnits.poll()) == null));
+      }
+    }
+  }
+  return m_done;
+}

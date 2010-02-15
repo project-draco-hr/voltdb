@@ -1,0 +1,56 @@
+{
+  final String className=procedureDescriptor.m_className;
+  String[] parts=className.split("\\.");
+  String shortName=parts[parts.length - 1];
+  final Procedure procedure=db.getProcedures().add(shortName);
+  for (  String userName : procedureDescriptor.m_authUsers) {
+    final User user=db.getUsers().get(userName);
+    if (user == null) {
+      throw compiler.new VoltCompilerException("Procedure " + className + " has a user "+ userName+ " that does not exist");
+    }
+    final UserRef userRef=procedure.getAuthusers().add(userName);
+    userRef.setUser(user);
+  }
+  for (  String groupName : procedureDescriptor.m_authGroups) {
+    final Group group=db.getGroups().get(groupName);
+    if (group == null) {
+      throw compiler.new VoltCompilerException("Procedure " + className + " has a group "+ groupName+ " that does not exist");
+    }
+    final GroupRef groupRef=procedure.getAuthgroups().add(groupName);
+    groupRef.setGroup(group);
+  }
+  procedure.setClassname(className);
+  procedure.setSystemproc(false);
+  procedure.setHasjava(false);
+  ProcInfoData info=compiler.getProcInfoOverride(shortName);
+  if (info == null) {
+    info=new ProcInfoData();
+    if (procedureDescriptor.m_partitionString != null) {
+      info.partitionInfo=procedureDescriptor.m_partitionString;
+      info.singlePartition=true;
+    }
+  }
+  assert(info != null);
+  Statement catalogStmt=procedure.getStatements().add(VoltProcedure.ANON_STMT_NAME);
+  StatementCompiler.compile(compiler,hsql,catalog,db,estimates,catalogStmt,procedureDescriptor.m_singleStmt,info.singlePartition);
+  boolean procHasWriteStmts=(catalogStmt.getReadonly() == false);
+  procedure.setReadonly(procHasWriteStmts == false);
+  CatalogMap<ProcParameter> params=procedure.getParameters();
+  CatalogMap<StmtParameter> stmtParams=catalogStmt.getParameters();
+  int i=0;
+  for (  StmtParameter stmtParam : CatalogUtil.getSortedCatalogItems(stmtParams,"index")) {
+    ProcParameter procParam=params.add("param" + String.valueOf(i));
+    procParam.setIndex(stmtParam.getIndex());
+    procParam.setIsarray(false);
+    procParam.setType(stmtParam.getJavatype());
+    i++;
+  }
+  procedure.setSinglepartition(info.singlePartition);
+  if (info.singlePartition) {
+    parsePartitionInfo(compiler,db,procedure,info.partitionInfo);
+    if (procedure.getPartitionparameter() >= params.size()) {
+      String msg="PartitionInfo parameter not a valid parameter for procedure: " + procedure.getClassname();
+      throw compiler.new VoltCompilerException(msg);
+    }
+  }
+}

@@ -1,0 +1,43 @@
+{
+  try {
+    server=new ServerSocket(org.voltdb.client.Client.VOLTDB_SERVER_PORT);
+  }
+ catch (  IOException e) {
+    System.out.println("Could not listen on port");
+    e.printStackTrace();
+    System.exit(-1);
+  }
+  fs=new FastSerializer();
+  byte[] buffer=new byte[1024 * 1024 * 2];
+  try {
+    while (true) {
+      client=server.accept();
+      client.setReceiveBufferSize(1024 * 1024 * 2);
+      client.setSendBufferSize(1024 * 1024 * 2);
+      byte[] lengthBytes=new byte[4];
+      while (client.getInputStream().read(lengthBytes) > 0) {
+        FastDeserializer fds=new FastDeserializer(lengthBytes);
+        int length=fds.readInt();
+        int count=0;
+        byte[] type=new byte[1];
+        count+=client.getInputStream().read(type);
+        while (count < length) {
+          count+=client.getInputStream().read(buffer,count - 1,buffer.length - count + 1);
+        }
+        echo(type,buffer,length);
+      }
+      client.close();
+    }
+  }
+ catch (  IOException e) {
+    e.printStackTrace();
+  }
+ finally {
+    try {
+      server.close();
+    }
+ catch (    IOException e) {
+      e.printStackTrace();
+    }
+  }
+}

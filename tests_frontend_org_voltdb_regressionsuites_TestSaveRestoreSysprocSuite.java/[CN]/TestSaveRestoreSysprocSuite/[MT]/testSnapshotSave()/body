@@ -1,0 +1,55 @@
+{
+  Client client=getClient();
+  int num_replicated_items_per_chunk=100;
+  int num_replicated_chunks=10;
+  int num_partitioned_items_per_chunk=120;
+  int num_partitioned_chunks=10;
+  loadLargeReplicatedTable(client,"REPLICATED_TESTER",num_replicated_items_per_chunk,num_replicated_chunks);
+  loadLargePartitionedTable(client,"PARTITION_TESTER",num_partitioned_items_per_chunk,num_partitioned_chunks);
+  VoltTable[] results=null;
+  try {
+    results=client.callProcedure("@SnapshotSave",TMPDIR,TESTNONCE,(byte)1);
+  }
+ catch (  Exception ex) {
+    ex.printStackTrace();
+    fail("SnapshotSave exception: " + ex.getMessage());
+  }
+  Cluster cluster=VoltDB.instance().getCatalog().getClusters().get("cluster");
+  Database database=cluster.getDatabases().get("database");
+  CatalogMap<Table> tables=database.getTables();
+  CatalogMap<Site> sites=cluster.getSites();
+  int num_hosts=cluster.getHosts().size();
+  int replicated=0;
+  int total_tables=0;
+  int expected_entries=0;
+  for (  Table table : tables) {
+    if (table.getMaterializer() == null) {
+      total_tables++;
+      if (table.getIsreplicated()) {
+        replicated++;
+      }
+    }
+  }
+  for (  Site s : sites) {
+    if (s.getIsexec()) {
+      expected_entries++;
+    }
+  }
+  assertEquals(expected_entries,results[0].getRowCount());
+  while (results[0].advanceRow()) {
+    assertEquals(results[0].getString("RESULT"),"SUCCESS");
+  }
+  expected_entries=((total_tables - replicated) * num_hosts) + replicated;
+  try {
+    results=client.callProcedure("@SnapshotSave",TMPDIR,TESTNONCE,(byte)1);
+  }
+ catch (  Exception ex) {
+    ex.printStackTrace();
+    fail("SnapshotSave exception: " + ex.getMessage());
+  }
+  assertEquals(expected_entries,results[0].getRowCount());
+  while (results[0].advanceRow()) {
+    assertEquals(results[0].getString("RESULT"),"FAILURE");
+    assertTrue(results[0].getString("ERR_MSG").contains("SAVE FILE ALREADY EXISTS"));
+  }
+}

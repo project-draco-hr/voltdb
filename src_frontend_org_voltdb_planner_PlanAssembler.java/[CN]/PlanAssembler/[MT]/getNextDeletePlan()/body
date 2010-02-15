@@ -1,0 +1,44 @@
+{
+  assert(subAssembler != null);
+  assert(m_parsedDelete.tableList.size() == 1);
+  Table targetTable=m_parsedDelete.tableList.get(0);
+  if (m_singlePartition && (targetTable.getIsreplicated())) {
+    String msg="Trying to delete from replicated table '" + targetTable.getTypeName() + "'";
+    msg+=" in a single-partition procedure.";
+    throw new PlanningErrorException(msg);
+  }
+  AbstractPlanNode subSelectRoot=subAssembler.nextPlan();
+  if (subSelectRoot == null)   return null;
+  DeletePlanNode deleteNode=new DeletePlanNode(m_context,getNextPlanNodeId());
+  deleteNode.setTargetTableName(targetTable.getTypeName());
+  ProjectionPlanNode projectionNode=new ProjectionPlanNode(m_context,getNextPlanNodeId());
+  AbstractExpression addressExpr=new TupleAddressExpression();
+  PlanColumn colInfo=m_context.getPlanColumn(addressExpr,"tuple_address");
+  projectionNode.appendOutputColumn(colInfo);
+  if (m_singlePartition == true) {
+    assert(subSelectRoot instanceof AbstractScanPlanNode);
+    if ((subSelectRoot instanceof SeqScanPlanNode) && (((AbstractScanPlanNode)subSelectRoot).getPredicate() == null)) {
+      deleteNode.setTruncate(true);
+      return deleteNode;
+    }
+    subSelectRoot.addInlinePlanNode(projectionNode);
+    deleteNode.addAndLinkChild(subSelectRoot);
+    return deleteNode;
+  }
+ else {
+    assert(subSelectRoot instanceof ReceivePlanNode);
+    ReceivePlanNode recvNode=(ReceivePlanNode)subSelectRoot;
+    assert(recvNode.getChildCount() == 1);
+    AbstractPlanNode sendNode=recvNode.getChild(0);
+    assert(sendNode.getChildCount() == 1);
+    AbstractPlanNode scanNode=sendNode.getChild(0);
+    sendNode.unlinkChild(scanNode);
+    assert(scanNode instanceof AbstractScanPlanNode);
+    scanNode.addInlinePlanNode(projectionNode);
+    deleteNode.addAndLinkChild(scanNode);
+    AbstractPlanNode countNode=insertCountInDMLPlan(deleteNode);
+    sendNode.addAndLinkChild(countNode);
+    recvNode.updateOutputColumns(m_catalogDb);
+    return addSumAndSendToDMLNode(subSelectRoot);
+  }
+}

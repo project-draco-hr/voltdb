@@ -1,0 +1,86 @@
+{
+  if (profilingLevel == Level.DISABLED)   return;
+  if (allCallCount == 0)   return;
+  PrintStream printer=null;
+  try {
+    try {
+      printer=new PrintStream(PROFILE_FILENAME);
+    }
+ catch (    FileNotFoundException e) {
+      e.printStackTrace();
+      profilingLevel=Level.DISABLED;
+      return;
+    }
+    printer.println("+========================================== PROCEDURE INFO ===========================================+");
+    printer.println("| PROC                  |     Count |  % time | Avg uSecs |      Min |  # Stmts | Std. Dev |      TPS |");
+    printer.println("+-----------------------------------------------------------------------------------------------------+");
+    TreeSet<TimingInfo> tset=new TreeSet<TimingInfo>();
+    for (    TimingInfo ti : times.values()) {
+      tset.add(ti);
+    }
+    long totalStmtCalls=0;
+    for (    TimingInfo ti : tset) {
+      double percent=ti.totalTime / (totalTime / 100.0);
+      long uSecs=ti.averageTime / 1000;
+      double tps=1000000000.0 / ti.averageTime;
+      long stddev=(long)Math.sqrt(ti.sumOfSquares / ti.callCount - uSecs * uSecs);
+      printer.printf("| %-21s | %9d | %6.2f%% | %9d | %8d | %8d | %8d | %8.2f |\n",ti.name,ti.callCount,percent,uSecs,ti.min / 1000,ti.stmtCalls,stddev,tps);
+      totalStmtCalls+=ti.stmtCalls;
+    }
+    printer.println("+-----------------------------------------------------------------------------------------------------+");
+    printer.printf("| %-21s | %9d | %6.2f%% | %9d |          | %8d |           |%8.2f |\n","TOTALS",allCallCount,100.0,totalTime / 1000,totalStmtCalls,1000000000.0 / (totalTime / allCallCount));
+    printer.println("+=====================================================================================================+\n");
+    printer.flush();
+    printer.println("+====================================== STATEMENT INFO ==========================================+");
+    printer.println("| PROC / STMT                 |     Count |  % time | Avg uSecs | #PerProc | %PerCall | %ofTotal |");
+    printer.println("+------------------------------------------------------------------------------------------------+");
+    for (    TimingInfo ti : tset) {
+      long totalStmtTime=0;
+      TreeSet<TimingInfo> stset=new TreeSet<TimingInfo>();
+      for (      long fragId : ti.stmts.keySet()) {
+        TimingInfo sti=ti.stmts.get(fragId);
+        if (sti.name == null) {
+          CatalogMap<Statement> stmts=ti.proc.getStatements();
+          for (          Statement stmt : stmts) {
+            CatalogMap<PlanFragment> frags=stmt.getFragments();
+            for (            PlanFragment frag : frags) {
+              if (CatalogUtil.getUniqueIdForFragment(frag) == fragId)               sti.name=stmt.getTypeName();
+            }
+          }
+        }
+        stset.add(sti);
+        totalStmtTime+=sti.totalTime;
+      }
+      long javaTime=ti.totalTime - totalStmtTime;
+      double percent=javaTime / (ti.totalTime / 100.0);
+      long uSecs=(long)(javaTime / (double)ti.callCount / 1000.0);
+      printer.printf("| %-27s |           |         |           |          |          |          |\n",ti.name);
+      printer.printf("|   (Java Overhead)           |           | %6.2f%% | %9d |          |          | %7.3f%% |\n",percent,uSecs,(javaTime * 100.0) / totalTime);
+      for (      TimingInfo sti : stset) {
+        percent=sti.totalTime / (ti.totalTime / 100.0);
+        uSecs=sti.averageTime / 1000;
+        double percentOfWhole=(sti.totalTime * 100.0) / totalTime;
+        double perProc=(double)sti.callCount / ti.callCount;
+        double perCallPercent=percentOfWhole / perProc;
+        printer.printf("|   %-25s | %9d | %6.2f%% | %9d | %8.3f | %7.3f%% | %7.3f%% |\n",sti.name,sti.callCount,percent,uSecs,perProc,perCallPercent,percentOfWhole);
+      }
+      printer.println("|                             |           |         |           |          |          |          |");
+    }
+    printer.println("+================================================================================================+\n");
+    printer.flush();
+    long fullTime=profileEndTime - profileStartTime;
+    printer.printf("\nRan benchmark for %d \n",fullTime / 1000);
+    printer.printf("Ran procedures for %d \n",totalTime / 1000);
+    printer.printf("Ran statements for %d \n\n",stmtTotalTime / 1000);
+    printer.printf("Spend %5.2f%% of run time in procedures\n",((double)totalTime / fullTime) * 100.0);
+    printer.printf("Spend %5.2f%% of run time in stmts\n",((double)stmtTotalTime / fullTime) * 100.0);
+    printer.printf("Spend %5.2f%% of procedure time in stmts\n",((double)stmtTotalTime / totalTime) * 100.0);
+    printer.flush();
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+  }
+ finally {
+    if ((printer != null) && (printer != System.out))     printer.close();
+  }
+}

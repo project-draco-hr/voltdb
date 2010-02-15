@@ -1,0 +1,59 @@
+{
+  HsqlArrayList list=new HsqlArrayList();
+  if (!(map instanceof HashMappedList)) {
+    return null;
+  }
+  if (map.isEmpty()) {
+    return ValuePool.emptyStringArray;
+  }
+  Iterator it=map.values().iterator();
+  if (type == SchemaObject.FUNCTION || type == SchemaObject.PROCEDURE) {
+    OrderedHashSet set=new OrderedHashSet();
+    while (it.hasNext()) {
+      RoutineSchema routine=(RoutineSchema)it.next();
+      for (int i=0; i < routine.routines.length; i++) {
+        set.add(routine.routines[i]);
+      }
+    }
+    it=set.iterator();
+  }
+  while (it.hasNext()) {
+    SchemaObject object=(SchemaObject)it.next();
+    OrderedHashSet references=object.getReferences();
+    if (references != null) {
+      boolean isResolved=true;
+      for (int j=0; j < references.size(); j++) {
+        HsqlName name=(HsqlName)references.get(j);
+        if (SqlInvariants.isSchemaNameSystem(name)) {
+          continue;
+        }
+        if (name.type == SchemaObject.COLUMN) {
+          name=name.parent;
+        }
+        if (name.type == SchemaObject.CHARSET) {
+          if (name.schema == null) {
+            continue;
+          }
+        }
+        if (!resolved.contains(name)) {
+          isResolved=false;
+          break;
+        }
+      }
+      if (!isResolved) {
+        unresolved.add(object);
+        continue;
+      }
+    }
+    resolved.add(object.getName());
+    if (object.getType() == SchemaObject.TABLE) {
+      list.addAll(((Table)object).getSQL(resolved,unresolved));
+    }
+ else {
+      list.add(object.getSQL());
+    }
+  }
+  String[] array=new String[list.size()];
+  list.toArray(array);
+  return array;
+}

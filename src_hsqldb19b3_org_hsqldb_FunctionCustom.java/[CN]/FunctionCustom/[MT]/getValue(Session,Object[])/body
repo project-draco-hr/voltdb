@@ -1,0 +1,438 @@
+{
+switch (funcType) {
+case FUNC_EXTRACT:
+case FUNC_TRIM_CHAR:
+case FUNC_OVERLAY_CHAR:
+    return super.getValue(session,data);
+case FUNC_DATABASE:
+  return session.getDatabase().getPath();
+case FUNC_ISAUTOCOMMIT:
+return session.isAutoCommit() ? Boolean.TRUE : Boolean.FALSE;
+case FUNC_ISREADONLYSESSION:
+return session.isReadOnlyDefault() ? Boolean.TRUE : Boolean.FALSE;
+case FUNC_ISREADONLYDATABASE:
+return session.getDatabase().databaseReadOnly ? Boolean.TRUE : Boolean.FALSE;
+case FUNC_ISREADONLYDATABASEFILES:
+return session.getDatabase().isFilesReadOnly() ? Boolean.TRUE : Boolean.FALSE;
+case FUNC_IDENTITY:
+{
+Number id=session.getLastIdentity();
+if (id instanceof Long) {
+return id;
+}
+ else {
+return ValuePool.getLong(id.longValue());
+}
+}
+case FUNC_TIMESTAMPADD:
+{
+if (data[1] == null || data[2] == null) {
+return null;
+}
+int part=((Number)nodes[0].valueData).intValue();
+long units=((Number)data[1]).longValue();
+TimestampData source=(TimestampData)data[2];
+IntervalType t;
+Object o;
+switch (part) {
+case Tokens.SQL_TSI_FRAC_SECOND:
+{
+long seconds=units / DTIType.limitNanoseconds;
+int nanos=(int)(units % DTIType.limitNanoseconds);
+t=Type.SQL_INTERVAL_SECOND_MAX_FRACTION;
+o=new IntervalSecondData(seconds,nanos,t);
+return dataType.add(source,o,t);
+}
+case Tokens.SQL_TSI_SECOND:
+t=Type.SQL_INTERVAL_SECOND;
+o=IntervalSecondData.newIntervalSeconds(units,t);
+return dataType.add(source,o,t);
+case Tokens.SQL_TSI_MINUTE:
+t=Type.SQL_INTERVAL_MINUTE;
+o=IntervalSecondData.newIntervalMinute(units,t);
+return dataType.add(source,o,t);
+case Tokens.SQL_TSI_HOUR:
+t=Type.SQL_INTERVAL_HOUR;
+o=IntervalSecondData.newIntervalHour(units,t);
+return dataType.add(source,o,t);
+case Tokens.SQL_TSI_DAY:
+t=Type.SQL_INTERVAL_DAY;
+o=IntervalSecondData.newIntervalDay(units,t);
+return dataType.add(source,o,t);
+case Tokens.SQL_TSI_WEEK:
+t=Type.SQL_INTERVAL_DAY;
+o=IntervalSecondData.newIntervalDay(units * 7,t);
+return dataType.add(source,o,t);
+case Tokens.SQL_TSI_MONTH:
+t=Type.SQL_INTERVAL_MONTH;
+o=IntervalMonthData.newIntervalMonth(units,t);
+return dataType.add(source,o,t);
+case Tokens.SQL_TSI_QUARTER:
+t=Type.SQL_INTERVAL_MONTH;
+o=IntervalMonthData.newIntervalMonth(units * 3,t);
+return dataType.add(source,o,t);
+case Tokens.SQL_TSI_YEAR:
+t=Type.SQL_INTERVAL_YEAR;
+o=IntervalMonthData.newIntervalMonth(units,t);
+return dataType.add(source,o,t);
+default :
+throw Error.runtimeError(ErrorCode.U_S0500,"FunctionCustom");
+}
+}
+case FUNC_TIMESTAMPDIFF:
+{
+if (data[1] == null || data[2] == null) {
+return null;
+}
+int part=((Number)nodes[0].valueData).intValue();
+TimestampData a=(TimestampData)data[2];
+TimestampData b=(TimestampData)data[1];
+if (nodes[2].dataType.isDateTimeTypeWithZone()) {
+a=(TimestampData)Type.SQL_TIMESTAMP.convertToType(session,a,Type.SQL_TIMESTAMP_WITH_TIME_ZONE);
+}
+if (nodes[1].dataType.isDateTimeTypeWithZone()) {
+b=(TimestampData)Type.SQL_TIMESTAMP.convertToType(session,b,Type.SQL_TIMESTAMP_WITH_TIME_ZONE);
+}
+IntervalType t;
+switch (part) {
+case Tokens.SQL_TSI_FRAC_SECOND:
+t=Type.SQL_INTERVAL_SECOND_MAX_PRECISION;
+IntervalSecondData interval=(IntervalSecondData)t.subtract(a,b,null);
+return new Long(DTIType.limitNanoseconds * interval.getSeconds() + interval.getNanos());
+case Tokens.SQL_TSI_SECOND:
+t=Type.SQL_INTERVAL_SECOND_MAX_PRECISION;
+return new Long(t.convertToLong(t.subtract(a,b,null)));
+case Tokens.SQL_TSI_MINUTE:
+t=Type.SQL_INTERVAL_MINUTE_MAX_PRECISION;
+return new Long(t.convertToLong(t.subtract(a,b,null)));
+case Tokens.SQL_TSI_HOUR:
+t=Type.SQL_INTERVAL_HOUR_MAX_PRECISION;
+return new Long(t.convertToLong(t.subtract(a,b,null)));
+case Tokens.SQL_TSI_DAY:
+t=Type.SQL_INTERVAL_DAY_MAX_PRECISION;
+return new Long(t.convertToLong(t.subtract(a,b,null)));
+case Tokens.SQL_TSI_WEEK:
+t=Type.SQL_INTERVAL_DAY_MAX_PRECISION;
+return new Long(t.convertToLong(t.subtract(a,b,null)) / 7);
+case Tokens.SQL_TSI_MONTH:
+t=Type.SQL_INTERVAL_MONTH_MAX_PRECISION;
+return new Long(t.convertToLong(t.subtract(a,b,null)));
+case Tokens.SQL_TSI_QUARTER:
+t=Type.SQL_INTERVAL_MONTH_MAX_PRECISION;
+return new Long(t.convertToLong(t.subtract(a,b,null)) / 3);
+case Tokens.SQL_TSI_YEAR:
+t=Type.SQL_INTERVAL_YEAR_MAX_PRECISION;
+return new Long(t.convertToLong(t.subtract(a,b,null)));
+default :
+throw Error.runtimeError(ErrorCode.U_S0500,"FunctionCustom");
+}
+}
+case FUNC_SECONDS_MIDNIGHT:
+{
+if (data[0] == null) {
+return null;
+}
+}
+case FUNC_TRUNCATE:
+{
+if (data[0] == null || data[1] == null) {
+return null;
+}
+return ((NumberType)dataType).truncate(data[0],((Number)data[1]).intValue());
+}
+case FUNC_TO_CHAR:
+{
+if (data[0] == null || data[1] == null) {
+return null;
+}
+SimpleDateFormat format=session.getSimpleDateFormatGMT();
+String javaPattern=HsqlDateTime.toJavaDatePattern((String)data[1]);
+try {
+format.applyPattern(javaPattern);
+}
+ catch (Exception e) {
+throw Error.error(ErrorCode.X_22511);
+}
+Date date=(Date)((DateTimeType)nodes[0].dataType).convertSQLToJavaGMT(session,data[0]);
+return format.format(date);
+}
+case FUNC_TIMESTAMP:
+{
+boolean unary=nodes[1] == null;
+if (data[0] == null) {
+return null;
+}
+if (unary) {
+return Type.SQL_TIMESTAMP.convertToType(session,data[0],nodes[0].dataType);
+}
+if (data[1] == null) {
+return null;
+}
+TimestampData date=(TimestampData)Type.SQL_DATE.convertToType(session,data[0],nodes[0].dataType);
+TimeData time=(TimeData)Type.SQL_TIME.convertToType(session,data[1],nodes[1].dataType);
+return new TimestampData(date.getSeconds() + time.getSeconds(),time.getNanos());
+}
+case FUNC_PI:
+return Double.valueOf(Math.PI);
+case FUNC_RAND:
+{
+if (nodes[0] == null) {
+return Double.valueOf(session.random());
+}
+ else {
+long seed=((Number)data[0]).longValue();
+return Double.valueOf(seed);
+}
+}
+case FUNC_ACOS:
+{
+if (data[0] == null) {
+return null;
+}
+double d=NumberType.toDouble(data[0]);
+return Double.valueOf(java.lang.Math.acos(d));
+}
+case FUNC_ASIN:
+{
+if (data[0] == null) {
+return null;
+}
+double d=NumberType.toDouble(data[0]);
+return Double.valueOf(java.lang.Math.asin(d));
+}
+case FUNC_ATAN:
+{
+if (data[0] == null) {
+return null;
+}
+double d=NumberType.toDouble(data[0]);
+return Double.valueOf(java.lang.Math.atan(d));
+}
+case FUNC_COS:
+{
+if (data[0] == null) {
+return null;
+}
+double d=NumberType.toDouble(data[0]);
+return Double.valueOf(java.lang.Math.cos(d));
+}
+case FUNC_COT:
+{
+if (data[0] == null) {
+return null;
+}
+double d=NumberType.toDouble(data[0]);
+double c=1.0 / java.lang.Math.tan(d);
+return Double.valueOf(c);
+}
+case FUNC_DEGREES:
+{
+if (data[0] == null) {
+return null;
+}
+double d=NumberType.toDouble(data[0]);
+return Double.valueOf(java.lang.Math.toDegrees(d));
+}
+case FUNC_SIN:
+{
+if (data[0] == null) {
+return null;
+}
+double d=NumberType.toDouble(data[0]);
+return Double.valueOf(java.lang.Math.sin(d));
+}
+case FUNC_TAN:
+{
+if (data[0] == null) {
+return null;
+}
+double d=NumberType.toDouble(data[0]);
+return Double.valueOf(java.lang.Math.tan(d));
+}
+case FUNC_LOG10:
+{
+if (data[0] == null) {
+return null;
+}
+double d=NumberType.toDouble(data[0]);
+return Double.valueOf(java.lang.Math.log10(d));
+}
+case FUNC_RADIANS:
+{
+if (data[0] == null) {
+return null;
+}
+double d=NumberType.toDouble(data[0]);
+return Double.valueOf(java.lang.Math.toRadians(d));
+}
+case FUNC_SIGN:
+{
+if (data[0] == null) {
+return null;
+}
+return ((NumberType)nodes[0].dataType).compareToZero(data[0]);
+}
+case FUNC_ATAN2:
+{
+if (data[0] == null) {
+return null;
+}
+double a=NumberType.toDouble(data[0]);
+double b=NumberType.toDouble(data[1]);
+return Double.valueOf(java.lang.Math.atan2(a,b));
+}
+case FUNC_ASCII:
+{
+String arg;
+if (data[0] == null) {
+return null;
+}
+if (nodes[0].dataType.isLobType()) {
+arg=((ClobData)data[0]).getSubString(session,0,1);
+}
+ else {
+arg=(String)data[0];
+}
+if (arg.length() == 0) {
+return null;
+}
+return ValuePool.getInt(arg.charAt(0));
+}
+case FUNC_CHAR:
+if (data[0] == null) {
+return null;
+}
+int arg=((Number)data[0]).intValue();
+return String.valueOf(arg);
+case FUNC_ROUND:
+{
+if (data[0] == null || data[1] == null) {
+return null;
+}
+double d=NumberType.toDouble(data[0]);
+int i=((Number)data[1]).intValue();
+return Library.round(d,i);
+}
+case FUNC_ROUNDMAGIC:
+{
+if (data[0] == null) {
+return null;
+}
+double d=NumberType.toDouble(data[0]);
+return Library.roundMagic(d);
+}
+case FUNC_SOUNDEX:
+{
+if (data[0] == null) {
+return null;
+}
+String s=(String)data[0];
+return Library.soundex(s);
+}
+case FUNC_BITAND:
+case FUNC_BITOR:
+case FUNC_BITXOR:
+{
+for (int i=0; i < data.length; i++) {
+if (data[0] == null) {
+return null;
+}
+}
+if (nodes[0].dataType.isIntegralType()) {
+int v=0;
+int a=((Number)data[0]).intValue();
+int b=((Number)data[0]).intValue();
+switch (funcType) {
+case FUNC_BITAND:
+v=a & b;
+break;
+case FUNC_BITOR:
+v=a | b;
+break;
+case FUNC_BITXOR:
+v=a ^ b;
+break;
+}
+return ValuePool.getInt(v);
+}
+ else {
+return null;
+}
+}
+case FUNC_DIFFERENCE:
+{
+for (int i=0; i < data.length; i++) {
+if (data[0] == null) {
+return null;
+}
+}
+int v=Library.difference((String)data[0],(String)data[1]);
+return ValuePool.getInt(v);
+}
+case FUNC_HEXTORAW:
+{
+if (data[0] == null) {
+return null;
+}
+return dataType.convertToType(session,data[0],nodes[0].dataType);
+}
+case FUNC_RAWTOHEX:
+{
+if (data[0] == null) {
+return null;
+}
+return nodes[0].dataType.convertToString(data[0]);
+}
+case FUNC_LOCATE:
+{
+for (int i=0; i < data.length; i++) {
+if (data[0] == null) {
+return null;
+}
+}
+int v=Library.locate((String)data[0],(String)data[1],(Integer)data[2]);
+return ValuePool.getInt(v);
+}
+case FUNC_REPEAT:
+{
+for (int i=0; i < data.length; i++) {
+if (data[0] == null) {
+return null;
+}
+}
+return Library.repeat((String)data[0],((Number)data[1]).intValue());
+}
+case FUNC_REPLACE:
+{
+for (int i=0; i < data.length; i++) {
+if (data[0] == null) {
+return null;
+}
+}
+return Library.replace((String)data[0],(String)data[1],(String)data[2]);
+}
+case FUNC_LEFT:
+case FUNC_RIGHT:
+{
+for (int i=0; i < data.length; i++) {
+if (data[0] == null) {
+return null;
+}
+}
+int count=((Number)data[1]).intValue();
+return ((CharacterType)dataType).substring(session,data[0],0,count,true,funcType == FUNC_RIGHT);
+}
+case FUNC_SPACE:
+{
+for (int i=0; i < data.length; i++) {
+if (data[0] == null) {
+return null;
+}
+}
+int count=((Number)data[0]).intValue();
+return ValuePool.getSpaces(count);
+}
+default :
+throw Error.runtimeError(ErrorCode.U_S0500,"FunctionCustom");
+}
+}

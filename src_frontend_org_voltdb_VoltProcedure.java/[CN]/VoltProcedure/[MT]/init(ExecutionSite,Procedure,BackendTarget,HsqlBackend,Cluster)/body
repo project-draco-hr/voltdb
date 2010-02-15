@@ -1,0 +1,94 @@
+{
+  if (m_initialized) {
+    throw new IllegalStateException("VoltProcedure has already been initialized");
+  }
+ else {
+    m_initialized=true;
+  }
+  this.catProc=catProc;
+  this.m_site=site;
+  this.isNative=(eeType != BackendTarget.HSQLDB_BACKEND);
+  this.hsql=hsql;
+  this.m_cluster=cluster;
+  statsCollector=new ProcedureStatsCollector();
+  VoltDB.instance().getStatsAgent().registerStatsSource(SysProcSelector.PROCEDURE,Integer.parseInt(site.site.getTypeName()),statsCollector);
+  for (int i=0; i < expectedDeps.length; i++)   expectedDeps[i]=1;
+  if (catProc.getHasjava()) {
+    int tempParamTypesLength=0;
+    Method tempProcMethod=null;
+    Method[] methods=getClass().getMethods();
+    Class<?> tempParamTypes[]=null;
+    boolean tempParamTypeIsPrimitive[]=null;
+    boolean tempParamTypeIsArray[]=null;
+    Class<?> tempParamTypeComponentType[]=null;
+    for (    final Method m : methods) {
+      String name=m.getName();
+      if (name.equals("run")) {
+        tempProcMethod=m;
+        tempParamTypes=tempProcMethod.getParameterTypes();
+        tempParamTypesLength=tempParamTypes.length;
+        tempParamTypeIsPrimitive=new boolean[tempParamTypesLength];
+        tempParamTypeIsArray=new boolean[tempParamTypesLength];
+        tempParamTypeComponentType=new Class<?>[tempParamTypesLength];
+        for (int ii=0; ii < tempParamTypesLength; ii++) {
+          tempParamTypeIsPrimitive[ii]=tempParamTypes[ii].isPrimitive();
+          tempParamTypeIsArray[ii]=tempParamTypes[ii].isArray();
+          tempParamTypeComponentType[ii]=tempParamTypes[ii].getComponentType();
+        }
+      }
+    }
+    paramTypesLength=tempParamTypesLength;
+    procMethod=tempProcMethod;
+    paramTypes=tempParamTypes;
+    paramTypeIsPrimitive=tempParamTypeIsPrimitive;
+    paramTypeIsArray=tempParamTypeIsArray;
+    paramTypeComponentType=tempParamTypeComponentType;
+    if (procMethod == null) {
+      log.debug("No good method found in: " + getClass().getName());
+    }
+    Field[] fields=getClass().getFields();
+    for (    final Field f : fields) {
+      if (f.getType() == SQLStmt.class) {
+        String name=f.getName();
+        Statement s=catProc.getStatements().get(name);
+        if (s != null) {
+          try {
+            SQLStmt stmt=(SQLStmt)f.get(this);
+            stmt.catStmt=s;
+            initSQLStmt(stmt);
+          }
+ catch (          IllegalArgumentException e) {
+            e.printStackTrace();
+          }
+catch (          IllegalAccessException e) {
+            e.printStackTrace();
+          }
+        }
+      }
+    }
+  }
+ else {
+    Statement catStmt=catProc.getStatements().get(ANON_STMT_NAME);
+    SQLStmt stmt=new SQLStmt(catStmt.getSqltext());
+    stmt.catStmt=catStmt;
+    initSQLStmt(stmt);
+    m_cachedSingleStmt[0]=stmt;
+    procMethod=null;
+    paramTypesLength=catProc.getParameters().size();
+    paramTypes=new Class<?>[paramTypesLength];
+    paramTypeIsPrimitive=new boolean[paramTypesLength];
+    paramTypeIsArray=new boolean[paramTypesLength];
+    paramTypeComponentType=new Class<?>[paramTypesLength];
+    for (    ProcParameter param : catProc.getParameters()) {
+      VoltType type=VoltType.get((byte)param.getType());
+      if (type == VoltType.INTEGER)       type=VoltType.BIGINT;
+      if (type == VoltType.SMALLINT)       type=VoltType.BIGINT;
+      if (type == VoltType.TINYINT)       type=VoltType.BIGINT;
+      paramTypes[param.getIndex()]=type.classFromType();
+      paramTypeIsPrimitive[param.getIndex()]=true;
+      paramTypeIsArray[param.getIndex()]=param.getIsarray();
+      assert(paramTypeIsArray[param.getIndex()] == false);
+      paramTypeComponentType[param.getIndex()]=null;
+    }
+  }
+}
