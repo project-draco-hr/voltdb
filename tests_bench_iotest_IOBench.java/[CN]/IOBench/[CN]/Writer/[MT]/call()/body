@@ -1,0 +1,47 @@
+{
+  final File f=File.createTempFile("foo","bar",new File("/var/voltdb"));
+  f.deleteOnExit();
+  try {
+    final FileOutputStream fos=new FileOutputStream(f);
+    final FileChannel fc=fos.getChannel();
+    try {
+synchronized (readyLock) {
+        readyThreads++;
+        readyLock.notify();
+      }
+synchronized (goLock) {
+        while (!goNow) {
+          goLock.wait();
+        }
+      }
+      for (int ii=0; ii < 128; ii++) {
+        final int percentDone=(int)((ii / 128.0) * 100.0);
+        if (extra_output && percentDone % 25 == 0) {
+          System.out.println("Thread " + Thread.currentThread().getId() + "  is "+ percentDone+ "% complete with parallel test");
+        }
+        ByteBuffer b=m_buffer.duplicate();
+        while (b.hasRemaining()) {
+          fc.write(b);
+        }
+      }
+      fos.getFD().sync();
+      if (extra_output) {
+        System.out.println("Thread " + Thread.currentThread().getId() + " is finished");
+      }
+synchronized (readyLock) {
+        readyThreads--;
+        readyLock.notifyAll();
+        while (readyThreads > 0) {
+          readyLock.wait();
+        }
+      }
+    }
+  finally {
+      fos.close();
+    }
+  }
+  finally {
+    f.delete();
+  }
+  return null;
+}
