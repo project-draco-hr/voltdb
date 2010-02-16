@@ -2,12 +2,16 @@
   assert(m_initialized);
   assert(message != null);
   assert(siteIds != null);
-  final HashSet<ForeignHost> foreignHosts=new HashSet<ForeignHost>(32);
+  final HashMap<ForeignHost,ForeignHostBundle> foreignHosts=new HashMap<ForeignHost,ForeignHostBundle>(32);
   for (  int siteId : siteIds) {
     ForeignHost host=presend(siteId,mailboxId,message);
-    if (host != null) {
-      foreignHosts.add(host);
+    if (host == null)     continue;
+    ForeignHostBundle bundle=foreignHosts.get(host);
+    if (bundle == null) {
+      bundle=new ForeignHostBundle();
+      foreignHosts.put(host,bundle);
     }
+    bundle.add(siteId);
   }
   if (foreignHosts.size() == 0)   return;
   final FutureTask<ByteBuffer> buildMessageTask=new FutureTask<ByteBuffer>(new Callable<ByteBuffer>(){
@@ -16,8 +20,8 @@
     }
   }
 );
-  for (  ForeignHost host : foreignHosts) {
-    host.send(mailboxId,siteIds,siteIds.length,new DeferredSerialization(){
+  for (  Entry<ForeignHost,ForeignHostBundle> e : foreignHosts.entrySet()) {
+    e.getKey().send(mailboxId,e.getValue().siteIds,e.getValue().count,new DeferredSerialization(){
       @Override public final BBContainer serialize(      DBBPool pool) throws IOException {
         ByteBuffer messageBytes=null;
         try {
