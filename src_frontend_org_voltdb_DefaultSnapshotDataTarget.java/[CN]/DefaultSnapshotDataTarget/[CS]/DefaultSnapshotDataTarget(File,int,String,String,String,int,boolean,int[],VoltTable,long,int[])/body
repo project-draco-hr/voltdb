@@ -9,7 +9,8 @@
 );
   final FastSerializer fs=new FastSerializer();
   fs.writeInt(0);
-  fs.writeByte(0);
+  fs.writeInt(0);
+  fs.writeByte(1);
   for (int ii=0; ii < 4; ii++) {
     fs.writeInt(version[ii]);
   }
@@ -24,13 +25,24 @@
     fs.writeInt(numPartitions);
   }
   final BBContainer container=fs.getBBContainer();
-  write(container);
+  container.b.position(4);
+  container.b.putInt(container.b.remaining() - 4);
+  container.b.position(0);
   FastSerializer schemaSerializer=new FastSerializer();
   schemaTable.writeExternal(schemaSerializer);
   final BBContainer schemaContainer=schemaSerializer.getBBContainer();
   schemaContainer.b.limit(schemaContainer.b.limit() - 4);
   schemaContainer.b.position(schemaContainer.b.position() + 4);
-  Future<?> writeFuture=write(schemaContainer,false);
+  final CRC32 crc=new CRC32();
+  ByteBuffer aggregateBuffer=ByteBuffer.allocate(container.b.remaining() + schemaContainer.b.remaining());
+  aggregateBuffer.put(container.b);
+  aggregateBuffer.put(schemaContainer.b);
+  aggregateBuffer.flip();
+  crc.update(aggregateBuffer.array(),4,aggregateBuffer.capacity() - 4);
+  final int crcValue=(int)crc.getValue();
+  aggregateBuffer.putInt(crcValue).position(8);
+  aggregateBuffer.put((byte)0).position(0);
+  Future<?> writeFuture=write(DBBPool.wrapBB(aggregateBuffer),false);
   try {
     writeFuture.get();
   }

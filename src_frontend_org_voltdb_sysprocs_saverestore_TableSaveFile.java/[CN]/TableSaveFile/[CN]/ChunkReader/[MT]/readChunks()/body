@@ -8,7 +8,7 @@
       throw new RuntimeException(e);
     }
     try {
-      ByteBuffer chunkLengthB=ByteBuffer.allocate(8);
+      ByteBuffer chunkLengthB=ByteBuffer.allocate(12);
       while (chunkLengthB.hasRemaining()) {
         final int read=m_saveFile.read(chunkLengthB);
         if (read == -1) {
@@ -16,11 +16,14 @@
         }
       }
       chunkLengthB.flip();
-      int nextChunkLength=chunkLengthB.getInt();
-      int nextChunkPartitionId=chunkLengthB.getInt();
+      final int nextChunkLength=chunkLengthB.getInt();
+      final int nextChunkCRC=chunkLengthB.getInt();
+      final int nextChunkPartitionId=chunkLengthB.getInt();
+      final CRC32 crc=new CRC32();
+      crc.update(chunkLengthB.array(),8,4);
       if (m_relevantPartitionIds != null) {
         if (!m_relevantPartitionIds.contains(nextChunkPartitionId)) {
-          m_saveFile.position(m_saveFile.position() + (nextChunkLength - 4));
+          m_saveFile.position(m_saveFile.position() + (nextChunkLength - 8));
         }
       }
       Container c=m_buffers.poll();
@@ -33,13 +36,27 @@
       c.b.limit((nextChunkLength - 4) + m_tableHeader.capacity());
       m_tableHeader.position(0);
       c.b.put(m_tableHeader);
+      c.b.position(c.b.position() + 4);
+      final int checksumStartPosition=c.b.position();
       while (c.b.hasRemaining()) {
         final int read=m_saveFile.read(c.b);
         if (read == -1) {
           throw new EOFException();
         }
       }
-      c.b.flip();
+      c.b.position(c.b.position() - 4);
+      final int rowCount=c.b.getInt();
+      c.b.position(checksumStartPosition);
+      while (c.b.hasRemaining()) {
+        crc.update(c.b.get());
+      }
+      final int calculatedCRC=(int)crc.getValue();
+      if (calculatedCRC != nextChunkCRC) {
+        throw new IOException("CRC mismatch in saved table chunk");
+      }
+      c.b.limit(c.b.limit() - 4);
+      c.b.position(checksumStartPosition - 4);
+      c.b.putInt(rowCount);
       c.b.position(0);
       ++chunksRead;
 synchronized (TableSaveFile.this) {

@@ -10,7 +10,8 @@
   }
   m_chunkReads=new Semaphore(readAheadChunks);
   m_saveFile=dataIn;
-  final ByteBuffer lengthBuffer=ByteBuffer.allocate(4);
+  final CRC32 crc=new CRC32();
+  final ByteBuffer lengthBuffer=ByteBuffer.allocate(8);
   while (lengthBuffer.hasRemaining()) {
     final int read=m_saveFile.read(lengthBuffer);
     if (read == -1) {
@@ -18,7 +19,9 @@
     }
   }
   lengthBuffer.flip();
+  final int originalCRC=lengthBuffer.getInt();
   int length=lengthBuffer.getInt();
+  crc.update(lengthBuffer.array(),4,4);
   final ByteBuffer saveRestoreHeader=ByteBuffer.allocate(length);
   while (saveRestoreHeader.hasRemaining()) {
     final int read=m_saveFile.read(saveRestoreHeader);
@@ -27,6 +30,7 @@
     }
   }
   saveRestoreHeader.flip();
+  crc.update(saveRestoreHeader.array());
   FastDeserializer fd=new FastDeserializer(saveRestoreHeader);
   m_completed=fd.readByte() == 1 ? true : false;
   for (int ii=0; ii < 4; ii++) {
@@ -54,6 +58,7 @@
       throw new EOFException();
     }
   }
+  crc.update(lengthBuffer.array(),0,2);
   lengthBuffer.flip();
   length=lengthBuffer.getShort();
   m_tableHeader=ByteBuffer.allocate(length);
@@ -63,5 +68,10 @@
     if (read == -1) {
       throw new EOFException();
     }
+  }
+  crc.update(m_tableHeader.array(),2,length - 2);
+  final int actualCRC=(int)crc.getValue();
+  if (originalCRC != actualCRC) {
+    throw new IOException("Checksum mismatch");
   }
 }
