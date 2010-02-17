@@ -1,4 +1,5 @@
 {
+  final long startTime=System.currentTimeMillis();
   if (path == null || path.equals("")) {
     ColumnInfo[] result_columns=new ColumnInfo[1];
     int ii=0;
@@ -10,14 +11,23 @@
   VoltTable scanResults=performSnapshotScanWork(path)[0];
   VoltTable clientResults=constructClientResultsTable();
   VoltTable diskFreeResults=performDiskFreeScanWork(path)[0];
+  VoltTable digestScanResults=performSnapshotDigestScanWork(path)[0];
   HashMap<String,Snapshot> aggregates=new HashMap<String,Snapshot>();
   while (scanResults.advanceRow()) {
     if (scanResults.getString("RESULT").equals("SUCCESS") && scanResults.getString("READABLE").equals("TRUE") && scanResults.getString("COMPLETED").equals("TRUE")) {
       hashToSnapshot(scanResults,aggregates);
     }
   }
-  for (  Snapshot s : aggregates.values()) {
-    clientResults.addRow(s.m_path,s.m_nonce,s.m_createTime,s.size(),s.tables(),s.complete());
+  while (digestScanResults.advanceRow()) {
+    if (digestScanResults.getString("RESULT").equals("SUCCESS")) {
+      hashDigestToSnapshot(digestScanResults,aggregates);
+    }
   }
+  for (  Snapshot s : aggregates.values()) {
+    clientResults.addRow(s.asRow());
+  }
+  final long endTime=System.currentTimeMillis();
+  final long duration=endTime - startTime;
+  HOST_LOG.info("Finished scanning snapshots. Took " + duration + " milliseconds");
   return new VoltTable[]{clientResults,diskFreeResults,scanResults};
 }
