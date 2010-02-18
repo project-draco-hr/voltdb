@@ -1,0 +1,42 @@
+{
+  parsecommandline(args);
+  init_db();
+  for (int i=0; i < num_of_satellites; i++) {
+    Orbit o=new Orbit(Math.toRadians(minlat),Math.toRadians(maxlat),Math.toRadians(minoffset),Math.toRadians(maxoffset));
+    o.country=country;
+    o.id=i;
+    o.model=country;
+    sat.add(o);
+    try {
+      VoltTable[] result=db.callProcedure(AddSatellite.class.getSimpleName(),o.id,o.model,o.country,o.currentLat,o.currentLong);
+      o.id=(int)result[0].asScalarLong();
+      System.out.println("Satellite ID is " + o.id);
+    }
+ catch (    Exception e) {
+      System.err.println(e.getMessage());
+    }
+  }
+  int counter=0;
+  while (counter < 3000) {
+    counter++;
+    for (    Orbit s : sat) {
+      s.Move();
+      try {
+        VoltTable[] result=db.callProcedure(UpdateLocation.class.getSimpleName(),s.id,s.currentLat,s.currentLong);
+        assert(result != null);
+        long updatedRows=result[0].fetchRow(0).getLong(0);
+        assert(updatedRows > 0);
+      }
+ catch (      Exception e) {
+        System.err.println(e.getMessage());
+      }
+    }
+    pause(.1);
+  }
+  try {
+    db.shutdown();
+  }
+ catch (  InterruptedException e) {
+    e.printStackTrace();
+  }
+}
