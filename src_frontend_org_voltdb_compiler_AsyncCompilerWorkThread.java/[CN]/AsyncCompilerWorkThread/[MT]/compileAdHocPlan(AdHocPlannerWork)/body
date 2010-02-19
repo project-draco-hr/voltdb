@@ -1,0 +1,44 @@
+{
+  TrivialCostModel costModel=new TrivialCostModel();
+  Cluster cluster=m_catalog.getClusters().get("cluster");
+  Database database=cluster.getDatabases().get("database");
+  QueryPlanner planner=new QueryPlanner(cluster,database,m_hsql,new DatabaseEstimates(),false,VoltDB.getQuietAdhoc());
+  CompiledPlan plan=null;
+  AdHocPlannedStmt plannedStmt=new AdHocPlannedStmt();
+  plannedStmt.clientHandle=work.clientHandle;
+  plannedStmt.connectionId=work.connectionId;
+  plannedStmt.clientData=work.clientData;
+  String error_msg=null;
+  try {
+    plan=planner.compilePlan(costModel,work.sql,"adhocsql-" + String.valueOf(counter++),"adhocproc",false,null);
+    error_msg=planner.getErrorMessage();
+  }
+ catch (  Exception e) {
+    plan=null;
+    error_msg=e.getMessage();
+  }
+  if (plan != null) {
+    plan.sql=work.sql;
+  }
+ else {
+    plannedStmt.errorMsg="Failed to ad-hoc-plan for stmt: " + work.sql;
+    plannedStmt.errorMsg+=" with error: " + error_msg;
+  }
+  if (plan != null) {
+    assert(plan.fragments.size() <= 2);
+    for (int i=0; i < plan.fragments.size(); i++) {
+      Fragment frag=plan.fragments.get(i);
+      PlanNodeList planList=new PlanNodeList(frag.planGraph);
+      String serializedPlan=planList.toJSONString();
+      if (frag.multiPartition) {
+        plannedStmt.collectorFragment=serializedPlan;
+      }
+ else {
+        plannedStmt.aggregatorFragment=serializedPlan;
+      }
+    }
+    plannedStmt.isReplicatedTableDML=plan.replicatedTableDML;
+    plannedStmt.sql=plan.sql;
+  }
+  return plannedStmt;
+}

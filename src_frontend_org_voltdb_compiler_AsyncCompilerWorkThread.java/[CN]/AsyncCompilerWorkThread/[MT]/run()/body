@@ -1,0 +1,30 @@
+{
+  AsyncCompilerWork work=null;
+  try {
+    work=m_work.take();
+  }
+ catch (  InterruptedException e) {
+    e.printStackTrace();
+  }
+  while (work.shouldShutdown == false) {
+    if (work.shouldDump == true) {
+      DumpManager.putDump(m_dumpId,m_currentDumpTimestamp,true,getDumpContents());
+    }
+ else {
+      AsyncCompilerResult result=null;
+      if (work instanceof AdHocPlannerWork)       result=compileAdHocPlan((AdHocPlannerWork)work);
+      if (work instanceof CatalogChangeWork)       result=prepareApplicationCatalogDiff((CatalogChangeWork)work);
+      assert(result != null);
+synchronized (m_finished) {
+        m_finished.add(result);
+      }
+    }
+    try {
+      work=m_work.take();
+    }
+ catch (    InterruptedException e) {
+      e.printStackTrace();
+    }
+  }
+  if (m_hsql != null)   m_hsql.close();
+}
