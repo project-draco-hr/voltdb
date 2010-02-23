@@ -19,10 +19,11 @@
       final int nextChunkLength=chunkLengthB.getInt();
       final int nextChunkCRC=chunkLengthB.getInt();
       final int nextChunkPartitionId=chunkLengthB.getInt();
-      if (m_relevantPartitionIds != null) {
-        if (!m_relevantPartitionIds.contains(nextChunkPartitionId)) {
-          m_saveFile.position(m_saveFile.position() + (nextChunkLength - 8));
-        }
+      if (nextChunkLength < 0) {
+        throw new IOException("Corrupted TableSaveFile chunk has negative chunk length");
+      }
+      if (nextChunkLength > 2097152) {
+        throw new IOException("Corrupted TableSaveFile chunk has unreasonable header length > 2 megs");
       }
       Container c=m_buffers.poll();
       if (c == null) {
@@ -50,6 +51,11 @@
       final int calculatedCRC=DBBPool.getBufferCRC32(c.b,c.b.position(),c.b.remaining());
       if (calculatedCRC != nextChunkCRC) {
         throw new IOException("CRC mismatch in saved table chunk");
+      }
+      if (m_relevantPartitionIds != null) {
+        if (!m_relevantPartitionIds.contains(nextChunkPartitionId)) {
+          m_saveFile.position(m_saveFile.position() + (nextChunkLength - 8));
+        }
       }
       c.b.limit(c.b.limit() - 4);
       c.b.position(checksumStartPosition);
