@@ -22,20 +22,15 @@
     File f=new File(m_config.m_pathToCatalog);
     hostLog.info("Loading application catalog jarfile from " + f.getAbsolutePath());
   }
-  String serializedCatalog=CatalogUtil.loadCatalogFromJar(m_config.m_pathToCatalog,hostLog);
+  final String serializedCatalog=CatalogUtil.loadCatalogFromJar(m_config.m_pathToCatalog,hostLog);
   if (serializedCatalog == null)   VoltDB.crashVoltDB();
-  m_catalog=new Catalog();
-  m_catalog.execute(serializedCatalog);
-  m_cluster=m_catalog.getClusters().get("cluster");
-  final org.voltdb.catalog.Database db=m_cluster.getDatabases().get("database");
-  m_procedures=db.getProcedures();
-  final SnapshotSchedule schedule=db.getSnapshotschedule().get("default");
-  m_authSystem=new AuthSystem(m_cluster.getDatabases().get("database"),m_cluster.getSecurityenabled());
-  m_sites=m_cluster.getSites();
-  m_siteTracker=new SiteTracker(m_sites);
-  int hostCount=m_cluster.getHosts().size();
+  Catalog catalog=new Catalog();
+  catalog.execute(serializedCatalog);
+  m_catalogContext=new CatalogContext(catalog,m_config.m_pathToCatalog);
+  final SnapshotSchedule schedule=m_catalogContext.database.getSnapshotschedule().get("default");
+  m_siteTracker=new SiteTracker(m_catalogContext.sites);
   int lowestNonExecSiteId=-1;
-  for (  Site site : m_sites) {
+  for (  Site site : m_catalogContext.sites) {
     if (!site.getIsexec()) {
       if (lowestNonExecSiteId == -1) {
         lowestNonExecSiteId=Integer.parseInt(site.getTypeName());
@@ -45,8 +40,7 @@
       }
     }
   }
-  m_catalogClassLoader=new JarClassLoader(m_config.m_pathToCatalog);
-  TheHashinator.initialize(m_catalog);
+  TheHashinator.initialize(catalog);
   m_network=new VoltNetwork(new Runnable[]{new Runnable(){
     @Override public void run(){
       for (      final ClientInterface ci : m_clientInterfaces) {
@@ -56,7 +50,7 @@
   }
 });
   try {
-    ELTManager.initialize(m_catalog);
+    ELTManager.initialize(catalog);
   }
  catch (  ELTManager.SetupException e) {
     hostLog.l7dlog(Level.FATAL,LogKeys.host_VoltDB_ELTInitFailure.name(),e);
@@ -64,34 +58,28 @@
   }
   InetAddress leader=null;
   try {
-    leader=InetAddress.getByName(m_cluster.getLeaderaddress());
+    leader=InetAddress.getByName(m_catalogContext.cluster.getLeaderaddress());
   }
  catch (  UnknownHostException ex) {
-    hostLog.l7dlog(Level.FATAL,LogKeys.host_VoltDB_CouldNotRetrieveLeaderAddress.name(),new Object[]{m_cluster.getLeaderaddress()},ex);
+    hostLog.l7dlog(Level.FATAL,LogKeys.host_VoltDB_CouldNotRetrieveLeaderAddress.name(),new Object[]{m_catalogContext.cluster.getLeaderaddress()},ex);
     throw new RuntimeException(ex);
   }
-  if (hostCount <= 0) {
-    hostLog.l7dlog(Level.FATAL,LogKeys.host_VoltDB_InvalidHostCount.name(),new Object[]{hostCount},null);
+  if (m_catalogContext.numberOfNodes <= 0) {
+    hostLog.l7dlog(Level.FATAL,LogKeys.host_VoltDB_InvalidHostCount.name(),new Object[]{m_catalogContext.numberOfNodes},null);
     VoltDB.crashVoltDB();
   }
-  hostLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_CreatingVoltDB.name(),new Object[]{hostCount,leader},null);
-  m_messenger=new HostMessenger(m_network,leader,hostCount,hostLog);
+  hostLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_CreatingVoltDB.name(),new Object[]{m_catalogContext.numberOfNodes,leader},null);
+  m_messenger=new HostMessenger(m_network,leader,m_catalogContext.numberOfNodes,hostLog);
   m_messenger.waitForGroupJoin();
   int myHostId=m_messenger.getHostId();
   m_localSites=new Hashtable<Integer,ExecutionSite>();
   m_siteThreads=new Hashtable<Integer,Thread>();
   m_runners=new ArrayList<ExecutionSiteRunner>();
-  m_numberOfExecSites=0;
-  m_numberOfNodes=hostCount;
   Site siteForThisThread=null;
   m_currentThreadSite=null;
-  for (  Site site : m_sites) {
+  for (  Site site : m_catalogContext.sites) {
     int sitesHostId=Integer.parseInt(site.getHost().getTypeName());
     int siteId=Integer.parseInt(site.getTypeName());
-    if (site.getPartition() != null) {
-      assert(site.getIsexec());
-      m_numberOfExecSites++;
-    }
     if (sitesHostId == myHostId) {
       log.l7dlog(Level.TRACE,LogKeys.org_voltdb_VoltDB_CreatingLocalSite.name(),new Object[]{siteId},null);
       m_messenger.createLocalSite(siteId);
@@ -100,7 +88,7 @@
           siteForThisThread=site;
         }
  else {
-          ExecutionSiteRunner runner=new ExecutionSiteRunner(siteId,m_catalog);
+          ExecutionSiteRunner runner=new ExecutionSiteRunner(siteId,m_catalogContext,serializedCatalog);
           m_runners.add(runner);
           Thread runnerThread=new Thread(runner,"Site " + siteId);
           runnerThread.start();
@@ -110,7 +98,7 @@
       }
     }
   }
-  ExecutionSite siteObj=new ExecutionSite(Integer.parseInt(siteForThisThread.getTypeName()),m_catalog);
+  ExecutionSite siteObj=new ExecutionSite(Integer.parseInt(siteForThisThread.getTypeName()),m_catalogContext,serializedCatalog);
   m_localSites.put(Integer.parseInt(siteForThisThread.getTypeName()),siteObj);
   m_currentThreadSite=siteObj;
   for (  ExecutionSiteRunner runner : m_runners) {
@@ -133,13 +121,13 @@ synchronized (runner) {
  else {
     hostLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_InternalProfilingDisabledOnMultipartitionHosts.name(),null);
   }
-  ProcedureProfiler.initializeWorkloadTrace(m_catalog);
+  ProcedureProfiler.initializeWorkloadTrace(catalog);
   int portOffset=0;
-  for (  Site site : m_sites) {
+  for (  Site site : m_catalogContext.sites) {
     int sitesHostId=Integer.parseInt(site.getHost().getTypeName());
     int siteId=Integer.parseInt(site.getTypeName());
     if ((sitesHostId == myHostId) && (site.getIsexec() == false)) {
-      ClientInterface ci=ClientInterface.create(m_network,m_messenger,hostCount,siteId,site.getInitiatorid(),config.m_port + portOffset++,siteId == lowestNonExecSiteId ? schedule : null);
+      ClientInterface ci=ClientInterface.create(m_network,m_messenger,m_catalogContext,m_catalogContext.numberOfNodes,siteId,site.getInitiatorid(),config.m_port + portOffset++,siteId == lowestNonExecSiteId ? schedule : null);
       m_clientInterfaces.add(ci);
       try {
         ci.startAcceptingConnections();
