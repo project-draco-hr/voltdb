@@ -1,0 +1,51 @@
+{
+  SnapshotDaemon daemon=getBasicDaemon();
+  long startTime=System.currentTimeMillis();
+  Pair<String,Object[]> work=daemon.processPeriodicWork(startTime);
+  work=daemon.processClientResponse(getSuccessfulScanOneResult());
+  assertNull(work);
+  assertNull(daemon.processPeriodicWork(startTime + 2000));
+  work=daemon.processPeriodicWork(startTime + 5000);
+  assertNotNull(work);
+  assertTrue("@SnapshotSave".equals(work.getFirst()));
+  assertTrue("/tmp".equals(work.getSecond()[0]));
+  assertTrue(((String)work.getSecond()[1]).startsWith("woobie_"));
+  assertEquals(0,work.getSecond()[2]);
+  assertNull(daemon.processClientResponse(getFailureResponse()));
+  assertEquals(SnapshotDaemon.State.FAILURE,daemon.getState());
+  daemon=getBasicDaemon();
+  startTime=System.currentTimeMillis();
+  assertNotNull(daemon.processPeriodicWork(startTime));
+  assertNull(daemon.processClientResponse(getSuccessfulScanOneResult()));
+  daemon.processPeriodicWork(startTime + 5000);
+  daemon.processClientResponse(getErrMsgResponse());
+  assertEquals(daemon.getState(),SnapshotDaemon.State.WAITING);
+  daemon=getBasicDaemon();
+  startTime=System.currentTimeMillis();
+  assertNotNull(daemon.processPeriodicWork(startTime));
+  assertNotNull(daemon.processClientResponse(getSuccessfulScanThreeResults()));
+  assertNull(daemon.processClientResponse(getErrMsgResponse()));
+  daemon.processPeriodicWork(startTime + 5000);
+  assertNull(daemon.processPeriodicWork(startTime + 10000));
+  daemon.processClientResponse(new ClientResponse(){
+    @Override public Exception getException(){
+      return null;
+    }
+    @Override public String getExtra(){
+      return null;
+    }
+    @Override public VoltTable[] getResults(){
+      VoltTable result=new VoltTable(SnapshotSave.nodeResultsColumns);
+      result.addRow("0","0","FAILURE","epic fail");
+      return new VoltTable[]{result};
+    }
+    @Override public byte getStatus(){
+      return ClientResponse.SUCCESS;
+    }
+  }
+);
+  assertEquals(SnapshotDaemon.State.WAITING,daemon.getState());
+  work=daemon.processPeriodicWork(startTime + 15000);
+  assertNotNull(work);
+  assertTrue("@SnapshotDelete".equals(work.getFirst()));
+}
