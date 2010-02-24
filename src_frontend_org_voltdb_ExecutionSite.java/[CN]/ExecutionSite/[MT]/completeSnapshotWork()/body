@@ -1,15 +1,25 @@
 {
-synchronized (m_stupidSnapshotContainer) {
-    m_snapshotTargetTerminators=new ArrayList<Thread>();
-    while (m_snapshotTableTasks != null) {
-      doSnapshotWork();
-      if (m_snapshotTableTasks != null) {
-        m_stupidSnapshotContainer.wait();
+  HashSet<Exception> retval=new HashSet<Exception>();
+  m_snapshotTargetTerminators=new ArrayList<Thread>();
+  while (m_snapshotTableTasks != null) {
+    Future<?> result=doSnapshotWork();
+    if (result != null) {
+      try {
+        result.get();
+      }
+ catch (      ExecutionException e) {
+        final boolean added=retval.add((Exception)e.getCause());
+        assert(added);
+      }
+catch (      Exception e) {
+        final boolean added=retval.add((Exception)e.getCause());
+        assert(added);
       }
     }
-    for (    Thread t : m_snapshotTargetTerminators) {
-      t.join();
-    }
-    m_snapshotTargetTerminators=null;
   }
+  for (  Thread t : m_snapshotTargetTerminators) {
+    t.join();
+  }
+  m_snapshotTargetTerminators=null;
+  return retval;
 }

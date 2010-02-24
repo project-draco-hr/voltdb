@@ -1,6 +1,7 @@
 {
+  Future<?> retval=null;
   if (m_snapshotTableTasks == null || m_snapshotBufferIsLoaned) {
-    return;
+    return retval;
   }
   while (!m_snapshotTableTasks.isEmpty()) {
     final SnapshotTableTask currentTask=m_snapshotTableTasks.peek();
@@ -40,20 +41,12 @@ catch (            InterruptedException e) {
     m_snapshotBuffer.limit(headerSize + serialized);
     m_snapshotBuffer.position(0);
     m_snapshotBufferIsLoaned=true;
-    try {
-      currentTask.m_target.write(new BBContainer(m_snapshotBuffer,m_snapshotBufferAddress){
-        @Override public void discard(){
-          m_snapshotBufferIsLoaned=false;
-synchronized (m_stupidSnapshotContainer) {
-            m_stupidSnapshotContainer.notify();
-          }
-        }
+    retval=currentTask.m_target.write(new BBContainer(m_snapshotBuffer,m_snapshotBufferAddress){
+      @Override public void discard(){
+        m_snapshotBufferIsLoaned=false;
       }
+    }
 );
-    }
- catch (    IOException e) {
-      throw new RuntimeException(e);
-    }
     break;
   }
   if (m_snapshotTableTasks.isEmpty()) {
@@ -85,5 +78,5 @@ catch (            InterruptedException e) {
       ExecutionSitesCurrentlySnapshotting.decrementAndGet();
     }
   }
-  return;
+  return retval;
 }

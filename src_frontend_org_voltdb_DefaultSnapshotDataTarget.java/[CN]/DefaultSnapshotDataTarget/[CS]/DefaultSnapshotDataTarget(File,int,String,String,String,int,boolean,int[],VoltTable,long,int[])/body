@@ -42,6 +42,14 @@
   final int crcValue=(int)crc.getValue();
   aggregateBuffer.putInt(crcValue).position(8);
   aggregateBuffer.put((byte)0).position(0);
+  if (m_simulateFullDiskWritingHeader) {
+    m_writeException=new IOException("Disk full");
+    m_writeFailed=true;
+    m_fos.close();
+    m_es.shutdown();
+    throw m_writeException;
+  }
+  m_acceptOneWrite=true;
   Future<?> writeFuture=write(DBBPool.wrapBB(aggregateBuffer),false);
   try {
     writeFuture.get();
@@ -54,7 +62,7 @@
 catch (  ExecutionException e) {
     m_fos.close();
     m_es.shutdown();
-    return;
+    throw m_writeException;
   }
   if (m_writeFailed) {
     m_fos.close();
