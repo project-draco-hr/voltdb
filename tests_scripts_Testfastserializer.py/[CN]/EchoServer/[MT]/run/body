@@ -1,16 +1,20 @@
 def run(self):
-    while (self.running == 1):
-        (self.client, addr) = self.socket.accept()
-        while (self.running == 1):
-            try:
-                prefix = ''
-                while (len(prefix) < 4):
-                    prefix += self.client.recv((4 - len(prefix)))
-                responseLength = struct.unpack(self.int32Type(1), prefix)[0]
-                rstr = ''
-                while (len(rstr) < responseLength):
-                    rstr += self.client.recv((responseLength - len(rstr)))
-                self.client.sendall(prefix)
-                self.client.sendall(rstr)
-            except Exception:
-                pass
+    server = subprocess.Popen(self.__server_cmd, shell=True)
+    time.sleep(1)
+    self.__start.set()
+    self.__lock.wait()
+    jps = subprocess.Popen('jps', stdout=subprocess.PIPE, shell=True)
+    (stdout, stderr) = jps.communicate()
+    pid = None
+    lines = stdout.split('\n')
+    for l in lines:
+        if (SERVER_NAME in l):
+            pid = l.split()[0]
+    if (pid == None):
+        return
+    killer = subprocess.Popen(('kill -9 %s' % pid), shell=True)
+    killer.communicate()
+    if (killer.returncode != 0):
+        print  >> sys.stderr, ('Failed to kill the server process %d' % server.pid)
+        return
+    server.communicate()
