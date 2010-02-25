@@ -43,10 +43,9 @@ catch (  Exception e) {
   }
   sb.append(">\n");
   sb.append(indent + "<columns>\n");
-  ArrayList<Expression> simpleCols=new ArrayList<Expression>();
-  ArrayList<Expression> otherCols=new ArrayList<Expression>();
   ArrayList<Expression> orderByCols=new ArrayList<Expression>();
   ArrayList<Expression> groupByCols=new ArrayList<Expression>();
+  ArrayList<Expression> displayCols=new ArrayList<Expression>();
   ArrayList<Pair<Integer,SimpleName>> aliases=new ArrayList<Pair<Integer,SimpleName>>();
   for (int i=0; i < select.exprColumns.length; i++) {
     final Expression expr=select.exprColumns[i];
@@ -61,23 +60,49 @@ catch (  Exception e) {
         aliases.add(Pair.of(expr.columnIndex,expr.alias));
       }
     }
+    if (expr.columnIndex == -1) {
+      expr.columnIndex=i;
+    }
     if (isGroupByColumn(select,i)) {
       groupByCols.add(expr);
-    }
- else     if (expr.opType == OpTypes.SIMPLE_COLUMN) {
-      simpleCols.add(select.exprColumns[i]);
     }
  else     if (expr.opType == OpTypes.ORDER_BY) {
       orderByCols.add(expr);
     }
+ else     if (expr.opType == OpTypes.SIMPLE_COLUMN && expr.isAggregate && expr.alias != null) {
+      displayCols.add(expr);
+    }
+ else     if (expr.opType == OpTypes.SIMPLE_COLUMN) {
+    }
  else {
-      otherCols.add(expr);
+      displayCols.add(expr);
     }
   }
   for (  Pair<Integer,SimpleName> alias : aliases) {
     select.exprColumns[alias.getFirst()].alias=alias.getSecond();
   }
-  for (  Expression otherCol : otherCols)   sb.append(otherCol.voltGetXML(session,indent + HSQLInterface.XML_INDENT)).append("\n");
+  for (int jj=0; jj < displayCols.size(); ++jj) {
+    Expression expr=displayCols.get(jj);
+    if (expr == null) {
+      continue;
+    }
+ else     if (expr.opType == OpTypes.SIMPLE_COLUMN) {
+      for (int ii=jj; ii < displayCols.size(); ++ii) {
+        Expression otherCol=displayCols.get(ii);
+        if (otherCol == null) {
+          continue;
+        }
+ else         if ((otherCol.opType != OpTypes.SIMPLE_COLUMN) && (otherCol.columnIndex == expr.columnIndex)) {
+          sb.append(otherCol.voltGetXML(session,indent + HSQLInterface.XML_INDENT)).append("\n");
+          displayCols.set(ii,null);
+          break;
+        }
+      }
+    }
+ else {
+      sb.append(expr.voltGetXML(session,indent + HSQLInterface.XML_INDENT)).append("\n");
+    }
+  }
   sb.append(indent + "</columns>\n");
   sb.append(indent + "<parameters>\n");
   for (int i=0; i < parameters.length; i++) {
