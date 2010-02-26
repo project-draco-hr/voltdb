@@ -53,9 +53,10 @@
     assert(params.toArray()[0] != null);
     assert(params.toArray()[1] != null);
     assert(params.toArray()[2] != null);
+    assert(params.toArray()[3] != null);
     final String file_path=(String)params.toArray()[0];
     final String file_nonce=(String)params.toArray()[1];
-    long block=(Long)params.toArray()[2];
+    byte block=(Byte)params.toArray()[3];
     final VoltTable result=constructNodeResultsTable();
     boolean willDoSetup=m_snapshotCreateSetupPermit.tryAcquire();
     final int numLocalSites=VoltDB.instance().getLocalSites().values().size();
@@ -112,6 +113,12 @@
           result.addRow(context.getSite().getHost().getTypeName(),table.getTypeName(),canSnapshot,err_msg);
         }
 synchronized (m_taskListsForSites) {
+          if (!partitionedSnapshotTasks.isEmpty() && !replicatedSnapshotTasks.isEmpty()) {
+            ExecutionSite.ExecutionSitesCurrentlySnapshotting.set(VoltDB.instance().getLocalSites().values().size());
+          }
+ else {
+            SnapshotRegistry.discardSnapshot(snapshotRecord);
+          }
           for (int ii=0; ii < numLocalSites && !partitionedSnapshotTasks.isEmpty(); ii++) {
             m_taskListsForSites.add(new ArrayDeque<SnapshotTableTask>(partitionedSnapshotTasks));
           }
@@ -120,15 +127,10 @@ synchronized (m_taskListsForSites) {
             m_taskListsForSites.get(siteIndex++ % numLocalSites).offer(t);
           }
         }
-        if (!partitionedSnapshotTasks.isEmpty() && !replicatedSnapshotTasks.isEmpty()) {
-          ExecutionSite.ExecutionSitesCurrentlySnapshotting.set(VoltDB.instance().getLocalSites().values().size());
-        }
- else {
-          SnapshotRegistry.discardSnapshot(snapshotRecord);
-        }
       }
  catch (      Exception ex) {
         result.addRow(context.getSite().getHost().getTypeName(),"","FAILURE","SNAPSHOT INITIATION OF " + file_path + file_nonce+ "RESULTED IN Exception: "+ ex.getMessage());
+        HOST_LOG.error(ex);
       }
  finally {
         m_snapshotPermits.release(numLocalSites);
@@ -142,8 +144,10 @@ synchronized (m_taskListsForSites) {
       return new DependencyPair(DEP_createSnapshotTargets,result);
     }
  finally {
-      if (m_snapshotPermits.availablePermits() == 0) {
-        m_snapshotCreateSetupPermit.release();
+synchronized (m_snapshotPermits) {
+        if (m_snapshotPermits.availablePermits() == 0 && m_snapshotCreateSetupPermit.availablePermits() == 0) {
+          m_snapshotCreateSetupPermit.release();
+        }
       }
     }
 synchronized (m_taskListsForSites) {
@@ -152,6 +156,11 @@ synchronized (m_taskListsForSites) {
         return new DependencyPair(DEP_createSnapshotTargets,result);
       }
  else {
+        if (m_taskListsForSites.isEmpty()) {
+          assert(m_snapshotCreateSetupPermit.availablePermits() == 1);
+          assert(m_snapshotPermits.availablePermits() == 0);
+        }
+        assert(ExecutionSite.ExecutionSitesCurrentlySnapshotting.get() > 0);
         context.getExecutionSite().initiateSnapshots(m_taskList);
       }
     }
