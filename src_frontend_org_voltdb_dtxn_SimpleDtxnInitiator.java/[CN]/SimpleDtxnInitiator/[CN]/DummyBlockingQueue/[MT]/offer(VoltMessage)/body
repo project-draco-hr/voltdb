@@ -3,35 +3,26 @@
   final InitiateResponse r=(InitiateResponse)message;
   InFlightTxnState state;
   int sites_left=-1;
-synchronized (m_initiator.m_pendingTxns) {
+synchronized (m_initiator) {
     state=m_initiator.m_pendingTxns.getTxn(r.getTxnId(),r.getCoordinatorSiteId());
     sites_left=m_initiator.m_pendingTxns.getTxnIdSize(r.getTxnId());
-    if (m_initiator.m_pendingTxns.size() < (MAX_DESIRED_PENDING * .8)) {
-      if (m_initiator.m_hadBackPressure) {
-        transactionLog.trace("DTXN backpressure ended");
-        m_initiator.m_hadBackPressure=false;
-        m_initiator.m_offBackPressure.run();
-      }
-    }
   }
   assert(state.coordinatorId == r.getCoordinatorSiteId());
   assert(m_initiator.m_siteId == r.getInitiatorSiteId());
   boolean first_response=false;
   VoltTable[] first_results=null;
-synchronized (m_txnIdResponses) {
-    if (!m_txnIdResponses.containsKey(r.getTxnId())) {
-      ClientResponseImpl curr_response=(ClientResponseImpl)r.getClientResponseData();
-      VoltTable[] curr_results=curr_response.getResults();
-      VoltTable[] saved_results=new VoltTable[curr_results.length];
-      for (int i=0; i < curr_results.length; ++i) {
-        saved_results[i]=new VoltTable(curr_results[i].getTableDataReference(),true);
-      }
-      m_txnIdResponses.put(r.getTxnId(),saved_results);
-      first_response=true;
+  if (!m_txnIdResponses.containsKey(r.getTxnId())) {
+    ClientResponseImpl curr_response=(ClientResponseImpl)r.getClientResponseData();
+    VoltTable[] curr_results=curr_response.getResults();
+    VoltTable[] saved_results=new VoltTable[curr_results.length];
+    for (int i=0; i < curr_results.length; ++i) {
+      saved_results[i]=new VoltTable(curr_results[i].getTableDataReference(),true);
     }
+    m_txnIdResponses.put(r.getTxnId(),saved_results);
+    first_response=true;
+  }
  else {
-      first_results=m_txnIdResponses.get(r.getTxnId());
-    }
+    first_results=m_txnIdResponses.get(r.getTxnId());
   }
   if (first_response) {
     if (state.isReadOnly) {
@@ -63,12 +54,19 @@ synchronized (m_txnIdResponses) {
     }
   }
   if (sites_left == 0) {
-synchronized (m_initiator.m_pendingTxns) {
+synchronized (m_initiator) {
       m_initiator.m_pendingTxns.removeTxnId(r.getTxnId());
+      m_initiator.m_pendingTxnBytes-=state.messageSize;
+      m_initiator.m_pendingTxnCount--;
+      if (m_initiator.m_pendingTxnBytes < (MAX_DESIRED_PENDING_BYTES * .8) && m_initiator.m_pendingTxnCount < (MAX_DESIRED_PENDING_TXNS * .8)) {
+        if (m_initiator.m_hadBackPressure) {
+          transactionLog.trace("DTXN backpressure ended");
+          m_initiator.m_hadBackPressure=false;
+          m_initiator.m_offBackPressure.run();
+        }
+      }
     }
-synchronized (m_txnIdResponses) {
-      m_txnIdResponses.remove(r.getTxnId());
-    }
+    m_txnIdResponses.remove(r.getTxnId());
     if (!state.isReadOnly) {
       r.setClientHandle(state.invocation.getClientHandle());
       final Connection c=(Connection)state.clientData;
