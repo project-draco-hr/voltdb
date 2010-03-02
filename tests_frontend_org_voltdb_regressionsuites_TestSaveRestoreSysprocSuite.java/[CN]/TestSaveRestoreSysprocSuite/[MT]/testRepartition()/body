@@ -1,0 +1,35 @@
+{
+  int num_replicated_items_per_chunk=100;
+  int num_replicated_chunks=10;
+  int num_partitioned_items_per_chunk=120;
+  int num_partitioned_chunks=10;
+  Client client=getClient();
+  loadLargeReplicatedTable(client,"REPLICATED_TESTER",num_replicated_items_per_chunk,num_partitioned_chunks);
+  loadLargePartitionedTable(client,"PARTITION_TESTER",num_partitioned_items_per_chunk,num_partitioned_chunks);
+  VoltTable[] results=null;
+  results=saveTables(client);
+  m_config.shutDown();
+  CatalogChangeSingleProcessServer config=(CatalogChangeSingleProcessServer)m_config;
+  config.recompile(4);
+  m_config.startUp();
+  client=getClient();
+  try {
+    results=client.callProcedure("@SnapshotRestore",TMPDIR,TESTNONCE,ALLOWELT);
+  }
+ catch (  Exception ex) {
+    ex.printStackTrace();
+    fail("SnapshotRestore exception: " + ex.getMessage());
+  }
+  checkTable(client,"PARTITION_TESTER","PT_ID",num_partitioned_items_per_chunk * num_partitioned_chunks);
+  checkTable(client,"REPLICATED_TESTER","RT_ID",num_replicated_items_per_chunk * num_replicated_chunks);
+  results=client.callProcedure("@Statistics","table");
+  int foundItem=0;
+  while (results[0].advanceRow()) {
+    if (results[0].getString(2).equals("PARTITION_TESTER")) {
+      ++foundItem;
+      assertEquals((num_partitioned_items_per_chunk * num_partitioned_chunks) / 4,results[0].getLong(4));
+    }
+  }
+  assertEquals(4,foundItem);
+  config.revertCompile();
+}

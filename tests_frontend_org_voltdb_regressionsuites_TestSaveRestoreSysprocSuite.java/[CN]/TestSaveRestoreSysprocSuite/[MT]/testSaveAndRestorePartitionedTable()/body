@@ -1,0 +1,91 @@
+{
+  int num_partitioned_items_per_chunk=120;
+  int num_partitioned_chunks=10;
+  Client client=getClient();
+  loadLargePartitionedTable(client,"PARTITION_TESTER",num_partitioned_items_per_chunk,num_partitioned_chunks);
+  VoltTable[] results=null;
+  DefaultSnapshotDataTarget.m_simulateFullDiskWritingHeader=true;
+  results=saveTables(client);
+  deleteTestFiles();
+  while (results[0].advanceRow()) {
+    assertTrue(results[0].getString("RESULT").equals("FAILURE"));
+  }
+  DefaultSnapshotDataTarget.m_simulateFullDiskWritingHeader=false;
+  results=saveTables(client);
+  while (results[0].advanceRow()) {
+    if (!results[0].getString("RESULT").equals("SUCCESS")) {
+      System.out.println(results[0].getString("ERR_MSG"));
+    }
+    assertTrue(results[0].getString("RESULT").equals("SUCCESS"));
+  }
+  try {
+    results=client.callProcedure("@SnapshotStatus");
+    assertTrue(results[0].advanceRow());
+    assertTrue(results[0].getString("RESULT").equals("SUCCESS"));
+    assertEquals(1,results[0].getRowCount());
+  }
+ catch (  Exception ex) {
+    ex.printStackTrace();
+    fail("SnapshotRestore exception: " + ex.getMessage());
+  }
+  m_config.shutDown();
+  m_config.startUp();
+  client=getClient();
+  try {
+    results=client.callProcedure("@SnapshotRestore",TMPDIR,TESTNONCE,ALLOWELT);
+  }
+ catch (  Exception ex) {
+    ex.printStackTrace();
+    fail("SnapshotRestore exception: " + ex.getMessage());
+  }
+  checkTable(client,"PARTITION_TESTER","PT_ID",num_partitioned_items_per_chunk * num_partitioned_chunks);
+  results=client.callProcedure("@Statistics","table");
+  int foundItem=0;
+  while (results[0].advanceRow()) {
+    if (results[0].getString(2).equals("PARTITION_TESTER")) {
+      ++foundItem;
+      assertEquals((num_partitioned_items_per_chunk * num_partitioned_chunks) / 3,results[0].getLong(4));
+    }
+  }
+  assertEquals(3,foundItem);
+  m_config.shutDown();
+  m_config.startUp();
+  deleteTestFiles();
+  DefaultSnapshotDataTarget.m_simulateFullDiskWritingChunk=true;
+  org.voltdb.sysprocs.SnapshotRegistry.clear();
+  client=getClient();
+  loadLargePartitionedTable(client,"PARTITION_TESTER",num_partitioned_items_per_chunk,num_partitioned_chunks);
+  results=saveTables(client);
+  try {
+    results=client.callProcedure("@SnapshotStatus");
+    assertTrue(results[0].advanceRow());
+    assertTrue(results[0].getString("RESULT").equals("FAILURE"));
+  }
+ catch (  Exception ex) {
+    ex.printStackTrace();
+    fail("SnapshotRestore exception: " + ex.getMessage());
+  }
+  DefaultSnapshotDataTarget.m_simulateFullDiskWritingChunk=false;
+  deleteTestFiles();
+  results=saveTables(client);
+  m_config.shutDown();
+  m_config.startUp();
+  client=getClient();
+  try {
+    results=client.callProcedure("@SnapshotRestore",TMPDIR,TESTNONCE,ALLOWELT);
+  }
+ catch (  Exception ex) {
+    ex.printStackTrace();
+    fail("SnapshotRestore exception: " + ex.getMessage());
+  }
+  checkTable(client,"PARTITION_TESTER","PT_ID",num_partitioned_items_per_chunk * num_partitioned_chunks);
+  results=client.callProcedure("@Statistics","table");
+  foundItem=0;
+  while (results[0].advanceRow()) {
+    if (results[0].getString(2).equals("PARTITION_TESTER")) {
+      ++foundItem;
+      assertEquals((num_partitioned_items_per_chunk * num_partitioned_chunks) / 3,results[0].getLong(4));
+    }
+  }
+  assertEquals(3,foundItem);
+}
