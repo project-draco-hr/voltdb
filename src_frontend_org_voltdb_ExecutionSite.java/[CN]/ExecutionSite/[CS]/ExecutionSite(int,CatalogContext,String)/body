@@ -5,17 +5,15 @@
   this.siteId=siteId;
   m_context=context;
   catalog=context.catalog;
-  cluster=catalog.getClusters().get("cluster");
-  site=cluster.getSites().get(Integer.toString(siteId));
-  database=cluster.getDatabases().get("database");
+  site=m_context.cluster.getSites().get(Integer.toString(siteId));
   m_systemProcedureContext=new SystemProcedureContext();
   m_dumpId="ExecutionSite." + String.valueOf(siteId);
   DumpManager.register(m_dumpId,this);
   int initiatorCount=0;
-  for (  final Site s : cluster.getSites())   if (s.getIsexec() == false)   initiatorCount++;
+  for (  final Site s : m_context.cluster.getSites())   if (s.getIsexec() == false)   initiatorCount++;
   final int[] initiatorIds=new int[initiatorCount];
   int index=0;
-  for (  final Site s : cluster.getSites())   if (s.getIsexec() == false)   initiatorIds[index++]=Integer.parseInt(s.getTypeName());
+  for (  final Site s : m_context.cluster.getSites())   if (s.getIsexec() == false)   initiatorIds[index++]=Integer.parseInt(s.getTypeName());
   final Messenger messenger=VoltDB.instance().getMessenger();
   final Mailbox mqueue=messenger.createMailbox(siteId,VoltDB.DTXN_MAILBOX_ID,null);
   dtxnConn=new SimpleDtxnConnection(this,mqueue,initiatorIds);
@@ -25,7 +23,7 @@
     final BackendTarget target=VoltDB.getEEBackendType();
     if (target == BackendTarget.HSQLDB_BACKEND) {
       hsqlTemp=new HsqlBackend(siteId);
-      final String hexDDL=database.getSchema();
+      final String hexDDL=m_context.database.getSchema();
       final String ddl=Encoder.hexDecodeToString(hexDDL);
       final String[] commands=ddl.split(";");
       for (      String command : commands) {
@@ -38,13 +36,13 @@
       eeTemp=new MockExecutionEngine();
     }
  else     if (target == BackendTarget.NATIVE_EE_JNI) {
-      eeTemp=new ExecutionEngineJNI(this,cluster.getRelativeIndex(),siteId);
+      eeTemp=new ExecutionEngineJNI(this,m_context.cluster.getRelativeIndex(),siteId);
       eeTemp.loadCatalog(serializedCatalog);
       lastTickTime=EstTime.currentTimeMillis();
       eeTemp.tick(lastTickTime,0);
     }
  else {
-      eeTemp=new ExecutionEngineIPC(this,cluster.getRelativeIndex(),siteId,target);
+      eeTemp=new ExecutionEngineIPC(this,m_context.cluster.getRelativeIndex(),siteId,target);
       eeTemp.loadCatalog(serializedCatalog);
       lastTickTime=EstTime.currentTimeMillis();
       eeTemp.tick(lastTickTime,0);
@@ -56,35 +54,7 @@
   }
   ee=eeTemp;
   hsql=hsqlTemp;
-  final CatalogMap<Procedure> catalogProcedures=database.getProcedures();
-  for (  final Procedure proc : catalogProcedures) {
-    VoltProcedure wrapper=null;
-    if (proc.getHasjava()) {
-      final String className=proc.getClassname();
-      Class<?> procClass=null;
-      try {
-        procClass=m_context.classForProcedure(className);
-      }
- catch (      final ClassNotFoundException e) {
-        hostLog.l7dlog(Level.WARN,LogKeys.host_ExecutionSite_GenericException.name(),new Object[]{siteId,siteIndex},e);
-        VoltDB.crashVoltDB();
-      }
-      try {
-        wrapper=(VoltProcedure)procClass.newInstance();
-      }
- catch (      final InstantiationException e) {
-        hostLog.l7dlog(Level.WARN,LogKeys.host_ExecutionSite_GenericException.name(),new Object[]{siteId,siteIndex},e);
-      }
-catch (      final IllegalAccessException e) {
-        hostLog.l7dlog(Level.WARN,LogKeys.host_ExecutionSite_GenericException.name(),new Object[]{siteId,siteIndex},e);
-      }
-    }
- else {
-      wrapper=new VoltProcedure.StmtProcedure();
-    }
-    wrapper.init(this,proc,VoltDB.getEEBackendType(),hsql,cluster);
-    procs.put(proc.getTypeName(),wrapper);
-  }
+  loadProceduresFromCatalog();
   m_snapshotBufferOrigin=org.voltdb.utils.DBBPool.allocateDirect(m_snapshotBufferLength);
   m_snapshotBuffer=m_snapshotBufferOrigin.b;
   if (VoltDB.getLoadLibVOLTDB()) {
