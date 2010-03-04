@@ -1,18 +1,50 @@
 {
   final Set<SelectionKey> selectedKeys=m_selector.selectedKeys();
+  final ArrayList<Runnable> generatedTasks=new ArrayList<Runnable>();
   for (  SelectionKey key : selectedKeys) {
     final VoltPort port=(VoltPort)key.attachment();
     try {
       port.lockForHandlingWork();
       key.interestOps(0);
+      final Runnable runner=new Runnable(){
+        @Override public void run(){
+          try {
+            port.call();
+          }
+ catch (          Exception e) {
+            port.die();
+            if (e instanceof IOException) {
+              m_logger.trace("VoltPort died, probably of natural causes",e);
+            }
+ else {
+              networkLog.error("VoltPort died due to an unexpected exception",e);
+            }
+          }
+ finally {
+            addToChangeList(port);
+          }
+        }
+      }
+;
       if (useExecutor) {
-        m_executor.execute(new VoltPortFutureTask(port));
+        generatedTasks.add(runner);
       }
  else {
-        new VoltPortFutureTask(port).run();
+        runner.run();
       }
     }
  catch (    CancelledKeyException e) {
+    }
+  }
+  if (!generatedTasks.isEmpty()) {
+synchronized (m_tasks) {
+      m_tasks.addAll(generatedTasks);
+      if (m_tasks.size() > 1) {
+        m_tasks.notifyAll();
+      }
+ else {
+        m_tasks.notify();
+      }
     }
   }
   selectedKeys.clear();

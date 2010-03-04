@@ -13,7 +13,6 @@
   }
   final int availableProcessors=Runtime.getRuntime().availableProcessors();
   if (!useExecutorService) {
-    m_executor=null;
     return;
   }
   int threadPoolSize=1;
@@ -47,12 +46,36 @@ synchronized (m_poolsToClearOnShutdown) {
       }
 ;
 synchronized (m_networkThreads) {
-        m_networkThreads.add(t);
+        m_networkThreads.add(new WeakReference<Thread>(t));
       }
       t.setDaemon(true);
       return t;
     }
   }
 ;
-  m_executor=Executors.newFixedThreadPool(threadPoolSize,tf);
+  for (int ii=0; ii < threadPoolSize; ii++) {
+    tf.newThread(new Runnable(){
+      @Override public void run(){
+        try {
+          while (true) {
+            Runnable nextTask=null;
+synchronized (m_tasks) {
+              nextTask=m_tasks.poll();
+              while (nextTask == null && !m_shouldStop) {
+                m_tasks.wait();
+                nextTask=m_tasks.poll();
+              }
+            }
+            if (nextTask == null) {
+              return;
+            }
+            nextTask.run();
+          }
+        }
+ catch (        InterruptedException e) {
+        }
+      }
+    }
+).start();
+  }
 }
