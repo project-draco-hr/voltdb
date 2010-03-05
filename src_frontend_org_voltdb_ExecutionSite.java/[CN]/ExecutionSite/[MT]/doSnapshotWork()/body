@@ -1,15 +1,17 @@
 {
   Future<?> retval=null;
-  if (m_snapshotTableTasks == null || m_snapshotBufferIsLoaned) {
+  if (m_snapshotTableTasks == null || m_availableSnapshotBuffers.isEmpty()) {
     return retval;
   }
   while (!m_snapshotTableTasks.isEmpty()) {
     final SnapshotTableTask currentTask=m_snapshotTableTasks.peek();
     assert(currentTask != null);
     final int headerSize=currentTask.m_target.getHeaderSize();
-    m_snapshotBuffer.clear();
-    m_snapshotBuffer.position(headerSize);
-    final int serialized=ee.cowSerializeMore(m_stupidSnapshotContainer,currentTask.m_tableId);
+    final BBContainer snapshotBuffer=m_availableSnapshotBuffers.poll();
+    assert(snapshotBuffer != null);
+    snapshotBuffer.b.clear();
+    snapshotBuffer.b.position(headerSize);
+    final int serialized=ee.cowSerializeMore(snapshotBuffer,currentTask.m_tableId);
     if (serialized < 0) {
       hostLog.error("Failure while serialize data from a table for COW snapshot");
       VoltDB.crashVoltDB();
@@ -36,17 +38,12 @@ catch (            InterruptedException e) {
         }
         terminatorThread.start();
       }
+      m_availableSnapshotBuffers.offer(snapshotBuffer);
       continue;
     }
-    m_snapshotBuffer.limit(headerSize + serialized);
-    m_snapshotBuffer.position(0);
-    m_snapshotBufferIsLoaned=true;
-    retval=currentTask.m_target.write(new BBContainer(m_snapshotBuffer,m_snapshotBufferAddress){
-      @Override public void discard(){
-        m_snapshotBufferIsLoaned=false;
-      }
-    }
-);
+    snapshotBuffer.b.limit(headerSize + serialized);
+    snapshotBuffer.b.position(0);
+    retval=currentTask.m_target.write(snapshotBuffer);
     break;
   }
   if (m_snapshotTableTasks.isEmpty()) {

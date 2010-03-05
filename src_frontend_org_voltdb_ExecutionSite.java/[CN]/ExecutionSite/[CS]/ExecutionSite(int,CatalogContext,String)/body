@@ -55,17 +55,18 @@
   ee=eeTemp;
   hsql=hsqlTemp;
   loadProceduresFromCatalog();
-  m_snapshotBufferOrigin=org.voltdb.utils.DBBPool.allocateDirect(m_snapshotBufferLength);
-  m_snapshotBuffer=m_snapshotBufferOrigin.b;
-  if (VoltDB.getLoadLibVOLTDB()) {
-    m_snapshotBufferAddress=org.voltdb.utils.DBBPool.getBufferAddress(m_snapshotBuffer);
-  }
- else {
-    m_snapshotBufferAddress=0;
-  }
-  m_stupidSnapshotContainer=new BBContainer(m_snapshotBuffer,m_snapshotBufferAddress){
-    @Override public void discard(){
+  for (int ii=0; ii < m_numSnapshotBuffers; ii++) {
+    final BBContainer origin=org.voltdb.utils.DBBPool.allocateDirect(m_snapshotBufferLength);
+    m_snapshotBufferOrigins.add(origin);
+    long snapshotBufferAddress=0;
+    if (VoltDB.getLoadLibVOLTDB()) {
+      snapshotBufferAddress=org.voltdb.utils.DBBPool.getBufferAddress(origin.b);
     }
+    m_availableSnapshotBuffers.offer(new BBContainer(origin.b,snapshotBufferAddress){
+      @Override public void discard(){
+        m_availableSnapshotBuffers.offer(this);
+      }
+    }
+);
   }
-;
 }
