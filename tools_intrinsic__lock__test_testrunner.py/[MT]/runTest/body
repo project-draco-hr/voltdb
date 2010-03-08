@@ -1,0 +1,39 @@
+def runTest(i):
+    'Start a subprocess that runs the java reproducer. If it hangs, let the user know and\n       leave the subprocess process running until the user presses a key. If it runs for\n       DURATION_IN_SECONDS seconds without hanging, kill the subprocess and repeat.'
+    print ('\nBeginning run %d for %d seconds. Press ENTER or RETURN to end the test.\n' % (i, DURATION_IN_SECONDS))
+    p = Popen('java IntrinsicLockPatternTest', shell=True, bufsize=0, stdout=PIPE)
+    fd = p.stdout.fileno()
+    fl = fcntl.fcntl(fd, fcntl.F_GETFL)
+    fcntl.fcntl(fd, fcntl.F_SETFL, (fl | os.O_NONBLOCK))
+    start = datetime.datetime.utcnow()
+    prevnow = start
+    lastdotprinted = start
+    possiblyFailed = False
+    while (p.poll() == None):
+        now = datetime.datetime.utcnow()
+        if (possiblyFailed == False):
+            if ((now - prevnow).seconds == 10):
+                prevnow = now
+                sys.stdout.write((' %d seconds ' % (now - start).seconds))
+            if ((now - lastdotprinted).seconds > 20):
+                print "\nSorry, this platfrom may have reproduced the issue. If you do not see more dots, it's sadness time."
+                possiblyFailed = True
+            if ((now - start).seconds > DURATION_IN_SECONDS):
+                print ('\nThis run (%d) did not reproduce the issue.' % i)
+                killProcess(p)
+                return True
+        try:
+            sys.stdin.readline()
+            print ('\nThis run (%d) interrupted by user.' % i)
+            killProcess(p)
+            sys.exit((-1))
+        except:
+            pass
+        try:
+            c = p.stdout.read(1)
+            sys.stdout.write(c)
+            lastdotprinted = now
+            possiblyFailed = False
+        except:
+            time.sleep(0.1)
+    p.wait()
