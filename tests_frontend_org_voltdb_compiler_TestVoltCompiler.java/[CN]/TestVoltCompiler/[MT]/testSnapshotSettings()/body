@@ -1,0 +1,30 @@
+{
+  String schemaPath="";
+  try {
+    final URL url=TPCCClient.class.getResource("tpcc-ddl.sql");
+    schemaPath=URLDecoder.decode(url.getPath(),"UTF-8");
+  }
+ catch (  final UnsupportedEncodingException e) {
+    e.printStackTrace();
+    System.exit(-1);
+  }
+  VoltProjectBuilder builder=new VoltProjectBuilder();
+  builder.addProcedures(org.voltdb.compiler.procedures.TPCCTestProc.class);
+  builder.setSnapshotSettings("32m",5,"/tmp","woobar");
+  builder.addSchema(schemaPath);
+  try {
+    assertTrue(builder.compile("/tmp/snapshot_settings_test.jar"));
+    final String catalogContents=JarReader.readFileFromJarfile("/tmp/snapshot_settings_test.jar","catalog.txt");
+    final Catalog cat=new Catalog();
+    cat.execute(catalogContents);
+    SnapshotSchedule schedule=cat.getClusters().get("cluster").getDatabases().get("database").getSnapshotschedule().get("default");
+    assertEquals(32,schedule.getFrequencyvalue());
+    assertEquals("m",schedule.getFrequencyunit());
+    assertEquals("/tmp",schedule.getPath());
+    assertEquals("woobar",schedule.getPrefix());
+  }
+  finally {
+    final File jar=new File("/tmp/snapshot_settings_test.jar");
+    jar.delete();
+  }
+}

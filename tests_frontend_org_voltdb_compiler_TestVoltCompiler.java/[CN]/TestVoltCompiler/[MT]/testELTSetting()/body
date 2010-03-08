@@ -1,0 +1,30 @@
+{
+  final VoltProjectBuilder project=new VoltProjectBuilder();
+  project.addSchema(TestELTSuite.class.getResource("sqltypessuite-ddl.sql"));
+  project.addProcedures(org.voltdb.regressionsuites.sqltypesprocs.Insert.class);
+  project.addPartitionInfo("NO_NULLS","PKEY");
+  project.addPartitionInfo("ALLOW_NULLS","PKEY");
+  project.addPartitionInfo("WITH_DEFAULTS","PKEY");
+  project.addPartitionInfo("WITH_NULL_DEFAULTS","PKEY");
+  project.addPartitionInfo("EXPRESSIONS_WITH_NULLS","PKEY");
+  project.addPartitionInfo("EXPRESSIONS_NO_NULLS","PKEY");
+  project.addELT("bob","forapples","org.voltdb.elt.processors.RawProcessor","faraway",false);
+  project.addELTTable("ALLOW_NULLS",false);
+  project.addELTTable("WITH_DEFAULTS",true);
+  try {
+    assertTrue(project.compile("/tmp/eltsettingstest.jar"));
+    final String catalogContents=JarReader.readFileFromJarfile("/tmp/eltsettingstest.jar","catalog.txt");
+    final Catalog cat=new Catalog();
+    cat.execute(catalogContents);
+    Connector connector=cat.getClusters().get("cluster").getDatabases().get("database").getConnectors().get("0");
+    assertFalse(connector.getEnabled());
+    ConnectorDestinationInfo dest=connector.getDestinfo().get("0");
+    assertTrue(dest.getUsername().equals("bob"));
+    assertTrue(dest.getPassword().equals("forapples"));
+    assertTrue(dest.getUrl().equals("faraway"));
+  }
+  finally {
+    final File jar=new File("/tmp/eltsettingstest.jar");
+    jar.delete();
+  }
+}
