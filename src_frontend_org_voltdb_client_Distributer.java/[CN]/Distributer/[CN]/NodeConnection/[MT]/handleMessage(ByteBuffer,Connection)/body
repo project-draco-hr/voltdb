@@ -1,4 +1,5 @@
 {
+  long now=System.currentTimeMillis();
   ClientResponseImpl response=null;
   FastDeserializer fds=new FastDeserializer(buf);
   try {
@@ -8,13 +9,15 @@
     e.printStackTrace();
   }
   ProcedureCallback cb=null;
+  long callTime=0;
 synchronized (this) {
-    cb=m_callbacks.remove(response.getClientHandle());
+    Pair<Long,ProcedureCallback> pair=m_callbacks.remove(response.getClientHandle());
+    callTime=pair.getFirst();
+    cb=pair.getSecond();
   }
+  final int delta=(int)(now - callTime);
   if (cb != null) {
-    if (ProcedureCallback.measureLatency) {
-      cb.closeTimer(m_context,Distributer.this,response.clientQueueTime(),response.CIAcceptTime(),response.FHReceiveTime(),response.FHResponseTime(),response.initiatorReceiveTime());
-    }
+    response.setClientRoundtrip(delta);
     cb.clientCallback(response);
   }
  else   if (m_isConnected) {
