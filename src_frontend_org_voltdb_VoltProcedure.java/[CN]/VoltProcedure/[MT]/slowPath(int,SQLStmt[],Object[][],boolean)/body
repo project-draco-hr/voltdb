@@ -17,7 +17,7 @@
       msg+=" inside a stored procedure's run method.";
       throw new RuntimeException(msg);
     }
-    int collectorOutputDepId=m_site.dtxnConn.getNextDependencyId();
+    int collectorOutputDepId=m_site.getNextDependencyId();
     depsToResume[i]=collectorOutputDepId;
     ParameterSet paramSet=getCleanParams(stmt,batchArgs[i]);
     fs.clear();
@@ -54,7 +54,7 @@
           localFragIds[i]=CatalogUtil.getUniqueIdForFragment(frag);
           localParams[i]=params;
           assert(frag.getHasdependencies());
-          int outputDepId=m_site.dtxnConn.getNextDependencyId() | DtxnConstants.MULTIPARTITION_DEPENDENCY;
+          int outputDepId=m_site.getNextDependencyId() | DtxnConstants.MULTIPARTITION_DEPENDENCY;
           depsForLocalTask[i]=outputDepId;
           distributedOutputDepIds.add(outputDepId);
           if (frag.getNontransactional() == false)           localFragsAreNonTransactional=true;
@@ -71,16 +71,16 @@
     distributedOutputDepIdArray[i]=distributedOutputDepIds.get(i);
     distributedParamsArray[i]=distributedParams.get(i);
   }
-  m_site.dtxnConn.setupProcedureResume(finalTask,depsToResume);
+  m_site.setupProcedureResume(finalTask,depsToResume);
   FragmentTask localTask=new FragmentTask(m_site.getCurrentInitiatorSiteId(),m_site.siteId,m_site.getCurrentTxnId(),m_site.getCurrentSPTask().isReadOnly(),localFragIds,depsToResume,localParams,false);
   for (int i=0; i < depsForLocalTask.length; i++) {
     if (depsForLocalTask[i] < 0)     continue;
     localTask.addInputDepId(i,depsForLocalTask[i]);
   }
-  m_site.dtxnConn.createLocalWork(localTask,localFragsAreNonTransactional && finalTask);
+  m_site.createLocalWork(localTask,localFragsAreNonTransactional && finalTask);
   FragmentTask distributedTask=new FragmentTask(m_site.getCurrentInitiatorSiteId(),m_site.siteId,m_site.getCurrentTxnId(),m_site.getCurrentSPTask().isReadOnly(),distributedFragIdArray,distributedOutputDepIdArray,distributedParamsArray,finalTask);
-  m_site.dtxnConn.createAllParticipatingWork(distributedTask);
-  Map<Integer,List<VoltTable>> mapResults=m_site.dtxnConn.recursableRun(false);
+  m_site.createAllParticipatingWork(distributedTask);
+  Map<Integer,List<VoltTable>> mapResults=m_site.recursableRun(false);
   assert(mapResults != null);
   assert(depsToResume != null);
   assert(depsToResume.length == batchSize);
