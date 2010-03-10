@@ -1,0 +1,144 @@
+{
+  String dir="/tmp";
+  String nonce="data_verification";
+  LinkedHashMap<Integer,String> hostMappings=new LinkedHashMap<Integer,String>();
+  LinkedHashMap<String,int[]> partitionMappings=new LinkedHashMap<String,int[]>();
+  LinkedHashMap<String,Pair<String,String>> snapshotMappings=new LinkedHashMap<String,Pair<String,String>>();
+  boolean isSatisfied=true;
+  org.voltdb.EELibraryLoader.loadExecutionEngineLibrary(true);
+  try {
+    boolean keepTrying=true;
+    VoltTable[] response=null;
+    while (true) {
+      response=m_voltClient.callProcedure("@SnapshotSave",dir,nonce,1);
+      if (response.length != 1 || !response[0].advanceRow() || !response[0].getString("RESULT").equals("SUCCESS")) {
+        if (keepTrying && response[0].getString("ERR_MSG").contains("ALREADY EXISTS")) {
+          m_voltClient.callProcedure("@SnapshotDelete",new String[]{dir},new String[]{nonce});
+          keepTrying=false;
+          continue;
+        }
+        System.err.println("Failed to take snapshot");
+        return false;
+      }
+      break;
+    }
+    response=m_voltClient.callProcedure("@SystemInformation");
+    if (response.length != 1) {
+      System.err.println("Failed to get host ID to IP address mapping");
+      return false;
+    }
+    while (response[0].advanceRow()) {
+      if (!response[0].getString("key").equals("hostname"))       continue;
+      hostMappings.put((Integer)response[0].get("node_id",VoltType.INTEGER),response[0].getString("value"));
+    }
+    response=m_voltClient.callProcedure("@SnapshotScan",dir);
+    if (response.length != 3) {
+      System.err.println("Failed to get snapshot filenames");
+      return false;
+    }
+    while (response[0].advanceRow()) {
+      if (!response[0].getString("NONCE").equals(nonce))       continue;
+      String[] tables=response[0].getString("TABLES_REQUIRED").split(",");
+      for (      String t : tables)       snapshotMappings.put(t,null);
+      break;
+    }
+    while (response[2].advanceRow()) {
+      int id=Integer.parseInt(response[2].getString("HOST_ID"));
+      String tableName=response[2].getString("TABLE");
+      if (!snapshotMappings.containsKey(tableName) || !hostMappings.containsKey(id))       continue;
+      snapshotMappings.put(tableName,Pair.of(hostMappings.get(id),response[2].getString("NAME")));
+      String[] partitionStrings=response[2].getString("PARTITIONS").split(",");
+      int[] partitions=new int[partitionStrings.length];
+      for (int i=0; i < partitionStrings.length; i++)       partitions[i]=Integer.parseInt(partitionStrings[i]);
+      partitionMappings.put(tableName,partitions);
+    }
+  }
+ catch (  NoConnectionsException e) {
+    e.printStackTrace();
+    return false;
+  }
+catch (  ProcCallException e) {
+    e.printStackTrace();
+    return false;
+  }
+  for (  Map.Entry<String,Pair<String,String>> entry : snapshotMappings.entrySet()) {
+    String tableName=entry.getKey();
+    String hostName=entry.getValue().getFirst();
+    int[] partitions=partitionMappings.get(tableName);
+    File file=new File(dir,entry.getValue().getSecond());
+    FileInputStream inputStream=null;
+    TableSaveFile saveFile=null;
+    long rowCount=0;
+    Pair<String,Integer> key=Pair.of(tableName,0);
+    if (!m_constraints.containsKey(key) || hostName == null)     continue;
+    System.out.println("Checking table " + tableName);
+    String localhostName=null;
+    try {
+      localhostName=InetAddress.getLocalHost().getHostName();
+    }
+ catch (    UnknownHostException e1) {
+      localhostName="localhost";
+    }
+    if (!hostName.equals("localhost") && !hostName.equals(localhostName)) {
+      if (!SSHTools.copyFromRemote(file,m_username,hostName,file.getPath())) {
+        System.err.println("Failed to copy the snapshot file " + file.getPath() + " from host "+ hostName);
+        return false;
+      }
+    }
+    if (!file.exists()) {
+      System.err.println("Snapshot file " + file.getPath() + " cannot be copied from "+ hostName+ " to localhost");
+      return false;
+    }
+    try {
+      try {
+        inputStream=new FileInputStream(file);
+        saveFile=new TableSaveFile(inputStream.getChannel(),3,partitions);
+        while (isSatisfied && saveFile.hasMoreChunks()) {
+          BBContainer chunk=saveFile.getNextChunk();
+          VoltTable table=null;
+          if (chunk == null)           continue;
+          table=new VoltTable(chunk.b,true);
+          while (isSatisfied && table.advanceRow()) {
+            isSatisfied=Verification.checkRow(m_constraints.get(key),table);
+            rowCount++;
+          }
+          chunk.discard();
+        }
+      }
+  finally {
+        if (saveFile != null)         saveFile.close();
+        if (inputStream != null)         inputStream.close();
+        if (!file.delete()) {
+          System.err.println("Failed to delete snapshot file " + file.getPath());
+          return false;
+        }
+      }
+    }
+ catch (    FileNotFoundException e) {
+      e.printStackTrace();
+      return false;
+    }
+catch (    IOException e) {
+      e.printStackTrace();
+      return false;
+    }
+    if (isSatisfied) {
+      System.out.println("Table " + tableName + " with "+ rowCount+ " rows passed check");
+    }
+ else {
+      System.err.println("Table " + tableName + " failed check");
+      break;
+    }
+  }
+  try {
+    m_voltClient.callProcedure("@SnapshotDelete",new String[]{dir},new String[]{nonce});
+  }
+ catch (  NoConnectionsException e) {
+    e.printStackTrace();
+  }
+catch (  ProcCallException e) {
+    e.printStackTrace();
+  }
+  System.out.println("Table checking finished " + (isSatisfied ? "successfully" : "with failures"));
+  return isSatisfied;
+}
