@@ -85,6 +85,33 @@
     result.addRow(context.getCluster().getPartitions().size());
     return new DependencyPair(DEP_partitionCount,result);
   }
+ else   if (fragmentId == SysProcFragmentId.PF_ioData) {
+    assert(params.toArray() != null);
+    assert(params.toArray().length == 2);
+    final boolean resetCounters=((Byte)params.toArray()[0]).byteValue() == 0 ? false : true;
+    final Long now=(Long)params.toArray()[1];
+    final VoltTable result=new VoltTable(ioColumnInfo);
+    final Map<Long,Pair<String,long[]>> stats=VoltDB.instance().getNetwork().getIOStats(resetCounters);
+    final Integer hostId=VoltDB.instance().getHostMessenger().getHostId();
+    final String hostname=VoltDB.instance().getHostMessenger().getHostname();
+    for (    Map.Entry<Long,Pair<String,long[]>> e : stats.entrySet()) {
+      final Long connectionId=e.getKey();
+      final String remoteHostname=e.getValue().getFirst();
+      final long counters[]=e.getValue().getSecond();
+      result.addRow(now,hostId,hostname,connectionId,remoteHostname,counters[0],counters[1],counters[2],counters[3]);
+    }
+    return new DependencyPair(DEP_ioData,result);
+  }
+ else   if (fragmentId == SysProcFragmentId.PF_ioDataAggregator) {
+    final VoltTable result=new VoltTable(ioColumnInfo);
+    List<VoltTable> dep=dependencies.get(DEP_ioData);
+    for (    VoltTable t : dep) {
+      while (t.advanceRow()) {
+        result.add(t);
+      }
+    }
+    return new DependencyPair(DEP_ioDataAggregator,result);
+  }
   assert(false);
   return null;
 }
