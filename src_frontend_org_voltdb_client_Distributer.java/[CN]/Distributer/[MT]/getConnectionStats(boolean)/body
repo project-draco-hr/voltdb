@@ -1,0 +1,43 @@
+{
+  final Long now=System.currentTimeMillis();
+  VoltTable retval=new VoltTable(statsColumns);
+  Map<String,long[]> m_networkStats;
+  if (interval) {
+    m_networkStats=m_network.getIOStatsInterval();
+  }
+ else {
+    m_networkStats=m_network.getIOStats();
+  }
+  long totalInvocations=0;
+  long totalAbortedInvocations=0;
+  long totalFailedInvocations=0;
+synchronized (m_connections) {
+    for (    NodeConnection cxn : m_connections) {
+      long counters[];
+      if (interval) {
+        counters=cxn.getCountersInterval();
+      }
+ else {
+        counters=cxn.getCounters();
+      }
+      totalInvocations+=counters[0];
+      totalAbortedInvocations+=counters[1];
+      totalFailedInvocations+=counters[2];
+      final long networkCounters[]=m_networkStats.get(cxn.m_hostname);
+      long bytesRead=0;
+      long messagesRead=0;
+      long bytesWritten=0;
+      long messagesWritten=0;
+      if (networkCounters != null) {
+        bytesRead=networkCounters[0];
+        messagesRead=networkCounters[1];
+        bytesWritten=networkCounters[2];
+        messagesWritten=networkCounters[3];
+      }
+      retval.addRow(now,cxn.m_hostname,counters[0],counters[1],counters[2],bytesRead,messagesRead,bytesWritten,messagesWritten);
+    }
+  }
+  final long globalIOStats[]=m_networkStats.get("GLOBAL");
+  retval.addRow(now,"GLOBAL",totalInvocations,totalAbortedInvocations,totalFailedInvocations,globalIOStats[0],globalIOStats[1],globalIOStats[2],globalIOStats[3]);
+  return retval;
+}
