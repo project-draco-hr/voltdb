@@ -9,7 +9,7 @@
   try {
     boolean keepTrying=true;
     VoltTable[] response=null;
-    while (true) {
+    while (m_id == 0) {
       response=m_voltClient.callProcedure("@SnapshotSave",dir,nonce,1);
       if (response.length != 1 || !response[0].advanceRow() || !response[0].getString("RESULT").equals("SUCCESS")) {
         if (keepTrying && response[0].getString("ERR_MSG").contains("ALREADY EXISTS")) {
@@ -21,6 +21,32 @@
         return false;
       }
       break;
+    }
+    if (m_id > 0) {
+      int maxTry=10;
+      while (maxTry-- > 0) {
+        boolean found=false;
+        response=m_voltClient.callProcedure("@SnapshotStatus");
+        if (response.length != 2) {
+          System.err.println("Failed to get snapshot status");
+          return false;
+        }
+        while (response[0].advanceRow()) {
+          if (response[0].getString("NONCE").equals(nonce)) {
+            found=true;
+            break;
+          }
+        }
+        if (found) {
+          if (response[0].getLong("END_TIME") > 0)           break;
+        }
+        try {
+          Thread.sleep(500);
+        }
+ catch (        InterruptedException e) {
+          return false;
+        }
+      }
     }
     response=m_voltClient.callProcedure("@SystemInformation");
     if (response.length != 1) {
@@ -62,6 +88,7 @@ catch (  ProcCallException e) {
     return false;
   }
   for (  Map.Entry<String,Pair<String,String>> entry : snapshotMappings.entrySet()) {
+    if (entry.getValue() == null)     continue;
     String tableName=entry.getKey();
     String hostName=entry.getValue().getFirst();
     int[] partitions=partitionMappings.get(tableName);
@@ -108,10 +135,7 @@ catch (  ProcCallException e) {
   finally {
         if (saveFile != null)         saveFile.close();
         if (inputStream != null)         inputStream.close();
-        if (!file.delete()) {
-          System.err.println("Failed to delete snapshot file " + file.getPath());
-          return false;
-        }
+        if (!hostName.equals("localhost") && !hostName.equals(localhostName) && !file.delete())         System.err.println("Failed to delete snapshot file " + file.getPath());
       }
     }
  catch (    FileNotFoundException e) {
@@ -131,7 +155,7 @@ catch (    IOException e) {
     }
   }
   try {
-    m_voltClient.callProcedure("@SnapshotDelete",new String[]{dir},new String[]{nonce});
+    if (m_id == 0)     m_voltClient.callProcedure("@SnapshotDelete",new String[]{dir},new String[]{nonce});
   }
  catch (  NoConnectionsException e) {
     e.printStackTrace();
