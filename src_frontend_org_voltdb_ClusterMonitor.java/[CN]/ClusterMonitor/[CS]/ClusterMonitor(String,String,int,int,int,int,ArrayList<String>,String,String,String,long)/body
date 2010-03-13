@@ -1,0 +1,82 @@
+{
+  m_pollInterval=pollInterval;
+  m_client=ClientFactory.createClient();
+  int successfulConnections=0;
+  for (  String host : voltHosts) {
+    try {
+      m_client.createConnection(host,voltUsername,voltPassword);
+      successfulConnections++;
+    }
+ catch (    IOException e) {
+      e.printStackTrace();
+    }
+  }
+  if (successfulConnections == 0) {
+    System.err.println("Unable to open any connections to the cluster");
+    System.exit(-1);
+  }
+  m_conn=DriverManager.getConnection(databaseURL);
+  m_conn.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
+  m_conn.setAutoCommit(false);
+  final PreparedStatement statement=m_conn.prepareStatement(createInstanceStatement,Statement.RETURN_GENERATED_KEYS);
+  insertInitiator=m_conn.prepareStatement(insertInitiatorStatement);
+  insertIOStats=m_conn.prepareStatement(insertIOStatsStatement);
+  insertProcedures=m_conn.prepareStatement(insertProceduresStatement);
+  insertTableStats=m_conn.prepareStatement(insertTableStatsStatement);
+  boolean success=false;
+  Integer instanceId=-1;
+  try {
+    int index=1;
+    statement.setString(index++,application);
+    if (subApplication != null) {
+      statement.setString(index++,subApplication);
+    }
+ else {
+      statement.setNull(index++,Types.VARCHAR);
+    }
+    if (hosts > 0) {
+      statement.setInt(index++,hosts);
+    }
+ else {
+      statement.setNull(index++,Types.INTEGER);
+    }
+    if (partitionsPerHost > 0) {
+      statement.setInt(index++,partitionsPerHost);
+    }
+ else {
+      statement.setNull(index++,Types.INTEGER);
+    }
+    if (totalPartitions > 0) {
+      statement.setInt(index++,totalPartitions);
+    }
+ else {
+      statement.setNull(index++,Types.INTEGER);
+    }
+    if (kFactor >= 0) {
+      statement.setInt(index++,kFactor);
+    }
+ else {
+      statement.setNull(index++,Types.INTEGER);
+    }
+    statement.setTimestamp(index++,new Timestamp(System.currentTimeMillis()));
+    statement.execute();
+    final ResultSet generatedKeys=statement.getGeneratedKeys();
+    if (generatedKeys.first()) {
+      instanceId=generatedKeys.getInt(1);
+      success=true;
+    }
+ else {
+      throw new SQLException("Create instance statement didn't return an instance key");
+    }
+  }
+  finally {
+    statement.close();
+    if (success) {
+      m_conn.commit();
+    }
+ else {
+      m_conn.close();
+    }
+  }
+  m_instanceId=instanceId;
+}

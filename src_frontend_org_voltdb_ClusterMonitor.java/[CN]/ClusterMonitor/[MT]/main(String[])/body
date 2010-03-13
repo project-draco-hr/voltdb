@@ -1,0 +1,104 @@
+{
+  String application="";
+  String subApplication=null;
+  int hosts=-1;
+  int partitionsPerHost=-1;
+  int totalPartitions=-1;
+  int kFactor=-1;
+  String databaseURL="";
+  String voltUsername="";
+  String voltPassword="";
+  long pollInterval=10000;
+  ArrayList<String> voltHosts=new ArrayList<String>();
+  for (  String arg : args) {
+    String[] parts=arg.split("=",2);
+    if (parts.length == 1) {
+      continue;
+    }
+ else     if (parts[1].startsWith("${")) {
+      continue;
+    }
+ else     if (parts[0].equals("application")) {
+      application=parts[1];
+    }
+ else     if (parts[0].equals("subApplication")) {
+      subApplication=parts[1];
+    }
+ else     if (parts[0].equals("hosts")) {
+      hosts=Integer.parseInt(parts[1]);
+      if (hosts < 1) {
+        System.err.println("hosts can't be less than 1");
+        System.exit(-1);
+      }
+    }
+ else     if (parts[0].equals("partitionsPerHost")) {
+      partitionsPerHost=Integer.parseInt(parts[1]);
+      if (partitionsPerHost < 1) {
+        System.err.println("partitionsPerHost can't be less than 1");
+        System.exit(-1);
+      }
+    }
+ else     if (parts[0].equals("kFactor")) {
+      kFactor=Integer.parseInt(parts[1]);
+      if (kFactor < 0) {
+        System.err.println("kFactor can't be less than 0");
+        System.exit(-1);
+      }
+    }
+ else     if (parts[0].startsWith("voltHost")) {
+      final String host=parts[1];
+      if (host.isEmpty()) {
+        System.err.println("voltHost can't be empty");
+        System.exit(-1);
+      }
+      voltHosts.add(host);
+    }
+ else     if (parts[0].equals("voltUsername")) {
+      voltUsername=parts[1];
+    }
+ else     if (parts[0].equals("voltPassword")) {
+      voltPassword=parts[1];
+    }
+ else     if (parts[0].equals("databaseURL")) {
+      databaseURL=parts[1];
+      if (databaseURL.isEmpty()) {
+        System.err.println("databaseURL cannot be empty");
+        System.exit(-1);
+      }
+    }
+ else     if (parts[0].equals("pollInterval")) {
+      pollInterval=Long.parseLong(parts[1]);
+      if (pollInterval < 200) {
+        System.err.println("Poll interval is excessive, try 1 second");
+        System.exit(-1);
+      }
+      if (pollInterval < 1000) {
+        System.err.println("Warning, an excessively frequent poll interval incurs overhead");
+      }
+    }
+  }
+  if (partitionsPerHost != -1 && hosts != -1) {
+    totalPartitions=partitionsPerHost * hosts;
+  }
+  boolean err=false;
+  if (voltHosts.isEmpty()) {
+    System.err.println("No volt hosts specified");
+    System.err.println("Usage: voltHost1=host1 voltHost2=host2 ... ");
+    err=true;
+  }
+  if (application.isEmpty()) {
+    System.err.println("No application name specified");
+    System.err.println("Usage: application=bingo");
+    err=true;
+  }
+  if (databaseURL.isEmpty()) {
+    System.err.println("No database specified. Be sure to incude username and password in URL.");
+    System.err.println("Usage: databaseURL=jdbc:mysql://[host][,failoverhost...]" + "[:port]/[database][?propertyName1][=propertyValue1][&propertyName2][=propertyValue2]...");
+    err=true;
+  }
+  if (err) {
+    System.exit(-1);
+  }
+  final ClusterMonitor cm=new ClusterMonitor(application,subApplication,hosts,partitionsPerHost,totalPartitions,kFactor,voltHosts,voltUsername,voltPassword,databaseURL,pollInterval);
+  cm.monitor();
+}
