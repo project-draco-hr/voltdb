@@ -1,6 +1,26 @@
 {
-  final SocketChannel aChannel=ConnectionUtil.getAuthenticatedConnection(host,program,password,port);
-  NodeConnection cxn=new NodeConnection();
+  final Pair<SocketChannel,long[]> p=ConnectionUtil.getAuthenticatedConnection(host,program,password,port);
+  final SocketChannel aChannel=p.getFirst();
+  if (m_clusterInstanceId == null) {
+    long timestamp=p.getSecond()[2];
+    int addr=(int)p.getSecond()[3];
+    m_clusterInstanceId=new Object[]{timestamp,addr};
+    if (m_statsLoader != null) {
+      try {
+        m_statsLoader.start(timestamp,addr);
+      }
+ catch (      SQLException e) {
+        throw new IOException(e);
+      }
+    }
+  }
+ else {
+    if (!(((Long)m_clusterInstanceId[0]).longValue() == p.getSecond()[2]) || !(((Integer)m_clusterInstanceId[1]).longValue() == p.getSecond()[3])) {
+      p.getFirst().close();
+      throw new IOException("Cluster instance id mismatch. Current is " + m_clusterInstanceId[0] + ","+ m_clusterInstanceId[1]+ " and server's was "+ p.getSecond()[2]+ ","+ p.getSecond()[3]);
+    }
+  }
+  NodeConnection cxn=new NodeConnection(p.getSecond());
   m_connections.add(cxn);
   Connection c=m_network.registerChannel(aChannel,cxn);
   cxn.m_hostname=c.getHostname();
