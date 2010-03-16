@@ -1,13 +1,12 @@
 {
-  long latestTxnId=m_currentTransactionState == null ? lastCommittedTxnId : getCurrentTxnId();
-  if (notice.getTxnId() < latestTxnId) {
+  if (notice.getTxnId() < lastCommittedTxnId) {
     if (notice instanceof FragmentTask) {
       return null;
     }
     StringBuilder msg=new StringBuilder();
     msg.append("Txn ordering deadlock (DTXN) at site ").append(m_siteId).append(":\n");
-    msg.append("   txn ").append(latestTxnId).append(" (");
-    msg.append(TransactionIdManager.toString(latestTxnId)).append(" HB: ?");
+    msg.append("   txn ").append(lastCommittedTxnId).append(" (");
+    msg.append(TransactionIdManager.toString(lastCommittedTxnId)).append(" HB: ?");
     msg.append(") before\n");
     msg.append("   txn ").append(notice.getTxnId()).append(" (");
     msg.append(TransactionIdManager.toString(notice.getTxnId())).append(" HB:");
@@ -15,14 +14,19 @@
     throw new RuntimeException(msg.toString());
   }
   m_transactionQueue.gotTransaction(notice.getInitiatorSiteId(),notice.getTxnId(),notice.isHeartBeat());
-  if (notice.isHeartBeat())   return null;
-  if ((m_currentTransactionState != null) && (m_currentTransactionState.txnId == notice.getTxnId()))   return m_currentTransactionState;
+  if (notice.isHeartBeat()) {
+    return null;
+  }
   TransactionState state=m_transactionsById.get(notice.getTxnId());
   if (state == null) {
     if (notice instanceof InitiateTask) {
       InitiateTask it=(InitiateTask)notice;
-      if (it.isSinglePartition())       state=new SinglePartitionTxnState(m_mailbox,this,it);
- else       state=new MultiPartitionParticipantTxnState(m_mailbox,this,it);
+      if (it.isSinglePartition()) {
+        state=new SinglePartitionTxnState(m_mailbox,this,it);
+      }
+ else {
+        state=new MultiPartitionParticipantTxnState(m_mailbox,this,it);
+      }
     }
  else {
       state=new MultiPartitionParticipantTxnState(m_mailbox,this,notice);
