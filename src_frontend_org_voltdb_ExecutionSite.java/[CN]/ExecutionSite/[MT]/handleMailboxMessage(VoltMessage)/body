@@ -1,15 +1,36 @@
 {
-  if (message instanceof InitiateTask) {
-    messageArrived((InitiateTask)message);
-  }
- else   if (message instanceof FragmentTask) {
-    messageArrived((FragmentTask)message);
+  if (message instanceof MembershipNotice) {
+    MembershipNotice mn=(MembershipNotice)message;
+    assertTxnIdOrdering(mn);
+    if (mn.isHeartBeat()) {
+      m_transactionQueue.gotTransaction(mn.getInitiatorSiteId(),mn.getTxnId(),true);
+      return;
+    }
+ else     if (!(mn instanceof FragmentTask)) {
+      m_transactionQueue.gotTransaction(mn.getInitiatorSiteId(),mn.getTxnId(),false);
+    }
+    TransactionState ts=m_transactionsById.get(mn.getTxnId());
+    if (ts == null) {
+      if (mn.isSinglePartition()) {
+        ts=new SinglePartitionTxnState(m_mailbox,this,mn);
+      }
+ else {
+        ts=new MultiPartitionParticipantTxnState(m_mailbox,this,mn);
+      }
+      m_transactionQueue.add(ts);
+      m_transactionsById.put(ts.txnId,ts);
+    }
+    if (message instanceof FragmentTask) {
+      ts.createLocalFragmentWork((FragmentTask)message,false);
+    }
   }
  else   if (message instanceof FragmentResponse) {
-    messageArrived((FragmentResponse)message);
-  }
- else   if (message instanceof MembershipNotice) {
-    processTransactionMembership((MembershipNotice)message);
+    FragmentResponse response=(FragmentResponse)message;
+    TransactionState txnState=m_transactionsById.get(response.getTxnId());
+    if (txnState != null) {
+      assert(txnState instanceof MultiPartitionParticipantTxnState);
+      txnState.processRemoteWorkResponse(response);
+    }
   }
  else   if (message instanceof DebugMessage) {
     DebugMessage dmsg=(DebugMessage)message;
