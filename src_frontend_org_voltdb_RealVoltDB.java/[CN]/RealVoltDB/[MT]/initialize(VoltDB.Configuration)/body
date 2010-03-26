@@ -26,6 +26,13 @@ synchronized (m_startAndStopLock) {
     }
     final String serializedCatalog=CatalogUtil.loadCatalogFromJar(m_config.m_pathToCatalog,hostLog);
     if ((serializedCatalog == null) || (serializedCatalog.length() == 0))     VoltDB.crashVoltDB();
+    long catalogCRC=0;
+    try {
+      catalogCRC=JarReader.crcForJar(m_config.m_pathToCatalog);
+    }
+ catch (    IOException e1) {
+      VoltDB.crashVoltDB();
+    }
     Catalog catalog=new Catalog();
     catalog.execute(serializedCatalog);
     m_catalogContext=new CatalogContext(catalog,m_config.m_pathToCatalog);
@@ -70,7 +77,7 @@ synchronized (m_startAndStopLock) {
       VoltDB.crashVoltDB();
     }
     hostLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_CreatingVoltDB.name(),new Object[]{m_catalogContext.numberOfNodes,leader},null);
-    m_messenger=new HostMessenger(m_network,leader,m_catalogContext.numberOfNodes,hostLog);
+    m_messenger=new HostMessenger(m_network,leader,m_catalogContext.numberOfNodes,catalogCRC,hostLog);
     m_instanceId=m_messenger.waitForGroupJoin();
     int myHostId=m_messenger.getHostId();
     m_localSites=new Hashtable<Integer,ExecutionSite>();
