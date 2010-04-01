@@ -1,0 +1,59 @@
+{
+  while (!Thread.interrupted() && m_saveFile.hasMoreChunks()) {
+    if (m_availableBytes.get() > m_maxAvailableBytes) {
+      Thread.sleep(5);
+      continue;
+    }
+    BBContainer c=m_saveFile.getNextChunk();
+    if (c == null) {
+      return;
+    }
+    try {
+      final int size=c.b.remaining();
+      final VoltTable vt=new VoltTable(c.b,true);
+      StringBuilder sb=new StringBuilder(size * 2);
+      final SimpleDateFormat sdf=new SimpleDateFormat("yyyy.MM.dd HH:mm:ss.SSS:");
+      while (vt.advanceRow()) {
+        for (int ii=0; ii < vt.getColumnCount(); ii++) {
+          final VoltType type=vt.getColumnType(ii);
+          if (ii != 0) {
+            sb.append(',');
+          }
+          if (type == VoltType.BIGINT || type == VoltType.INTEGER || type == VoltType.SMALLINT || type == VoltType.TINYINT) {
+            sb.append(vt.getLong(ii));
+          }
+ else           if (type == VoltType.FLOAT) {
+            sb.append(vt.getDouble(ii));
+          }
+ else           if (type == VoltType.DECIMAL) {
+            sb.append(vt.getDecimalAsBigDecimal(ii).toString());
+          }
+ else           if (type == VoltType.STRING) {
+            sb.append(m_escaper.escape(vt.getString(ii)));
+          }
+ else           if (type == VoltType.TIMESTAMP) {
+            final TimestampType timestamp=vt.getTimestampAsTimestamp(ii);
+            StringBuilder builder=new StringBuilder(64);
+            builder.append(sdf.format(timestamp.asApproximateJavaDate()));
+            builder.append(timestamp.getUSec());
+            sb.append(m_escaper.escape(builder.toString()));
+          }
+        }
+        sb.append(m_delimeter);
+      }
+      byte bytes[]=null;
+      try {
+        bytes=sb.toString().getBytes("UTF-8");
+      }
+ catch (      UnsupportedEncodingException e) {
+        e.printStackTrace();
+        return;
+      }
+      m_availableBytes.addAndGet(bytes.length);
+      m_available.offer(bytes);
+    }
+  finally {
+      c.discard();
+    }
+  }
+}
