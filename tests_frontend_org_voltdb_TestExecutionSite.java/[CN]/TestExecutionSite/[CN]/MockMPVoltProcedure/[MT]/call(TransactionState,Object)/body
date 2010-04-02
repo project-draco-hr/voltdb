@@ -1,4 +1,18 @@
 {
-  Map<Integer,List<VoltTable>> resultDeps=m_site.recursableRun(txnState);
-  return null;
+  ByteBuffer paramBuf=createParametersBuffer(paramList);
+  int localTask_startDep=txnState.getNextDependencyId() | DtxnConstants.MULTIPARTITION_DEPENDENCY;
+  int localTask_outputDep=txnState.getNextDependencyId();
+  FragmentTask localTask=new FragmentTask(txnState.initiatorSiteId,txnState.coordinatorSiteId,txnState.txnId,txnState.isReadOnly,new long[]{0},new int[]{localTask_outputDep},new ByteBuffer[]{paramBuf},finalTask());
+  localTask.addInputDepId(0,localTask_startDep);
+  FragmentTask distributedTask=new FragmentTask(txnState.initiatorSiteId,txnState.coordinatorSiteId,txnState.txnId,txnState.isReadOnly,new long[]{0},new int[]{localTask_startDep},new ByteBuffer[]{paramBuf},finalTask());
+  txnState.createLocalFragmentWork(localTask,nonTransactional() && finalTask());
+  txnState.createAllParticipatingFragmentWork(distributedTask);
+  txnState.setupProcedureResume(finalTask(),new int[]{localTask_outputDep});
+  final Map<Integer,List<VoltTable>> resultDeps=m_site.recursableRun(txnState);
+  assertTrue(resultDeps != null);
+  VoltTable[] vta=new VoltTable[1];
+  vta[0]=new VoltTable(new VoltTable.ColumnInfo("",VoltType.INTEGER));
+  vta[0].addRow(new Integer(1));
+  ++m_called;
+  return new ClientResponseImpl(ClientResponse.SUCCESS,vta,null);
 }
