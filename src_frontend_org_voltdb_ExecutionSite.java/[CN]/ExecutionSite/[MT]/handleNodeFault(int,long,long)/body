@@ -1,6 +1,4 @@
 {
-  long globalCommitPoint=Long.MAX_VALUE;
-  long globalInitiationPoint=Long.MAX_VALUE;
   m_context=VoltDB.instance().getCatalogContext();
   ArrayList<Integer> failedSites=m_context.siteTracker.getAllSitesForHost(hostId);
   for (  Integer i : failedSites) {
@@ -19,13 +17,16 @@
       m_transactionQueue.faultTransaction(ts);
     }
  else     if (ts instanceof MultiPartitionParticipantTxnState && failedSites.contains(ts.coordinatorSiteId)) {
+      MultiPartitionParticipantTxnState mpts=(MultiPartitionParticipantTxnState)ts;
       if (ts.isInProgress() && ts.txnId <= globalCommitPoint) {
-        System.err.println("Commit in-progress MP on failure, not supported.");
-        VoltDB.crashVoltDB();
+        FragmentTaskMessage ft=mpts.createConcludingFragmentTask();
+        ft.setShouldUndo(false);
+        m_mailbox.deliver(ft);
       }
  else       if (ts.isInProgress() && ts.txnId > globalCommitPoint) {
-        System.err.println("Rollback in-progress MP on failure, not supported.");
-        VoltDB.crashVoltDB();
+        FragmentTaskMessage ft=mpts.createConcludingFragmentTask();
+        ft.setShouldUndo(true);
+        m_mailbox.deliver(ft);
       }
  else {
         log.info("Site " + getSiteId() + " faulting transaction "+ ts.txnId+ " as a result of host failure at node "+ hostId);
