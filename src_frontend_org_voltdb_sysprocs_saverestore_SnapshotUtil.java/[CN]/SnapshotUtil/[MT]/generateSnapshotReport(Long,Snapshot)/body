@@ -1,6 +1,6 @@
 {
-  StringWriter sw=new StringWriter();
-  PrintWriter pw=new PrintWriter(sw);
+  CharArrayWriter caw=new CharArrayWriter();
+  PrintWriter pw=new PrintWriter(caw);
   boolean snapshotConsistent=true;
   String indentString="";
   pw.println(indentString + "Date: " + new Date(snapshotTime));
@@ -84,15 +84,15 @@
   for (  Map.Entry<String,TableFiles> entry : snapshot.m_tableFiles.entrySet()) {
     TableFiles tableFiles=entry.getValue();
     TreeSet<Integer> partitionsAvailable=new TreeSet<Integer>();
+    int kk=0;
     for (    Set<Integer> validPartitionIds : tableFiles.m_validPartitionIds) {
-      partitionsAvailable.addAll(validPartitionIds);
+      if (tableFiles.m_completed.get(kk++)) {
+        partitionsAvailable.addAll(validPartitionIds);
+      }
     }
     boolean partitionsPresent=false;
-    if ((partitionsAvailable.size() == totalPartitionCount) && (partitionsAvailable.first() == 0) && (partitionsAvailable.last() == totalPartitionCount - 1)) {
+    if ((partitionsAvailable.size() == (tableFiles.m_isReplicated ? 1 : totalPartitionCount)) && (partitionsAvailable.first() == 0) && (partitionsAvailable.last() == (tableFiles.m_isReplicated ? 1 : totalPartitionCount) - 1)) {
       partitionsPresent=true;
-    }
- else     if (!tableFiles.m_isReplicated) {
-      snapshotConsistent=false;
     }
     boolean hasCorruptPartitions=false;
     for (    Set<Integer> corruptIds : tableFiles.m_corruptParititionIds) {
@@ -105,9 +105,6 @@
     indentString=indentString + "\t";
     pw.println(indentString + "Replicated: " + entry.getValue().m_isReplicated);
     pw.println(indentString + "Valid partition set available: " + partitionsPresent);
-    if (hasCorruptPartitions) {
-      pw.println("Corrupt partitions may prevent a restore even if the data " + "is intact and still available in some replica file. This is being work on.");
-    }
     pw.println(indentString + "Corrupt partitions present: " + hasCorruptPartitions);
     pw.println(indentString + "Files: ");
     indentString=indentString + "\t";
@@ -132,19 +129,36 @@
       }
       if (corruptPartitionIdString.isEmpty()) {
         consistentTablesSeen.add(entry.getKey());
-        pw.println(indentString + tableFiles.m_files.get(ii).getPath() + " Partitions: "+ validPartitionIdString);
+        pw.println(indentString + tableFiles.m_files.get(ii).getPath() + " Completed: "+ tableFiles.m_completed.get(ii)+ " Partitions: "+ validPartitionIdString);
       }
  else {
-        pw.println(indentString + tableFiles.m_files.get(ii).getPath() + " Valid Partitions: "+ validPartitionIdString+ " Corrupt Partitions: "+ corruptPartitionIdString);
+        pw.println(indentString + tableFiles.m_files.get(ii).getPath() + " Completed: "+ tableFiles.m_completed.get(ii)+ " Valid Partitions: "+ validPartitionIdString+ " Corrupt Partitions: "+ corruptPartitionIdString);
       }
     }
     indentString=indentString.substring(2);
   }
   indentString=indentString.substring(1);
+  StringBuilder missingTables=new StringBuilder(8192);
+  if (!consistentTablesSeen.containsAll(digestTablesSeen)) {
+    snapshotConsistent=false;
+    missingTables.append("Missing tables: ");
+    Set<String> missingTablesSet=new TreeSet<String>(digestTablesSeen);
+    missingTablesSet.removeAll(consistentTablesSeen);
+    int hh=0;
+    for (    String tableName : missingTablesSet) {
+      if (hh > 0) {
+        missingTables.append(", ");
+      }
+      missingTables.append(tableName);
+    }
+    missingTables.append('\n');
+  }
   if (snapshotConsistent) {
-    return Pair.of(true,"Snapshot valid\n" + sw.toString());
+    return Pair.of(true,"Snapshot valid\n" + caw.toString());
   }
  else {
-    return Pair.of(false,"Snapshot corrupted\n" + sw.toString());
+    StringBuilder sb=new StringBuilder(8192);
+    sb.append("Snapshot corrupted\n").append(missingTables).append(caw.toCharArray());
+    return Pair.of(false,sb.toString());
   }
 }
