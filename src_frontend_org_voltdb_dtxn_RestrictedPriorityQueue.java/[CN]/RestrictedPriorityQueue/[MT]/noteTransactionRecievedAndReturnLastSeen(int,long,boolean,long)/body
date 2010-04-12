@@ -1,0 +1,22 @@
+{
+  assert(txnId != 0);
+  if (m_initiatorData.containsKey(initiatorSiteId) == false)   return DtxnConstants.DUMMY_LAST_SEEN_TXN_ID;
+  if (m_lastTxnPopped > txnId) {
+    StringBuilder msg=new StringBuilder();
+    msg.append("Txn ordering deadlock (QUEUE) at site ").append(m_siteId).append(":\n");
+    msg.append("   txn ").append(m_lastTxnPopped).append(" (");
+    msg.append(TransactionIdManager.toString(m_lastTxnPopped)).append(" HB: ?) before\n");
+    msg.append("   txn ").append(txnId).append(" (");
+    msg.append(TransactionIdManager.toString(txnId)).append(" HB:");
+    msg.append(isHeartbeat).append(").\n");
+    System.err.print(msg.toString());
+  }
+  LastInitiatorData lid=m_initiatorData.get(initiatorSiteId);
+  if (lid.m_lastSeenTxnId < txnId)   lid.m_lastSeenTxnId=txnId;
+  if (lid.m_lastSafeTxnId < lastSafeTxnIdFromInitiator)   lid.m_lastSafeTxnId=lastSafeTxnIdFromInitiator;
+  long min=Long.MAX_VALUE;
+  for (  LastInitiatorData l : m_initiatorData.values())   if (l.m_lastSeenTxnId < min)   min=l.m_lastSeenTxnId;
+  m_newestCandidateTransaction=min;
+  checkQueueState();
+  return lid.m_lastSeenTxnId;
+}

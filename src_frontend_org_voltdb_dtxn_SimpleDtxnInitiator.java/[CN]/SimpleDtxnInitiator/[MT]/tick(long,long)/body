@@ -1,11 +1,16 @@
 {
   long txnId=m_idManager.getNextUniqueTransactionId();
-  HeartbeatMessage tickNotice=new HeartbeatMessage(m_siteId,txnId,Long.MAX_VALUE);
-  int[] outOfDateSites=VoltDB.instance().getCatalogContext().siteTracker.getSitesWhichNeedAHeartbeat(time,interval);
+  int[] outOfDateSites=VoltDB.instance().getCatalogContext().siteTracker.getUpExecutionSites();
+  long now=System.currentTimeMillis();
   try {
-    m_mailbox.send(outOfDateSites,0,tickNotice);
+    for (    int siteId : outOfDateSites) {
+      long newestSafeTxnId=m_safetyState.getNewestSafeTxnIdForExecutorBySiteId(siteId);
+      HeartbeatMessage tickNotice=new HeartbeatMessage(m_siteId,txnId,newestSafeTxnId);
+      m_mailbox.send(siteId,VoltDB.DTXN_MAILBOX_ID,tickNotice);
+    }
   }
  catch (  MessagingException e) {
     throw new RuntimeException(e);
   }
+  m_lastTickTime=now;
 }
