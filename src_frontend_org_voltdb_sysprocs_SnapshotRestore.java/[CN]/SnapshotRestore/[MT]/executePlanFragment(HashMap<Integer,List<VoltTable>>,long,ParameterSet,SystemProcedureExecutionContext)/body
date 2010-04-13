@@ -9,38 +9,42 @@
   if (fragmentId == SysProcFragmentId.PF_restoreScan) {
     assert(params.toArray()[0] != null);
     assert(params.toArray()[1] != null);
-    m_initializedTableSaveFiles.clear();
-    m_filePath=(String)params.toArray()[0];
-    m_fileNonce=(String)params.toArray()[1];
-    TRACE_LOG.trace("Checking saved table state for restore of: " + m_filePath + ", "+ m_fileNonce);
     VoltTable result=ClusterSaveFileState.constructEmptySaveFileStateVoltTable();
-    File[] savefiles=retrieveRelevantFiles(m_filePath,m_fileNonce);
-    for (    File file : savefiles) {
-      TableSaveFile savefile=null;
-      try {
-        savefile=getTableSaveFile(file,1,null);
+    int host_id=context.getExecutionSite().getCorrespondingHostId();
+    Integer lowest_site_id=VoltDB.instance().getCatalogContext().siteTracker.getLowestLiveExecSiteIdForHost(host_id);
+    if (context.getExecutionSite().getSiteId() == lowest_site_id) {
+      m_initializedTableSaveFiles.clear();
+      m_filePath=(String)params.toArray()[0];
+      m_fileNonce=(String)params.toArray()[1];
+      TRACE_LOG.trace("Checking saved table state for restore of: " + m_filePath + ", "+ m_fileNonce);
+      File[] savefiles=retrieveRelevantFiles(m_filePath,m_fileNonce);
+      for (      File file : savefiles) {
+        TableSaveFile savefile=null;
         try {
-          if (!savefile.getCompleted()) {
-            continue;
+          savefile=getTableSaveFile(file,1,null);
+          try {
+            if (!savefile.getCompleted()) {
+              continue;
+            }
+            String is_replicated="FALSE";
+            if (savefile.isReplicated()) {
+              is_replicated="TRUE";
+            }
+            int partitionIds[]=savefile.getPartitionIds();
+            for (            int pid : partitionIds) {
+              result.addRow(m_hostId,hostname,savefile.getHostId(),savefile.getHostname(),savefile.getClusterName(),savefile.getDatabaseName(),savefile.getTableName(),is_replicated,pid,savefile.getTotalPartitions());
+            }
           }
-          String is_replicated="FALSE";
-          if (savefile.isReplicated()) {
-            is_replicated="TRUE";
-          }
-          int partitionIds[]=savefile.getPartitionIds();
-          for (          int pid : partitionIds) {
-            result.addRow(m_hostId,hostname,savefile.getHostId(),savefile.getHostname(),savefile.getClusterName(),savefile.getDatabaseName(),savefile.getTableName(),is_replicated,pid,savefile.getTotalPartitions());
-          }
-        }
   finally {
-          savefile.close();
+            savefile.close();
+          }
         }
-      }
- catch (      FileNotFoundException e) {
-        e.printStackTrace();
-      }
-catch (      IOException e) {
-        e.printStackTrace();
+ catch (        FileNotFoundException e) {
+          e.printStackTrace();
+        }
+catch (        IOException e) {
+          e.printStackTrace();
+        }
       }
     }
     return new DependencyPair(DEP_restoreScan,result);

@@ -66,6 +66,11 @@
     ArrayList<Integer> catalogIds=new ArrayList<Integer>();
     catalogIds.add(0);
     VoltTable result=VoltDB.instance().getStatsAgent().getStats(SysProcSelector.INITIATOR,catalogIds,interval,now);
+    int host_id=context.getExecutionSite().getCorrespondingHostId();
+    Integer lowest_site_id=VoltDB.instance().getCatalogContext().siteTracker.getLowestLiveExecSiteIdForHost(host_id);
+    if (context.getExecutionSite().getSiteId() != lowest_site_id) {
+      result.clearRowData();
+    }
     return new DependencyPair(DEP_initiatorData,result);
   }
  else   if (fragmentId == SysProcFragmentId.PF_initiatorAggregator) {
@@ -93,19 +98,23 @@
     return new DependencyPair(DEP_partitionCount,result);
   }
  else   if (fragmentId == SysProcFragmentId.PF_ioData) {
-    assert(params.toArray() != null);
-    assert(params.toArray().length == 2);
-    final boolean interval=((Byte)params.toArray()[0]).byteValue() == 0 ? false : true;
-    final Long now=(Long)params.toArray()[1];
     final VoltTable result=new VoltTable(ioColumnInfo);
-    final Map<Long,Pair<String,long[]>> stats=VoltDB.instance().getNetwork().getIOStats(interval);
-    final Integer hostId=VoltDB.instance().getHostMessenger().getHostId();
-    final String hostname=VoltDB.instance().getHostMessenger().getHostname();
-    for (    Map.Entry<Long,Pair<String,long[]>> e : stats.entrySet()) {
-      final Long connectionId=e.getKey();
-      final String remoteHostname=e.getValue().getFirst();
-      final long counters[]=e.getValue().getSecond();
-      result.addRow(now,hostId,hostname,connectionId,remoteHostname,counters[0],counters[1],counters[2],counters[3]);
+    int host_id=context.getExecutionSite().getCorrespondingHostId();
+    Integer lowest_site_id=VoltDB.instance().getCatalogContext().siteTracker.getLowestLiveExecSiteIdForHost(host_id);
+    if (context.getExecutionSite().getSiteId() == lowest_site_id) {
+      assert(params.toArray() != null);
+      assert(params.toArray().length == 2);
+      final boolean interval=((Byte)params.toArray()[0]).byteValue() == 0 ? false : true;
+      final Long now=(Long)params.toArray()[1];
+      final Map<Long,Pair<String,long[]>> stats=VoltDB.instance().getNetwork().getIOStats(interval);
+      final Integer hostId=VoltDB.instance().getHostMessenger().getHostId();
+      final String hostname=VoltDB.instance().getHostMessenger().getHostname();
+      for (      Map.Entry<Long,Pair<String,long[]>> e : stats.entrySet()) {
+        final Long connectionId=e.getKey();
+        final String remoteHostname=e.getValue().getFirst();
+        final long counters[]=e.getValue().getSecond();
+        result.addRow(now,hostId,hostname,connectionId,remoteHostname,counters[0],counters[1],counters[2],counters[3]);
+      }
     }
     return new DependencyPair(DEP_ioData,result);
   }
