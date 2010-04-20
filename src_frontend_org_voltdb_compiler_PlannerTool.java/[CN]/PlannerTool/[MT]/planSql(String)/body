@@ -1,7 +1,12 @@
 {
   Result retval=new Result();
   retval.errors="";
+  if (m_timeOfLastPlannerCall.compareAndSet(0,System.currentTimeMillis()) == false) {
+    retval.errors="Multiple simultanious calls to out of process planner are not allowed";
+    return retval;
+  }
   if ((sql == null) || (sql.length() == 0)) {
+    m_timeOfLastPlannerCall.set(0);
     retval.errors="Can't plan empty or null SQL.";
     return retval;
   }
@@ -11,7 +16,10 @@
     m_in.flush();
   }
  catch (  IOException e) {
+    m_timeOfLastPlannerCall.set(0);
     e.printStackTrace();
+    retval.errors=e.getMessage();
+    return retval;
   }
   BufferedReader r=new BufferedReader(new InputStreamReader(m_process.getInputStream()));
   ArrayList<String> output=new ArrayList<String>();
@@ -21,7 +29,10 @@
       line=r.readLine();
     }
  catch (    Exception e) {
+      m_timeOfLastPlannerCall.set(0);
       e.printStackTrace();
+      retval.errors=e.getMessage();
+      return retval;
     }
     if (line == null)     continue;
     line=line.trim();
@@ -46,5 +57,6 @@
   }
   retval.errors=retval.errors.trim();
   if (retval.errors.length() == 0)   retval.errors=null;
+  m_timeOfLastPlannerCall.set(0);
   return retval;
 }
