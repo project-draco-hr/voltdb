@@ -1,16 +1,27 @@
 {
-  if (args.length != 1) {
-    return;
+  m_logfile=new File("plannerlog.txt");
+  log("\ngetting started at: " + new Date().toString());
+  BufferedReader br=null;
+  final int TEN_MEGS=10 * 1024 * 1024;
+  br=new BufferedReader(new InputStreamReader(System.in),TEN_MEGS);
+  String encodedSerializedCatalog=null;
+  try {
+    encodedSerializedCatalog=br.readLine();
   }
-  String pathToCatalog=args[0];
-  final String serializedCatalog=CatalogUtil.loadCatalogFromJar(pathToCatalog,null);
+ catch (  IOException e2) {
+    log("Couldn't read catalog");
+    e2.printStackTrace();
+  }
+  final String serializedCatalog=Encoder.decodeBase64AndDecompress(encodedSerializedCatalog);
   if ((serializedCatalog == null) || (serializedCatalog.length() == 0)) {
-    return;
+    log("Catalog is null or empty");
+    System.exit(28);
   }
   Catalog catalog=new Catalog();
   catalog.execute(serializedCatalog);
   Cluster cluster=catalog.getClusters().get("cluster");
   Database db=cluster.getDatabases().get("database");
+  log("catalog loaded");
   HSQLInterface hsql=HSQLInterface.loadHsqldb();
   String hexDDL=db.getSchema();
   String ddl=Encoder.hexDecodeToString(hexDDL);
@@ -22,24 +33,26 @@
       hsql.runDDLCommand(command);
     }
  catch (    HSQLParseException e) {
+      log("Error creating hsql: " + e.getMessage());
       e.printStackTrace();
       return;
     }
   }
+  log("hsql loaded");
   String inputLine="";
-  InputStreamReader isr=new InputStreamReader(System.in);
-  BufferedReader in=new BufferedReader(isr);
   while (true) {
     try {
-      inputLine=in.readLine();
+      inputLine=br.readLine();
     }
  catch (    IOException e1) {
       e1.printStackTrace();
     }
     if (inputLine.length() == 0) {
+      log("got a zero-length sql statement");
       continue;
     }
     inputLine=inputLine.trim();
+    log("recieved sql stmt: " + inputLine);
     TrivialCostModel costModel=new TrivialCostModel();
     QueryPlanner planner=new QueryPlanner(cluster,db,hsql,new DatabaseEstimates(),false,true);
     CompiledPlan plan=null;
@@ -47,8 +60,15 @@
       plan=planner.compilePlan(costModel,inputLine,"PlannerTool","PlannerToolProc",false,null);
     }
  catch (    Exception e) {
-      e.printStackTrace();
-      return;
+      log("Error creating planner: " + e.getMessage());
+      String plannerMsg=e.getMessage();
+      if (plannerMsg != null) {
+        System.out.println("ERROR: " + plannerMsg + "\n");
+      }
+ else {
+        System.out.println("ERROR: UNKNOWN PLANNING ERROR\n");
+      }
+      continue;
     }
     if (plan == null) {
       String plannerMsg=planner.getErrorMessage();
@@ -60,30 +80,27 @@
       }
       continue;
     }
+    log("finished planning stmt");
     assert(plan.fragments.size() <= 2);
-    boolean found=false;
     for (int i=0; i < plan.fragments.size(); i++) {
       Fragment frag=plan.fragments.get(i);
+      PlanNodeList planList=new PlanNodeList(frag.planGraph);
+      String serializedPlan=planList.toJSONString();
+      String encodedPlan=serializedPlan;
       if (frag.multiPartition) {
-        PlanNodeList planList=new PlanNodeList(frag.planGraph);
-        String serializedPlan=planList.toJSONString();
-        System.out.println("PLAN-ALL: " + serializedPlan);
-        found=true;
-        break;
+        log("PLAN-ALL: " + encodedPlan);
+        System.out.println("PLAN-ALL: " + encodedPlan);
+      }
+ else {
+        log("PLAN-ONE: " + encodedPlan);
+        System.out.println("PLAN-ONE: " + encodedPlan);
       }
     }
-    if (plan.fragments.size() > 1)     assert(found == true);
-    found=false;
-    for (int i=0; i < plan.fragments.size(); i++) {
-      Fragment frag=plan.fragments.get(i);
-      if (frag.multiPartition == false) {
-        PlanNodeList planList=new PlanNodeList(frag.planGraph);
-        String serializedPlan=planList.toJSONString();
-        System.out.println("PLAN-ONE: " + serializedPlan);
-        found=true;
-        break;
-      }
+    if (plan.replicatedTableDML) {
+      System.out.println("REPLICATED-DML: true");
     }
-    assert(found == true);
+    log("finished loop");
+    System.out.println();
+    System.out.flush();
   }
 }

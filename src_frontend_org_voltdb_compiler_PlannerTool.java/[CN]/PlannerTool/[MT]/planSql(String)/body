@@ -1,40 +1,50 @@
 {
-  String[] retval=null;
+  Result retval=new Result();
+  retval.errors="";
   if ((sql == null) || (sql.length() == 0)) {
-    retval=new String[1];
-    retval[0]="ERROR: Can't plan empty or null SQL.";
+    retval.errors="Can't plan empty or null SQL.";
     return retval;
   }
   sql=sql.trim();
-  m_in.write(sql + "\n");
-  m_in.flush();
-  String line1=readLineFromProcess(m_process,3000);
-  assert(line1 != null);
-  String line2=null;
-  if (line1.startsWith("ERROR: ")) {
-    line1=line1.substring(7);
-    throw new IOException(line1);
+  try {
+    m_in.write(sql + "\n");
+    m_in.flush();
   }
- else   if (line1.startsWith("PLAN-ONE: ")) {
+ catch (  IOException e) {
+    e.printStackTrace();
   }
- else   if (line1.startsWith("PLAN-ALL: ")) {
-    line2=readLineFromProcess(m_process,500);
-    assert(line2 != null);
-    if (line2.startsWith("ERROR: ")) {
-      line2=line2.substring(7);
-      throw new IOException(line2);
+  BufferedReader r=new BufferedReader(new InputStreamReader(m_process.getInputStream()));
+  ArrayList<String> output=new ArrayList<String>();
+  while (true) {
+    String line=null;
+    try {
+      line=r.readLine();
     }
-    if (line2.startsWith("PLAN-ONE: ") == false) {
-      throw new IOException("Unintelligble output from planner process.");
+ catch (    Exception e) {
+      e.printStackTrace();
     }
-    line2=line1.substring(10);
+    if (line == null)     continue;
+    line=line.trim();
+    if (line.length() == 0)     break;
+    output.add(line);
   }
+  for (  String line : output) {
+    if (line.startsWith("PLAN-ONE: ")) {
+      assert(retval.onePlan == null);
+      retval.onePlan=line.substring(10);
+    }
+ else     if (line.startsWith("PLAN-ALL: ")) {
+      assert(retval.allPlan == null);
+      retval.allPlan=line.substring(10);
+    }
+ else     if (line.startsWith("REPLICATED-DML: ")) {
+      retval.replicatedDML=true;
+    }
  else {
-    throw new IOException("Unintelligble output from planner process.");
+      retval.errors+=line.substring(7) + "\n";
+    }
   }
-  line1=line1.substring(10);
-  retval=(line2 == null) ? new String[1] : new String[2];
-  retval[0]=line1;
-  if (line2 != null)   retval[1]=line2;
+  retval.errors=retval.errors.trim();
+  if (retval.errors.length() == 0)   retval.errors=null;
   return retval;
 }
