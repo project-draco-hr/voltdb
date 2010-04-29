@@ -1,0 +1,82 @@
+{
+  if (m.isError()) {
+    protocolError(m,"Error. May indicate that an invalid ack offset was requested.");
+    return;
+  }
+ else   if (m.isOpenResponse()) {
+    protocolError(m,"Server must not receive open response message.");
+    return;
+  }
+ else   if (m.isOpen()) {
+    if (m_state != RawProcessor.CLOSED) {
+      protocolError(m,"Must not OPEN an already opened connection.");
+      return;
+    }
+    if (m.isClose() || m.isPoll() || m.isAck()) {
+      protocolError(m,"Invalid combination of OPEN with other action.");
+      return;
+    }
+    m_state=RawProcessor.CONNECTED;
+    int found_partitionId=-1;
+    int found_tableId=-1;
+    Set<Integer> keySet=m_sources.keySet();
+    for (    Integer p_id : keySet) {
+      found_partitionId=p_id;
+      Set<Integer> keySet2=m_sources.get(p_id).keySet();
+      for (      Integer t_id : keySet2) {
+        found_tableId=t_id;
+      }
+    }
+    assert(found_partitionId != -1);
+    assert(found_tableId != -1);
+    final ELTProtoMessage r=new ELTProtoMessage(found_partitionId,found_tableId);
+    r.openResponse();
+    m_c.writeStream().enqueue(new DeferredSerialization(){
+      @Override public BBContainer serialize(      DBBPool p) throws IOException {
+        FastSerializer fs=new FastSerializer(p,r.serializableBytes() + 4);
+        r.writeToFastSerializer(fs);
+        return fs.getBBContainer();
+      }
+      @Override public void cancel(){
+      }
+    }
+);
+    return;
+  }
+ else   if (m.isPoll() || m.isAck()) {
+    if (m_state != RawProcessor.CONNECTED) {
+      protocolError(m,"Must not poll or ack a closed connection");
+      return;
+    }
+    ELTDataSource source=RawProcessor.this.getDataSourceFor(m.getPartitionId(),m.getTableId());
+    if (source == null) {
+      protocolError(m,"No ELT data source exists for partition(" + m.getPartitionId() + ") and table("+ m.getTableId()+ ") pair.");
+      return;
+    }
+    try {
+      source.poll(new ELTInternalMessage(this,m));
+      return;
+    }
+ catch (    MessagingException e) {
+      protocolError(m,e.getMessage());
+      return;
+    }
+  }
+ else   if (m.isClose()) {
+    m_state=RawProcessor.CLOSED;
+    return;
+  }
+ else   if (m.isPollResponse()) {
+    m_c.writeStream().enqueue(new DeferredSerialization(){
+      @Override public BBContainer serialize(      DBBPool p) throws IOException {
+        FastSerializer fs=new FastSerializer(p,m.serializableBytes() + 4);
+        m.writeToFastSerializer(fs);
+        return fs.getBBContainer();
+      }
+      @Override public void cancel(){
+      }
+    }
+);
+    return;
+  }
+}
