@@ -1,38 +1,22 @@
 {
-  final long time=EstTime.currentTimeMillis();
-  boolean locked=periodicWorkLock.tryLock();
-  if (!locked) {
-    return;
+  final long time=m_initiator.tick();
+  m_tickCounter++;
+  if (m_tickCounter % 20 == 0) {
+    checkForDeadConnections(time);
   }
-  try {
-    long delta=time - m_lastTickTime;
-    if (delta > TICK_INTERVAL) {
-      m_lastTickTime=time;
-      m_initiator.tick(time,TICK_INTERVAL);
-      m_tickCounter++;
-      if (m_tickCounter % 20 == 0) {
-        checkForDeadConnections(time);
-      }
-    }
- else {
-    }
-    delta=time - m_lastCompilerThreadPoke;
-    if (delta > POKE_INTERVAL) {
-      m_lastCompilerThreadPoke=time;
-      m_asyncCompilerWorkThread.verifyEverthingIsKosher();
-    }
-    if (m_shouldUpdateCatalog.compareAndSet(true,false)) {
-      m_catalogContext.set(VoltDB.instance().getCatalogContext());
-      m_asyncCompilerWorkThread.notifyShouldUpdateCatalog();
-      if (m_siteId == m_catalogContext.get().siteTracker.getLowestLiveNonExecSiteId()) {
-        m_snapshotDaemon.makeActive();
-      }
-    }
-    checkForFinishedCompilerWork();
-    initiateSnapshotDaemonWork(m_snapshotDaemon.processPeriodicWork(time));
+  long delta=time - m_lastCompilerThreadPoke;
+  if (delta > POKE_INTERVAL) {
+    m_lastCompilerThreadPoke=time;
+    m_asyncCompilerWorkThread.verifyEverthingIsKosher();
   }
-  finally {
-    periodicWorkLock.unlock();
+  if (m_shouldUpdateCatalog.compareAndSet(true,false)) {
+    m_catalogContext.set(VoltDB.instance().getCatalogContext());
+    m_asyncCompilerWorkThread.notifyShouldUpdateCatalog();
+    if (m_siteId == m_catalogContext.get().siteTracker.getLowestLiveNonExecSiteId()) {
+      m_snapshotDaemon.makeActive();
+    }
   }
+  checkForFinishedCompilerWork();
+  initiateSnapshotDaemonWork(m_snapshotDaemon.processPeriodicWork(time));
   return;
 }
