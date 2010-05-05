@@ -4,24 +4,34 @@
   double rollbackPerc=0.15;
   double random=Math.random();
   final Object[] rowdata=TestSQLTypesSuite.m_midValues;
-  for (int pkey=0; pkey < 25000; pkey++) {
-    if ((pkey % 500) == 0)     System.out.println("Rollback test added " + pkey + " rows");
+  for (int pkey=0; pkey < 175000; pkey++) {
+    if ((pkey % 1000) == 0) {
+      System.out.println("Rollback test added " + pkey + " rows");
+    }
     final Object[] params=convertValsToParams(pkey,rowdata);
     random=Math.random();
     if (random <= rollbackPerc) {
-      try {
-        client.callProcedure("RollbackInsert",params);
-      }
- catch (      ProcCallException ex) {
-        if (!(ex.getMessage().contains("OK"))) {
-          throw ex;
+      boolean done;
+      do {
+        done=client.callProcedure(new RollbackCallback(),"RollbackInsert",params);
+        if (done == false) {
+          client.backpressureBarrier();
         }
       }
+ while (!done);
     }
  else {
       verifier.addRow("ALLOW_NULLS",convertValsToRow(pkey,rowdata));
-      client.callProcedure("Insert",params);
+      boolean done;
+      do {
+        done=client.callProcedure(new SyncCallback(),"Insert",params);
+        if (done == false) {
+          client.backpressureBarrier();
+        }
+      }
+ while (!done);
     }
   }
+  client.drain();
   quiesceAndVerify(client,verifier);
 }
