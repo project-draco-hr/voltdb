@@ -9,5 +9,18 @@
     ((ProcedureArgumentCacher)callback).setArgs(parameters);
   }
   ProcedureInvocation invocation=new ProcedureInvocation(m_handle.getAndIncrement(),procName,parameters);
-  return m_distributer.queue(invocation,callback,expectedSerializedSize,false);
+  if (m_blockingQueue) {
+    while (!m_distributer.queue(invocation,callback,expectedSerializedSize,false)) {
+      try {
+        backpressureBarrier();
+      }
+ catch (      InterruptedException e) {
+        throw new java.io.InterruptedIOException("Interrupted while invoking procedure asynchronously");
+      }
+    }
+    return true;
+  }
+ else {
+    return m_distributer.queue(invocation,callback,expectedSerializedSize,false);
+  }
 }
