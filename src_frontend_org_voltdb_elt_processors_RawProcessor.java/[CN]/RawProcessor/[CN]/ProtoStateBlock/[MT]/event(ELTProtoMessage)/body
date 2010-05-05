@@ -1,6 +1,6 @@
 {
   if (m.isError()) {
-    protocolError(m,"Error. May indicate that an invalid ack offset was requested.");
+    protocolError(m,"Internal error message. May indicate that an invalid ack offset was requested.");
     return;
   }
  else   if (m.isOpenResponse()) {
@@ -9,28 +9,34 @@
   }
  else   if (m.isOpen()) {
     if (m_state != RawProcessor.CLOSED) {
-      protocolError(m,"Must not OPEN an already opened connection.");
+      protocolError(m,"Client must not open an already opened connection.");
       return;
     }
     if (m.isClose() || m.isPoll() || m.isAck()) {
-      protocolError(m,"Invalid combination of OPEN with other action.");
+      protocolError(m,"Invalid combination of open with close, poll or ack.");
       return;
     }
     m_state=RawProcessor.CONNECTED;
-    int found_partitionId=-1;
-    int found_tableId=-1;
-    Set<Integer> keySet=m_sources.keySet();
-    for (    Integer p_id : keySet) {
-      found_partitionId=p_id;
-      Set<Integer> keySet2=m_sources.get(p_id).keySet();
-      for (      Integer t_id : keySet2) {
-        found_tableId=t_id;
+    FastSerializer fs=new FastSerializer();
+    try {
+      fs.writeInt(m_sourcesArray.size());
+      for (      ELTDataSource src : m_sourcesArray) {
+        fs.writeInt(src.getPartitionId());
+        fs.writeInt(src.getTableId());
+        fs.writeString(src.getTableName());
+        fs.writeInt(src.m_columnNames.size());
+        for (int ii=0; ii < src.m_columnNames.size(); ++ii) {
+          fs.writeString(src.m_columnNames.get(ii));
+          fs.writeInt(src.m_columnTypes.get(ii));
+        }
       }
     }
-    assert(found_partitionId != -1);
-    assert(found_tableId != -1);
-    final ELTProtoMessage r=new ELTProtoMessage(found_partitionId,found_tableId);
-    r.openResponse();
+ catch (    IOException e) {
+      protocolError(m,"Error producing open response advertisement.");
+      return;
+    }
+    final ELTProtoMessage r=new ELTProtoMessage(-1,-1);
+    r.openResponse(fs.getBuffer());
     m_c.writeStream().enqueue(new DeferredSerialization(){
       @Override public BBContainer serialize(      DBBPool p) throws IOException {
         FastSerializer fs=new FastSerializer(p,r.serializableBytes() + 4);
