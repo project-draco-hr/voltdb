@@ -1,0 +1,34 @@
+{
+  ELTProtoMessage m=null;
+  try {
+    m=nextMessage();
+  }
+ catch (  IOException e) {
+    e.printStackTrace();
+  }
+  if (m != null && m.isError()) {
+    m_state=CLOSING;
+  }
+  if (m != null && m.isPollResponse()) {
+    ELDataSink rx_sink=m_sinks.get(m.getTableId()).get(m.getPartitionId());
+    rx_sink.getRxQueue().offer(m);
+  }
+  for (  HashMap<Integer,ELDataSink> part_map : m_sinks.values()) {
+    for (    ELDataSink work_sink : part_map.values()) {
+      work_sink.work();
+    }
+  }
+  for (  HashMap<Integer,ELDataSink> part_map : m_sinks.values()) {
+    for (    ELDataSink tx_sink : part_map.values()) {
+      ELTProtoMessage tx_m=tx_sink.getTxQueue().poll();
+      if (tx_m != null) {
+        try {
+          sendMessage(tx_m);
+        }
+ catch (        IOException e) {
+          e.printStackTrace();
+        }
+      }
+    }
+  }
+}
