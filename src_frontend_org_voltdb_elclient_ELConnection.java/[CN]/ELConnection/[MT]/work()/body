@@ -1,18 +1,21 @@
 {
   ELTProtoMessage m=null;
-  try {
-    m=nextMessage();
+  do {
+    try {
+      m=nextMessage();
+    }
+ catch (    IOException e) {
+      e.printStackTrace();
+    }
+    if (m != null && m.isError()) {
+      m_state=CLOSING;
+    }
+    if (m != null && m.isPollResponse()) {
+      ELDataSink rx_sink=m_sinks.get(m.getTableId()).get(m.getPartitionId());
+      rx_sink.getRxQueue().offer(m);
+    }
   }
- catch (  IOException e) {
-    e.printStackTrace();
-  }
-  if (m != null && m.isError()) {
-    m_state=CLOSING;
-  }
-  if (m != null && m.isPollResponse()) {
-    ELDataSink rx_sink=m_sinks.get(m.getTableId()).get(m.getPartitionId());
-    rx_sink.getRxQueue().offer(m);
-  }
+ while (m != null);
   for (  HashMap<Integer,ELDataSink> part_map : m_sinks.values()) {
     for (    ELDataSink work_sink : part_map.values()) {
       work_sink.work();
