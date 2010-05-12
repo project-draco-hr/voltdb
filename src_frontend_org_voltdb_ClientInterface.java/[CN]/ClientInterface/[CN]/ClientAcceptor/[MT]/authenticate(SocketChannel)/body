@@ -68,7 +68,7 @@
   final byte password[]=new byte[20];
   message.get(password);
   final AuthSystem.AuthUser user=m_catalogContext.get().authSystem.authenticate(service,username,password);
-  ClientInputHandler handler=null;
+  InputHandler handler=null;
   if (user == null) {
     responseBuffer.put((byte)-1).flip();
     socket.write(responseBuffer);
@@ -76,8 +76,13 @@
     authLog.warn("Failure to authenticate connection(" + socket.socket().getRemoteSocketAddress() + "): user "+ username+ " failed authentication.");
     return null;
   }
- else {
+ else   if (service.equalsIgnoreCase("database")) {
     handler=new ClientInputHandler(user,socket.socket().getInetAddress().getHostName());
+  }
+ else {
+    handler=ELTManager.instance().createInputHandler(service);
+  }
+  if (handler != null) {
     byte buildString[]=VoltDB.instance().getBuildString().getBytes("UTF-8");
     responseBuffer=ByteBuffer.allocate(34 + buildString.length);
     responseBuffer.putInt(30 + buildString.length);
@@ -90,6 +95,13 @@
     responseBuffer.putInt(buildString.length);
     responseBuffer.put(buildString).flip();
     socket.write(responseBuffer);
+  }
+ else {
+    responseBuffer.put((byte)-1).flip();
+    socket.write(responseBuffer);
+    socket.close();
+    authLog.warn("Failure to authenticate connection(" + socket.socket().getRemoteSocketAddress() + "): user "+ username+ " failed authentication.");
+    return null;
   }
   return handler;
 }
