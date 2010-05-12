@@ -1,4 +1,7 @@
 {
+  if (!m_socket.isConnected() || !m_socket.isOpen()) {
+    m_state=CLOSING;
+  }
   ELTProtoMessage m=null;
   do {
     try {
@@ -12,24 +15,22 @@
     }
     if (m != null && m.isPollResponse()) {
       ELDataSink rx_sink=m_sinks.get(m.getTableId()).get(m.getPartitionId());
-      rx_sink.getRxQueue().offer(m);
+      rx_sink.getRxQueue(m_connectionName).offer(m);
     }
   }
  while (m != null);
   for (  HashMap<Integer,ELDataSink> part_map : m_sinks.values()) {
-    for (    ELDataSink work_sink : part_map.values()) {
-      work_sink.work();
-    }
-  }
-  for (  HashMap<Integer,ELDataSink> part_map : m_sinks.values()) {
     for (    ELDataSink tx_sink : part_map.values()) {
-      ELTProtoMessage tx_m=tx_sink.getTxQueue().poll();
-      if (tx_m != null) {
-        try {
-          sendMessage(tx_m);
-        }
- catch (        IOException e) {
-          e.printStackTrace();
+      Queue<ELTProtoMessage> tx_queue=tx_sink.getTxQueue(m_connectionName);
+      if (tx_queue != null) {
+        ELTProtoMessage tx_m=tx_queue.poll();
+        if (tx_m != null) {
+          try {
+            sendMessage(tx_m);
+          }
+ catch (          IOException e) {
+            e.printStackTrace();
+          }
         }
       }
     }
