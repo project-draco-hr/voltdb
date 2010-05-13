@@ -67,8 +67,7 @@
   final String username=fds.readString();
   final byte password[]=new byte[20];
   message.get(password);
-  final AuthSystem.AuthUser user=m_catalogContext.get().authSystem.authenticate(service,username,password);
-  InputHandler handler=null;
+  final AuthSystem.AuthUser user=m_catalogContext.get().authSystem.authenticate(username,password);
   if (user == null) {
     responseBuffer.put((byte)-1).flip();
     socket.write(responseBuffer);
@@ -76,10 +75,19 @@
     authLog.warn("Failure to authenticate connection(" + socket.socket().getRemoteSocketAddress() + "): user "+ username+ " failed authentication.");
     return null;
   }
- else   if (service.equalsIgnoreCase("database")) {
+  InputHandler handler=null;
+  if (service.equalsIgnoreCase("database")) {
     handler=new ClientInputHandler(user,socket.socket().getInetAddress().getHostName());
   }
  else {
+    String connectorClassName=ELTManager.instance().getConnectorForService(service);
+    if (!user.authorizeConnector(connectorClassName)) {
+      responseBuffer.put((byte)-1).flip();
+      socket.write(responseBuffer);
+      socket.close();
+      authLog.warn("Failure to authroize user " + username + " for service "+ service+ ".");
+      return null;
+    }
     handler=ELTManager.instance().createInputHandler(service);
   }
   if (handler != null) {
