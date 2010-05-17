@@ -7,7 +7,31 @@
     System.exit(-1);
   }
  else {
-    tot_executions++;
-    pClientCallback(clientResponse.getResults(),clientResponse.getClientRoundtrip());
+    counterLock.lock();
+    try {
+      tot_executions++;
+      VoltTable vtResults[]=clientResponse.getResults();
+      int vote_result=(int)vtResults[0].fetchRow(0).getLong(0);
+      vote_result_counter[vote_result]++;
+      if (checkLatency) {
+        long execution_time=clientResponse.getClientRoundtrip();
+        tot_executions_latency++;
+        tot_execution_milliseconds+=execution_time;
+        if (execution_time < min_execution_milliseconds) {
+          min_execution_milliseconds=execution_time;
+        }
+        if (execution_time > max_execution_milliseconds) {
+          max_execution_milliseconds=execution_time;
+        }
+        int latency_bucket=(int)(execution_time / 25l);
+        if (latency_bucket > 8) {
+          latency_bucket=8;
+        }
+        latency_counter[latency_bucket]++;
+      }
+    }
+  finally {
+      counterLock.unlock();
+    }
   }
 }

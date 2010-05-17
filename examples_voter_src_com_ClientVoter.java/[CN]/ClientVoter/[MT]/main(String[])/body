@@ -1,19 +1,19 @@
 {
   if (args.length != 7) {
-    System.err.println("ClientVoter [number of contestants] [votes per phone number] [transactions per second] [client feedback interval (seconds)] [test duration (seconds)] [server list (comma separated)] [lag record delay (seconds)] ");
+    System.err.println("ClientVoter [number of contestants] [votes per phone number] " + "[transactions per second] [client feedback interval (seconds)] " + "[test duration (seconds)] [server list (comma separated)] [lag record delay (seconds)] ");
     System.exit(1);
   }
-  int maxContestant=(int)Integer.valueOf(args[0]);
+  int maxContestant=Integer.valueOf(args[0]);
   if ((maxContestant < 1) || (maxContestant > 12)) {
     System.err.println("Number of contestants must be between 1 and 12");
     System.exit(1);
   }
-  long maxVotesPerPhoneNumber=(long)Long.valueOf(args[1]);
-  long transactions_per_second=(long)Long.valueOf(args[2]);
+  long maxVotesPerPhoneNumber=Long.valueOf(args[1]);
+  long transactions_per_second=Long.valueOf(args[2]);
   long transactions_per_milli=transactions_per_second / 1000l;
-  long client_feedback_interval_secs=(long)Long.valueOf(args[3]);
-  long test_duration_secs=(long)Long.valueOf(args[4]);
-  long lag_latency_seconds=(long)Long.valueOf(args[5]);
+  long client_feedback_interval_secs=Long.valueOf(args[3]);
+  long test_duration_secs=Long.valueOf(args[4]);
+  long lag_latency_seconds=Long.valueOf(args[5]);
   String serverList=args[6];
   long lag_latency_millis=lag_latency_seconds * 1000l;
   long thisOutstanding=0;
@@ -71,22 +71,13 @@ catch (  java.io.IOException e) {
       contestantNumber=(byte)((rand.nextInt(maxContestant) + 1) * 2);
     }
     try {
-      boolean queued=false;
-      while (!queued) {
-        queued=voltclient.callProcedure(callBack,"Vote",phoneNumber,contestantNumber,maxVotesPerPhoneNumber);
-        if (!queued) {
-          try {
-            voltclient.backpressureBarrier();
-          }
- catch (          Exception e) {
-            e.printStackTrace();
-            System.exit(-1);
-          }
-        }
-      }
+      voltclient.callProcedure(callBack,"Vote",phoneNumber,contestantNumber,maxVotesPerPhoneNumber);
     }
  catch (    java.io.IOException e) {
       e.printStackTrace();
+      if (e instanceof NoConnectionsException) {
+        System.exit(-1);
+      }
     }
     transactions_this_second++;
     if (transactions_this_second >= transactions_per_milli) {
@@ -102,22 +93,26 @@ catch (  java.io.IOException e) {
       checkLatency=true;
     }
     if (currentTime >= (lastFeedbackTime + (client_feedback_interval_secs * 1000))) {
-synchronized (callBack) {
-        lastFeedbackTime=currentTime;
-        long elapsedTimeMillis2=System.currentTimeMillis() - startTime;
-        float elapsedTimeSec2=elapsedTimeMillis2 / 1000F;
-        if (tot_executions_latency == 0) {
-          tot_executions_latency=1;
-        }
+      final long elapsedTimeMillis2=System.currentTimeMillis() - startTime;
+      lastFeedbackTime=currentTime;
+      final long runTimeMillis=endTime - startTime;
+      float elapsedTimeSec2=elapsedTimeMillis2 / 1000F;
+      if (tot_executions_latency == 0) {
+        tot_executions_latency=1;
+      }
+      double percentComplete=((double)elapsedTimeMillis2 / (double)runTimeMillis) * 100;
+      if (percentComplete > 100.0) {
+        percentComplete=100.0;
+      }
+      counterLock.lock();
+      try {
         thisOutstanding=num_sp_calls - tot_executions;
-        long runTimeMillis=endTime - startTime;
-        double percentComplete=((double)elapsedTimeMillis2 / (double)runTimeMillis) * 100;
-        if (percentComplete > 100.0) {
-          percentComplete=100.0;
-        }
         double avgLatency=(double)tot_execution_milliseconds / (double)tot_executions_latency;
         System.out.printf("%.3f%% Complete | SP Calls: %,d at %,.2f SP/sec | outstanding = %d (%d) | min = %d | max = %d | avg = %.2f\n",percentComplete,num_sp_calls,(num_sp_calls / elapsedTimeSec2),thisOutstanding,(thisOutstanding - lastOutstanding),min_execution_milliseconds,max_execution_milliseconds,avgLatency);
         lastOutstanding=thisOutstanding;
+      }
+  finally {
+        counterLock.unlock();
       }
     }
   }
@@ -174,7 +169,7 @@ catch (  java.io.IOException e) {
   System.out.printf(" - Ran for %,.2f seconds\n",elapsedTimeSec);
   System.out.printf(" - Performed %,d Stored Procedure calls\n",num_sp_calls);
   System.out.printf(" - At %,.2f calls per second\n",num_sp_calls / elapsedTimeSec);
-  System.out.printf(" - Average Latency = %.2f ms\n",(double)((double)tot_execution_milliseconds / (double)tot_executions_latency));
+  System.out.printf(" - Average Latency = %.2f ms\n",((double)tot_execution_milliseconds / (double)tot_executions_latency));
   System.out.printf(" -   Latency   0ms -  25ms = %,d\n",latency_counter[0]);
   System.out.printf(" -   Latency  25ms -  50ms = %,d\n",latency_counter[1]);
   System.out.printf(" -   Latency  50ms -  75ms = %,d\n",latency_counter[2]);
@@ -187,7 +182,7 @@ catch (  java.io.IOException e) {
   try {
     voltclient.close();
   }
- catch (  Exception e) {
+ catch (  InterruptedException e) {
     e.printStackTrace();
     System.exit(-1);
   }
