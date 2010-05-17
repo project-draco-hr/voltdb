@@ -1,0 +1,31 @@
+{
+  final Client client=getClient();
+  for (int i=0; i < 10; i++) {
+    Object[] rowdata=TestSQLTypesSuite.m_midValues;
+    m_tester.addRow("ALLOW_NULLS",i,convertValsToRow(i,'I',rowdata));
+    Object[] params=convertValsToParams("ALLOW_NULLS",i,rowdata);
+    client.callProcedure("Insert",params);
+    rowdata=TestSQLTypesSuite.m_defaultValues;
+    m_tester.addRow("NO_NULLS",i,convertValsToRow(i,'I',rowdata));
+    params=convertValsToParams("NO_NULLS",i,rowdata);
+    client.callProcedure("Insert",params);
+  }
+  client.callProcedure("@SnapshotSave","/tmp","testELTPlusSnapshot",(byte)1).getResults();
+  ByteArrayOutputStream baos=new ByteArrayOutputStream();
+  PrintStream ps=new PrintStream(baos);
+  PrintStream original=System.out;
+  try {
+    System.setOut(ps);
+    String args[]=new String[]{"testELTPlusSnapshot","--dir","/tmp"};
+    SnapshotVerifier.main(args);
+    ps.flush();
+    String reportString=baos.toString("UTF-8");
+    assertTrue(reportString.startsWith("Snapshot valid\n"));
+  }
+ catch (  UnsupportedEncodingException e) {
+  }
+ finally {
+    System.setOut(original);
+  }
+  quiesceAndVerify(client,m_tester);
+}
