@@ -1,16 +1,23 @@
 {
   super.setUp();
-  Procedure proc=null;
   m_voltdb=new MockVoltDB();
   m_voltdb.setFaultDistributor(new FaultDistributor());
-  m_voltdb.addHost(host1);
-  m_voltdb.addHost(host2);
-  m_voltdb.addSite(initiator1,host1,0,false);
-  m_voltdb.addSite(initiator2,host2,0,false);
-  m_voltdb.addPartition(0);
-  m_voltdb.addSite(site1,host1,0,true);
-  m_voltdb.addPartition(1);
-  m_voltdb.addSite(site2,host2,1,true);
+  for (int ss=0; ss < SITE_COUNT; ss++) {
+    m_voltdb.addHost(getHostIdForSiteId(ss));
+    m_voltdb.addSite(getInitiatorIdForSiteId(ss),getHostIdForSiteId(ss),getPartitionIdForSiteId(ss),false);
+  }
+  int siteid=0;
+  for (int pp=0; pp < PARTITION_COUNT; pp++) {
+    m_voltdb.addPartition(pp);
+    for (int kk=0; kk < (K_FACTOR + 1); kk++) {
+      m_voltdb.addSite(siteid,getHostIdForSiteId(siteid),pp,true);
+      ++siteid;
+    }
+  }
+  if (siteid != SITE_COUNT) {
+    throw new RuntimeException("Invalid setup logic.");
+  }
+  Procedure proc=null;
   proc=m_voltdb.addProcedureForTest(MockSPVoltProcedure.class.getName());
   proc.setReadonly(false);
   proc.setSinglepartition(true);
@@ -21,10 +28,10 @@
   proc.setReadonly(false);
   proc.setSinglepartition(false);
   VoltDB.replaceVoltDBInstanceForTest(m_voltdb);
-  m_mboxes[site1]=new MockMailbox(new LinkedBlockingQueue<VoltMessage>());
-  m_mboxes[site2]=new MockMailbox(new LinkedBlockingQueue<VoltMessage>());
-  m_sites[site1]=new ExecutionSite(m_voltdb,m_mboxes[site1],site1);
-  m_sites[site2]=new ExecutionSite(m_voltdb,m_mboxes[site2],site2);
-  MockMailbox.registerMailbox(site1,m_mboxes[site1]);
-  MockMailbox.registerMailbox(site2,m_mboxes[site2]);
+  for (int ss=0; ss < SITE_COUNT; ++ss) {
+    m_mboxes[ss]=new MockMailbox(new LinkedBlockingQueue<VoltMessage>());
+    m_rpqs[ss]=new RestrictedPriorityARRR(getInitiatorIds(),ss,m_mboxes[ss]);
+    m_sites[ss]=new ExecutionSite(m_voltdb,m_mboxes[ss],ss,null,m_rpqs[ss]);
+    MockMailbox.registerMailbox(ss,m_mboxes[ss]);
+  }
 }
