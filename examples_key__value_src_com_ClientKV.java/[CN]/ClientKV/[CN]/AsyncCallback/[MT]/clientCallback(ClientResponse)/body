@@ -1,0 +1,38 @@
+{
+synchronized (lockObject) {
+    final byte status=clientResponse.getStatus();
+    if (status != ClientResponse.SUCCESS) {
+      m_logger.error("Failed to execute!!!");
+      m_logger.error(clientResponse.getStatusString());
+      m_logger.error(clientResponse.getException());
+    }
+ else {
+      tot_executions++;
+      if (this.spnProcedure == spName.GET) {
+        if (clientResponse.getResults()[0].getRowCount() == 0) {
+          m_logger.info("Get Miss, key = " + cbKeyValue);
+        }
+ else {
+          byte[] baGetValue=clientResponse.getResults()[0].fetchRow(0).getStringAsBytes(0);
+          get_value_compressed_bytes+=(long)baGetValue.length;
+          if (behavior == Behavior.NONE) {
+            get_value_uncompressed_bytes+=(long)baGetValue.length;
+          }
+ else           if (behavior == Behavior.BASE64) {
+            get_value_uncompressed_bytes+=Encoder.decodeBase64ToBytes(baGetValue).length;
+          }
+ else           if (behavior == Behavior.COMPRESS_AND_BASE64) {
+            get_value_uncompressed_bytes+=Encoder.decodeBase64AndDecompressToBytes(baGetValue).length;
+          }
+ else {
+            System.err.println("Unsupported behavior " + behavior);
+            System.exit(-1);
+          }
+        }
+      }
+      if (checkLatency) {
+        pClientCallback(clientResponse.getResults(),clientResponse.getClientRoundtrip());
+      }
+    }
+  }
+}

@@ -1,0 +1,80 @@
+{
+  Random rand=new Random();
+  int permits=0;
+  while (true) {
+    byte valueToDecompress[]=null;
+    while ((valueToDecompress=valuesPendingDecompression.poll()) != null) {
+      if (behavior == Behavior.NONE) {
+        get_value_uncompressed_bytes.addAndGet(valueToDecompress.length);
+      }
+ else       if (behavior == Behavior.BASE64) {
+        get_value_uncompressed_bytes.addAndGet(Encoder.decodeBase64ToBytes(valueToDecompress).length);
+      }
+ else       if (behavior == Behavior.COMPRESS_AND_BASE64) {
+        get_value_uncompressed_bytes.addAndGet(Encoder.decodeBase64AndDecompressToBytes(valueToDecompress).length);
+      }
+ else {
+        System.err.println("Unsupported behavior " + behavior);
+        System.exit(-1);
+      }
+    }
+    if (permits == 0) {
+      try {
+        workPermits.acquire(10);
+        permits=10;
+      }
+ catch (      InterruptedException e) {
+        return;
+      }
+    }
+    num_sp_calls.incrementAndGet();
+    int getTest=rand.nextInt(99) + 1;
+    long current_key=(long)((rand.nextDouble() * initial_size) + 1);
+    if (getTest <= percent_gets) {
+      num_gets++;
+      String this_key=String.format("%d",current_key) + "0123456789012345678901234567890123456789";
+      try {
+        voltclient.callProcedure(new AsyncCallback(spName.GET,this_key),"Get",this_key);
+      }
+ catch (      IOException e) {
+        if (e instanceof InterruptedIOException) {
+          return;
+        }
+        m_logger.error(e.toString());
+        System.exit(-1);
+      }
+    }
+ else {
+      num_puts++;
+      String this_key=String.format("%d",current_key) + "0123456789012345678901234567890123456789";
+      byte[] baThisValuePut=Arrays.copyOfRange(baGenericValue,0,min_value_size + rand.nextInt(max_value_size - min_value_size + 1));
+      byte this_value[]=null;
+      if (behavior == Behavior.NONE) {
+        this_value=baThisValuePut;
+      }
+ else       if (behavior == Behavior.BASE64) {
+        this_value=Encoder.base64EncodeToBytes(baThisValuePut);
+      }
+ else       if (behavior == Behavior.COMPRESS_AND_BASE64) {
+        this_value=Encoder.compressAndBase64EncodeToBytes(baThisValuePut);
+      }
+ else {
+        System.err.println("Unsupported behavior " + behavior);
+        System.exit(-1);
+      }
+      put_value_uncompressed_bytes+=baThisValuePut.length;
+      put_value_compressed_bytes+=this_value.length;
+      try {
+        voltclient.callProcedure(new AsyncCallback(spName.PUT,this_key),this_value.length + 100,"Put",this_key,this_value);
+      }
+ catch (      IOException e) {
+        if (e instanceof InterruptedIOException) {
+          return;
+        }
+        m_logger.error(e.toString());
+        System.exit(-1);
+      }
+    }
+    permits--;
+  }
+}
