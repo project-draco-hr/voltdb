@@ -1,0 +1,39 @@
+{
+  for (int i=1; i < 1001; ++i) {
+    boolean readOnly=true;
+    int txnid=i + 10000;
+    int initiator=getInitiatorIdForSiteId(i % SITE_COUNT);
+    int partition=i % PARTITION_COUNT;
+    int coordinator=getSiteIdsForPartitionId(partition).get(0);
+    createSPInitiation(readOnly,txnid,initiator,partition,coordinator);
+  }
+  Thread siteThreads[]=new Thread[SITE_COUNT];
+  for (int i=0; i < SITE_COUNT; ++i) {
+    final int site_id=i;
+    siteThreads[i]=new Thread(new Runnable(){
+      @Override public void run(){
+        m_sites[site_id].runLoop();
+      }
+    }
+);
+  }
+  for (int i=0; i < SITE_COUNT; ++i) {
+    siteThreads[i].start();
+  }
+  for (int i=0; i < SITE_COUNT; ++i) {
+    boolean stopped=false;
+    do {
+      try {
+        siteThreads[i].join();
+      }
+ catch (      InterruptedException e) {
+      }
+      if (siteThreads[i].isAlive() == false) {
+        System.out.println("Joined site " + i);
+        assertTrue(m_sites[i].lastCommittedTxnId > 10000);
+        stopped=true;
+      }
+    }
+ while (!stopped);
+  }
+}
