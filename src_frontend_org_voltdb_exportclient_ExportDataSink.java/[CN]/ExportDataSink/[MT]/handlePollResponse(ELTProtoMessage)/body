@@ -1,21 +1,27 @@
 {
-  if (m.getData().remaining() == 0) {
-    m_decoder.noDataReceived(m.getAckOffset());
-    poll();
-    return;
+  m.getData().order(ByteOrder.LITTLE_ENDIAN);
+  try {
+    if (m.getData().remaining() == 0) {
+      m_decoder.noDataReceived(m.getAckOffset());
+      poll();
+      return;
+    }
+    int ttllength=m.getData().getInt();
+    m_logger.trace("Poller: table: " + m_tableName + ", partition: "+ m_partitionId+ " : data payload bytes: "+ ttllength);
+    if (ttllength == 0) {
+      m_decoder.noDataReceived(m.getAckOffset());
+      poll();
+      return;
+    }
+    while (m.getData().hasRemaining()) {
+      int length=m.getData().getInt();
+      byte[] rowdata=new byte[length];
+      m.getData().get(rowdata,0,length);
+      m_decoder.processRow(length,rowdata);
+    }
+    pollAndAck(m);
   }
-  int ttllength=m.getData().getInt();
-  m_logger.trace("Poller: table: " + m_tableName + ", partition: "+ m_partitionId+ " : data payload bytes: "+ ttllength);
-  if (ttllength == 0) {
-    m_decoder.noDataReceived(m.getAckOffset());
-    poll();
-    return;
+  finally {
+    m.getData().order(ByteOrder.BIG_ENDIAN);
   }
-  while (m.getData().hasRemaining()) {
-    int length=m.getData().getInt();
-    byte[] rowdata=new byte[length];
-    m.getData().get(rowdata,0,length);
-    m_decoder.processRow(length,rowdata);
-  }
-  pollAndAck(m);
 }
