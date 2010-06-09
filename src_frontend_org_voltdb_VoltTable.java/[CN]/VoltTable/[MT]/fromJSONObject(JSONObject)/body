@@ -1,0 +1,47 @@
+{
+  JSONArray jsonCols=json.getJSONArray(JSON_SCHEMA_KEY);
+  ColumnInfo[] columns=new ColumnInfo[jsonCols.length()];
+  for (int i=0; i < jsonCols.length(); i++) {
+    JSONObject jsonCol=jsonCols.getJSONObject(i);
+    String name=jsonCol.getString(JSON_NAME_KEY);
+    VoltType type=VoltType.get((byte)jsonCol.getInt(JSON_TYPE_KEY));
+    columns[i]=new ColumnInfo(name,type);
+  }
+  VoltTable t=new VoltTable(columns);
+  byte status=(byte)json.getInt(JSON_STATUS_KEY);
+  t.setStatusCode(status);
+  JSONArray data=json.getJSONArray(JSON_DATA_KEY);
+  for (int i=0; i < data.length(); i++) {
+    JSONArray jsonRow=data.getJSONArray(i);
+    assert(jsonRow.length() == jsonCols.length());
+    Object[] row=new Object[jsonRow.length()];
+    for (int j=0; j < jsonRow.length(); j++) {
+      row[j]=jsonRow.get(j);
+      if (row[j] == JSONObject.NULL)       row[j]=null;
+      VoltType type=columns[j].type;
+      if (row[j] != null) {
+switch (type) {
+case BIGINT:
+case INTEGER:
+case SMALLINT:
+case TINYINT:
+case TIMESTAMP:
+          if (row[j] instanceof String) {
+            row[j]=Long.parseLong((String)row[j]);
+          }
+        assert(row[j] instanceof Number);
+      break;
+case DECIMAL:
+    String decVal;
+  if (row[j] instanceof String)   decVal=(String)row[j];
+ else   decVal=row[j].toString();
+if (decVal.compareToIgnoreCase("NULL") == 0) row[j]=null;
+ else row[j]=VoltDecimalHelper.deserializeBigDecimalFromString(decVal);
+break;
+}
+}
+}
+t.addRow(row);
+}
+return t;
+}
