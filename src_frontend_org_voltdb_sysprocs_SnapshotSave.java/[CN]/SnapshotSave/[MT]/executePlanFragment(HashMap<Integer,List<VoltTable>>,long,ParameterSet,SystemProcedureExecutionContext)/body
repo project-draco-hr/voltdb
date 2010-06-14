@@ -11,7 +11,7 @@
     if (context.getExecutionSite().getSiteId() == lowest_site_id) {
       TRACE_LOG.trace("Checking feasibility of save with path and nonce: " + file_path + ", "+ file_nonce);
       if (SnapshotSiteProcessor.ExecutionSitesCurrentlySnapshotting.get() != -1) {
-        result.addRow(context.getSite().getHost().getTypeName(),hostname,"","FAILURE","SNAPSHOT IN PROGRESS");
+        result.addRow(Integer.parseInt(context.getSite().getHost().getTypeName()),hostname,"","FAILURE","SNAPSHOT IN PROGRESS");
         return new DependencyPair(DEP_saveTest,result);
       }
       for (      Table table : getTablesToSave(context)) {
@@ -36,7 +36,7 @@
             err_msg="FILE CREATION OF " + saveFilePath + "RESULTED IN IOException: "+ ex.getMessage();
           }
         }
-        result.addRow(context.getSite().getHost().getTypeName(),hostname,table.getTypeName(),file_valid,err_msg);
+        result.addRow(Integer.parseInt(context.getSite().getHost().getTypeName()),hostname,table.getTypeName(),file_valid,err_msg);
       }
     }
     return new DependencyPair(DEP_saveTest,result);
@@ -115,7 +115,7 @@
             canSnapshot="FAILURE";
             err_msg="SNAPSHOT INITIATION OF " + saveFilePath + "RESULTED IN IOException: "+ ex.getMessage();
           }
-          result.addRow(context.getSite().getHost().getTypeName(),hostname,table.getTypeName(),canSnapshot,err_msg);
+          result.addRow(Integer.parseInt(context.getSite().getHost().getTypeName()),hostname,table.getTypeName(),canSnapshot,err_msg);
         }
 synchronized (m_taskListsForSites) {
           if (!partitionedSnapshotTasks.isEmpty() || !replicatedSnapshotTasks.isEmpty()) {
@@ -134,7 +134,7 @@ synchronized (m_taskListsForSites) {
         }
       }
  catch (      Exception ex) {
-        result.addRow(context.getSite().getHost().getTypeName(),hostname,"","FAILURE","SNAPSHOT INITIATION OF " + file_path + file_nonce+ "RESULTED IN Exception: "+ ex.getMessage());
+        result.addRow(Integer.parseInt(context.getSite().getHost().getTypeName()),hostname,"","FAILURE","SNAPSHOT INITIATION OF " + file_path + file_nonce+ "RESULTED IN Exception: "+ ex.getMessage());
         HOST_LOG.error(ex);
       }
  finally {
@@ -145,7 +145,7 @@ synchronized (m_taskListsForSites) {
       m_snapshotPermits.acquire();
     }
  catch (    Exception e) {
-      result.addRow(context.getSite().getHost().getTypeName(),hostname,"","FAILURE",e.toString());
+      result.addRow(Integer.parseInt(context.getSite().getHost().getTypeName()),hostname,"","FAILURE",e.toString());
       return new DependencyPair(DEP_createSnapshotTargets,result);
     }
  finally {
@@ -182,14 +182,14 @@ synchronized (m_taskListsForSites) {
       }
       final VoltTable blockingResult=constructPartitionResultsTable();
       if (failures.isEmpty()) {
-        blockingResult.addRow(context.getSite().getHost().getTypeName(),hostname,context.getSite().getTypeName(),status,err);
+        blockingResult.addRow(Integer.parseInt(context.getSite().getHost().getTypeName()),hostname,Integer.parseInt(context.getSite().getTypeName()),status,err);
       }
  else {
         status="FAILURE";
         for (        Exception e : failures) {
           err=e.toString();
         }
-        blockingResult.addRow(context.getSite().getHost().getTypeName(),hostname,context.getSite().getTypeName(),status,err);
+        blockingResult.addRow(Integer.parseInt(context.getSite().getHost().getTypeName()),hostname,Integer.parseInt(context.getSite().getTypeName()),status,err);
       }
       return new DependencyPair(DEP_createSnapshotTargets,blockingResult);
     }
@@ -199,8 +199,12 @@ synchronized (m_taskListsForSites) {
     TRACE_LOG.trace("Aggregating create snapshot target results");
     assert(dependencies.size() > 0);
     List<VoltTable> dep=dependencies.get(DEP_createSnapshotTargets);
-    VoltTable result=constructNodeResultsTable();
+    VoltTable result=null;
     for (    VoltTable table : dep) {
+      if (result == null) {
+        if (table.getColumnType(2).equals(VoltType.INTEGER))         result=constructPartitionResultsTable();
+ else         result=constructNodeResultsTable();
+      }
       while (table.advanceRow()) {
         result.add(table);
       }
