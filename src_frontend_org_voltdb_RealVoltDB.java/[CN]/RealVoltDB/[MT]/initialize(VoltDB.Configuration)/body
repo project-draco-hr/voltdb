@@ -130,11 +130,23 @@ synchronized (runner) {
         }
       }
     }
+    m_partitionCountStats=new PartitionCountStats("Partition Count Stats",m_catalogContext.numberOfPartitions);
+    m_statsAgent.registerStatsSource(SysProcSelector.PARTITIONCOUNT,0,m_partitionCountStats);
+    m_ioStats=new IOStats("IO Stats");
+    m_statsAgent.registerStatsSource(SysProcSelector.IOSTATS,0,m_ioStats);
+    m_statsManager=null;
+    try {
+      final Class<?> statsManagerClass=Class.forName("org.voltdb.management.JMXStatsManager");
+      m_statsManager=(StatsManager)statsManagerClass.newInstance();
+      m_statsManager.initialize(new ArrayList<Integer>(m_localSites.keySet()));
+    }
+ catch (    Exception e) {
+    }
     hostLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_StartingNetwork.name(),null);
     m_network.start();
     m_messenger.sendReadyMessage();
     m_messenger.waitForAllHostsToBeReady();
-    fivems=new PeriodicWorkTimerThread(m_clientInterfaces);
+    fivems=new PeriodicWorkTimerThread(m_clientInterfaces,m_statsManager);
     fivems.start();
     hostLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_ServerCompletedInitialization.name(),null);
   }
