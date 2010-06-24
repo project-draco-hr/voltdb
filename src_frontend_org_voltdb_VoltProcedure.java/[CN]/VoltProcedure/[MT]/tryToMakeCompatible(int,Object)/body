@@ -1,55 +1,63 @@
 {
   if (param == null || param == VoltType.NULL_STRING || param == VoltType.NULL_DECIMAL) {
     if (paramTypeIsPrimitive[paramTypeIndex]) {
-      throw new Exception("Primitive type " + paramTypes[paramTypeIndex] + " cannot be null");
+      VoltType type=VoltType.typeFromClass(paramTypes[paramTypeIndex]);
+switch (type) {
+case TINYINT:
+case SMALLINT:
+case INTEGER:
+case BIGINT:
+case FLOAT:
+        return type.getNullValue();
     }
-    return null;
   }
-  if (param instanceof ExecutionSite.SystemProcedureExecutionContext) {
+  return null;
+}
+if (param instanceof ExecutionSite.SystemProcedureExecutionContext) {
+  return param;
+}
+Class<?> pclass=param.getClass();
+boolean slotIsArray=paramTypeIsArray[paramTypeIndex];
+if (slotIsArray != pclass.isArray()) throw new Exception("Array / Scalar parameter mismatch");
+if (slotIsArray) {
+  Class<?> pSubCls=pclass.getComponentType();
+  Class<?> sSubCls=paramTypeComponentType[paramTypeIndex];
+  if (pSubCls == sSubCls) {
     return param;
   }
-  Class<?> pclass=param.getClass();
-  boolean slotIsArray=paramTypeIsArray[paramTypeIndex];
-  if (slotIsArray != pclass.isArray())   throw new Exception("Array / Scalar parameter mismatch");
-  if (slotIsArray) {
-    Class<?> pSubCls=pclass.getComponentType();
-    Class<?> sSubCls=paramTypeComponentType[paramTypeIndex];
-    if (pSubCls == sSubCls) {
-      return param;
-    }
- else     if (Array.getLength(param) == 0) {
-      return Array.newInstance(sSubCls,0);
-    }
+ else   if (Array.getLength(param) == 0) {
+    return Array.newInstance(sSubCls,0);
+  }
  else {
-      throw new Exception("tryScalarMakeCompatible: Unable to match parameter array:" + sSubCls.getName() + " to provided "+ pSubCls.getName());
-    }
+    throw new Exception("tryScalarMakeCompatible: Unable to match parameter array:" + sSubCls.getName() + " to provided "+ pSubCls.getName());
   }
-  final Class<?> slot=paramTypes[paramTypeIndex];
-  if ((slot == long.class) && (pclass == Long.class || pclass == Integer.class || pclass == Short.class || pclass == Byte.class))   return param;
-  if ((slot == int.class) && (pclass == Integer.class || pclass == Short.class || pclass == Byte.class))   return param;
-  if ((slot == short.class) && (pclass == Short.class || pclass == Byte.class))   return param;
-  if ((slot == byte.class) && (pclass == Byte.class))   return param;
-  if ((slot == double.class) && (pclass == Double.class))   return param;
-  if ((slot == String.class) && (pclass == String.class))   return param;
-  if (slot == TimestampType.class) {
-    if (pclass == Long.class)     return new TimestampType((Long)param);
-    if (pclass == TimestampType.class)     return param;
+}
+final Class<?> slot=paramTypes[paramTypeIndex];
+if ((slot == long.class) && (pclass == Long.class || pclass == Integer.class || pclass == Short.class || pclass == Byte.class)) return param;
+if ((slot == int.class) && (pclass == Integer.class || pclass == Short.class || pclass == Byte.class)) return param;
+if ((slot == short.class) && (pclass == Short.class || pclass == Byte.class)) return param;
+if ((slot == byte.class) && (pclass == Byte.class)) return param;
+if ((slot == double.class) && (pclass == Double.class)) return param;
+if ((slot == String.class) && (pclass == String.class)) return param;
+if (slot == TimestampType.class) {
+  if (pclass == Long.class)   return new TimestampType((Long)param);
+  if (pclass == TimestampType.class)   return param;
+}
+if (slot == BigDecimal.class) {
+  if (pclass == Long.class) {
+    BigInteger bi=new BigInteger(param.toString());
+    BigDecimal bd=new BigDecimal(bi);
+    bd.setScale(4,BigDecimal.ROUND_HALF_EVEN);
+    return bd;
   }
-  if (slot == BigDecimal.class) {
-    if (pclass == Long.class) {
-      BigInteger bi=new BigInteger(param.toString());
-      BigDecimal bd=new BigDecimal(bi);
-      bd.setScale(4,BigDecimal.ROUND_HALF_EVEN);
-      return bd;
-    }
-    if (pclass == BigDecimal.class) {
-      BigDecimal bd=(BigDecimal)param;
-      bd.setScale(4,BigDecimal.ROUND_HALF_EVEN);
-      return bd;
-    }
+  if (pclass == BigDecimal.class) {
+    BigDecimal bd=(BigDecimal)param;
+    bd.setScale(4,BigDecimal.ROUND_HALF_EVEN);
+    return bd;
   }
-  if (slot == VoltTable.class && pclass == VoltTable.class) {
-    return param;
-  }
-  throw new Exception("tryToMakeCompatible: Unable to match parameters:" + slot.getName() + " to provided "+ pclass.getName());
+}
+if (slot == VoltTable.class && pclass == VoltTable.class) {
+  return param;
+}
+throw new Exception("tryToMakeCompatible: Unable to match parameters:" + slot.getName() + " to provided "+ pclass.getName());
 }
