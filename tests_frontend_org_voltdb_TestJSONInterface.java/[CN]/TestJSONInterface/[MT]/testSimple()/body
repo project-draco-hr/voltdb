@@ -17,48 +17,25 @@
   server.start();
   server.waitForInitialization();
   ParameterSet pset=new ParameterSet();
+  String responseJSON;
+  Response response;
+  pset.setParameters(1,"hello",new TimestampType(System.currentTimeMillis()),5.0,"5.0");
+  responseJSON=callProcOverJSON("Insert",pset);
+  System.out.println(responseJSON);
+  response=responseFromJSON(responseJSON);
+  assertEquals(null,response.exception);
+  responseJSON=callProcOverJSON("Insert",pset);
+  System.out.println(responseJSON);
+  response=responseFromJSON(responseJSON);
+  assertNotNull(response.exception);
   pset.setParameters(1,5,new double[]{1.5,6.0,4},new VoltTable(new VoltTable.ColumnInfo("foo",VoltType.BIGINT)),new BigDecimal[]{},new TimestampType(System.currentTimeMillis()));
-  String paramsInJSON=pset.toJSONString();
-  JSONObject jobj=new JSONObject("{ params: " + paramsInJSON + " }");
-  System.out.println(jobj.toString(2));
-  HashMap<String,String> params=new HashMap<String,String>();
-  params.put("Procedure","CrazyBlahProc");
-  params.put("Parameters",paramsInJSON);
-  String varString=getHTTPVarString(params);
-  URL jsonAPIURL=new URL("http://localhost:8095/api/1.0/");
-  HttpURLConnection conn=(HttpURLConnection)jsonAPIURL.openConnection();
-  conn.setDoOutput(true);
-  conn.setRequestMethod("POST");
-  OutputStreamWriter out=new OutputStreamWriter(conn.getOutputStream());
-  out.write(varString);
-  out.close();
-  BufferedReader in=null;
-  try {
-    if (conn.getInputStream() != null) {
-      in=new BufferedReader(new InputStreamReader(conn.getInputStream()));
-    }
-  }
- catch (  IOException e) {
-    if (conn.getErrorStream() != null) {
-      in=new BufferedReader(new InputStreamReader(conn.getErrorStream()));
-    }
-  }
-  if (in == null) {
-    throw new Exception("Unable to read response from server");
-  }
-  StringBuffer decodedString=new StringBuffer();
-  String line;
-  while ((line=in.readLine()) != null) {
-    decodedString.append(line);
-  }
-  in.close();
-  int responseCode=conn.getResponseCode();
-  String response=decodedString.toString();
-  assertEquals(200,responseCode);
-  System.out.println(response);
-  JSONObject jsonObj=new JSONObject(response);
+  responseJSON=callProcOverJSON("CrazyBlahProc",pset);
+  System.out.println(responseJSON);
+  response=responseFromJSON(responseJSON);
+  assertTrue(response.status == ClientResponse.SUCCESS);
+  JSONObject jsonObj=new JSONObject(responseJSON);
   JSONArray results=jsonObj.getJSONArray("results");
-  assertEquals(3,results.length());
+  assertEquals(3,response.results.length);
   JSONObject table=results.getJSONObject(0);
   JSONArray data=table.getJSONArray("data");
   assertEquals(1,data.length());
@@ -66,8 +43,16 @@
   assertEquals(1,row.length());
   long value=row.getLong(0);
   assertEquals(1,value);
-  System.out.println(responseCode);
-  System.out.println(decodedString.toString());
+  pset.setParameters(1,VoltType.NULL_SMALLINT,new double[]{1.5,6.0,4},new VoltTable(new VoltTable.ColumnInfo("foo",VoltType.BIGINT)),new BigDecimal[]{},new TimestampType(System.currentTimeMillis()));
+  responseJSON=callProcOverJSON("CrazyBlahProc",pset);
+  System.out.println(responseJSON);
+  response=responseFromJSON(responseJSON);
+  assertFalse(response.status == ClientResponse.SUCCESS);
+  pset.setParameters(1,Long.MAX_VALUE - 100,new double[]{1.5,6.0,4},new VoltTable(new VoltTable.ColumnInfo("foo",VoltType.BIGINT)),new BigDecimal[]{},new TimestampType(System.currentTimeMillis()));
+  responseJSON=callProcOverJSON("CrazyBlahProc",pset);
+  System.out.println(responseJSON);
+  response=responseFromJSON(responseJSON);
+  assertFalse(response.status == ClientResponse.SUCCESS);
   server.shutdown();
   server.join();
 }
