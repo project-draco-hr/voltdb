@@ -1,0 +1,59 @@
+{
+  m_timestamp=System.currentTimeMillis();
+  SocketChannel socket=null;
+  DataInputStream in=null;
+  DataOutputStream out=null;
+  LOG.debug("Starting Coordinator");
+  try {
+    while (m_sockets.size() < (m_expectedHosts - 1)) {
+      socket=m_listenerSocket.accept();
+      socket.socket().setTcpNoDelay(true);
+      socket.socket().setPerformancePreferences(0,2,1);
+      InputStream s=socket.socket().getInputStream();
+      in=new DataInputStream(new BufferedInputStream(s));
+      int hostId=in.readInt();
+      m_sockets.put(hostId,socket);
+    }
+    int difftimei=0;
+    long difftimes[]=new long[m_expectedHosts - 1];
+    for (    Entry<Integer,SocketChannel> e : m_sockets.entrySet()) {
+      out=getOutputForHost(e.getKey());
+      in=getInputForHost(e.getKey());
+      out.writeInt(COMMAND_SENDTIME_AND_CRC);
+      out.flush();
+      long timestamp=in.readLong();
+      difftimes[difftimei++]=System.currentTimeMillis() - timestamp;
+    }
+    int command=COMMAND_COMPLETE;
+    long minimumDiff=0;
+    long maximumDiff=0;
+    for (    long diff : difftimes) {
+      if (diff > maximumDiff)       maximumDiff=diff;
+      if (diff < minimumDiff)       minimumDiff=diff;
+    }
+    long maxDiffMS=maximumDiff - minimumDiff;
+    if (maxDiffMS > MAX_ACCEPTABLE_TIME_DIFF_IN_MS)     command=COMMAND_NTPFAIL;
+    for (    Entry<Integer,SocketChannel> e : m_sockets.entrySet()) {
+      out=getOutputForHost(e.getKey());
+      out.writeLong(maxDiffMS);
+      out.writeInt(command);
+      out.flush();
+    }
+    if (m_hostLog != null)     m_hostLog.info("Maximum clock/network skew is " + maxDiffMS + " milliseconds (according to rejoined node)");
+    if (command == COMMAND_NTPFAIL) {
+      if (m_hostLog != null)       m_hostLog.info("Maximum clock/network is " + (maxDiffMS * 100) / MAX_ACCEPTABLE_TIME_DIFF_IN_MS + "% higher than allowable limit");
+      VoltDB.crashVoltDB();
+    }
+  }
+ catch (  IOException e) {
+    e.printStackTrace();
+  }
+ finally {
+    try {
+      m_listenerSocket.close();
+    }
+ catch (    IOException e) {
+      e.printStackTrace();
+    }
+  }
+}
