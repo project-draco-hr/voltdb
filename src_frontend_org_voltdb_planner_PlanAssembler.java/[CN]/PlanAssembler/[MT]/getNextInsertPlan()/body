@@ -7,10 +7,11 @@
     msg+=" in a single-partition procedure.";
     throw new PlanningErrorException(msg);
   }
-  InsertPlanNode insertNode=new InsertPlanNode(m_context);
+  InsertPlanNode insertNode=new InsertPlanNode();
   insertNode.setTargetTableName(targetTable.getTypeName());
   insertNode.setMultiPartition(m_singlePartition == false);
-  MaterializePlanNode materializeNode=new MaterializePlanNode(m_context);
+  MaterializePlanNode materializeNode=new MaterializePlanNode();
+  NodeSchema mat_schema=new NodeSchema();
   List<Column> columns=CatalogUtil.getSortedCatalogItems(targetTable.getColumns(),"index");
   for (  Column column : columns) {
     AbstractExpression expr=m_parsedInsert.columns.get(column);
@@ -29,19 +30,21 @@
     }
     expr.setValueSize(column.getSize());
     expr.setValueType(VoltType.get((byte)column.getType()));
-    PlanColumn colInfo=m_context.getPlanColumn(expr,column.getTypeName());
-    materializeNode.appendOutputColumn(colInfo);
+    mat_schema.addColumn(new SchemaColumn("VOLT_TEMP_TABLE",column.getTypeName(),column.getTypeName(),expr));
   }
+  materializeNode.setOutputSchema(mat_schema);
   insertNode.addAndLinkChild(materializeNode);
+  insertNode.generateOutputSchema(m_catalogDb);
   AbstractPlanNode rootNode=insertNode;
   if (m_singlePartition == false) {
-    SendPlanNode sendNode=new SendPlanNode(m_context);
+    SendPlanNode sendNode=new SendPlanNode();
     sendNode.isMultiPartition=true;
     sendNode.addAndLinkChild(rootNode);
-    ReceivePlanNode recvNode=new ReceivePlanNode(m_context);
+    sendNode.generateOutputSchema(m_catalogDb);
+    ReceivePlanNode recvNode=new ReceivePlanNode();
     recvNode.addAndLinkChild(sendNode);
+    recvNode.generateOutputSchema(m_catalogDb);
     rootNode=recvNode;
-    recvNode.updateOutputColumns(m_catalogDb);
     rootNode=addSumAndSendToDMLNode(rootNode);
   }
   return rootNode;

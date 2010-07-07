@@ -1,23 +1,17 @@
 {
   assert(table != null);
   assert(path != null);
-  if (path.index == null)   return getScanAccessPlanForTable(table,path.otherExprs);
-  Index index=path.index;
-  IndexScanPlanNode scanNode=new IndexScanPlanNode(m_context);
-  List<AbstractExpression> searchKeys=scanNode.getSearchKeyExpressions();
-  for (  AbstractExpression expr : path.indexExprs) {
-    AbstractExpression expr2=ExpressionUtil.getOtherTableExpression(expr,table.getTypeName());
-    assert(expr2 != null);
-    searchKeys.add(expr2);
+  AbstractScanPlanNode scanNode=null;
+  if (path.index == null) {
+    scanNode=getScanAccessPlanForTable(table,path.otherExprs);
   }
-  scanNode.setKeyIterate(path.keyIterate);
-  scanNode.setLookupType(path.lookupType);
-  scanNode.setSortDirection(path.sortDirection);
-  scanNode.setTargetTableName(table.getTypeName());
-  scanNode.setTargetTableAlias(table.getTypeName());
-  scanNode.setTargetIndexName(index.getTypeName());
-  scanNode.setEndExpression(ExpressionUtil.combine(path.endExprs));
-  scanNode.setPredicate(ExpressionUtil.combine(path.otherExprs));
+ else {
+    scanNode=getIndexAccessPlanForTable(table,path);
+  }
+  if (m_parsedStmt.scanColumns != null) {
+    scanNode.setScanColumns(m_parsedStmt.scanColumns.get(table.getTypeName()));
+  }
+  scanNode.generateOutputSchema(m_db);
   AbstractPlanNode rootNode=scanNode;
   if (tableRequiresDistributedScan(table)) {
     rootNode=addSendReceivePair(scanNode);

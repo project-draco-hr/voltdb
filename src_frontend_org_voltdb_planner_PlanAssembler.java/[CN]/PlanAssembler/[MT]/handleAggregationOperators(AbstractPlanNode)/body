@@ -6,56 +6,62 @@
       containsAggregateExpression=true;
     }
   }
-  if (m_parsedSelect.grouped)   containsAggregateExpression=true;
+  if (m_parsedSelect.grouped) {
+    containsAggregateExpression=true;
+  }
   if (containsAggregateExpression) {
-    aggNode=new HashAggregatePlanNode(m_context);
+    aggNode=new HashAggregatePlanNode();
     for (    ParsedSelectStmt.ParsedColInfo col : m_parsedSelect.groupByColumns) {
-      aggNode.getGroupByColumns().add(col.index);
-      aggNode.getGroupByColumnNames().add(col.alias);
-      PlanColumn groupByColumn=root.findMatchingOutputColumn(col.tableName,col.columnName,col.alias);
-      aggNode.appendGroupByColumn(groupByColumn);
+      aggNode.addGroupByExpression(col.expression);
     }
     int outputColumnIndex=0;
+    NodeSchema agg_schema=new NodeSchema();
     for (    ParsedSelectStmt.ParsedColInfo col : m_parsedSelect.displayColumns) {
       AbstractExpression rootExpr=col.expression;
+      AbstractExpression agg_input_expr=null;
+      SchemaColumn schema_col=null;
       ExpressionType agg_expression_type=rootExpr.getExpressionType();
       if (rootExpr.getExpressionType() == ExpressionType.AGGREGATE_SUM || rootExpr.getExpressionType() == ExpressionType.AGGREGATE_MIN || rootExpr.getExpressionType() == ExpressionType.AGGREGATE_MAX || rootExpr.getExpressionType() == ExpressionType.AGGREGATE_AVG || rootExpr.getExpressionType() == ExpressionType.AGGREGATE_COUNT || rootExpr.getExpressionType() == ExpressionType.AGGREGATE_COUNT_STAR) {
-        PlanColumn aggregateColumn=null;
+        agg_input_expr=rootExpr.getLeft();
         if (rootExpr.getLeft() instanceof TupleValueExpression) {
-          TupleValueExpression nested=(TupleValueExpression)rootExpr.getLeft();
           if (((AggregateExpression)rootExpr).m_distinct) {
-            root=addDistinctNode(root,nested);
+            root=addDistinctNode(root,rootExpr.getLeft());
           }
-          aggregateColumn=root.findMatchingOutputColumn(nested.getTableName(),nested.getColumnName(),nested.getColumnAlias());
         }
  else         if (rootExpr.getExpressionType() == ExpressionType.AGGREGATE_COUNT && rootExpr.getLeft() == null) {
-          aggregateColumn=m_context.get(root.m_outputColumns.get(0));
           agg_expression_type=ExpressionType.AGGREGATE_COUNT_STAR;
+          SchemaColumn first_col=root.getOutputSchema().getColumns().get(0);
+          TupleValueExpression tve=new TupleValueExpression();
+          tve.setValueType(first_col.getType());
+          tve.setValueSize(first_col.getSize());
+          tve.setColumnIndex(0);
+          tve.setColumnName(first_col.getColumnName());
+          tve.setColumnAlias(first_col.getColumnName());
+          tve.setTableName(first_col.getTableName());
+          agg_input_expr=tve;
         }
  else {
           throw new PlanningErrorException("Expressions in aggregates currently unsupported");
         }
-        aggNode.getAggregateColumnGuids().add(aggregateColumn.guid());
-        aggNode.getAggregateColumnNames().add(aggregateColumn.displayName());
-        aggNode.getAggregateTypes().add(agg_expression_type);
         TupleValueExpression tve=new TupleValueExpression();
         tve.setValueType(rootExpr.getValueType());
         tve.setValueSize(rootExpr.getValueSize());
         tve.setColumnIndex(outputColumnIndex);
         tve.setColumnName("");
         tve.setColumnAlias(col.alias);
-        tve.setTableName("VOLT_AGGREGATE_NODE_TEMP_TABLE");
-        PlanColumn colInfo=m_context.getPlanColumn(tve,col.alias);
-        aggNode.appendOutputColumn(colInfo);
-        aggNode.getAggregateOutputColumns().add(outputColumnIndex);
+        tve.setTableName("VOLT_TEMP_TABLE");
+        aggNode.addAggregate(agg_expression_type,outputColumnIndex,agg_input_expr);
+        schema_col=new SchemaColumn("VOLT_TEMP_TABLE","",col.alias,tve);
       }
  else {
-        PlanColumn passThruColumn=root.findMatchingOutputColumn(col.tableName,col.columnName,col.alias);
-        aggNode.appendOutputColumn(passThruColumn);
+        schema_col=new SchemaColumn(col.tableName,col.columnName,col.alias,col.expression);
       }
+      agg_schema.addColumn(schema_col);
       outputColumnIndex++;
     }
+    aggNode.setOutputSchema(agg_schema);
     aggNode.addAndLinkChild(root);
+    aggNode.generateOutputSchema(m_catalogDb);
     root=aggNode;
   }
   if (aggNode == null && m_parsedSelect.distinct) {
@@ -64,8 +70,7 @@
     }
     for (    ParsedSelectStmt.ParsedColInfo col : m_parsedSelect.displayColumns) {
       if (col.expression instanceof TupleValueExpression) {
-        TupleValueExpression colexpr=(TupleValueExpression)(col.expression);
-        root=addDistinctNode(root,colexpr);
+        root=addDistinctNode(root,col.expression);
         root=addProjection(root);
       }
  else {

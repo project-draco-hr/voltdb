@@ -1,26 +1,21 @@
 {
   assert(m_parsedSelect != null);
   assert(m_parsedSelect.displayColumns != null);
-  PlanColumn colInfo=null;
-  rootNode.updateOutputColumns(m_catalogDb);
-  ProjectionPlanNode projectionNode=new ProjectionPlanNode(m_context);
+  ProjectionPlanNode projectionNode=new ProjectionPlanNode();
+  NodeSchema proj_schema=new NodeSchema();
   for (  ParsedSelectStmt.ParsedColInfo outputCol : m_parsedSelect.displayColumns) {
     assert(outputCol.expression != null);
-    try {
-      AbstractExpression expressionWithRealOffsets=generateProjectionColumnExpression(outputCol,rootNode.m_outputColumns);
-      colInfo=m_context.getPlanColumn(expressionWithRealOffsets,outputCol.alias);
-      projectionNode.appendOutputColumn(colInfo);
-    }
- catch (    CloneNotSupportedException ex) {
-      throw new PlanningErrorException(ex.getMessage());
-    }
+    SchemaColumn col=new SchemaColumn(outputCol.tableName,outputCol.columnName,outputCol.alias,outputCol.expression);
+    proj_schema.addColumn(col);
   }
+  projectionNode.setOutputSchema(proj_schema);
   if (rootNode instanceof AbstractScanPlanNode) {
     rootNode.addInlinePlanNode(projectionNode);
     return rootNode;
   }
  else {
     projectionNode.addAndLinkChild(rootNode);
+    projectionNode.generateOutputSchema(m_catalogDb);
     return projectionNode;
   }
 }

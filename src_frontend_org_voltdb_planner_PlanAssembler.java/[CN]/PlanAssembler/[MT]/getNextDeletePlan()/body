@@ -9,12 +9,13 @@
   }
   AbstractPlanNode subSelectRoot=subAssembler.nextPlan();
   if (subSelectRoot == null)   return null;
-  DeletePlanNode deleteNode=new DeletePlanNode(m_context);
+  DeletePlanNode deleteNode=new DeletePlanNode();
   deleteNode.setTargetTableName(targetTable.getTypeName());
-  ProjectionPlanNode projectionNode=new ProjectionPlanNode(m_context);
+  ProjectionPlanNode projectionNode=new ProjectionPlanNode();
   AbstractExpression addressExpr=new TupleAddressExpression();
-  PlanColumn colInfo=m_context.getPlanColumn(addressExpr,"tuple_address");
-  projectionNode.appendOutputColumn(colInfo);
+  NodeSchema proj_schema=new NodeSchema();
+  proj_schema.addColumn(new SchemaColumn("VOLT_TEMP_TABLE","tuple_address","tuple_address",addressExpr));
+  projectionNode.setOutputSchema(proj_schema);
   if (m_singlePartition == true) {
     assert(subSelectRoot instanceof AbstractScanPlanNode);
     if ((subSelectRoot instanceof SeqScanPlanNode) && (((AbstractScanPlanNode)subSelectRoot).getPredicate() == null)) {
@@ -23,6 +24,7 @@
     }
     subSelectRoot.addInlinePlanNode(projectionNode);
     deleteNode.addAndLinkChild(subSelectRoot);
+    deleteNode.generateOutputSchema(m_catalogDb);
     return deleteNode;
   }
  else {
@@ -36,8 +38,10 @@
     assert(scanNode instanceof AbstractScanPlanNode);
     scanNode.addInlinePlanNode(projectionNode);
     deleteNode.addAndLinkChild(scanNode);
+    deleteNode.generateOutputSchema(m_catalogDb);
     sendNode.addAndLinkChild(deleteNode);
-    recvNode.updateOutputColumns(m_catalogDb);
+    sendNode.generateOutputSchema(m_catalogDb);
+    recvNode.generateOutputSchema(m_catalogDb);
     return addSumAndSendToDMLNode(subSelectRoot);
   }
 }

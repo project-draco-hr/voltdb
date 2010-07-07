@@ -9,25 +9,26 @@
   }
   AbstractPlanNode subSelectRoot=subAssembler.nextPlan();
   if (subSelectRoot == null)   return null;
-  UpdatePlanNode updateNode=new UpdatePlanNode(m_context);
+  UpdatePlanNode updateNode=new UpdatePlanNode();
   updateNode.setTargetTableName(targetTable.getTypeName());
   updateNode.setUpdateIndexes(false);
-  ProjectionPlanNode projectionNode=new ProjectionPlanNode(m_context);
+  ProjectionPlanNode projectionNode=new ProjectionPlanNode();
   TupleAddressExpression tae=new TupleAddressExpression();
-  PlanColumn colInfo=m_context.getPlanColumn(tae,"tuple_address");
-  projectionNode.appendOutputColumn(colInfo);
+  NodeSchema proj_schema=new NodeSchema();
+  proj_schema.addColumn(new SchemaColumn("VOLT_TEMP_TABLE","tuple_address","tuple_address",tae));
   Set<String> affectedColumns=getIndexedColumnSetForTable(targetTable);
-  int index=1;
   for (  Entry<Column,AbstractExpression> col : m_parsedUpdate.columns.entrySet()) {
-    colInfo=m_context.getPlanColumn(col.getValue(),col.getKey().getTypeName());
-    projectionNode.appendOutputColumn(colInfo);
-    index++;
-    if (affectedColumns.contains(colInfo.displayName()))     updateNode.setUpdateIndexes(true);
+    proj_schema.addColumn(new SchemaColumn("VOLT_TEMP_TABLE",col.getKey().getTypeName(),col.getKey().getTypeName(),col.getValue()));
+    if (affectedColumns.contains(col.getKey().getTypeName())) {
+      updateNode.setUpdateIndexes(true);
+    }
   }
+  projectionNode.setOutputSchema(proj_schema);
   if (m_singlePartition == true) {
     assert(subSelectRoot instanceof AbstractScanPlanNode);
     subSelectRoot.addInlinePlanNode(projectionNode);
     updateNode.addAndLinkChild(subSelectRoot);
+    updateNode.generateOutputSchema(m_catalogDb);
     return updateNode;
   }
  else {
@@ -41,8 +42,10 @@
     assert(scanNode instanceof AbstractScanPlanNode);
     scanNode.addInlinePlanNode(projectionNode);
     updateNode.addAndLinkChild(scanNode);
+    updateNode.generateOutputSchema(m_catalogDb);
     sendNode.addAndLinkChild(updateNode);
-    recvNode.updateOutputColumns(m_catalogDb);
+    sendNode.generateOutputSchema(m_catalogDb);
+    recvNode.generateOutputSchema(m_catalogDb);
     return addSumAndSendToDMLNode(subSelectRoot);
   }
 }

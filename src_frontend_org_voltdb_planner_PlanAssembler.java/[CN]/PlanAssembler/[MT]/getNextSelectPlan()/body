@@ -3,9 +3,8 @@
   AbstractPlanNode subSelectRoot=subAssembler.nextPlan();
   if (subSelectRoot == null)   return null;
   AbstractPlanNode root=subSelectRoot;
-  root.updateOutputColumns(m_catalogDb);
+  root.generateOutputSchema(m_catalogDb);
   root=handleAggregationOperators(root);
-  root.updateOutputColumns(m_catalogDb);
   if ((subSelectRoot.getPlanNodeType() != PlanNodeType.INDEXSCAN || ((IndexScanPlanNode)subSelectRoot).getSortDirection() == SortDirectionType.INVALID) && m_parsedSelect.orderColumns.size() > 0) {
     root=addOrderBy(root);
   }
@@ -13,7 +12,7 @@
     root=addProjection(root);
   }
   if ((m_parsedSelect.limit != -1) || (m_parsedSelect.limitParameterId != -1) || (m_parsedSelect.offset > 0)|| (m_parsedSelect.offsetParameterId != -1)) {
-    LimitPlanNode limit=new LimitPlanNode(m_context);
+    LimitPlanNode limit=new LimitPlanNode();
     limit.setLimit((int)m_parsedSelect.limit);
     limit.setOffset((int)m_parsedSelect.offset);
     if (m_parsedSelect.offsetParameterId != -1) {
@@ -25,9 +24,11 @@
       limit.setLimitParameterIndex(parameterInfo.index);
     }
     limit.addAndLinkChild(root);
+    limit.generateOutputSchema(m_catalogDb);
     root=limit;
   }
-  SendPlanNode sendNode=new SendPlanNode(m_context);
+  SendPlanNode sendNode=new SendPlanNode();
   sendNode.addAndLinkChild(root);
+  sendNode.generateOutputSchema(m_catalogDb);
   return sendNode;
 }

@@ -1,0 +1,42 @@
+{
+  IndexScanPlanNode index_scan=(IndexScanPlanNode)getInlinePlanNode(PlanNodeType.INDEXSCAN);
+  assert(m_children.size() == 2 && index_scan == null);
+  for (  AbstractPlanNode child : m_children) {
+    child.resolveColumnIndexes();
+  }
+  NodeSchema outer_schema=m_children.get(0).getOutputSchema();
+  NodeSchema inner_schema=m_children.get(1).getOutputSchema();
+  TreeMap<Integer,SchemaColumn> sort_cols=new TreeMap<Integer,SchemaColumn>();
+  for (  SchemaColumn col : m_outputSchema.getColumns()) {
+    assert(col.getExpression() instanceof TupleValueExpression);
+    TupleValueExpression tve=(TupleValueExpression)col.getExpression();
+    int index=outer_schema.getIndexOfTve(tve);
+    if (index == -1) {
+      index=inner_schema.getIndexOfTve(tve);
+      if (index == -1) {
+        throw new RuntimeException("Unable to find index for column: " + col.toString());
+      }
+      sort_cols.put(index + outer_schema.size(),col);
+    }
+ else {
+      sort_cols.put(index,col);
+    }
+    tve.setColumnIndex(index);
+  }
+  NodeSchema new_output_schema=new NodeSchema();
+  for (  SchemaColumn col : sort_cols.values()) {
+    new_output_schema.addColumn(col);
+  }
+  m_outputSchema=new_output_schema;
+  List<TupleValueExpression> predicate_tves=ExpressionUtil.getTupleValueExpressions(m_predicate);
+  for (  TupleValueExpression tve : predicate_tves) {
+    int index=outer_schema.getIndexOfTve(tve);
+    if (index == -1) {
+      index=inner_schema.getIndexOfTve(tve);
+      if (index == -1) {
+        throw new RuntimeException("Unable to find index for join TVE: " + tve.toString());
+      }
+    }
+    tve.setColumnIndex(index);
+  }
+}

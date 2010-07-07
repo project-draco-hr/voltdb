@@ -1,0 +1,41 @@
+{
+  if (m_tableSchema == null) {
+    m_tableSchema=new NodeSchema();
+    CatalogMap<Column> cols=db.getTables().getIgnoreCase(m_targetTableName).getColumns();
+    for (    Column col : CatalogUtil.getSortedCatalogItems(cols,"index")) {
+      TupleValueExpression tve=new TupleValueExpression();
+      tve.setValueType(VoltType.get((byte)col.getType()));
+      tve.setValueSize(col.getSize());
+      tve.setColumnIndex(col.getIndex());
+      tve.setTableName(m_targetTableName);
+      tve.setColumnAlias(col.getTypeName());
+      tve.setColumnName(col.getTypeName());
+      m_tableSchema.addColumn(new SchemaColumn(m_targetTableName,col.getTypeName(),col.getTypeName(),tve));
+    }
+  }
+  ProjectionPlanNode proj=(ProjectionPlanNode)getInlinePlanNode(PlanNodeType.PROJECTION);
+  if (proj != null) {
+    m_outputSchema=proj.getOutputSchema().copyAndReplaceWithTVE();
+  }
+ else {
+    if (m_tableScanSchema.size() != 0) {
+      List<TupleValueExpression> scan_tves=new ArrayList<TupleValueExpression>();
+      for (      SchemaColumn col : m_tableScanSchema.getColumns()) {
+        assert(col.getExpression() instanceof TupleValueExpression);
+        scan_tves.addAll(ExpressionUtil.getTupleValueExpressions(col.getExpression()));
+      }
+      for (      TupleValueExpression tve : scan_tves) {
+        int index=m_tableSchema.getIndexOfTve(tve);
+        tve.setColumnIndex(index);
+      }
+      m_tableScanSchema.sortByTveIndex();
+      ProjectionPlanNode map=new ProjectionPlanNode();
+      map.setOutputSchema(m_tableScanSchema);
+      addInlinePlanNode(map);
+      m_outputSchema=map.getOutputSchema().copyAndReplaceWithTVE();
+    }
+ else {
+      m_outputSchema=m_tableSchema.clone();
+    }
+  }
+}
