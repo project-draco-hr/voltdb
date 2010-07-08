@@ -1,0 +1,39 @@
+{
+  if (m_pendingFaults.isEmpty()) {
+    return;
+  }
+  HashMap<FaultType,HashSet<VoltFault>> faultsMap=new HashMap<FaultType,HashSet<VoltFault>>();
+  while (!m_pendingFaults.isEmpty()) {
+    VoltFault fault=m_pendingFaults.poll();
+    if (duplicateCheck(fault)) {
+      continue;
+    }
+    HashSet<VoltFault> faults=faultsMap.get(fault.getFaultType());
+    if (faults == null) {
+      faults=new HashSet<VoltFault>();
+      faultsMap.put(fault.getFaultType(),faults);
+    }
+    boolean added=faults.add(fault);
+    assert(added);
+  }
+  if (faultsMap.isEmpty()) {
+    return;
+  }
+  for (  Map.Entry<FaultType,HashSet<VoltFault>> entry : faultsMap.entrySet()) {
+    TreeMap<Integer,List<FaultHandlerData>> handler_map=m_faultHandlers.get(entry.getKey());
+    if (handler_map == null) {
+      handler_map=m_faultHandlers.get(FaultType.UNKNOWN);
+      if (handler_map == null) {
+        registerDefaultHandler(new DefaultFaultHandler());
+        handler_map=m_faultHandlers.get(FaultType.UNKNOWN);
+      }
+    }
+    for (    List<FaultHandlerData> handler_list : handler_map.values()) {
+      for (      FaultHandlerData handlerData : handler_list) {
+        if (handlerData.m_pendingFaults.addAll(entry.getValue())) {
+          handlerData.m_handler.faultOccured(handlerData.m_pendingFaults);
+        }
+      }
+    }
+  }
+}

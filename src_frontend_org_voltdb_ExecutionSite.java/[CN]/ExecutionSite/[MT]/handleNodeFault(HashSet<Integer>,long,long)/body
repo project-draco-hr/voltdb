@@ -1,0 +1,56 @@
+{
+  StringBuffer sb=new StringBuffer();
+  for (  Integer hostId : hostIds) {
+    sb.append(hostId).append(' ');
+  }
+  if (m_txnlog.isTraceEnabled()) {
+    m_txnlog.trace("FUZZTEST handleNodeFault " + sb.toString() + " with globalMultiPartCommitPoint "+ globalMultiPartCommitPoint+ " and globalInitiationPoint "+ globalInitiationPoint);
+  }
+  HashSet<Integer> failedSites=new HashSet<Integer>();
+  for (  Integer hostId : hostIds) {
+    failedSites.addAll(m_context.siteTracker.getAllSitesForHost(hostId));
+  }
+  for (  Integer i : failedSites) {
+    if (m_context.siteTracker.getSiteForId(i).getIsexec() == false) {
+      m_transactionQueue.gotFaultForInitiator(i);
+    }
+  }
+  Iterator<Long> it=m_transactionsById.keySet().iterator();
+  while (it.hasNext()) {
+    final long tid=it.next();
+    TransactionState ts=m_transactionsById.get(tid);
+    ts.handleSiteFaults(failedSites);
+    if (ts.txnId > globalInitiationPoint && failedSites.contains(ts.initiatorSiteId)) {
+      m_recoveryLog.info("Faulting non-globally initiated transaction " + ts.txnId);
+      it.remove();
+      m_transactionQueue.faultTransaction(ts);
+      faultedTxns.add(ts.txnId);
+    }
+ else     if (ts instanceof MultiPartitionParticipantTxnState && failedSites.contains(ts.coordinatorSiteId)) {
+      MultiPartitionParticipantTxnState mpts=(MultiPartitionParticipantTxnState)ts;
+      if (ts.isInProgress() && ts.txnId <= globalMultiPartCommitPoint) {
+        m_recoveryLog.info("Committing in progress multi-partition txn " + ts.txnId + " even though coordinator was on a failed host because the txnId <= "+ "the global multi-part commit point");
+        FragmentTaskMessage ft=mpts.createConcludingFragmentTask();
+        ft.setShouldUndo(false);
+        m_mailbox.deliver(ft);
+      }
+ else       if (ts.isInProgress() && ts.txnId > globalMultiPartCommitPoint) {
+        m_recoveryLog.info("Rolling back in progress multi-partition txn " + ts.txnId + " because the coordinator was on a failed host and the txnId > "+ "the global multi-part commit point");
+        FragmentTaskMessage ft=mpts.createConcludingFragmentTask();
+        ft.setShouldUndo(true);
+        m_mailbox.deliver(ft);
+      }
+ else {
+        m_recoveryLog.info("Faulting multi-part transaction " + ts.txnId + " because the coordinator was on a failed node");
+        it.remove();
+        m_transactionQueue.faultTransaction(ts);
+        faultedTxns.add(ts.txnId);
+      }
+    }
+ else     if (ts instanceof MultiPartitionParticipantTxnState && ts.coordinatorSiteId == m_siteId) {
+      if (ts.isInProgress()) {
+        m_mailbox.deliver(new CheckTxnStateCompletionMessage(ts.txnId));
+      }
+    }
+  }
+}
