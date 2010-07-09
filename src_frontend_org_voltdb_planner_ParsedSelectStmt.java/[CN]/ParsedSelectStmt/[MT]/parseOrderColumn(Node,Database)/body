@@ -10,8 +10,8 @@
   Node child=orderByNode.getFirstChild();
   while (child.getNodeType() != Node.ELEMENT_NODE)   child=child.getNextSibling();
   assert(child != null);
+  NamedNodeMap childAttrs=child.getAttributes();
   if (child.getNodeName().equals("columnref")) {
-    NamedNodeMap childAttrs=child.getAttributes();
     String alias=childAttrs.getNamedItem("alias").getNodeValue();
     ParsedColInfo col=allColumns.get(alias);
     if (col == null) {
@@ -29,7 +29,38 @@
     col.ascending=!descending;
     orderColumns.add(col);
   }
+ else   if (child.getNodeName().equals("operation")) {
+    ParsedColInfo order_col=new ParsedColInfo();
+    order_col.columnName="";
+    order_col.orderBy=true;
+    order_col.ascending=!descending;
+    order_col.tableName="VOLT_TEMP_TABLE";
+    AbstractExpression order_exp=parseExpressionTree(child,db);
+    if (order_exp instanceof TupleValueExpression) {
+      String alias=childAttrs.getNamedItem("alias").getNodeValue();
+      ParsedColInfo orig_col=allColumns.get(alias);
+      if (orig_col == null) {
+        throw new PlanningErrorException("Unable to find source " + "column for simplecolumn: " + alias);
+      }
+      assert(orig_col.tableName.equals("VOLT_TEMP_TABLE"));
+      TupleValueExpression tve=(TupleValueExpression)order_exp;
+      tve.setColumnAlias(alias);
+      tve.setColumnName("");
+      tve.setColumnIndex(-1);
+      tve.setTableName("VOLT_TEMP_TABLE");
+      tve.setValueSize(orig_col.expression.getValueSize());
+      tve.setValueType(orig_col.expression.getValueType());
+      order_col.alias=alias;
+      order_col.expression=tve;
+    }
  else {
-    throw new RuntimeException("ORDER BY with complex expressions not yet supported");
+      ExpressionUtil.assignLiteralConstantTypesRecursively(order_exp);
+      ExpressionUtil.assignOutputValueTypesRecursively(order_exp);
+      order_col.expression=order_exp;
+    }
+    orderColumns.add(order_col);
+  }
+ else {
+    throw new RuntimeException("ORDER BY parsed with strange child node type: " + child.getNodeName());
   }
 }
