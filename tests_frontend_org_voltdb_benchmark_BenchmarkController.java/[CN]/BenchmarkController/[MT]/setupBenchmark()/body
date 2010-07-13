@@ -1,2 +1,178 @@
 {
+  String[] jarFileNames=m_projectBuilder.compileAllCatalogs(m_config.sitesPerHost,m_config.hosts.length,m_config.k_factor,m_config.hosts[0]);
+  m_jarFileName=jarFileNames[0];
+  boolean status;
+  if (m_config.localmode == false) {
+    for (    String fileName : jarFileNames) {
+      for (      String host : m_config.hosts) {
+        status=SSHTools.copyFromLocal(new File(fileName),m_config.remoteUser,host,m_config.remotePath);
+        if (!status)         System.out.println("SSH copyFromLocal failed to copy " + fileName + " to "+ m_config.remoteUser+ "@"+ host+ ":"+ m_config.remotePath);
+      }
+      for (      String client : m_config.clients) {
+        status=SSHTools.copyFromLocal(new File(fileName),m_config.remoteUser,client,m_config.remotePath);
+        if (!status)         System.out.println("SSH copyFromLocal failed to copy " + fileName + " to "+ m_config.remoteUser+ "@"+ client+ ":"+ m_config.remotePath);
+      }
+    }
+    Set<Thread> threads=new HashSet<Thread>();
+    for (    String host : m_config.hosts) {
+      Thread t=new KillStragglers(m_config.remoteUser,host,m_config.remotePath);
+      t.start();
+      threads.add(t);
+    }
+    for (    String host : m_config.clients) {
+      Thread t=new KillStragglers(m_config.remoteUser,host,m_config.remotePath);
+      t.start();
+      threads.add(t);
+    }
+    for (    Thread t : threads)     try {
+      t.join();
+    }
+ catch (    InterruptedException e) {
+      LogKeys logkey=LogKeys.benchmark_BenchmarkController_UnableToRunRemoteKill;
+      benchmarkLog.l7dlog(Level.FATAL,logkey.name(),e);
+      benchmarkLog.fatal("Couldn't run remote kill operation.",e);
+      System.exit(-1);
+    }
+    for (    String host : m_config.hosts) {
+      Runtime.getRuntime().addShutdownHook(new KillStragglers(m_config.remoteUser,host,m_config.remotePath));
+    }
+    for (    String client : m_config.clients) {
+      Runtime.getRuntime().addShutdownHook(new KillStragglers(m_config.remoteUser,client,m_config.remotePath));
+    }
+    m_serverPSM=new ProcessSetManager();
+    for (    String host : m_config.hosts) {
+      String debugString="";
+      if (m_config.listenForDebugger) {
+        debugString=" -agentlib:jdwp=transport=dt_socket,address=8001,server=y,suspend=n ";
+      }
+      String[] command={"java","-XX:-ReduceInitialCardMarks","-XX:+HeapDumpOnOutOfMemoryError","-XX:HeapDumpPath=/tmp","-Djava.library.path=.","-Dcom.sun.management.jmxremote.port=9090","-Dcom.sun.management.jmxremote.authenticate=false","-Dcom.sun.management.jmxremote.ssl=false","-Dlog4j.configuration=log.xml",debugString,"-Xmn" + String.valueOf((m_config.serverHeapSize / 4) * 3) + "m","-Xmx" + String.valueOf(m_config.serverHeapSize) + "m","-server","-cp","\"voltdbfat.jar:vertica_4.0_jdk_5.jar\"","org.voltdb.VoltDB","catalog",m_jarFileName,m_config.useProfile,m_config.backend};
+      command=SSHTools.convert(m_config.remoteUser,host,m_config.remotePath,command);
+      StringBuilder fullCommand=new StringBuilder();
+      for (      String s : command)       fullCommand.append(s).append(" ");
+      uploader.setCommandLineForHost(host,fullCommand.toString());
+      benchmarkLog.debug(fullCommand.toString());
+      m_serverPSM.startProcess(host,command);
+    }
+    String readyMsg="Server completed initialization.";
+    ProcessSetManager.OutputLine line=m_serverPSM.nextBlocking();
+    while (line.value.equals(readyMsg) == false) {
+      line=m_serverPSM.nextBlocking();
+    }
+  }
+ else {
+    VoltDB.Configuration localconfig=new VoltDB.Configuration();
+    localconfig.m_pathToCatalog=m_jarFileName;
+    m_localserver=new ServerThread(localconfig);
+    m_localserver.start();
+    m_localserver.waitForInitialization();
+  }
+  try {
+    m_clusterMonitor=new ClusterMonitor(m_config.applicationName == null ? m_config.benchmarkClient : m_config.applicationName,m_config.subApplicationName,m_config.statsTag,m_config.hosts.length,m_config.sitesPerHost,m_config.hosts.length * m_config.sitesPerHost,m_config.k_factor,new ArrayList<String>(java.util.Arrays.asList(m_config.hosts)),"","",m_config.statsDatabaseURL,m_config.interval);
+    m_clusterMonitor.start();
+  }
+ catch (  Exception e) {
+    m_clusterMonitor=null;
+  }
+  if (m_loaderClass != null) {
+    ArrayList<String> localArgs=new ArrayList<String>();
+    int lthreads=2;
+    if (m_config.parameters.containsKey("loadthreads")) {
+      lthreads=Integer.parseInt(m_config.parameters.get("loadthreads"));
+      if (lthreads < 1)       lthreads=1;
+      if (lthreads > 6)       lthreads=6;
+    }
+    int loaderheap=1024 * lthreads;
+    benchmarkLog.debug("LOADER HEAP " + loaderheap);
+    String debugString="";
+    if (m_config.listenForDebugger) {
+      debugString=" -agentlib:jdwp=transport=dt_socket,address=8002,server=y,suspend=n ";
+    }
+    StringBuilder loaderCommand=new StringBuilder(4096);
+    loaderCommand.append("java -XX:-ReduceInitialCardMarks -XX:+HeapDumpOnOutOfMemoryError " + "-XX:HeapDumpPath=/tmp -Xmx" + loaderheap + "m "+ debugString);
+    String classpath="voltdbfat.jar";
+    if (System.getProperty("java.class.path") != null) {
+      classpath=classpath + ":" + System.getProperty("java.class.path");
+    }
+    loaderCommand.append(" -cp \"" + classpath + "\" ");
+    loaderCommand.append(m_loaderClass.getCanonicalName());
+    for (    String host : m_config.hosts) {
+      String port=String.valueOf(VoltDB.DEFAULT_PORT);
+      loaderCommand.append(" HOST=" + host + ":"+ port);
+      localArgs.add("HOST=" + host + ":"+ port);
+    }
+    loaderCommand.append(" STATSDATABASEURL=" + m_config.statsDatabaseURL + " ");
+    loaderCommand.append(" STATSPOLLINTERVAL=" + m_config.interval + " ");
+    localArgs.add(" STATSDATABASEURL=" + m_config.statsDatabaseURL + " ");
+    localArgs.add(" STATSPOLLINTERVAL=" + m_config.interval + " ");
+    StringBuffer userParams=new StringBuffer(4096);
+    for (    Entry<String,String> userParam : m_config.parameters.entrySet()) {
+      if (userParam.getKey().equals("TXNRATE")) {
+        continue;
+      }
+      userParams.append(" ");
+      userParams.append(userParam.getKey());
+      userParams.append("=");
+      userParams.append(userParam.getValue());
+      localArgs.add(userParam.getKey() + "=" + userParam.getValue());
+    }
+    loaderCommand.append(userParams);
+    benchmarkLog.debug("Loader Command: " + loaderCommand.toString());
+    if (m_config.localmode) {
+      localArgs.add("EXITONCOMPLETION=false");
+      ClientMain.main(m_loaderClass,localArgs.toArray(new String[0]),true);
+    }
+ else {
+      String[] command=SSHTools.convert(m_config.remoteUser,m_config.clients[0],m_config.remotePath,loaderCommand.toString());
+      status=ShellTools.cmdToStdOut(command);
+      assert(status);
+    }
+  }
+  ArrayList<String> clArgs=new ArrayList<String>();
+  clArgs.add("java");
+  if (m_config.listenForDebugger) {
+    clArgs.add("");
+  }
+  clArgs.add("-XX:-ReduceInitialCardMarks -XX:+HeapDumpOnOutOfMemoryError " + "-XX:HeapDumpPath=/tmp -Xmx" + String.valueOf(m_config.clientHeapSize) + "m");
+  clArgs.add("-Djava.library.path=.");
+  String classpath="voltdbfat.jar";
+  if (System.getProperty("java.class.path") != null) {
+    classpath=classpath + ":" + System.getProperty("java.class.path");
+  }
+  clArgs.add("-cp");
+  clArgs.add("\"" + classpath + "\"");
+  clArgs.add(m_clientClass.getCanonicalName());
+  for (  Entry<String,String> userParam : m_config.parameters.entrySet()) {
+    clArgs.add(userParam.getKey() + "=" + userParam.getValue());
+  }
+  clArgs.add("CHECKTRANSACTION=" + m_config.checkTransaction);
+  clArgs.add("CHECKTABLES=" + m_config.checkTables);
+  clArgs.add("STATSDATABASEURL=" + m_config.statsDatabaseURL);
+  clArgs.add("STATSPOLLINTERVAL=" + m_config.interval);
+  for (  String host : m_config.hosts)   clArgs.add("HOST=" + host + ":"+ String.valueOf(VoltDB.DEFAULT_PORT));
+  int clientIndex=0;
+  for (  String client : m_config.clients) {
+    for (int j=0; j < m_config.processesPerClient; j++) {
+      if (m_config.listenForDebugger) {
+        clArgs.remove(1);
+        String arg="-agentlib:jdwp=transport=dt_socket,address=" + (8003 + j) + ",server=y,suspend=n ";
+        clArgs.add(1,arg);
+      }
+      ArrayList<String> tempCLArgs=new ArrayList<String>(clArgs);
+      tempCLArgs.add("ID=" + clientIndex++);
+      String[] args=tempCLArgs.toArray(new String[0]);
+      args=SSHTools.convert(m_config.remoteUser,client,m_config.remotePath,args);
+      StringBuilder fullCommand=new StringBuilder();
+      for (      String s : args)       fullCommand.append(s).append(" ");
+      uploader.setCommandLineForClient(client + ":" + String.valueOf(j),fullCommand.toString());
+      benchmarkLog.debug("Client Commnand: " + fullCommand.toString());
+      m_clientPSM.startProcess(client + ":" + String.valueOf(j),args);
+    }
+  }
+  String[] clientNames=m_clientPSM.getProcessNames();
+  for (  String name : clientNames) {
+    m_clients.add(name);
+  }
+  m_clientsNotReady.set(m_clientPSM.size());
+  registerInterest(new ResultsPrinter());
+  registerInterest(uploader);
 }
