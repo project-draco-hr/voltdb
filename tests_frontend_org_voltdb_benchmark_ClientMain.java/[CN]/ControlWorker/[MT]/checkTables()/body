@@ -55,8 +55,10 @@
       return false;
     }
     while (response[0].advanceRow()) {
-      if (!response[0].getString("key").equals("hostname"))       continue;
-      hostMappings.put((Integer)response[0].get("node_id",VoltType.INTEGER),response[0].getString("value"));
+      if (!response[0].getString("KEY").equals("HOSTNAME")) {
+        continue;
+      }
+      hostMappings.put((Integer)response[0].get("HOST_ID",VoltType.INTEGER),response[0].getString("VALUE"));
     }
     response=client.callProcedure("@SnapshotScan",dir).getResults();
     if (response.length != 3) {
@@ -66,13 +68,20 @@
     while (response[0].advanceRow()) {
       if (!response[0].getString("NONCE").equals(nonce))       continue;
       String[] tables=response[0].getString("TABLES_REQUIRED").split(",");
-      for (      String t : tables)       snapshotMappings.put(t,null);
+      for (      String t : tables) {
+        snapshotMappings.put(t,null);
+      }
       break;
     }
     while (response[2].advanceRow()) {
-      long id=response[2].getLong("HOST_ID");
+      int id=(Integer)response[2].get("HOST_ID",VoltType.INTEGER);
       String tableName=response[2].getString("TABLE");
-      if (!snapshotMappings.containsKey(tableName) || !hostMappings.containsKey(id))       continue;
+      if (!snapshotMappings.containsKey(tableName) || !hostMappings.containsKey(id)) {
+        System.err.println("FAILED configuring snapshotMappings for: ");
+        System.err.println("snapshottingMapping[" + tableName + "] "+ snapshotMappings.get(tableName));
+        System.err.println("hostMappings[" + id + "] "+ hostMappings.get(id));
+        continue;
+      }
       snapshotMappings.put(tableName,Pair.of(hostMappings.get(id),response[2].getString("NAME")));
     }
   }
@@ -92,9 +101,13 @@ catch (  IOException e) {
     e.printStackTrace();
     return false;
   }
+  System.err.println("Checking " + m_tableCheckOrder.size() + " table contraints");
   for (  String tableName : m_tableCheckOrder) {
     Pair<String,String> value=snapshotMappings.get(tableName);
-    if (value == null)     continue;
+    if (value == null) {
+      System.err.println("No snapshot mapping for table: " + tableName);
+      continue;
+    }
     String hostName=value.getFirst();
     File file=new File(dir,value.getSecond());
     FileInputStream inputStream=null;
@@ -105,7 +118,6 @@ catch (  IOException e) {
       System.err.println("No constraint for : " + tableName);
       continue;
     }
-    System.err.println("Checking table " + tableName);
     String localhostName=ConnectionUtil.getHostnameOrAddress();
     if (!hostName.equals("localhost") && !hostName.equals(localhostName)) {
       if (!SSHTools.copyFromRemote(file,m_username,hostName,file.getPath())) {
