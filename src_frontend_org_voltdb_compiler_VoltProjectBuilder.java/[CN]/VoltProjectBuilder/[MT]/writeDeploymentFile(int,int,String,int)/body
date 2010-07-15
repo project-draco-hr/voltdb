@@ -1,0 +1,72 @@
+{
+  DocumentBuilderFactory docFactory;
+  DocumentBuilder docBuilder;
+  Document doc;
+  try {
+    docFactory=DocumentBuilderFactory.newInstance();
+    docBuilder=docFactory.newDocumentBuilder();
+    doc=docBuilder.newDocument();
+  }
+ catch (  final ParserConfigurationException e) {
+    e.printStackTrace();
+    return null;
+  }
+  final Element deployment=doc.createElement("deployment");
+  doc.appendChild(deployment);
+  final Element cluster=doc.createElement("cluster");
+  cluster.setAttribute("hostcount",new Integer(hostCount).toString());
+  cluster.setAttribute("sitesperhost",new Integer(sitesPerHost).toString());
+  cluster.setAttribute("leader",leader);
+  cluster.setAttribute("kfactor",new Integer(kFactor).toString());
+  deployment.appendChild(cluster);
+  final Element users=doc.createElement("users");
+  deployment.appendChild(users);
+  if (m_users.isEmpty()) {
+    final Element user=doc.createElement("user");
+    user.setAttribute("name","default");
+    user.setAttribute("groups","default");
+    user.setAttribute("password","");
+    users.appendChild(user);
+  }
+ else {
+    for (    final UserInfo info : m_users) {
+      final Element user=doc.createElement("user");
+      user.setAttribute("name",info.name);
+      user.setAttribute("password",info.password);
+      if (info.groups.length > 0) {
+        final StringBuilder groups=new StringBuilder();
+        for (        final String group : info.groups) {
+          if (groups.length() > 0)           groups.append(",");
+          groups.append(group);
+        }
+        user.setAttribute("groups",groups.toString());
+      }
+      users.appendChild(user);
+    }
+  }
+  StreamResult result;
+  try {
+    final Transformer transformer=TransformerFactory.newInstance().newTransformer();
+    transformer.setOutputProperty(OutputKeys.INDENT,"yes");
+    result=new StreamResult(new StringWriter());
+    final DOMSource domSource=new DOMSource(doc);
+    transformer.transform(domSource,result);
+  }
+ catch (  final TransformerConfigurationException e) {
+    e.printStackTrace();
+    return null;
+  }
+catch (  final TransformerFactoryConfigurationError e) {
+    e.printStackTrace();
+    return null;
+  }
+catch (  final TransformerException e) {
+    e.printStackTrace();
+    return null;
+  }
+  String xml=result.getWriter().toString();
+  System.out.println(xml);
+  final File deploymentFile=writeStringToTempFile(result.getWriter().toString());
+  final String deploymentPath=deploymentFile.getPath();
+  return deploymentPath;
+}
