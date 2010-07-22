@@ -1,7 +1,6 @@
 {
   m_thread=new Thread(this,"Volt Network");
   m_thread.setDaemon(true);
-  m_useExecutorService=useExecutorService;
   m_useBlockingSelect=blockingSelect;
   try {
     m_selector=Selector.open();
@@ -11,7 +10,13 @@
     throw new RuntimeException(ex);
   }
   final int availableProcessors=Runtime.getRuntime().availableProcessors();
-  if (!useExecutorService) {
+  if (availableProcessors <= 4) {
+    m_useExecutorService=false;
+  }
+ else {
+    m_useExecutorService=useExecutorService;
+  }
+  if (!m_useExecutorService) {
     return;
   }
   int threadPoolSize=1;
@@ -55,8 +60,8 @@ synchronized (m_networkThreads) {
   for (int ii=0; ii < threadPoolSize; ii++) {
     tf.newThread(new Runnable(){
       @Override public void run(){
-        try {
-          while (true) {
+        while (true) {
+          try {
             Runnable nextTask=null;
 synchronized (m_tasks) {
               nextTask=m_tasks.poll();
@@ -70,8 +75,12 @@ synchronized (m_tasks) {
             }
             nextTask.run();
           }
-        }
- catch (        InterruptedException e) {
+ catch (          InterruptedException e) {
+            return;
+          }
+catch (          Exception e) {
+            networkLog.error(e);
+          }
         }
       }
     }
