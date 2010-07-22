@@ -2,20 +2,21 @@
   String[] jarFileNames=m_projectBuilder.compileAllCatalogs(m_config.sitesPerHost,m_config.hosts.length,m_config.k_factor,m_config.hosts[0]);
   m_jarFileName=jarFileNames[0];
   m_pathToDeployment=m_projectBuilder.getPathToDeployment();
+  SSHTools ssh=new SSHTools(m_config.remoteUser);
   boolean status;
   if (m_config.localmode == false) {
     for (    String fileName : jarFileNames) {
       for (      String host : m_config.hosts) {
-        status=SSHTools.copyFromLocal(new File(fileName),m_config.remoteUser,host,m_config.remotePath);
+        status=ssh.copyFromLocal(new File(fileName),host,m_config.remotePath);
         if (!status)         System.out.println("SSH copyFromLocal failed to copy " + fileName + " to "+ m_config.remoteUser+ "@"+ host+ ":"+ m_config.remotePath);
       }
       for (      String client : m_config.clients) {
-        status=SSHTools.copyFromLocal(new File(fileName),m_config.remoteUser,client,m_config.remotePath);
+        status=ssh.copyFromLocal(new File(fileName),client,m_config.remotePath);
         if (!status)         System.out.println("SSH copyFromLocal failed to copy " + fileName + " to "+ m_config.remoteUser+ "@"+ client+ ":"+ m_config.remotePath);
       }
     }
     for (    String host : m_config.hosts) {
-      status=SSHTools.copyFromLocal(new File(m_pathToDeployment),m_config.remoteUser,host,m_config.remotePath);
+      status=ssh.copyFromLocal(new File(m_pathToDeployment),host,m_config.remotePath);
       if (!status) {
         System.out.println("SSH copyFromLocal failed to copy " + m_pathToDeployment + " to "+ m_config.remoteUser+ "@"+ host+ ":"+ m_config.remotePath);
       }
@@ -53,7 +54,7 @@
         debugString=" -agentlib:jdwp=transport=dt_socket,address=8001,server=y,suspend=n ";
       }
       String[] command={"java","-XX:-ReduceInitialCardMarks","-XX:+HeapDumpOnOutOfMemoryError","-XX:HeapDumpPath=/tmp","-Djava.library.path=.","-Dlog4j.configuration=log.xml",debugString,"-Xmn" + String.valueOf((m_config.serverHeapSize / 4) * 3) + "m","-Xmx" + String.valueOf(m_config.serverHeapSize) + "m","-server","-cp","\"voltdbfat.jar:vertica_4.0_jdk_5.jar\"","org.voltdb.VoltDB","catalog",m_jarFileName,"deployment",new File(m_pathToDeployment).getName(),m_config.useProfile,m_config.backend};
-      command=SSHTools.convert(m_config.remoteUser,host,m_config.remotePath,command);
+      command=ssh.convert(host,m_config.remotePath,command);
       StringBuilder fullCommand=new StringBuilder();
       for (      String s : command)       fullCommand.append(s).append(" ");
       uploader.setCommandLineForHost(host,fullCommand.toString());
@@ -61,7 +62,7 @@
       m_serverPSM.startProcess(host,command);
     }
     String readyMsg="Server completed initialization.";
-    ProcessSetManager.OutputLine line=m_serverPSM.nextBlocking();
+    ProcessData.OutputLine line=m_serverPSM.nextBlocking();
     while (line.value.equals(readyMsg) == false) {
       line=m_serverPSM.nextBlocking();
     }
@@ -129,7 +130,7 @@
       ClientMain.main(m_loaderClass,localArgs.toArray(new String[0]),true);
     }
  else {
-      String[] command=SSHTools.convert(m_config.remoteUser,m_config.clients[0],m_config.remotePath,loaderCommand.toString());
+      String[] command=ssh.convert(m_config.clients[0],m_config.remotePath,loaderCommand.toString());
       status=ShellTools.cmdToStdOut(command);
       assert(status);
     }
@@ -167,7 +168,7 @@
       ArrayList<String> tempCLArgs=new ArrayList<String>(clArgs);
       tempCLArgs.add("ID=" + clientIndex++);
       String[] args=tempCLArgs.toArray(new String[0]);
-      args=SSHTools.convert(m_config.remoteUser,client,m_config.remotePath,args);
+      args=ssh.convert(client,m_config.remotePath,args);
       StringBuilder fullCommand=new StringBuilder();
       for (      String s : args)       fullCommand.append(s).append(" ");
       uploader.setCommandLineForClient(client + ":" + String.valueOf(j),fullCommand.toString());
