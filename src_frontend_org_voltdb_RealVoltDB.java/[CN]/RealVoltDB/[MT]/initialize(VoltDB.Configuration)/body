@@ -1,5 +1,8 @@
 {
 synchronized (m_startAndStopLock) {
+    if (config.m_port != VoltDB.DEFAULT_PORT) {
+      RejoinLog.setPortNo(config.m_port);
+    }
     hostLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_StartupString.name(),null);
     m_faultManager=new FaultDistributor();
     m_faultManager.registerFaultHandler(FaultType.NODE_FAILURE,new VoltDBNodeFailureFaultHandler(),NodeFailureFault.NODE_FAILURE_CATALOG);
@@ -43,21 +46,72 @@ synchronized (m_startAndStopLock) {
     final SnapshotSchedule schedule=m_catalogContext.database.getSnapshotschedule().get("default");
     TheHashinator.initialize(catalog);
     m_network=new VoltNetwork();
-    InetAddress leader=null;
-    try {
-      leader=InetAddress.getByName(m_catalogContext.cluster.getLeaderaddress());
+    if (config.m_rejoinToHostAndPort == null) {
+      InetAddress leader=null;
+      try {
+        leader=InetAddress.getByName(m_catalogContext.cluster.getLeaderaddress());
+      }
+ catch (      UnknownHostException ex) {
+        hostLog.l7dlog(Level.FATAL,LogKeys.host_VoltDB_CouldNotRetrieveLeaderAddress.name(),new Object[]{m_catalogContext.cluster.getLeaderaddress()},ex);
+        throw new RuntimeException(ex);
+      }
+      if (m_catalogContext.numberOfNodes <= 0) {
+        hostLog.l7dlog(Level.FATAL,LogKeys.host_VoltDB_InvalidHostCount.name(),new Object[]{m_catalogContext.numberOfNodes},null);
+        VoltDB.crashVoltDB();
+      }
+      hostLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_CreatingVoltDB.name(),new Object[]{m_catalogContext.numberOfNodes,leader},null);
+      m_messenger=new HostMessenger(m_network,leader,m_catalogContext.numberOfNodes,catalogCRC,hostLog);
+      m_instanceId=m_messenger.waitForGroupJoin();
     }
- catch (    UnknownHostException ex) {
-      hostLog.l7dlog(Level.FATAL,LogKeys.host_VoltDB_CouldNotRetrieveLeaderAddress.name(),new Object[]{m_catalogContext.cluster.getLeaderaddress()},ex);
-      throw new RuntimeException(ex);
+ else {
+      int rejoinPort=config.m_internalPort;
+      String rejoinHost="localhost";
+      int colonIndex=config.m_rejoinToHostAndPort.indexOf(':');
+      if (colonIndex == -1) {
+        rejoinHost=config.m_rejoinToHostAndPort.trim();
+      }
+ else {
+        rejoinHost=config.m_rejoinToHostAndPort.substring(0,colonIndex).trim();
+        rejoinPort=Integer.parseInt(config.m_rejoinToHostAndPort.substring(colonIndex + 1).trim());
+      }
+      ServerSocketChannel listener=null;
+      try {
+        listener=ServerSocketChannel.open();
+        listener.socket().bind(new InetSocketAddress(config.m_internalPort));
+      }
+ catch (      IOException e) {
+        e.printStackTrace();
+        System.exit(-1);
+      }
+      m_messenger=new HostMessenger(m_network,listener,m_catalogContext.numberOfNodes,catalogCRC,hostLog);
+      Client client=ClientFactory.createClient();
+      ClientResponse response=null;
+      SyncCallback scb=new SyncCallback();
+      try {
+        client.createConnection(rejoinHost,rejoinPort,null,null);
+        boolean success=false;
+        while (!success) {
+          success=client.callProcedure(scb,"@Rejoin","localhost",config.m_internalPort);
+          if (!success)           Thread.sleep(100);
+        }
+      }
+ catch (      Exception e) {
+        e.printStackTrace();
+        System.exit(-1);
+      }
+      m_messenger.waitForGroupJoin();
+      try {
+        scb.waitForResponse();
+        response=scb.getResponse();
+        client.close();
+      }
+ catch (      Exception e) {
+        e.printStackTrace();
+        System.exit(-1);
+      }
+      System.out.println("response:");
+      System.out.println(response);
     }
-    if (m_catalogContext.numberOfNodes <= 0) {
-      hostLog.l7dlog(Level.FATAL,LogKeys.host_VoltDB_InvalidHostCount.name(),new Object[]{m_catalogContext.numberOfNodes},null);
-      VoltDB.crashVoltDB();
-    }
-    hostLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_CreatingVoltDB.name(),new Object[]{m_catalogContext.numberOfNodes,leader},null);
-    m_messenger=new HostMessenger(m_network,leader,m_catalogContext.numberOfNodes,catalogCRC,hostLog);
-    m_instanceId=m_messenger.waitForGroupJoin();
     int myHostId=m_messenger.getHostId();
     try {
       ELTManager.initialize(myHostId,m_catalogContext);
@@ -82,7 +136,7 @@ synchronized (m_startAndStopLock) {
             siteForThisThread=site;
           }
  else {
-            ExecutionSiteRunner runner=new ExecutionSiteRunner(siteId,m_catalogContext,serializedCatalog);
+            ExecutionSiteRunner runner=new ExecutionSiteRunner(siteId,m_catalogContext,serializedCatalog,m_recovering);
             m_runners.add(runner);
             Thread runnerThread=new Thread(runner,"Site " + siteId);
             runnerThread.start();
@@ -93,7 +147,7 @@ synchronized (m_startAndStopLock) {
       }
     }
     int siteId=Integer.parseInt(siteForThisThread.getTypeName());
-    ExecutionSite siteObj=new ExecutionSite(VoltDB.instance(),VoltDB.instance().getMessenger().createMailbox(siteId,VoltDB.DTXN_MAILBOX_ID),siteId,serializedCatalog,null);
+    ExecutionSite siteObj=new ExecutionSite(VoltDB.instance(),VoltDB.instance().getMessenger().createMailbox(siteId,VoltDB.DTXN_MAILBOX_ID),siteId,serializedCatalog,null,m_recovering);
     m_localSites.put(Integer.parseInt(siteForThisThread.getTypeName()),siteObj);
     m_currentThreadSite=siteObj;
     for (    ExecutionSiteRunner runner : m_runners) {
