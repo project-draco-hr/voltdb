@@ -1,0 +1,22 @@
+{
+  Context retval=new Context();
+  VoltProjectBuilder builder=getBuilderForTest();
+  boolean success=builder.compile(Configuration.getPathToCatalogForTest("rejoin.jar"),1,2,1,"localhost",false);
+  copyFile(builder.getPathToDeployment(),Configuration.getPathToCatalogForTest("rejoin.xml"));
+  assertTrue(success);
+  VoltDB.Configuration config=new VoltDB.Configuration();
+  config.m_pathToCatalog=Configuration.getPathToCatalogForTest("rejoin.jar");
+  config.m_pathToDeployment=Configuration.getPathToCatalogForTest("rejoin.xml");
+  retval.localServer=new ServerThread(config);
+  retval.catalogCRC=JarReader.crcForJar(Configuration.getPathToCatalogForTest("rejoin.jar"));
+  VoltNetwork network2=new VoltNetwork();
+  InetAddress leader=InetAddress.getByName("localhost");
+  HostMessenger host2=new HostMessenger(network2,leader,2,retval.catalogCRC,null);
+  retval.localServer.start();
+  host2.waitForGroupJoin();
+  network2.start();
+  host2.sendReadyMessage();
+  retval.localServer.waitForInitialization();
+  host2.shutdown();
+  return retval;
+}
