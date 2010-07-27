@@ -1,5 +1,5 @@
 {
-  while (m_allowedBuffers > 0 && !m_tablesToStream.isEmpty()) {
+  while (m_allowedBuffers > 0 && !m_tablesToStream.isEmpty() && !m_buffers.isEmpty()) {
     m_allowedBuffers--;
     BBContainer container=m_buffers.poll();
     ByteBuffer buffer=container.b;
@@ -17,6 +17,13 @@
     assert(rm != null);
     if (rm.type() == RecoveryMessageType.Complete) {
       m_tablesToStream.poll();
+      RecoveryTable nextTable=m_tablesToStream.peek();
+      if (nextTable != null) {
+        if (!m_engine.activateTableStream(nextTable.m_tableId,TableStreamType.RECOVERY)) {
+          hostLog.error("Attempted to activate recovery stream for table " + nextTable.m_name + " and failed");
+          VoltDB.crashVoltDB();
+        }
+      }
     }
     final int numDestinations=table.m_destinationIds.length;
     m_ackTracker.waitForAcks(rm.blockIndex(),numDestinations);

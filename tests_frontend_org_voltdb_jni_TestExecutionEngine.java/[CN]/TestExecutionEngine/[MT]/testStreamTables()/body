@@ -1,14 +1,14 @@
 {
   final Catalog catalog=new Catalog();
   catalog.execute(LoadCatalogToString.THE_CATALOG);
-  engine.loadCatalog(catalog.serialize());
-  ExecutionEngine engine2=new ExecutionEngineJNI(null,CLUSTER_ID,NODE_ID,0,0,"");
-  engine2.loadCatalog(catalog.serialize());
+  sourceEngine.loadCatalog(catalog.serialize());
+  ExecutionEngine destinationEngine=new ExecutionEngineJNI(null,CLUSTER_ID,NODE_ID,0,0,"");
+  destinationEngine.loadCatalog(catalog.serialize());
   int WAREHOUSE_TABLEID=warehouseTableId(catalog);
   int STOCK_TABLEID=stockTableId(catalog);
   loadTestTables(catalog);
-  engine.activateTableStream(WAREHOUSE_TABLEID,TableStreamType.RECOVERY);
-  engine.activateTableStream(STOCK_TABLEID,TableStreamType.RECOVERY);
+  sourceEngine.activateTableStream(WAREHOUSE_TABLEID,TableStreamType.RECOVERY);
+  sourceEngine.activateTableStream(STOCK_TABLEID,TableStreamType.RECOVERY);
   BBContainer origin=DBBPool.allocateDirect(1024 * 1024 * 2);
   try {
     origin.b.clear();
@@ -18,18 +18,31 @@
       }
     }
 ;
-    int serialized=engine.tableStreamSerializeMore(container,WAREHOUSE_TABLEID,TableStreamType.RECOVERY);
+    int serialized=sourceEngine.tableStreamSerializeMore(container,WAREHOUSE_TABLEID,TableStreamType.RECOVERY);
     assertTrue(serialized > 0);
     container.b.limit(serialized);
     byte data[]=new byte[serialized];
     container.b.get(data);
     container.b.clear();
-    engine2.processRecoveryMessage(data);
-    serialized=engine.tableStreamSerializeMore(container,WAREHOUSE_TABLEID,TableStreamType.RECOVERY);
+    destinationEngine.processRecoveryMessage(data);
+    serialized=sourceEngine.tableStreamSerializeMore(container,WAREHOUSE_TABLEID,TableStreamType.RECOVERY);
     assertEquals(5,serialized);
     assertEquals(RecoveryMessageType.Complete.ordinal(),container.b.get());
     assertEquals(WAREHOUSE_TABLEID,container.b.getInt());
-    assertEquals(engine.tableHashCode(WAREHOUSE_TABLEID),engine2.tableHashCode(WAREHOUSE_TABLEID));
+    assertEquals(sourceEngine.tableHashCode(WAREHOUSE_TABLEID),destinationEngine.tableHashCode(WAREHOUSE_TABLEID));
+    container.b.clear();
+    serialized=sourceEngine.tableStreamSerializeMore(container,STOCK_TABLEID,TableStreamType.RECOVERY);
+    assertTrue(serialized > 0);
+    container.b.limit(serialized);
+    data=new byte[serialized];
+    container.b.get(data);
+    container.b.clear();
+    destinationEngine.processRecoveryMessage(data);
+    serialized=sourceEngine.tableStreamSerializeMore(container,STOCK_TABLEID,TableStreamType.RECOVERY);
+    assertEquals(5,serialized);
+    assertEquals(RecoveryMessageType.Complete.ordinal(),container.b.get());
+    assertEquals(STOCK_TABLEID,container.b.getInt());
+    assertEquals(sourceEngine.tableHashCode(STOCK_TABLEID),destinationEngine.tableHashCode(STOCK_TABLEID));
   }
   finally {
     origin.discard();
