@@ -1,20 +1,19 @@
 {
   long txnId=m_idManager.getNextUniqueTransactionId();
-  ArrayList<Integer> site_ids;
-  ArrayList<InFlightTxnState> txn_states=new ArrayList<InFlightTxnState>();
+  ArrayList<Integer> siteIds;
   if (partitions.length == 1) {
-    site_ids=VoltDB.instance().getCatalogContext().siteTracker.getLiveSitesForPartition(partitions[0]);
+    siteIds=VoltDB.instance().getCatalogContext().siteTracker.getLiveSitesForPartition(partitions[0]);
   }
  else {
-    site_ids=VoltDB.instance().getCatalogContext().siteTracker.getLiveSitesForEachPartitionAsList(partitions);
+    siteIds=VoltDB.instance().getCatalogContext().siteTracker.getLiveSitesForEachPartitionAsList(partitions);
   }
   increaseBackpressure(messageSize);
-  for (  int site_id : site_ids) {
-    InFlightTxnState txn=new InFlightTxnState(txnId,site_id,null,isReadOnly,true,invocation.getShallowCopy(),clientData,messageSize,now,connectionId,connectionHostname);
-    txn_states.add(txn);
-    m_mailbox.addPendingTxn(txn);
+  InFlightTxnState state=new InFlightTxnState(txnId,siteIds.get(0),null,isReadOnly,true,invocation.getShallowCopy(),clientData,messageSize,now,connectionId,connectionHostname);
+  for (  int siteId : siteIds) {
+    state.addCoordinator(siteId);
   }
-  for (  InFlightTxnState txn_state : txn_states) {
-    sendTransactionToCoordinator(txn_state);
+  m_mailbox.addPendingTxn(state);
+  for (  int coordId : state.outstandingCoordinators) {
+    sendTransactionToCoordinator(state,coordId);
   }
 }

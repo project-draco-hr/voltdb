@@ -1,18 +1,20 @@
 {
-  Map<Long,InFlightTxnState> txn_ids_affected=m_pendingTxns.removeSite(siteId);
-  for (  Long txn_id : txn_ids_affected.keySet()) {
-    if (m_pendingTxns.getTxnIdSize(txn_id) == 0) {
-      InFlightTxnState state=txn_ids_affected.get(txn_id);
-      if (!m_txnIdResponses.containsKey(txn_id)) {
-        VoltDB.crashVoltDB();
-      }
-      InitiateResponseMessage r=m_txnIdResponses.get(txn_id);
-      m_pendingTxns.removeTxnId(r.getTxnId());
+  ArrayList<Long> txnIdsToRemove=new ArrayList<Long>();
+  for (  InFlightTxnState state : m_pendingTxns.values()) {
+    if (!state.siteIsCoordinator(siteId))     continue;
+    ClientResponseImpl toSend=state.addFailedOrRecoveringResponse(siteId);
+    if (toSend != null) {
+      enqueueResponse(toSend,state);
+    }
+    if (state.hasAllResponses()) {
+      txnIdsToRemove.add(state.txnId);
       m_initiator.reduceBackpressure(state.messageSize);
-      m_txnIdResponses.remove(r.getTxnId());
-      if (!state.isReadOnly) {
-        enqueueResponse(r,state);
+      if (!state.hasSentResponse()) {
+        assert(false);
       }
     }
+  }
+  for (  long txnId : txnIdsToRemove) {
+    m_pendingTxns.remove(txnId);
   }
 }
