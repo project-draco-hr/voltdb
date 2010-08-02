@@ -1,13 +1,20 @@
 {
-  assert(message.type() == RecoveryMessageType.ScanTuples || message.type() == RecoveryMessageType.Complete);
+  assert(message.type() == RecoveryMessageType.ScanTuples || message.type() == RecoveryMessageType.Complete || message.type() == RecoveryMessageType.Initiate);
   if (message.type() == RecoveryMessageType.ScanTuples) {
     m_engine.processRecoveryMessage(message.getMessageData());
   }
  else   if (message.type() == RecoveryMessageType.Complete) {
     m_tables.remove(message.tableId());
     if (m_tables.isEmpty()) {
-      m_onCompletion.run();
+      m_onCompletion.complete(m_resumeTxnId);
     }
+  }
+ else   if (message.type() == RecoveryMessageType.Initiate) {
+    m_resumeTxnId=message.txnId();
+    return;
+  }
+ else {
+    VoltDB.crashVoltDB();
   }
   int sourceSite=message.sourceSite();
   RecoveryMessage ack=new RecoveryMessage(message,m_siteId);
