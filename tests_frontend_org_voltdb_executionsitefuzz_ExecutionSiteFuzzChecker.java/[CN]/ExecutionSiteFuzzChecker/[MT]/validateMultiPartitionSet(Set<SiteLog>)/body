@@ -1,0 +1,54 @@
+{
+  boolean valid=true;
+  TransactionRecord model_txn=null;
+  TransactionRecord coord_txn=null;
+  HashSet<Integer> failed_sites=new HashSet<Integer>();
+  boolean saw_rollback=false;
+  for (  SiteLog site : sites) {
+    System.out.println("" + site.getPartitionId() + ", "+ site.getSiteId()+ ": "+ site.currentTxn());
+    if (site.currentTxn().sawFailure()) {
+      failed_sites.addAll(site.currentTxn().getFailedSites());
+    }
+    if (site.currentTxn().isCoordinator()) {
+      coord_txn=site.currentTxn();
+    }
+  }
+  for (  SiteLog site : sites) {
+    if (failed_sites.contains((Integer)site.getSiteId())) {
+      if (site.currentTxn().isCoordinator() && !site.currentTxn().isReadOnly()) {
+        System.out.println("VALIDATION FAILURE, " + "MULTIPARTITION COORDINATOR FAILED " + "DURING READ/WRITE TRANSACTION BUT SOMEHOW COMPLETED");
+        valid=false;
+      }
+ else {
+        System.out.println("Site: " + site.getSiteId() + " failed before "+ "TXN "+ site.currentTxn().getTxnId()+ " was resolved, ignoring");
+      }
+      continue;
+    }
+    if (site.currentTxn().rolledBack()) {
+      saw_rollback=true;
+    }
+    if (model_txn == null) {
+      if (coord_txn == null) {
+        model_txn=site.currentTxn();
+      }
+ else {
+        model_txn=coord_txn;
+      }
+    }
+ else     if (!model_txn.isConsistent(site.currentTxn())) {
+      System.out.println("VALIDATION FAILURE, MISMATCHED TRANSACTIONS");
+      valid=false;
+    }
+  }
+  if (valid) {
+    if (model_txn.isMultiPart() && !model_txn.isReadOnly() && sites.size() != m_liveSites.size() && !model_txn.rolledBack()) {
+      System.out.println("VALIDATION FAILURE, PARTIALLY COMMITTED TXN");
+      valid=false;
+    }
+    if (coord_txn != null && coord_txn.isMultiPart() && !coord_txn.rolledBack() && saw_rollback) {
+      System.out.println("VALIDATION FAILURE, COORDINATOR COMMITTED WHEN PARTICIPANT ROLLED BACK");
+      valid=false;
+    }
+  }
+  return valid;
+}
