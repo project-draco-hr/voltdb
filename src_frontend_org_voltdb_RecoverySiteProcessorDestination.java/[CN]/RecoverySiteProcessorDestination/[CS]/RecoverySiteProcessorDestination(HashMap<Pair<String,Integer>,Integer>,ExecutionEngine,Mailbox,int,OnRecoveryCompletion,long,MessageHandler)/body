@@ -3,34 +3,13 @@
   m_engine=engine;
   m_siteId=siteId;
   m_messageHandler=messageHandler;
+  m_startingTxnId=currentTxnId;
   int sourceSiteId=0;
   for (  Map.Entry<Pair<String,Integer>,Integer> entry : tableToSourceSite.entrySet()) {
     m_tables.put(entry.getKey().getSecond(),new RecoveryTable(entry.getKey().getFirst(),entry.getKey().getSecond(),entry.getValue()));
     sourceSiteId=entry.getValue();
   }
+  m_sourceSiteId=sourceSiteId;
   m_onCompletion=onCompletion;
-  ByteBuffer buf=ByteBuffer.allocate(2048);
-  BBContainer container=DBBPool.wrapBB(buf);
-  RecoveryMessage recoveryMessage=new RecoveryMessage(container,m_siteId,currentTxnId);
-  try {
-    m_mailbox.send(sourceSiteId,0,recoveryMessage);
-  }
- catch (  MessagingException e) {
-    throw new RuntimeException(e);
-  }
   assert(!m_tables.isEmpty());
-  while (true) {
-    VoltMessage message=m_mailbox.recv();
-    if (message != null) {
-      if (message instanceof RecoveryMessage) {
-        handleRecoveryMessage((RecoveryMessage)message);
-        return;
-      }
- else {
-        m_messageHandler.handleMessage(message);
-      }
-      continue;
-    }
-    Thread.yield();
-  }
 }

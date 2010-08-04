@@ -1,0 +1,25 @@
+{
+  ByteBuffer buf=ByteBuffer.allocate(2048);
+  BBContainer container=DBBPool.wrapBB(buf);
+  RecoveryMessage recoveryMessage=new RecoveryMessage(container,m_siteId,m_startingTxnId);
+  try {
+    m_mailbox.send(m_sourceSiteId,0,recoveryMessage);
+  }
+ catch (  MessagingException e) {
+    throw new RuntimeException(e);
+  }
+  while (true) {
+    VoltMessage message=m_mailbox.recv();
+    if (message != null) {
+      if (message instanceof RecoveryMessage) {
+        handleRecoveryMessage((RecoveryMessage)message);
+        return;
+      }
+ else {
+        m_messageHandler.handleMessage(message);
+      }
+      continue;
+    }
+    Thread.yield();
+  }
+}
