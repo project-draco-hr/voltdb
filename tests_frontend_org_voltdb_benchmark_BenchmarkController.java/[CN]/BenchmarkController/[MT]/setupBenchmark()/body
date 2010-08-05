@@ -1,13 +1,13 @@
 {
-  String[] jarFileNames=m_projectBuilder.compileAllCatalogs(m_config.sitesPerHost,m_config.hosts.length,m_config.k_factor,m_config.hosts[0]);
+  String[] jarFileNames=m_projectBuilder.compileAllCatalogs(m_config.sitesPerHost,m_config.hosts.length,m_config.k_factor,m_config.hosts[0].getHostName());
   m_jarFileName=jarFileNames[0];
   m_pathToDeployment=m_projectBuilder.getPathToDeployment();
   SSHTools ssh=new SSHTools(m_config.remoteUser);
   boolean status;
   if (m_config.localmode == false) {
     for (    String fileName : jarFileNames) {
-      for (      String host : m_config.hosts) {
-        status=ssh.copyFromLocal(new File(fileName),host,m_config.remotePath);
+      for (      InetSocketAddress host : m_config.hosts) {
+        status=ssh.copyFromLocal(new File(fileName),host.getHostName(),m_config.remotePath);
         if (!status)         System.out.println("SSH copyFromLocal failed to copy " + fileName + " to "+ m_config.remoteUser+ "@"+ host+ ":"+ m_config.remotePath);
       }
       for (      String client : m_config.clients) {
@@ -15,20 +15,20 @@
         if (!status)         System.out.println("SSH copyFromLocal failed to copy " + fileName + " to "+ m_config.remoteUser+ "@"+ client+ ":"+ m_config.remotePath);
       }
     }
-    for (    String host : m_config.hosts) {
-      status=ssh.copyFromLocal(new File(m_pathToDeployment),host,m_config.remotePath);
+    for (    InetSocketAddress host : m_config.hosts) {
+      status=ssh.copyFromLocal(new File(m_pathToDeployment),host.getHostName(),m_config.remotePath);
       if (!status) {
         System.out.println("SSH copyFromLocal failed to copy " + m_pathToDeployment + " to "+ m_config.remoteUser+ "@"+ host+ ":"+ m_config.remotePath);
       }
     }
     Set<Thread> threads=new HashSet<Thread>();
-    for (    String host : m_config.hosts) {
-      Thread t=new KillStragglers(m_config.remoteUser,host,m_config.remotePath);
+    for (    InetSocketAddress host : m_config.hosts) {
+      Thread t=new KillStragglers(m_config.remoteUser,host.getHostName(),m_config.remotePath);
       t.start();
       threads.add(t);
     }
-    for (    String host : m_config.clients) {
-      Thread t=new KillStragglers(m_config.remoteUser,host,m_config.remotePath);
+    for (    String client : m_config.clients) {
+      Thread t=new KillStragglers(m_config.remoteUser,client,m_config.remotePath);
       t.start();
       threads.add(t);
     }
@@ -41,25 +41,25 @@
       benchmarkLog.fatal("Couldn't run remote kill operation.",e);
       System.exit(-1);
     }
-    for (    String host : m_config.hosts) {
-      Runtime.getRuntime().addShutdownHook(new KillStragglers(m_config.remoteUser,host,m_config.remotePath));
+    for (    InetSocketAddress host : m_config.hosts) {
+      Runtime.getRuntime().addShutdownHook(new KillStragglers(m_config.remoteUser,host.getHostName(),m_config.remotePath));
     }
     for (    String client : m_config.clients) {
       Runtime.getRuntime().addShutdownHook(new KillStragglers(m_config.remoteUser,client,m_config.remotePath));
     }
     m_serverPSM=new ProcessSetManager();
-    for (    String host : m_config.hosts) {
+    for (    InetSocketAddress host : m_config.hosts) {
       String debugString="";
       if (m_config.listenForDebugger) {
         debugString=" -agentlib:jdwp=transport=dt_socket,address=8001,server=y,suspend=n ";
       }
-      String[] command={"java","-XX:-ReduceInitialCardMarks","-XX:+HeapDumpOnOutOfMemoryError","-XX:HeapDumpPath=/tmp","-Djava.library.path=.","-Dlog4j.configuration=log.xml",debugString,"-Xmn" + String.valueOf((m_config.serverHeapSize / 4) * 3) + "m","-Xmx" + String.valueOf(m_config.serverHeapSize) + "m","-server","-cp","\"voltdbfat.jar:vertica_4.0_jdk_5.jar\"","org.voltdb.VoltDB","catalog",m_jarFileName,"deployment",new File(m_pathToDeployment).getName(),m_config.useProfile,m_config.backend};
-      command=ssh.convert(host,m_config.remotePath,command);
+      String[] command={"java","-XX:-ReduceInitialCardMarks","-XX:+HeapDumpOnOutOfMemoryError","-XX:HeapDumpPath=/tmp","-Djava.library.path=.","-Dlog4j.configuration=log.xml",debugString,"-Xmn" + String.valueOf((m_config.serverHeapSize / 4) * 3) + "m","-Xmx" + String.valueOf(m_config.serverHeapSize) + "m","-server","-cp","\"voltdbfat.jar:vertica_4.0_jdk_5.jar\"","org.voltdb.VoltDB","catalog",m_jarFileName,"deployment",new File(m_pathToDeployment).getName(),m_config.useProfile,m_config.backend,"port",Integer.toString(host.getPort())};
+      command=ssh.convert(host.getHostName(),m_config.remotePath,command);
       StringBuilder fullCommand=new StringBuilder();
       for (      String s : command)       fullCommand.append(s).append(" ");
-      uploader.setCommandLineForHost(host,fullCommand.toString());
+      uploader.setCommandLineForHost(host.getHostName(),fullCommand.toString());
       benchmarkLog.debug(fullCommand.toString());
-      m_serverPSM.startProcess(host,command);
+      m_serverPSM.startProcess(host.getHostName(),command);
     }
     String readyMsg="Server completed initialization.";
     ProcessData.OutputLine line=m_serverPSM.nextBlocking();
@@ -75,7 +75,7 @@
     m_localserver.waitForInitialization();
   }
   try {
-    m_clusterMonitor=new ClusterMonitor(m_config.applicationName == null ? m_config.benchmarkClient : m_config.applicationName,m_config.subApplicationName,m_config.statsTag,m_config.hosts.length,m_config.sitesPerHost,m_config.hosts.length * m_config.sitesPerHost,m_config.k_factor,new ArrayList<String>(java.util.Arrays.asList(m_config.hosts)),"","",m_config.statsDatabaseURL,m_config.interval);
+    m_clusterMonitor=new ClusterMonitor(m_config.applicationName == null ? m_config.benchmarkClient : m_config.applicationName,m_config.subApplicationName,m_config.statsTag,m_config.hosts.length,m_config.sitesPerHost,m_config.hosts.length * m_config.sitesPerHost,m_config.k_factor,new ArrayList<InetSocketAddress>(java.util.Arrays.asList(m_config.hosts)),"","",m_config.statsDatabaseURL,m_config.interval);
     m_clusterMonitor.start();
   }
  catch (  Exception e) {
@@ -103,10 +103,9 @@
     }
     loaderCommand.append(" -cp \"" + classpath + "\" ");
     loaderCommand.append(m_loaderClass.getCanonicalName());
-    for (    String host : m_config.hosts) {
-      String port=String.valueOf(VoltDB.DEFAULT_PORT);
-      loaderCommand.append(" HOST=" + host + ":"+ port);
-      localArgs.add("HOST=" + host + ":"+ port);
+    for (    InetSocketAddress host : m_config.hosts) {
+      loaderCommand.append(" HOST=" + host.getHostName() + ":"+ host.getPort());
+      localArgs.add("HOST=" + host.getHostName() + ":"+ host.getPort());
     }
     loaderCommand.append(" STATSDATABASEURL=" + m_config.statsDatabaseURL + " ");
     loaderCommand.append(" STATSPOLLINTERVAL=" + m_config.interval + " ");
@@ -156,7 +155,7 @@
   clArgs.add("CHECKTABLES=" + m_config.checkTables);
   clArgs.add("STATSDATABASEURL=" + m_config.statsDatabaseURL);
   clArgs.add("STATSPOLLINTERVAL=" + m_config.interval);
-  for (  String host : m_config.hosts)   clArgs.add("HOST=" + host + ":"+ String.valueOf(VoltDB.DEFAULT_PORT));
+  for (  InetSocketAddress host : m_config.hosts)   clArgs.add("HOST=" + host.getHostName() + ":"+ host.getPort());
   int clientIndex=0;
   for (  String client : m_config.clients) {
     for (int j=0; j < m_config.processesPerClient; j++) {
