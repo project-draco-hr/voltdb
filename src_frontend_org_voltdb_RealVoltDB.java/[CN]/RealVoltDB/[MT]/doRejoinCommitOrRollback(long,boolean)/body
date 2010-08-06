@@ -9,6 +9,7 @@
   if (commit) {
     HostMessenger.JoiningNodeInfo joinNodeInfo=messenger.rejoinForeignHostCommit();
     ArrayList<Integer> rejoiningSiteIds=new ArrayList<Integer>();
+    ArrayList<Integer> rejoiningExecSiteIds=new ArrayList<Integer>();
     Cluster cluster=m_catalogContext.catalog.getClusters().get("cluster");
     for (    Site site : cluster.getSites()) {
       int siteId=Integer.parseInt(site.getTypeName());
@@ -16,6 +17,9 @@
       if (hostId == joinNodeInfo.hostId) {
         assert(site.getIsup() == false);
         rejoiningSiteIds.add(siteId);
+        if (site.getIsexec() == true) {
+          rejoiningExecSiteIds.add(siteId);
+        }
       }
     }
     assert(rejoiningSiteIds.size() > 0);
@@ -34,7 +38,13 @@
       sb.append(site_path).append(" ").append("isUp true");
       sb.append("\n");
     }
-    VoltDB.instance().clusterUpdate(sb.toString());
+    clusterUpdate(sb.toString());
+    for (    ClientInterface ci : m_clientInterfaces) {
+      TransactionInitiator initiator=ci.getInitiator();
+      for (      int siteId : rejoiningExecSiteIds) {
+        initiator.notifyExecutonSiteRejoin(siteId);
+      }
+    }
   }
  else {
     messenger.rejoinForeginHostRollback();
