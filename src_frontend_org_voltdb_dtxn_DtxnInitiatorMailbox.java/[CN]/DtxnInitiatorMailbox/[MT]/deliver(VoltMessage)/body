@@ -1,3 +1,30 @@
 {
-  m_messages.offer(message);
+  ClientResponseImpl toSend=null;
+  InFlightTxnState state=null;
+synchronized (m_initiator) {
+    if (message instanceof HeartbeatResponseMessage) {
+      HeartbeatResponseMessage hrm=(HeartbeatResponseMessage)message;
+      m_safetyState.updateLastSeenTxnIdFromExecutorBySiteId(hrm.getExecSiteId(),hrm.getLastReceivedTxnId(),hrm.isBlocked());
+      return;
+    }
+    assert(message instanceof InitiateResponseMessage);
+    final InitiateResponseMessage r=(InitiateResponseMessage)message;
+    m_safetyState.updateLastSeenTxnIdFromExecutorBySiteId(r.getCoordinatorSiteId(),r.getLastReceivedTxnId(),false);
+    state=m_pendingTxns.get(r.getTxnId());
+    assert(m_siteId == r.getInitiatorSiteId());
+    if (r.isRecovering()) {
+      toSend=state.addFailedOrRecoveringResponse(r.getCoordinatorSiteId());
+    }
+ else {
+      toSend=state.addResponse(r.getCoordinatorSiteId(),r.getClientResponseData());
+    }
+    if (state.hasAllResponses()) {
+      m_initiator.reduceBackpressure(state.messageSize);
+      m_pendingTxns.remove(r.getTxnId());
+      assert(state.hasSentResponse());
+    }
+  }
+  if (toSend != null) {
+    enqueueResponse(toSend,state);
+  }
 }
