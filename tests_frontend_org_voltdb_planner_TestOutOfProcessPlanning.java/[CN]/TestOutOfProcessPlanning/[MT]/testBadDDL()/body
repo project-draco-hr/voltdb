@@ -1,0 +1,30 @@
+{
+  VoltProjectBuilder builder=new VoltProjectBuilder();
+  builder.addLiteralSchema("CREATE TABLE A (C1 BIGINT NOT NULL, PRIMARY KEY(C1)); -- this; is bad");
+  builder.addPartitionInfo("A","C1");
+  builder.addLiteralSchema("create table t(id bigint not null, name varchar(5) default 'a;bc', primary key(id));");
+  builder.addPartitionInfo("t","id");
+  builder.addLiteralSchema("create table s(id bigint not null, name varchar(5) default 'a\nb', primary key(id));");
+  builder.addStmtProcedure("MakeCompileHappy","SELECT * FROM A WHERE C1 = ?;","A.C1: 0");
+  builder.compile("testbadddl-oop.jar");
+  String serializedCatalog=CatalogUtil.loadCatalogFromJar("testbadddl-oop.jar",null);
+  assertNotNull(serializedCatalog);
+  Catalog c=new Catalog();
+  c.execute(serializedCatalog);
+  m_pt=PlannerTool.createPlannerToolProcess(serializedCatalog);
+  PlannerKillerThread ptKiller=new PlannerKillerThread();
+  ptKiller.m_serializedCatalog=serializedCatalog;
+  ptKiller.start();
+  PlannerTool.Result result=null;
+  result=m_pt.planSql("select * from A;");
+  System.out.println(result);
+  assertNotSame("Stream closed",result.getErrors());
+  assertNull(result.getErrors());
+  ptKiller.m_shouldStop.set(true);
+  try {
+    ptKiller.join();
+  }
+ catch (  InterruptedException e) {
+    e.printStackTrace();
+  }
+}
