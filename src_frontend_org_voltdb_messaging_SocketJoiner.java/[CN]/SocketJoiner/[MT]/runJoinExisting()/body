@@ -14,15 +14,20 @@
       int hostId=in.readInt();
       m_sockets.put(hostId,socket);
     }
-    int difftimei=0;
     long difftimes[]=new long[m_expectedHosts - 1];
+    int readHostIds[]=new int[m_expectedHosts - 1];
     for (    Entry<Integer,SocketChannel> e : m_sockets.entrySet()) {
       out=getOutputForHost(e.getKey());
-      in=getInputForHost(e.getKey());
       out.writeInt(COMMAND_SENDTIME_AND_CRC);
       out.flush();
+    }
+    int i=0;
+    for (    Entry<Integer,SocketChannel> e : m_sockets.entrySet()) {
+      in=getInputForHost(e.getKey());
+      readHostIds[i]=in.readInt();
       long timestamp=in.readLong();
-      difftimes[difftimei++]=System.currentTimeMillis() - timestamp;
+      difftimes[i]=System.currentTimeMillis() - timestamp;
+      i++;
     }
     int command=COMMAND_COMPLETE;
     long minimumDiff=0;
@@ -33,6 +38,12 @@
     }
     long maxDiffMS=maximumDiff - minimumDiff;
     if (maxDiffMS > MAX_ACCEPTABLE_TIME_DIFF_IN_MS)     command=COMMAND_NTPFAIL;
+    m_localHostId=readHostIds[0];
+    for (i=1; i < readHostIds.length; i++) {
+      if (readHostIds[i] != m_localHostId) {
+        command=COMMAND_HOSTIDFAIL;
+      }
+    }
     for (    Entry<Integer,SocketChannel> e : m_sockets.entrySet()) {
       out=getOutputForHost(e.getKey());
       out.writeLong(maxDiffMS);

@@ -1,0 +1,31 @@
+{
+  System.out.println("Instantiating LocalCluster for " + jarFileName);
+  System.out.println("Sites: " + siteCount + " hosts: "+ hostCount+ " replication factor: "+ replication);
+  assert(jarFileName != null);
+  assert(siteCount > 0);
+  assert(hostCount > 0);
+  assert(replication >= 0);
+  m_jarFileName=VoltDB.Configuration.getPathToCatalogForTest(jarFileName);
+  m_siteCount=siteCount;
+  m_target=target;
+  m_hostCount=hostCount;
+  m_replication=replication;
+  String buildDir=System.getenv("VOLTDB_BUILD_DIR");
+  if (buildDir == null)   m_buildDir=System.getProperty("user.dir") + "/obj/release";
+ else   m_buildDir=buildDir;
+  m_failureState=failureState;
+  if (m_replication < 1)   m_failureState=FailureState.ALL_RUNNING;
+  String classPath=System.getProperty("java.class.path") + ":" + m_buildDir+ File.separator+ m_jarFileName;
+  classPath+=":" + m_buildDir + File.separator+ "prod";
+  m_cluster=new ArrayList<Process>();
+  m_pipes=new ArrayList<PipeToFile>();
+  m_procBuilder=new ProcessBuilder("java","-Djava.library.path=" + m_buildDir + "/nativelibs","-Dlog4j.configuration=log.xml","-ea","-Xmx2048m","-XX:+HeapDumpOnOutOfMemoryError","-classpath",classPath,"org.voltdb.VoltDB","catalog",m_jarFileName,"deployment","","port","-1");
+  m_portOffset=m_procBuilder.command().size() - 1;
+  m_pathToDeploymentOffset=m_procBuilder.command().size() - 3;
+  for (  String s : m_procBuilder.command()) {
+    System.out.println(s);
+  }
+  m_procBuilder.redirectErrorStream(true);
+  Thread shutdownThread=new Thread(new ShutDownHookThread());
+  java.lang.Runtime.getRuntime().addShutdownHook(shutdownThread);
+}
