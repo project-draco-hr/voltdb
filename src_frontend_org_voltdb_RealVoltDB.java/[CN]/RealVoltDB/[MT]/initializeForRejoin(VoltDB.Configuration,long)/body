@@ -1,0 +1,90 @@
+{
+  String rejoinHostCredentialString=null;
+  String rejoinHostAddressString=null;
+  int rejoinPort=config.m_internalPort;
+  String rejoinHost=null;
+  String rejoinUser=null;
+  String rejoinPass=null;
+  m_recovering=true;
+  int atSignIndex=config.m_rejoinToHostAndPort.indexOf('@');
+  if (atSignIndex == -1) {
+    rejoinHostAddressString=config.m_rejoinToHostAndPort;
+  }
+ else {
+    rejoinHostCredentialString=config.m_rejoinToHostAndPort.substring(0,atSignIndex).trim();
+    rejoinHostAddressString=config.m_rejoinToHostAndPort.substring(atSignIndex + 1).trim();
+  }
+  int colonIndex=-1;
+  if (rejoinHostCredentialString != null) {
+    colonIndex=rejoinHostCredentialString.indexOf(':');
+    if (colonIndex == -1) {
+      rejoinUser=rejoinHostCredentialString.trim();
+      System.out.print("password: ");
+      BufferedReader br=new BufferedReader(new InputStreamReader(System.in));
+      try {
+        rejoinPass=br.readLine();
+      }
+ catch (      IOException e) {
+        hostLog.error("Unable to read passord for rejoining credentials from console.");
+        System.exit(-1);
+      }
+    }
+ else {
+      rejoinUser=rejoinHostCredentialString.substring(0,colonIndex).trim();
+      rejoinPass=rejoinHostCredentialString.substring(colonIndex + 1).trim();
+    }
+  }
+  colonIndex=rejoinHostAddressString.indexOf(':');
+  if (colonIndex == -1) {
+    rejoinHost=rejoinHostAddressString.trim();
+  }
+ else {
+    rejoinHost=rejoinHostAddressString.substring(0,colonIndex).trim();
+    rejoinPort=Integer.parseInt(rejoinHostAddressString.substring(colonIndex + 1).trim());
+  }
+  ServerSocketChannel listener=null;
+  try {
+    listener=ServerSocketChannel.open();
+    listener.socket().bind(new InetSocketAddress(config.m_internalPort));
+  }
+ catch (  IOException e) {
+    hostLog.error("Problem opening listening rejoin socket: " + e.getMessage());
+    System.exit(-1);
+  }
+  m_messenger=new HostMessenger(m_network,listener,m_catalogContext.numberOfNodes,catalogCRC,hostLog);
+  if ((rejoinUser != null) && (rejoinUser.length() == 0))   rejoinUser=null;
+  if ((rejoinPass != null) && (rejoinPass.length() == 0))   rejoinPass=null;
+  try {
+    if (rejoinUser != null)     rejoinUser=URLDecoder.decode(rejoinUser,"UTF-8");
+    if (rejoinPass != null)     rejoinPass=URLDecoder.decode(rejoinPass,"UTF-8");
+  }
+ catch (  UnsupportedEncodingException e) {
+    hostLog.error("Problem URL-decoding credentials for rejoin authentication: " + e.getMessage());
+    System.exit(-1);
+  }
+  Client client=ClientFactory.createClient();
+  ClientResponse response=null;
+  SyncCallback scb=new SyncCallback();
+  try {
+    client.createConnection(rejoinHost,rejoinPort,rejoinUser,rejoinPass);
+    client.callProcedure(scb,"@Rejoin","localhost",config.m_internalPort);
+  }
+ catch (  Exception e) {
+    hostLog.error("Problem connecting client: " + e.getMessage());
+    System.exit(-1);
+  }
+  m_instanceId=m_messenger.waitForGroupJoin();
+  try {
+    scb.waitForResponse();
+    response=scb.getResponse();
+    client.close();
+    if (response.getStatus() != ClientResponse.SUCCESS) {
+      hostLog.error("Unable to rejoin to cluster with error: " + response.getStatusString());
+      System.exit(-1);
+    }
+  }
+ catch (  Exception e) {
+    hostLog.error("Unable to rejoin to cluster with error: " + e.getMessage());
+    System.exit(-1);
+  }
+}
