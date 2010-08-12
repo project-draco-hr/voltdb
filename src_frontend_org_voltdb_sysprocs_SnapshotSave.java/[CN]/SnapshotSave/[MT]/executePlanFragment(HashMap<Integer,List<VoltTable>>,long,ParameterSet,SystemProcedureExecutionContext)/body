@@ -66,11 +66,12 @@
     boolean willDoSetup=m_snapshotCreateSetupPermit.tryAcquire();
     final int numLocalSites=VoltDB.instance().getLocalSites().values().size();
     if (willDoSetup) {
+      final ArrayList<SnapshotDataTarget> targets=new ArrayList<SnapshotDataTarget>();
       try {
-        assert(SnapshotSiteProcessor.ExecutionSitesCurrentlySnapshotting.get() == -1);
-        final long startTime=(Long)params.toArray()[2];
         final ArrayDeque<SnapshotTableTask> partitionedSnapshotTasks=new ArrayDeque<SnapshotTableTask>();
         final ArrayList<SnapshotTableTask> replicatedSnapshotTasks=new ArrayList<SnapshotTableTask>();
+        assert(SnapshotSiteProcessor.ExecutionSitesCurrentlySnapshotting.get() == -1);
+        final long startTime=(Long)params.toArray()[2];
         final List<Table> tables=getTablesToSave(context);
         SnapshotUtil.recordSnapshotTableList(startTime,file_path,file_nonce,tables);
         final AtomicInteger numTables=new AtomicInteger(tables.size());
@@ -79,14 +80,17 @@
           String canSnapshot="SUCCESS";
           String err_msg="";
           final File saveFilePath=constructFileForTable(table,file_path,file_nonce,context.getSite().getHost().getTypeName());
+          SnapshotDataTarget sdt=null;
           try {
-            final SnapshotDataTarget sdt=constructSnapshotDataTargetForTable(context,saveFilePath,table,context.getSite().getHost(),context.getCluster().getPartitions().size(),startTime);
+            sdt=constructSnapshotDataTargetForTable(context,saveFilePath,table,context.getSite().getHost(),context.getCluster().getPartitions().size(),startTime);
+            targets.add(sdt);
+            final SnapshotDataTarget sdtFinal=sdt;
             final Runnable onClose=new Runnable(){
               @Override public void run(){
                 final long now=System.currentTimeMillis();
                 snapshotRecord.updateTable(table.getTypeName(),new SnapshotRegistry.Snapshot.TableUpdater(){
                   @Override public SnapshotRegistry.Snapshot.Table update(                  SnapshotRegistry.Snapshot.Table registryTable){
-                    return snapshotRecord.new Table(registryTable,sdt.getBytesWritten(),now,sdt.getLastWriteException());
+                    return snapshotRecord.new Table(registryTable,sdtFinal.getBytesWritten(),now,sdtFinal.getLastWriteException());
                   }
                 }
 );
@@ -109,20 +113,36 @@
             }
           }
  catch (          IOException ex) {
+            try {
+              if (sdt != null) {
+                targets.remove(sdt);
+                sdt.close();
+              }
+            }
+ catch (            Exception e) {
+              HOST_LOG.error(e);
+            }
+            StringWriter sw=new StringWriter();
+            PrintWriter pw=new PrintWriter(sw);
+            ex.printStackTrace(pw);
+            pw.flush();
             canSnapshot="FAILURE";
-            err_msg="SNAPSHOT INITIATION OF " + saveFilePath + "RESULTED IN IOException: "+ ex.getMessage();
+            err_msg="SNAPSHOT INITIATION OF " + saveFilePath + "RESULTED IN IOException: \n"+ sw.toString();
           }
           result.addRow(Integer.parseInt(context.getSite().getHost().getTypeName()),hostname,table.getTypeName(),canSnapshot,err_msg);
         }
 synchronized (m_taskListsForSites) {
           if (!partitionedSnapshotTasks.isEmpty() || !replicatedSnapshotTasks.isEmpty()) {
             SnapshotSiteProcessor.ExecutionSitesCurrentlySnapshotting.set(VoltDB.instance().getLocalSites().values().size());
+            for (int ii=0; ii < numLocalSites; ii++) {
+              m_taskListsForSites.add(new ArrayDeque<SnapshotTableTask>());
+            }
           }
  else {
             SnapshotRegistry.discardSnapshot(snapshotRecord);
           }
           for (int ii=0; ii < numLocalSites && !partitionedSnapshotTasks.isEmpty(); ii++) {
-            m_taskListsForSites.add(new ArrayDeque<SnapshotTableTask>(partitionedSnapshotTasks));
+            m_taskListsForSites.get(ii).addAll(partitionedSnapshotTasks);
           }
           int siteIndex=0;
           for (          SnapshotTableTask t : replicatedSnapshotTasks) {
@@ -131,7 +151,20 @@ synchronized (m_taskListsForSites) {
         }
       }
  catch (      Exception ex) {
-        result.addRow(Integer.parseInt(context.getSite().getHost().getTypeName()),hostname,"","FAILURE","SNAPSHOT INITIATION OF " + file_path + file_nonce+ "RESULTED IN Exception: "+ ex.getMessage());
+        m_taskListsForSites.clear();
+        for (        SnapshotDataTarget sdt : targets) {
+          try {
+            sdt.close();
+          }
+ catch (          Exception e) {
+            HOST_LOG.error(ex);
+          }
+        }
+        StringWriter sw=new StringWriter();
+        PrintWriter pw=new PrintWriter(sw);
+        ex.printStackTrace(pw);
+        pw.flush();
+        result.addRow(Integer.parseInt(context.getSite().getHost().getTypeName()),hostname,"","FAILURE","SNAPSHOT INITIATION OF " + file_path + file_nonce+ "RESULTED IN Exception: \n"+ sw.toString());
         HOST_LOG.error(ex);
       }
  finally {
