@@ -1,0 +1,39 @@
+{
+  if ((userName == null) || (userName == "")) {
+    if ((hashedPassword != null) && (hashedPassword.length > 0)) {
+      throw new IOException("Username was null but password was not.");
+    }
+    try {
+      if (m_unauthCient == null) {
+        m_unauthCient=(ClientImpl)ClientFactory.createClient();
+        m_unauthCient.createConnection(m_hostname,m_port,null,null);
+      }
+    }
+ catch (    IOException e) {
+      m_unauthCient=null;
+      throw e;
+    }
+    assert(m_unauthCient != null);
+    return m_unauthCient;
+  }
+  int passHash=0;
+  if (hashedPassword != null)   passHash=Arrays.hashCode(hashedPassword);
+  Connection conn=m_connections.get(userName);
+  if (conn != null) {
+    if (conn.passHash != passHash) {
+      throw new IOException("Incorrect authorization credentials.");
+    }
+    conn.refCount++;
+  }
+ else {
+    conn=new Connection();
+    conn.refCount=1;
+    conn.passHash=passHash;
+    conn.hashedPassword=Arrays.copyOf(hashedPassword,hashedPassword.length);
+    conn.user=userName;
+    conn.client=(ClientImpl)ClientFactory.createClient();
+    conn.client.createConnectionWithHashedCredentials(m_hostname,m_port,userName,hashedPassword);
+    attemptToShrinkPoolIfNeeded();
+  }
+  return conn.client;
+}
