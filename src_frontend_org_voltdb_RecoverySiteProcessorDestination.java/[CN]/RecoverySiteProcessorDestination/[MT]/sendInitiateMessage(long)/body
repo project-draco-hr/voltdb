@@ -1,0 +1,35 @@
+{
+  ByteBuffer buf=ByteBuffer.allocate(2048);
+  BBContainer container=DBBPool.wrapBB(buf);
+  RecoveryMessage recoveryMessage=new RecoveryMessage(container,m_siteId,txnId);
+  try {
+    m_mailbox.send(m_sourceSiteId,0,recoveryMessage);
+  }
+ catch (  MessagingException e) {
+    throw new RuntimeException(e);
+  }
+  while (true) {
+    VoltMessage message=m_mailbox.recv();
+    if (message != null) {
+      if (message instanceof RecoveryMessage) {
+        RecoveryMessage rm=(RecoveryMessage)message;
+        if (rm.type() == RecoveryMessageType.Initiate) {
+          m_stopBeforeTxnId=rm.txnId();
+          recoveryLog.info("Recovery initiate ack received at site " + m_siteId + " from site "+ rm.sourceSite()+ " will sync after txnId "+ rm.txnId());
+          return;
+        }
+ else {
+          VoltDB.crashVoltDB();
+        }
+        return;
+      }
+ else {
+        m_messageHandler.handleMessage(message);
+      }
+      continue;
+    }
+ else {
+      Thread.yield();
+    }
+  }
+}

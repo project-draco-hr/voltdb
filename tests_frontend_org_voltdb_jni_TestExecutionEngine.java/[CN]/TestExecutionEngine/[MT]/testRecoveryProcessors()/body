@@ -11,7 +11,7 @@
   int WAREHOUSE_TABLEID=warehouseTableId(catalog);
   int STOCK_TABLEID=stockTableId(catalog);
   loadTestTables(catalog);
-  HashMap<Pair<String,Integer>,HashSet<Integer>> tablesAndDestinations=new HashMap<Pair<String,Integer>,HashSet<Integer>>();
+  final HashMap<Pair<String,Integer>,HashSet<Integer>> tablesAndDestinations=new HashMap<Pair<String,Integer>,HashSet<Integer>>();
   HashSet<Integer> destinations=new HashSet<Integer>();
   destinations.add(destinationId);
   tablesAndDestinations.put(Pair.of("STOCK",STOCK_TABLEID),destinations);
@@ -24,25 +24,20 @@
     }
   }
 ;
-  OnRecoveringPartitionInitiate onInitiate=new OnRecoveringPartitionInitiate(){
-    @Override public long pickTxnToStopAfter(    long recoveringPartitionTxnId){
-      return 0;
-    }
-  }
-;
   final MessageHandler mh=new MessageHandler(){
     @Override public void handleMessage(    VoltMessage message){
       fail();
     }
   }
 ;
-  final RecoverySiteProcessorSource sourceProcessor=new RecoverySiteProcessorSource(tablesAndDestinations,sourceEngine,sourceMailbox,sourceId,onSourceCompletion,onInitiate,mh);
-  Thread sourceThread=new Thread(){
+  Thread sourceThread=new Thread("Source thread"){
     @Override public void run(){
       VoltMessage message=sourceMailbox.recvBlocking();
       assertTrue(message != null);
       assertTrue(message instanceof RecoveryMessage);
-      sourceProcessor.handleRecoveryMessage((RecoveryMessage)message);
+      RecoveryMessage rm=(RecoveryMessage)message;
+      final RecoverySiteProcessorSource sourceProcessor=new RecoverySiteProcessorSource(rm.txnId(),rm.sourceSite(),tablesAndDestinations,sourceEngine,sourceMailbox,sourceId,onSourceCompletion,mh);
+      sourceProcessor.doRecoveryWork(0);
     }
   }
 ;
@@ -52,22 +47,28 @@
   tablesAndSources.put(Pair.of("WAREHOUSE",WAREHOUSE_TABLEID),sourceId);
   final MockMailbox destinationMailbox=new MockMailbox();
   MockMailbox.registerMailbox(destinationId,destinationMailbox);
-  final OnRecoveryCompletion onDestinationCompletion=new OnRecoveryCompletion(){
-    @Override public void complete(    long txnId){
+  final Runnable onDestinationCompletion=new Runnable(){
+    @Override public void run(){
       destinationCompleted.set(true);
     }
   }
 ;
-  Thread destinationThread=new Thread(){
+  Thread destinationThread=new Thread("Destination thread"){
     @Override public void run(){
-      RecoverySiteProcessorDestination destinationProcess=new RecoverySiteProcessorDestination(tablesAndSources,destinationEngine,destinationMailbox,destinationId,onDestinationCompletion,0,mh);
-      destinationProcess.sendInitiateMessage();
+      RecoverySiteProcessorDestination destinationProcess=new RecoverySiteProcessorDestination(tablesAndSources,destinationEngine,destinationMailbox,destinationId,onDestinationCompletion,mh);
+      destinationProcess.doRecoveryWork(-1);
+      destinationProcess.m_recoveryBegan=true;
+      int ii=0;
       while (!destinationCompleted.get()) {
         VoltMessage message=destinationMailbox.recvBlocking();
         assertTrue(message != null);
         assertTrue(message instanceof RecoveryMessage);
         destinationProcess.handleRecoveryMessage((RecoveryMessage)message);
         message.discard();
+        ii++;
+        if (ii == 4) {
+          destinationProcess.doRecoveryWork(0);
+        }
       }
     }
   }

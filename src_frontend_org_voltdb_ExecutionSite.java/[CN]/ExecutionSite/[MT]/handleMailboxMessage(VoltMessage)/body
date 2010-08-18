@@ -61,11 +61,19 @@
   }
  else   if (message instanceof RecoveryMessage) {
     RecoveryMessage rm=(RecoveryMessage)message;
+    if (m_recovering) {
+      assert(m_recoveryProcessor != null);
+    }
     if (m_recoveryProcessor != null) {
       m_recoveryProcessor.handleRecoveryMessage(rm);
     }
  else {
-      VoltDB.crashVoltDB();
+      assert(!m_recovering);
+      assert(m_recoveryProcessor == null);
+      assert(rm.type() == RecoveryMessageType.Initiate);
+      final long recoveringPartitionTxnId=rm.txnId();
+      m_recoveryLog.info("Recovery initiate received at site " + m_siteId + " from site "+ rm.sourceSite());
+      m_recoveryProcessor=RecoverySiteProcessorSource.createProcessor(recoveringPartitionTxnId,rm.sourceSite(),m_context.database,m_context.siteTracker,ee,m_mailbox,m_siteId,m_onRecoveryCompletion,m_messageHandler);
     }
   }
  else   if (message instanceof FragmentResponseMessage) {

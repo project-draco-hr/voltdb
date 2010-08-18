@@ -10,6 +10,13 @@
   }
   try {
     while (m_shouldContinue) {
+      if (m_recovering && !m_haveRecoveryPermit) {
+        Long safeTxnId=m_transactionQueue.safeToRecover();
+        if (safeTxnId != null && m_recoveryPermit.tryAcquire()) {
+          m_haveRecoveryPermit=true;
+          m_recoveryProcessor=RecoverySiteProcessorDestination.createProcessor(m_context.database,m_context.siteTracker,ee,m_mailbox,m_siteId,m_onRecoveryCompletion,m_messageHandler);
+        }
+      }
       TransactionState currentTxnState=m_transactionQueue.poll();
       if (currentTxnState == null) {
         VoltMessage message=m_mailbox.recv();
@@ -24,7 +31,13 @@
         }
       }
       if (currentTxnState != null) {
+        if (m_recoveryProcessor != null) {
+          m_recoveryProcessor.doRecoveryWork(currentTxnState.txnId);
+        }
         recursableRun(currentTxnState);
+      }
+ else       if (m_recoveryProcessor != null) {
+        m_recoveryProcessor.doRecoveryWork(m_transactionQueue.safeToRecover());
       }
     }
   }

@@ -1,2 +1,32 @@
 {
+  if (!m_sentInitiate) {
+    m_sentInitiate=true;
+    sendInitiateMessage(txnId);
+  }
+  if (txnId < m_stopBeforeTxnId) {
+    return;
+  }
+  m_recoveryBegan=true;
+  for (  RecoveryMessage rm : m_buffered) {
+    handleRecoveryMessage(rm);
+  }
+  m_buffered.clear();
+  while (true) {
+    VoltMessage message=m_mailbox.recv();
+    if (message != null) {
+      if (message instanceof RecoveryMessage) {
+        handleRecoveryMessage((RecoveryMessage)message);
+      }
+ else {
+        m_messageHandler.handleMessage(message);
+      }
+    }
+ else {
+      Thread.yield();
+    }
+    if (m_tables.isEmpty()) {
+      m_onCompletion.run();
+      return;
+    }
+  }
 }

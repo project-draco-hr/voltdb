@@ -3,22 +3,9 @@
   if (message.type() == RecoveryMessageType.Ack) {
     if (m_ackTracker.ackReceived(message.blockIndex())) {
       m_allowedBuffers++;
-    }
-  }
- else   if (message.type() == RecoveryMessageType.Initiate) {
-    final long lastCommittedTxnId=m_onInitiate.pickTxnToStopAfter(Long.MIN_VALUE);
-    m_txnIdToBlockAfter=m_onInitiate.pickTxnToStopAfter(message.txnId());
-    ByteBuffer buf=ByteBuffer.allocate(2048);
-    BBContainer cont=DBBPool.wrapBB(buf);
-    RecoveryMessage response=new RecoveryMessage(cont,m_siteId,m_txnIdToBlockAfter);
-    try {
-      m_mailbox.send(message.sourceSite(),0,response);
-    }
- catch (    MessagingException e) {
-      throw new RuntimeException(e);
-    }
-    if (lastCommittedTxnId == m_txnIdToBlockAfter) {
-      doRecoveryWork(lastCommittedTxnId);
+      if (m_allowedBuffers == m_numBuffers && m_tablesToStream.isEmpty()) {
+        m_onCompletion.run();
+      }
     }
   }
  else {

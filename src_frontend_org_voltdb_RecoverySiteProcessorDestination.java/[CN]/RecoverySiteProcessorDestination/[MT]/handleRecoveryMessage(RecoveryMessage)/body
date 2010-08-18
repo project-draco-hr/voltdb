@@ -1,19 +1,19 @@
 {
-  assert(message.type() == RecoveryMessageType.ScanTuples || message.type() == RecoveryMessageType.Complete || message.type() == RecoveryMessageType.Initiate);
-  if (message.type() == RecoveryMessageType.ScanTuples) {
-    m_engine.processRecoveryMessage(message.getMessageData());
-  }
- else   if (message.type() == RecoveryMessageType.Complete) {
-    m_tables.remove(message.tableId());
-    if (m_tables.isEmpty()) {
-      m_onCompletion.complete(m_resumeTxnId);
-    }
-  }
- else   if (message.type() == RecoveryMessageType.Initiate) {
-    m_resumeTxnId=message.txnId();
+  assert(message.type() == RecoveryMessageType.ScanTuples || message.type() == RecoveryMessageType.Complete);
+  if (!m_recoveryBegan) {
+    m_buffered.add(message);
     return;
   }
+  if (message.type() == RecoveryMessageType.ScanTuples) {
+    m_engine.processRecoveryMessage(message.getMessageData());
+    recoveryLog.info("Received tuple data at site " + m_siteId + " for table "+ m_tables.get(message.tableId()).m_name);
+  }
+ else   if (message.type() == RecoveryMessageType.Complete) {
+    RecoveryTable table=m_tables.remove(message.tableId());
+    recoveryLog.info("Received completion message at site " + m_siteId + " for table "+ table.m_name);
+  }
  else {
+    System.out.println(message.type());
     VoltDB.crashVoltDB();
   }
   int sourceSite=message.sourceSite();

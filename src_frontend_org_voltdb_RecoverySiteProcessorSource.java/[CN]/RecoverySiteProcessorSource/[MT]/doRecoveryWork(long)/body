@@ -1,9 +1,18 @@
 {
-  if (lastCommittedTxnId < m_txnIdToBlockAfter) {
-    return;
+  if (!m_sentInitiateResponse) {
+    m_sentInitiateResponse=true;
+    m_stopBeforeTxnId=Math.max(nextTxnId,m_destinationStoppedBeforeTxnId);
+    ByteBuffer buf=ByteBuffer.allocate(2048);
+    BBContainer cont=DBBPool.wrapBB(buf);
+    RecoveryMessage response=new RecoveryMessage(cont,m_siteId,m_stopBeforeTxnId);
+    try {
+      m_mailbox.send(m_destinationSiteId,0,response);
+    }
+ catch (    MessagingException e) {
+      throw new RuntimeException(e);
+    }
   }
- else   if (lastCommittedTxnId > m_txnIdToBlockAfter) {
-    recoveryLog.error("Last committed txnId " + lastCommittedTxnId + " is after the txnid to block after "+ m_txnIdToBlockAfter+ " recovery has failed");
+  if (nextTxnId < m_stopBeforeTxnId) {
     return;
   }
   while (true) {
@@ -16,6 +25,7 @@
       buffer.position(RecoveryMessage.getHeaderLength());
       RecoveryTable table=m_tablesToStream.peek();
       int serialized=m_engine.tableStreamSerializeMore(container,table.m_tableId,TableStreamType.RECOVERY);
+      recoveryLog.info("Serialized " + serialized + " for table "+ table.m_name);
       if (serialized <= 0) {
         VoltDB.crashVoltDB();
       }
@@ -48,15 +58,18 @@
       }
     }
     if (m_tablesToStream.isEmpty()) {
+      if (!m_recoveryComplete) {
 synchronized (this) {
-        m_recoveryComplete=true;
-        BBContainer buffer=null;
-        while ((buffer=m_buffers.poll()) != null) {
-          m_bufferToOriginMap.remove(buffer).discard();
+          m_recoveryComplete=true;
+          BBContainer buffer=null;
+          while ((buffer=m_buffers.poll()) != null) {
+            m_bufferToOriginMap.remove(buffer).discard();
+          }
         }
       }
-      m_onCompletion.run();
-      return;
+      if (!m_ackTracker.hasOutstanding()) {
+        return;
+      }
     }
     VoltMessage message=m_mailbox.recv();
     if (message != null) {
@@ -67,6 +80,8 @@ synchronized (this) {
         m_messageHandler.handleMessage(message);
       }
     }
-    Thread.yield();
+ else {
+      Thread.yield();
+    }
   }
 }
