@@ -2,12 +2,20 @@
   final long now=EstTime.currentTimeMillis();
   final FastDeserializer fds=new FastDeserializer(buf);
   final StoredProcedureInvocation task=fds.readObject(StoredProcedureInvocation.class);
-  final Procedure catProc=m_catalogContext.get().procedures.get(task.procName);
+  final CatalogContext catalogContext=m_catalogContext.get();
+  final Procedure catProc=catalogContext.procedures.get(task.procName);
+  AuthSystem.AuthUser user=catalogContext.authSystem.getUser(handler.m_username);
+  if (user == null) {
+    final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],"User " + handler.m_username + " has been removed from the system via a catalog update",task.clientHandle);
+    authLog.info("User " + handler.m_username + " has been removed from the system via a catalog update");
+    c.writeStream().enqueue(errorResponse);
+    return;
+  }
   if (task.procName.startsWith("@")) {
     if (task.procName.equals("@AdHoc")) {
-      if (!handler.m_user.hasAdhocPermission()) {
+      if (!user.hasAdhocPermission()) {
         final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],"User does not have @AdHoc permission",task.clientHandle);
-        authLog.l7dlog(Level.INFO,LogKeys.auth_ClientInterface_LackingPermissionForAdhoc.name(),new String[]{handler.m_user.m_name},null);
+        authLog.l7dlog(Level.INFO,LogKeys.auth_ClientInterface_LackingPermissionForAdhoc.name(),new String[]{user.m_name},null);
         c.writeStream().enqueue(errorResponse);
         return;
       }
@@ -21,9 +29,9 @@
       m_asyncCompilerWorkThread.planSQL(sql,task.clientHandle,handler.connectionId(),handler.m_hostname,c);
       return;
     }
-    if (!handler.m_user.hasSystemProcPermission()) {
-      authLog.l7dlog(Level.INFO,LogKeys.auth_ClientInterface_LackingPermissionForSysproc.name(),new String[]{handler.m_user.m_name,task.procName},null);
-      final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],"User " + handler.m_user.m_name + " does not have sysproc permission",task.clientHandle);
+    if (!user.hasSystemProcPermission()) {
+      authLog.l7dlog(Level.INFO,LogKeys.auth_ClientInterface_LackingPermissionForSysproc.name(),new String[]{user.m_name,task.procName},null);
+      final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],"User " + user.m_name + " does not have sysproc permission",task.clientHandle);
       c.writeStream().enqueue(errorResponse);
       return;
     }
@@ -40,8 +48,8 @@
       return;
     }
   }
- else   if (!handler.m_user.hasPermission(catProc)) {
-    authLog.l7dlog(Level.INFO,LogKeys.auth_ClientInterface_LackingPermissionForProcedure.name(),new String[]{handler.m_user.m_name,task.procName},null);
+ else   if (!user.hasPermission(catProc)) {
+    authLog.l7dlog(Level.INFO,LogKeys.auth_ClientInterface_LackingPermissionForProcedure.name(),new String[]{user.m_name,task.procName},null);
     final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],"User does not have permission to invoke " + task.procName,task.clientHandle);
     c.writeStream().enqueue(errorResponse);
     return;

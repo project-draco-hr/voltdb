@@ -5,28 +5,27 @@
   for (  int survivor : survivors) {
     survivorSet.add(survivor);
   }
-  m_recoveryLog.info("Sending fault data " + m_knownFailedHosts.toString() + " to "+ survivorSet.toString()+ " survivors with lastKnownGloballyCommitedMultiPartTxnId "+ lastKnownGloballyCommitedMultiPartTxnId);
+  m_recoveryLog.info("Sending fault data " + m_knownFailedSites.toString() + " to "+ survivorSet.toString()+ " survivors with lastKnownGloballyCommitedMultiPartTxnId "+ lastKnownGloballyCommitedMultiPartTxnId);
   try {
-    for (    Integer hostId : m_knownFailedHosts) {
+    for (    Integer site : m_knownFailedSites) {
+      Integer hostId=m_context.siteTracker.getHostForSite(site);
       HashMap<Integer,Long> siteMap=m_newestSafeTransactionForInitiatorLedger.get(hostId);
       if (siteMap == null) {
         siteMap=new HashMap<Integer,Long>();
         m_newestSafeTransactionForInitiatorLedger.put(hostId,siteMap);
       }
-      for (      Integer site : m_context.siteTracker.getAllSitesForHost(hostId)) {
-        if (m_context.siteTracker.getSiteForId(site).getIsexec() == false) {
-          Long txnId=m_transactionQueue.getNewestSafeTransactionForInitiator(site);
-          if (txnId == null) {
-            txnId=siteMap.get(site);
-            assert(txnId != null);
-          }
- else {
-            siteMap.put(site,txnId);
-          }
-          FailureSiteUpdateMessage srcmsg=new FailureSiteUpdateMessage(m_siteId,m_knownFailedHosts,site,txnId,lastKnownGloballyCommitedMultiPartTxnId);
-          m_mailbox.send(survivors,0,srcmsg);
-          expectedResponses+=(survivors.length);
+      if (m_context.siteTracker.getSiteForId(site).getIsexec() == false) {
+        Long txnId=m_transactionQueue.getNewestSafeTransactionForInitiator(site);
+        if (txnId == null) {
+          txnId=siteMap.get(site);
+          assert(txnId != null);
         }
+ else {
+          siteMap.put(site,txnId);
+        }
+        FailureSiteUpdateMessage srcmsg=new FailureSiteUpdateMessage(m_siteId,m_knownFailedSites,site,txnId,lastKnownGloballyCommitedMultiPartTxnId);
+        m_mailbox.send(survivors,0,srcmsg);
+        expectedResponses+=(survivors.length);
       }
     }
   }
