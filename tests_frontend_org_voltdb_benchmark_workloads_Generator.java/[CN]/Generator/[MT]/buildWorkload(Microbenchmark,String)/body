@@ -27,8 +27,7 @@
     List<ProcedureType> procList=toBuild.getProcedure();
     myWL.procs=new String[procList.size()];
     myWL.percs=new double[procList.size()];
-    myWL.paramTypes=new String[procList.size()][];
-    myWL.generatorTypes=new GeneratorType[procList.size()][];
+    myWL.paramGenerators=new ParamGenerator[procList.size()][];
     myWL.params=new Object[procList.size()][];
     ListIterator<ProcedureType> procLI=procList.listIterator();
     int procIndex=0;
@@ -36,17 +35,42 @@
       ProcedureType proc=procLI.next();
       myWL.procs[procIndex]=proc.getProcName();
       myWL.percs[procIndex]=proc.getPercOfWL().doubleValue();
-      List<ParamType> paramList=proc.getParam();
-      myWL.paramTypes[procIndex]=new String[paramList.size()];
-      myWL.generatorTypes[procIndex]=new GeneratorType[paramList.size()];
-      myWL.params[procIndex]=new Object[paramList.size()];
-      ListIterator<ParamType> paramLI=paramList.listIterator();
-      int paramIndex=0;
-      while (paramLI.hasNext()) {
-        ParamType param=paramLI.next();
-        myWL.paramTypes[procIndex][paramIndex]=param.getType();
-        myWL.generatorTypes[procIndex][paramIndex]=param.getValue().getGenerator();
-        paramIndex++;
+      Class<?> proc_class=null;
+      for (      Class<?> clazz : m_projectBuilder.getProcedures()) {
+        if (clazz.getSimpleName().equals(proc.getProcName())) {
+          proc_class=clazz;
+          break;
+        }
+      }
+      if (proc_class == null) {
+        System.err.println("Stored Procedure not found: " + proc.getProcName());
+        System.exit(-1);
+      }
+      Method run_meth=null;
+      for (      Method meth : proc_class.getDeclaredMethods()) {
+        if (meth.getName().equals("run")) {
+          run_meth=meth;
+          break;
+        }
+      }
+      if (run_meth == null) {
+        System.err.println("No run method in 'Stored Procedure': " + proc.getProcName());
+        System.exit(-1);
+      }
+      ParamType[] paramList=new ParamType[run_meth.getParameterTypes().length];
+      for (      ParamType customParam : proc.getParam()) {
+        if (customParam.getOffset() != null) {
+          paramList[customParam.getOffset()]=customParam;
+        }
+ else {
+          System.err.println("Customizing param specified with no offset: " + customParam);
+          throw new RuntimeException("Customizing param specified with no offset: " + customParam);
+        }
+      }
+      myWL.paramGenerators[procIndex]=new ParamGenerator[paramList.length];
+      myWL.params[procIndex]=new Object[paramList.length];
+      for (int i=0; i < run_meth.getParameterTypes().length; i++) {
+        myWL.paramGenerators[procIndex][i]=GeneratorFactory.getParamGenerator(run_meth.getParameterTypes()[i],paramList[i]);
       }
       procIndex++;
     }
