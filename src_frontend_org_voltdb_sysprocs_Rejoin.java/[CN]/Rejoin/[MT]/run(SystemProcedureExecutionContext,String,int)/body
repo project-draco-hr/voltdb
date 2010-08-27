@@ -1,10 +1,9 @@
 {
-  VoltDBInterface instance=VoltDB.instance();
-  HostMessenger hm=instance.getHostMessenger();
-  int hostId=hm.findDownHostId();
-  if (hostId == -1) {
+  HashSet<Integer> downHosts=VoltDB.instance().getCatalogContext().siteTracker.getAllDownHosts();
+  if (downHosts.isEmpty()) {
     throw new VoltAbortException("Unable to find down node to replace.");
   }
+  int hostId=downHosts.iterator().next();
   VoltTable[] results;
   SynthesizedPlanFragment[] pfs=new SynthesizedPlanFragment[2];
   pfs[1]=new SynthesizedPlanFragment();
@@ -41,8 +40,17 @@
   pfs[0].multipartition=false;
   pfs[0].parameters=new ParameterSet();
   results=executeSysProcPlanFragments(pfs,DEP_rejoinAggregate);
+  StringBuilder sb=new StringBuilder();
   assert(results.length == 1);
   if (errorTable.getRowCount() > 0) {
+    while (errorTable.advanceRow()) {
+      String s=errorTable.getString(1);
+      if (s != null) {
+        sb.append(s);
+        sb.append('\n');
+      }
+    }
+    throw new VoltAbortException(sb.toString());
   }
-  return 0;
+  return new VoltTable[0];
 }

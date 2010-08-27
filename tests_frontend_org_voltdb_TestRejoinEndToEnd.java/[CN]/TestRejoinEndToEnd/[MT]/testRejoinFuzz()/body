@@ -1,0 +1,99 @@
+{
+  VoltProjectBuilder builder=getBuilderForTest();
+  builder.setSecurityEnabled(true);
+  final int numHosts=10;
+  final int numTuples=60000;
+  final int kfactor=4;
+  LocalCluster cluster=new LocalCluster("rejoin.jar",2,numHosts,4,BackendTarget.NATIVE_EE_JNI);
+  boolean success=cluster.compile(builder,false);
+  assertTrue(success);
+  copyFile(builder.getPathToDeployment(),Configuration.getPathToCatalogForTest("rejoin.xml"));
+  cluster.setHasLocalServer(false);
+  ArrayList<Integer> serverValues=new ArrayList<Integer>();
+  cluster.startUp();
+  Client client=ClientFactory.createClient(m_cconfig);
+  client.createConnection("localhost");
+  Random r=new Random();
+  for (int ii=0; ii < numTuples; ii++) {
+    int value=r.nextInt(numTuples);
+    serverValues.add(value);
+    client.callProcedure(new ProcedureCallback(){
+      @Override public void clientCallback(      ClientResponse clientResponse) throws Exception {
+        if (clientResponse.getStatus() != ClientResponse.SUCCESS) {
+          System.err.println(clientResponse.getStatusString());
+        }
+        if (clientResponse.getResults()[0].asScalarLong() != 1) {
+          System.err.println("Update didn't happen");
+        }
+      }
+    }
+,"InsertPartitioned",ii,value);
+  }
+  ArrayList<Integer> lastServerValues=new ArrayList<Integer>(serverValues);
+  client.drain();
+  client.close();
+  Random forWhomTheBellTolls=new Random();
+  for (int zz=0; zz < 10; zz++) {
+    client=ClientFactory.createClient(m_cconfig);
+    client.createConnection("localhost");
+    try {
+      VoltTable results=client.callProcedure("SelectPartitioned").getResults()[0];
+      while (results.advanceRow()) {
+        int key=(int)results.getLong(0);
+        int value=(int)results.getLong(1);
+        if (serverValues.get(key).intValue() != value) {
+          System.out.println("zz is " + zz + " and server value is "+ value+ " and expected was "+ serverValues.get(key).intValue()+ " and last time it was "+ lastServerValues.get(key).intValue());
+        }
+        assertTrue(serverValues.get(key).intValue() == value);
+      }
+      client.close();
+      ArrayList<Integer> toKill=new ArrayList<Integer>();
+      while (toKill.size() < kfactor) {
+        int candidate=forWhomTheBellTolls.nextInt(numHosts);
+        if (!toKill.contains(candidate)) {
+          toKill.add(candidate);
+        }
+      }
+      System.out.println("Killing " + toKill.toString());
+      int toConnectTo=forWhomTheBellTolls.nextInt(numHosts);
+      while (toKill.contains(toConnectTo)) {
+        toConnectTo=forWhomTheBellTolls.nextInt(numHosts);
+      }
+      for (      Integer uhoh : toKill) {
+        cluster.shutDownSingleHost(uhoh);
+      }
+      int recoverNow=toKill.size() / 2;
+      for (int ii=0; ii < recoverNow; ii++) {
+        cluster.recoverOne(toKill.remove(0),toConnectTo,m_username + ":" + m_password+ "@localhost");
+      }
+      client=ClientFactory.createClient(m_cconfig);
+      client.createConnection("localhost",Client.VOLTDB_SERVER_PORT + toConnectTo);
+      lastServerValues=new ArrayList<Integer>(serverValues);
+      for (int ii=0; ii < numTuples; ii++) {
+        int updateKey=r.nextInt(numTuples);
+        int updateValue=r.nextInt(numTuples);
+        serverValues.set(updateKey,updateValue);
+        client.callProcedure(new ProcedureCallback(){
+          @Override public void clientCallback(          ClientResponse clientResponse) throws Exception {
+            if (clientResponse.getStatus() != ClientResponse.SUCCESS) {
+              System.err.println(clientResponse.getStatusString());
+            }
+            if (clientResponse.getResults()[0].asScalarLong() != 1) {
+              System.err.println("Update didn't happen");
+            }
+          }
+        }
+,"UpdatePartitioned",updateValue,updateKey);
+      }
+      for (      Integer recover : toKill) {
+        cluster.recoverOne(recover,toConnectTo,m_username + ":" + m_password+ "@localhost");
+      }
+      client.drain();
+    }
+  finally {
+      client.close();
+    }
+    System.out.println("Finished iteration " + zz);
+  }
+  cluster.shutDown();
+}

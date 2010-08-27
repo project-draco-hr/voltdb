@@ -10,7 +10,11 @@
     System.out.println("********** Starting cluster at: " + startTime);
   }
   int oopStartIndex=0;
+  m_pipes.clear();
+  m_cluster.clear();
   if (m_hasLocalServer) {
+    m_cluster.add(null);
+    m_pipes.add(null);
     Configuration config=new Configuration();
     config.m_backend=m_target;
     config.m_noLoadLibVOLTDB=(m_target == BackendTarget.HSQLDB_BACKEND);
@@ -23,38 +27,16 @@
     oopStartIndex++;
   }
   for (int i=oopStartIndex; i < m_hostCount; i++) {
-    try {
-      m_procBuilder.command().set(m_portOffset,String.valueOf(VoltDB.DEFAULT_PORT + i));
-      m_procBuilder.command().set(m_pathToDeploymentOffset,m_pathToDeployment);
-      m_procBuilder.command().set(m_rejoinOffset,"");
-      Process proc=m_procBuilder.start();
-      m_cluster.add(proc);
-      String testoutputdir=m_buildDir + File.separator + "testoutput";
-      File dir=new File(testoutputdir);
-      if (dir.exists()) {
-        assert(dir.isDirectory());
-      }
- else {
-        boolean status=dir.mkdirs();
-        assert(status);
-      }
-      PipeToFile ptf=new PipeToFile(testoutputdir + File.separator + getName()+ "-"+ i+ ".txt",proc.getInputStream());
-      m_pipes.add(ptf);
-      Thread t=new Thread(ptf);
-      t.setName("ClusterPipe:" + String.valueOf(i));
-      t.start();
-    }
- catch (    IOException ex) {
-      System.out.println("Failed to start cluster process:" + ex.getMessage());
-      Logger.getLogger(LocalCluster.class.getName()).log(Level.SEVERE,null,ex);
-      assert(false);
-    }
+    startOne(i);
   }
   boolean allReady;
   do {
     if (logtime)     System.out.println("********** pre witness: " + (System.currentTimeMillis() - startTime) + " ms");
     allReady=true;
     for (    PipeToFile pipeToFile : m_pipes) {
+      if (pipeToFile == null) {
+        continue;
+      }
       if (pipeToFile.m_witnessedReady.get() != true) {
         try {
 synchronized (pipeToFile) {
@@ -76,7 +58,11 @@ synchronized (pipeToFile) {
   m_running=true;
   if (m_failureState != FailureState.ALL_RUNNING) {
     System.out.println("Killing one cluster member.");
-    Process proc=m_cluster.get(0);
+    int procIndex=0;
+    if (m_hasLocalServer) {
+      procIndex=1;
+    }
+    Process proc=m_cluster.get(procIndex);
     proc.destroy();
     int retval=0;
     try {
@@ -86,55 +72,14 @@ synchronized (pipeToFile) {
       System.out.println("External VoltDB process is acting crazy.");
     }
  finally {
-      m_cluster.set(0,null);
+      m_cluster.set(procIndex,null);
     }
     if (retval != 0 && retval != 143) {
       System.out.println("External VoltDB process terminated abnormally with return: " + retval);
     }
   }
   if (m_failureState == FailureState.ONE_RECOVERING) {
-    System.out.println("Adding a cluster member in the recovery state.");
     int hostId=m_hasLocalServer ? 1 : 0;
-    int portNo=VoltDB.DEFAULT_PORT + hostId;
-    int portNoToRejoin=VoltDB.DEFAULT_PORT + hostId + 1;
-    if (m_hasLocalServer)     portNoToRejoin=VoltDB.DEFAULT_PORT;
-    PipeToFile ptf=null;
-    try {
-      m_procBuilder.command().set(m_portOffset,String.valueOf(portNo));
-      m_procBuilder.command().set(m_pathToDeploymentOffset,m_pathToDeployment);
-      m_procBuilder.command().set(m_rejoinOffset,"localhost:" + String.valueOf(portNoToRejoin));
-      Process proc=m_procBuilder.start();
-      m_cluster.set(0,proc);
-      String testoutputdir=m_buildDir + File.separator + "testoutput";
-      File dir=new File(testoutputdir);
-      if (dir.exists()) {
-        assert(dir.isDirectory());
-      }
- else {
-        boolean status=dir.mkdirs();
-        assert(status);
-      }
-      ptf=new PipeToFile(testoutputdir + File.separator + getName()+ "-"+ hostId+ ".txt",proc.getInputStream());
-      m_pipes.set(0,ptf);
-      Thread t=new Thread(ptf);
-      t.setName("ClusterPipe:" + String.valueOf(hostId));
-      t.start();
-    }
- catch (    IOException ex) {
-      System.out.println("Failed to start cluster process:" + ex.getMessage());
-      Logger.getLogger(LocalCluster.class.getName()).log(Level.SEVERE,null,ex);
-      assert(false);
-    }
-    while (ptf.m_witnessedReady.get() != true) {
-      if (logtime)       System.out.println("********** pre witness: " + (System.currentTimeMillis() - startTime) + " ms");
-      try {
-synchronized (ptf) {
-          ptf.wait();
-        }
-      }
- catch (      InterruptedException ex) {
-        Logger.getLogger(LocalCluster.class.getName()).log(Level.SEVERE,null,ex);
-      }
-    }
+    recoverOne(logtime,startTime,hostId);
   }
 }

@@ -1,0 +1,37 @@
+{
+  ArrayDeque<VoltFault> pendingClearedFaults;
+synchronized (this) {
+    if (m_pendingClearedFaults.isEmpty()) {
+      return;
+    }
+    pendingClearedFaults=m_pendingClearedFaults;
+    m_pendingClearedFaults=new ArrayDeque<VoltFault>();
+  }
+  HashMap<FaultType,HashSet<VoltFault>> faultsMap=new HashMap<FaultType,HashSet<VoltFault>>();
+  while (!pendingClearedFaults.isEmpty()) {
+    VoltFault fault=pendingClearedFaults.poll();
+    HashSet<VoltFault> faults=faultsMap.get(fault.getFaultType());
+    if (faults == null) {
+      faults=new HashSet<VoltFault>();
+      faultsMap.put(fault.getFaultType(),faults);
+    }
+    boolean added=faults.add(fault);
+    m_knownFaults.get(fault.getFaultType()).remove(fault);
+    assert(added);
+  }
+  for (  Map.Entry<FaultType,HashSet<VoltFault>> entry : faultsMap.entrySet()) {
+    TreeMap<Integer,List<FaultHandlerData>> handler_map=m_faultHandlers.get(entry.getKey());
+    if (handler_map == null) {
+      handler_map=m_faultHandlers.get(FaultType.UNKNOWN);
+      if (handler_map == null) {
+        registerDefaultHandler(new DefaultFaultHandler());
+        handler_map=m_faultHandlers.get(FaultType.UNKNOWN);
+      }
+    }
+    for (    List<FaultHandlerData> handler_list : handler_map.values()) {
+      for (      FaultHandlerData handlerData : handler_list) {
+        handlerData.m_handler.faultCleared(entry.getValue());
+      }
+    }
+  }
+}

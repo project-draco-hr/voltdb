@@ -1,0 +1,51 @@
+{
+  System.out.println("Rejoining " + hostId);
+  int portNo=VoltDB.DEFAULT_PORT + hostId;
+  int portNoToRejoin=VoltDB.DEFAULT_PORT + hostId + 1;
+  if (m_hasLocalServer)   portNoToRejoin=VoltDB.DEFAULT_PORT;
+  if (portOffset != null) {
+    portNoToRejoin=VoltDB.DEFAULT_PORT + portOffset;
+  }
+  PipeToFile ptf=null;
+  try {
+    m_procBuilder.command().set(m_portOffset,String.valueOf(portNo));
+    m_procBuilder.command().set(m_pathToDeploymentOffset,m_pathToDeployment);
+    m_procBuilder.command().set(m_rejoinOffset,rejoinHost + ":" + String.valueOf(portNoToRejoin));
+    if (m_debug) {
+      m_procBuilder.command().set(m_debug1Offset,"-Xdebug");
+      m_procBuilder.command().set(m_debug2Offset,"-agentlib:jdwp=transport=dt_socket,address=" + m_debugPortOffset++ + ",server=y,suspend=n");
+    }
+    Process proc=m_procBuilder.start();
+    m_cluster.set(hostId,proc);
+    String testoutputdir=m_buildDir + File.separator + "testoutput";
+    File dir=new File(testoutputdir);
+    if (dir.exists()) {
+      assert(dir.isDirectory());
+    }
+ else {
+      boolean status=dir.mkdirs();
+      assert(status);
+    }
+    ptf=new PipeToFile(testoutputdir + File.separator + getName()+ "-"+ hostId+ ".txt",proc.getInputStream(),PipeToFile.m_rejoinToken);
+    m_pipes.set(hostId,ptf);
+    Thread t=new Thread(ptf);
+    t.setName("ClusterPipe:" + String.valueOf(hostId));
+    t.start();
+  }
+ catch (  IOException ex) {
+    System.out.println("Failed to start cluster process:" + ex.getMessage());
+    Logger.getLogger(LocalCluster.class.getName()).log(Level.SEVERE,null,ex);
+    assert(false);
+  }
+  while (ptf.m_witnessedReady.get() != true) {
+    if (logtime)     System.out.println("********** pre witness: " + (System.currentTimeMillis() - startTime) + " ms");
+    try {
+synchronized (ptf) {
+        ptf.wait();
+      }
+    }
+ catch (    InterruptedException ex) {
+      Logger.getLogger(LocalCluster.class.getName()).log(Level.SEVERE,null,ex);
+    }
+  }
+}

@@ -32,7 +32,7 @@ synchronized (m_startAndStopLock) {
     VLog.log("\n### RealVoltDB.initialize() for port %d ###",config.m_port);
     hostLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_StartupString.name(),null);
     m_faultManager=new FaultDistributor();
-    m_faultManager.registerFaultHandler(FaultType.NODE_FAILURE,new VoltDBNodeFailureFaultHandler(),NodeFailureFault.NODE_FAILURE_CATALOG);
+    m_faultManager.registerFaultHandler(FaultType.NODE_FAILURE,m_faultHandler,NodeFailureFault.NODE_FAILURE_CATALOG);
     if (config.listenForDumpRequests)     DumpManager.init();
     readBuildInfo();
     m_config=config;
@@ -89,10 +89,12 @@ synchronized (m_startAndStopLock) {
       }
       hostLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_CreatingVoltDB.name(),new Object[]{m_catalogContext.numberOfNodes,leader},null);
       m_messenger=new HostMessenger(m_network,leader,m_catalogContext.numberOfNodes,catalogCRC,hostLog);
-      m_instanceId=m_messenger.waitForGroupJoin();
+      Object retval[]=m_messenger.waitForGroupJoin();
+      m_instanceId=new Object[]{retval[0],retval[1]};
     }
  else {
       initializeForRejoin(config,catalogCRC);
+      ExecutionSite.recoveringSiteCount.set(m_catalogContext.siteTracker.getLiveExecutionSitesForHost(m_messenger.getHostId()).size());
     }
     int myHostId=m_messenger.getHostId();
     try {
@@ -183,8 +185,8 @@ synchronized (runner) {
     }
     hostLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_StartingNetwork.name(),null);
     m_network.start();
+    m_messenger.sendReadyMessage();
     if (config.m_rejoinToHostAndPort == null) {
-      m_messenger.sendReadyMessage();
       m_messenger.waitForAllHostsToBeReady();
     }
     fivems=new PeriodicWorkTimerThread(m_clientInterfaces,m_statsManager);

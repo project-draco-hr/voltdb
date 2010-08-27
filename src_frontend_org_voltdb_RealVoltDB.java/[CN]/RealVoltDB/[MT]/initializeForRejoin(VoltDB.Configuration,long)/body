@@ -64,27 +64,33 @@
   }
   Client client=ClientFactory.createClient();
   ClientResponse response=null;
-  SyncCallback scb=new SyncCallback();
+  RejoinCallback rcb=new RejoinCallback(){
+  }
+;
   try {
     client.createConnection(rejoinHost,rejoinPort,rejoinUser,rejoinPass);
-    client.callProcedure(scb,"@Rejoin","localhost",config.m_internalPort);
+    InetSocketAddress inetsockaddr=new InetSocketAddress(rejoinHost,rejoinPort);
+    SocketChannel socket=SocketChannel.open(inetsockaddr);
+    String hostname=socket.socket().getLocalAddress().getCanonicalHostName();
+    socket.close();
+    client.callProcedure(rcb,"@Rejoin",config.m_internalInterface != null ? config.m_internalInterface : hostname,config.m_internalPort);
   }
  catch (  Exception e) {
     hostLog.error("Problem connecting client: " + e.getMessage());
     System.exit(-1);
   }
-  m_instanceId=m_messenger.waitForGroupJoin();
-  try {
-    scb.waitForResponse();
-    response=scb.getResponse();
-    client.close();
-    if (response.getStatus() != ClientResponse.SUCCESS) {
-      hostLog.error("Unable to rejoin to cluster with error: " + response.getStatusString());
-      System.exit(-1);
-    }
+  Object retval[]=m_messenger.waitForGroupJoin();
+  m_instanceId=new Object[]{retval[0],retval[1]};
+  ArrayList<Integer> downHosts=(ArrayList<Integer>)retval[2];
+  System.out.println("Down hosts are " + downHosts.toString());
+  for (  Integer host : downHosts) {
+    m_faultHandler.handleNodeFailureFault(new NodeFailureFault(host,"UNKNOWN"));
   }
- catch (  Exception e) {
-    hostLog.error("Unable to rejoin to cluster with error: " + e.getMessage());
-    System.exit(-1);
+  try {
+    response=rcb.waitForResponse();
+  }
+ catch (  InterruptedException e) {
+    hostLog.error("Interrupted while attempting to rejoin cluster");
+    VoltDB.crashVoltDB();
   }
 }
