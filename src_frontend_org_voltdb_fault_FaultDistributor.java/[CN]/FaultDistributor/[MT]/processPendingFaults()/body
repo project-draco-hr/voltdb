@@ -7,24 +7,12 @@ synchronized (this) {
     pendingFaults=m_pendingFaults;
     m_pendingFaults=new ArrayDeque<VoltFault>();
   }
-  HashMap<FaultType,HashSet<VoltFault>> faultsMap=new HashMap<FaultType,HashSet<VoltFault>>();
-  while (!pendingFaults.isEmpty()) {
-    VoltFault fault=pendingFaults.poll();
-    if (duplicateCheck(fault)) {
-      continue;
-    }
-    HashSet<VoltFault> faults=faultsMap.get(fault.getFaultType());
-    if (faults == null) {
-      faults=new HashSet<VoltFault>();
-      faultsMap.put(fault.getFaultType(),faults);
-    }
-    boolean added=faults.add(fault);
-    assert(added);
-  }
-  if (faultsMap.isEmpty()) {
+  HashMap<FaultType,HashSet<VoltFault>> newFaults=organizeNewFaults(pendingFaults);
+  HashMap<FaultType,HashSet<VoltFault>> policiesMap=makePolicyDecisions(m_knownFaults,newFaults);
+  if (policiesMap.isEmpty()) {
     return;
   }
-  for (  Map.Entry<FaultType,HashSet<VoltFault>> entry : faultsMap.entrySet()) {
+  for (  Map.Entry<FaultType,HashSet<VoltFault>> entry : newFaults.entrySet()) {
     TreeMap<Integer,List<FaultHandlerData>> handler_map=m_faultHandlers.get(entry.getKey());
     if (handler_map == null) {
       handler_map=m_faultHandlers.get(FaultType.UNKNOWN);
