@@ -79,18 +79,20 @@
     hostLog.error("Problem connecting client: " + e.getMessage());
     System.exit(-1);
   }
-  Object retval[]=m_messenger.waitForGroupJoin();
+  Object retval[]=m_messenger.waitForGroupJoin(3000);
   m_instanceId=new Object[]{retval[0],retval[1]};
-  ArrayList<Integer> downHosts=(ArrayList<Integer>)retval[2];
+  HashSet<Integer> downHosts=(HashSet<Integer>)retval[2];
   System.out.println("Down hosts are " + downHosts.toString());
-  for (  Integer host : downHosts) {
-    m_faultHandler.handleNodeFailureFault(new NodeFailureFault(host,"UNKNOWN"));
-  }
   try {
-    response=rcb.waitForResponse();
+    response=rcb.waitForResponse(3000);
+    if (response == null) {
+      hostLog.fatal("Recovering node timed out rejoining");
+      VoltDB.crashVoltDB();
+    }
   }
  catch (  InterruptedException e) {
     hostLog.error("Interrupted while attempting to rejoin cluster");
     VoltDB.crashVoltDB();
   }
+  return downHosts;
 }

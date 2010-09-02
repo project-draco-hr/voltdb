@@ -7,6 +7,7 @@
     portNoToRejoin=VoltDB.DEFAULT_PORT + portOffset;
   }
   PipeToFile ptf=null;
+  long start=0;
   try {
     m_procBuilder.command().set(m_portOffset,String.valueOf(portNo));
     m_procBuilder.command().set(m_pathToDeploymentOffset,m_pathToDeployment);
@@ -16,7 +17,7 @@
       m_procBuilder.command().set(m_debug2Offset,"-agentlib:jdwp=transport=dt_socket,address=" + m_debugPortOffset++ + ",server=y,suspend=n");
     }
     Process proc=m_procBuilder.start();
-    m_cluster.set(hostId,proc);
+    start=System.currentTimeMillis();
     String testoutputdir=m_buildDir + File.separator + "testoutput";
     File dir=new File(testoutputdir);
     if (dir.exists()) {
@@ -27,7 +28,10 @@
       assert(status);
     }
     ptf=new PipeToFile(testoutputdir + File.separator + getName()+ "-"+ hostId+ ".txt",proc.getInputStream(),PipeToFile.m_rejoinToken);
-    m_pipes.set(hostId,ptf);
+synchronized (this) {
+      m_pipes.set(hostId,ptf);
+      m_cluster.set(hostId,proc);
+    }
     Thread t=new Thread(ptf);
     t.setName("ClusterPipe:" + String.valueOf(hostId));
     t.start();
@@ -37,7 +41,7 @@
     Logger.getLogger(LocalCluster.class.getName()).log(Level.SEVERE,null,ex);
     assert(false);
   }
-  while (ptf.m_witnessedReady.get() != true) {
+  while (ptf.m_witnessedReady.get() != true && !ptf.m_eof) {
     if (logtime)     System.out.println("********** pre witness: " + (System.currentTimeMillis() - startTime) + " ms");
     try {
 synchronized (ptf) {
@@ -47,5 +51,14 @@ synchronized (ptf) {
  catch (    InterruptedException ex) {
       Logger.getLogger(LocalCluster.class.getName()).log(Level.SEVERE,null,ex);
     }
+  }
+  if (ptf.m_witnessedReady.get()) {
+    long finish=System.currentTimeMillis();
+    System.out.println("Took " + (finish - start) + " milliseconds, time from init was "+ (finish - ptf.m_initTime));
+    return true;
+  }
+ else {
+    System.out.println("Recovering process exited before recovery completed");
+    return false;
   }
 }
