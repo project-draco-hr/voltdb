@@ -2,10 +2,10 @@
   VoltProjectBuilder builder=getBuilderForTest();
   builder.setSecurityEnabled(true);
   final int numHosts=10;
-  final int numTuples=60000;
   final int kfactor=4;
-  final LocalCluster cluster=new LocalCluster("rejoin.jar",2,numHosts,kfactor,BackendTarget.NATIVE_EE_JNI,LocalCluster.FailureState.ALL_RUNNING,false);
+  final LocalCluster cluster=new LocalCluster("rejoin.jar",2,numHosts,kfactor,BackendTarget.NATIVE_EE_JNI,LocalCluster.FailureState.ALL_RUNNING,true);
   cluster.setMaxHeap(256);
+  final int numTuples=cluster.isValgrind() ? 10000 : 60000;
   boolean success=cluster.compile(builder);
   assertTrue(success);
   copyFile(builder.getPathToDeployment(),Configuration.getPathToCatalogForTest("rejoin.xml"));
@@ -80,7 +80,7 @@
     for (    Integer uhoh : toKillFirst) {
       cluster.shutDownSingleHost(uhoh);
     }
-    Thread recoveryThread=new Thread(){
+    Thread recoveryThread=new Thread("Recovery thread"){
       @Override public void run(){
         for (        Integer dead : toKillFirst) {
           while (!cluster.recoverOne(dead,toConnectTo,m_username + ":" + m_password+ "@localhost")) {
@@ -90,17 +90,19 @@
       }
     }
 ;
-    Thread killerThread=new Thread(){
+    final java.util.concurrent.atomic.AtomicBoolean killerFail=new java.util.concurrent.atomic.AtomicBoolean(false);
+    Thread killerThread=new Thread("Killer thread"){
       @Override public void run(){
-        Random r=new Random();
-        for (        Integer toKill : toKillDuringRecovery) {
-          try {
+        try {
+          Random r=new Random();
+          for (          Integer toKill : toKillDuringRecovery) {
             Thread.sleep(r.nextInt(2000));
+            cluster.shutDownSingleHost(toKill);
           }
- catch (          InterruptedException e) {
-            e.printStackTrace();
-          }
-          cluster.shutDownSingleHost(toKill);
+        }
+ catch (        Exception e) {
+          killerFail.set(true);
+          e.printStackTrace();
         }
       }
     }
@@ -110,7 +112,7 @@
     client.createConnection("localhost",Client.VOLTDB_SERVER_PORT + toConnectTo);
     lastServerValues=new ArrayList<Integer>(serverValues);
     final AtomicBoolean shouldContinue=new AtomicBoolean(true);
-    final Thread loadThread=new Thread(){
+    final Thread loadThread=new Thread("Load thread"){
       @Override public void run(){
         try {
           while (shouldContinue.get()) {
@@ -148,9 +150,12 @@
     recoveryThread.start();
     recoveryThread.join();
     killerThread.join();
+    if (killerFail.get()) {
+      fail("Exception in killer thread");
+    }
     shouldContinue.set(false);
     loadThread.join();
-    lastRejoinThread=new Thread(){
+    lastRejoinThread=new Thread("Last rejoin thread"){
       @Override public void run(){
         try {
           for (          Integer recover : toKillDuringRecovery) {

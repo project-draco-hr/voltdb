@@ -74,17 +74,19 @@
       }
     }
 ;
+    final java.util.concurrent.atomic.AtomicBoolean killerFail=new java.util.concurrent.atomic.AtomicBoolean(false);
     Thread killerThread=new Thread(){
       @Override public void run(){
-        Random r=new Random();
-        for (        Integer toKill : toKillDuringRecovery) {
-          try {
+        try {
+          Random r=new Random();
+          for (          Integer toKill : toKillDuringRecovery) {
             Thread.sleep(r.nextInt(5000));
+            cluster.shutDownSingleHost(toKill);
           }
- catch (          InterruptedException e) {
-            e.printStackTrace();
-          }
-          cluster.shutDownSingleHost(toKill);
+        }
+ catch (        Exception e) {
+          killerFail.set(true);
+          e.printStackTrace();
         }
       }
     }
@@ -93,6 +95,9 @@
     killerThread.start();
     recoveryThread.join();
     killerThread.join();
+    if (killerFail.get()) {
+      fail("Exception in killer thread");
+    }
     for (    Integer recoverNow : toKillDuringRecovery) {
       cluster.recoverOne(recoverNow,toConnectTo,m_username + ":" + m_password+ "@localhost");
     }

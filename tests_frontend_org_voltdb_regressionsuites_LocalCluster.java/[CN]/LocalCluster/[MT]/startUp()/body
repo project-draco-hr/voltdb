@@ -10,6 +10,14 @@
     System.out.println("********** Starting cluster at: " + startTime);
   }
   int oopStartIndex=0;
+  for (int ii=0; ii < m_hostCount; ii++) {
+    ArrayList<EEProcess> procs=new ArrayList<EEProcess>();
+    m_eeProcs.add(procs);
+    for (int zz=0; zz < m_siteCount; zz++) {
+      String logfile="LocalCluster_host_" + ii + "_site"+ zz+ ".log";
+      procs.add(new EEProcess(m_target,logfile));
+    }
+  }
   m_pipes.clear();
   m_cluster.clear();
   if (m_hasLocalServer) {
@@ -22,6 +30,11 @@
     config.m_pathToDeployment=m_pathToDeployment;
     config.m_profilingLevel=ProcedureProfiler.Level.DISABLED;
     config.m_port=VoltDB.DEFAULT_PORT;
+    ArrayList<Integer> ports=new ArrayList<Integer>();
+    for (    EEProcess proc : m_eeProcs.get(0)) {
+      ports.add(proc.port());
+    }
+    config.m_ipcPorts=java.util.Collections.synchronizedList(ports);
     m_localServer=new ServerThread(config);
     m_localServer.start();
     oopStartIndex++;
@@ -53,6 +66,9 @@ synchronized (pipeToFile) {
   }
  while (allReady == false);
   if (logtime)   System.out.println("********** post witness: " + (System.currentTimeMillis() - startTime) + " ms");
+  if (!allReady) {
+    throw new RuntimeException("Not all processes became ready");
+  }
   if (m_hasLocalServer)   m_localServer.waitForInitialization();
   if (logtime)   System.out.println("********** DONE: " + (System.currentTimeMillis() - startTime) + " ms");
   m_running=true;
@@ -67,6 +83,9 @@ synchronized (pipeToFile) {
     int retval=0;
     try {
       retval=proc.waitFor();
+      for (      EEProcess eeproc : m_eeProcs.get(procIndex)) {
+        eeproc.waitForShutdown();
+      }
     }
  catch (    InterruptedException e) {
       System.out.println("External VoltDB process is acting crazy.");

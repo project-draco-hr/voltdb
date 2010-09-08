@@ -6,6 +6,34 @@
   if (portOffset != null) {
     portNoToRejoin=VoltDB.DEFAULT_PORT + portOffset;
   }
+  ArrayList<EEProcess> eeProcs=m_eeProcs.get(hostId);
+  for (  EEProcess proc : eeProcs) {
+    try {
+      proc.waitForShutdown();
+    }
+ catch (    InterruptedException e) {
+      throw new RuntimeException(e);
+    }
+  }
+  eeProcs.clear();
+  for (int ii=0; ii < m_siteCount; ii++) {
+    String logfile="LocalCluster_host_" + hostId + "_site"+ ii+ ".log";
+    eeProcs.add(new EEProcess(m_target,logfile));
+  }
+  if (m_target.isIPC) {
+    m_procBuilder.command().set(m_ipcPortOffset1,"ipcports");
+    String portString="";
+    for (    EEProcess proc : m_eeProcs.get(hostId)) {
+      if (portString.isEmpty()) {
+        portString+=Integer.valueOf(proc.port());
+      }
+ else {
+        portString+="," + Integer.valueOf(proc.port());
+      }
+    }
+    m_procBuilder.command().set(m_ipcPortOffset2,portString);
+    m_procBuilder.command().set(m_ipcPortOffset3,"valgrind");
+  }
   PipeToFile ptf=null;
   long start=0;
   try {
@@ -13,8 +41,8 @@
     m_procBuilder.command().set(m_pathToDeploymentOffset,m_pathToDeployment);
     m_procBuilder.command().set(m_rejoinOffset,rejoinHost + ":" + String.valueOf(portNoToRejoin));
     if (m_debug) {
-      m_procBuilder.command().set(m_debug1Offset,"-Xdebug");
-      m_procBuilder.command().set(m_debug2Offset,"-agentlib:jdwp=transport=dt_socket,address=" + m_debugPortOffset++ + ",server=y,suspend=n");
+      m_procBuilder.command().set(m_debugOffset1,"-Xdebug");
+      m_procBuilder.command().set(m_debugOffset2,"-agentlib:jdwp=transport=dt_socket,address=" + m_debugPortOffset++ + ",server=y,suspend=n");
     }
     Process proc=m_procBuilder.start();
     start=System.currentTimeMillis();
@@ -59,6 +87,12 @@ synchronized (ptf) {
   }
  else {
     System.out.println("Recovering process exited before recovery completed");
+    try {
+      silentShutdownSingleHost(hostId,true);
+    }
+ catch (    InterruptedException e) {
+      e.printStackTrace();
+    }
     return false;
   }
 }
