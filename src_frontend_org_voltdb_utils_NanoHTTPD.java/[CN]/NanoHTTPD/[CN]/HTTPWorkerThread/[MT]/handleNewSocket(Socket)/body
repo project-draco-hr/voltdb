@@ -1,0 +1,68 @@
+{
+  try {
+    InputStream is=socket.getInputStream();
+    if (is == null)     return;
+    BufferedReader in=new BufferedReader(new InputStreamReader(is));
+    String inLine=in.readLine();
+    if (inLine == null)     return;
+    StringTokenizer st=new StringTokenizer(inLine);
+    if (!st.hasMoreTokens())     sendError(socket,HTTP_BADREQUEST,"BAD REQUEST: Syntax error. Usage: GET /example/file.html");
+    String method=st.nextToken();
+    if (!st.hasMoreTokens())     sendError(socket,HTTP_BADREQUEST,"BAD REQUEST: Missing URI. Usage: GET /example/file.html");
+    String uri=st.nextToken();
+    Properties parms=new Properties();
+    int qmi=uri.indexOf('?');
+    if (qmi >= 0) {
+      decodeParms(socket,uri.substring(qmi + 1),parms);
+      uri=URLDecoder.decode(uri.substring(0,qmi),"UTF-8");
+    }
+ else     uri=URLDecoder.decode(uri,"UTF-8");
+    Properties header=new Properties();
+    if (st.hasMoreTokens()) {
+      String line=in.readLine();
+      while (line.trim().length() > 0) {
+        int p=line.indexOf(':');
+        header.put(line.substring(0,p).trim().toLowerCase(),line.substring(p + 1).trim());
+        line=in.readLine();
+      }
+    }
+    if (method.equalsIgnoreCase("POST")) {
+      long size=0x7FFFFFFFFFFFFFFFl;
+      String contentLength=header.getProperty("content-length");
+      if (contentLength != null) {
+        try {
+          size=Integer.parseInt(contentLength);
+        }
+ catch (        NumberFormatException ex) {
+        }
+      }
+      String postLine="";
+      char buf[]=new char[512];
+      int read=in.read(buf);
+      while (read >= 0 && size > 0 && !postLine.endsWith("\r\n")) {
+        size-=read;
+        postLine+=String.valueOf(buf,0,read);
+        if (size > 0)         read=in.read(buf);
+      }
+      postLine=postLine.trim();
+      decodeParms(socket,postLine,parms);
+    }
+    try {
+      Response r=processRequest(new Request(uri,method,header,parms,socket));
+      if (r != null)       sendResponse(socket,r.status,r.mimeType,r.header,r.data);
+    }
+ catch (    Exception e) {
+      sendError(socket,HTTP_INTERNALERROR,"SERVER INTERNAL ERROR: processRequest() threw an exception.");
+    }
+    in.close();
+  }
+ catch (  IOException ioe) {
+    try {
+      sendError(socket,HTTP_INTERNALERROR,"SERVER INTERNAL ERROR: IOException: " + ioe.getMessage());
+    }
+ catch (    Throwable t) {
+    }
+  }
+catch (  InterruptedException ie) {
+  }
+}
