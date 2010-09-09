@@ -4,10 +4,22 @@
     m_buffered.add(message);
     return;
   }
+  int sourceSite=message.sourceSite();
+  RecoveryMessage ack=new RecoveryMessage(m_siteId,message.blockIndex());
+  try {
+    m_mailbox.send(sourceSite,0,ack);
+  }
+ catch (  MessagingException e) {
+    throw new RuntimeException(e);
+  }
   if (message.type() == RecoveryMessageType.ScanTuples) {
-    byte data[]=message.getMessageData();
-    m_bytesReceived+=data.length;
-    m_engine.processRecoveryMessage(data);
+    m_buffer.clear();
+    message.getMessageData(m_buffer);
+    m_bytesReceived+=m_buffer.remaining();
+    long startTime=System.currentTimeMillis();
+    m_engine.processRecoveryMessage(m_buffer,m_bufferPointer);
+    long endTime=System.currentTimeMillis();
+    m_timeSpentHandlingData+=endTime - startTime;
     recoveryLog.trace("Received tuple data at site " + m_siteId + " for table "+ m_tables.get(message.tableId()).m_name);
   }
  else   if (message.type() == RecoveryMessageType.Complete) {
@@ -17,13 +29,5 @@
  else {
     System.out.println(message.type());
     VoltDB.crashVoltDB();
-  }
-  int sourceSite=message.sourceSite();
-  RecoveryMessage ack=new RecoveryMessage(message,m_siteId);
-  try {
-    m_mailbox.send(sourceSite,0,ack);
-  }
- catch (  MessagingException e) {
-    throw new RuntimeException(e);
   }
 }
