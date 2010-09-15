@@ -3,7 +3,7 @@
   builder.setSecurityEnabled(true);
   final int numHosts=10;
   final int kfactor=4;
-  final LocalCluster cluster=new LocalCluster("rejoin.jar",2,numHosts,kfactor,BackendTarget.NATIVE_EE_JNI,LocalCluster.FailureState.ALL_RUNNING,true);
+  final LocalCluster cluster=new LocalCluster("rejoin.jar",2,numHosts,kfactor,BackendTarget.NATIVE_EE_JNI,LocalCluster.FailureState.ALL_RUNNING,false);
   cluster.setMaxHeap(256);
   final int numTuples=cluster.isValgrind() ? 10000 : 60000;
   boolean success=cluster.compile(builder);
@@ -41,6 +41,7 @@
   Random forWhomTheBellTolls=new Random();
   int toConnectToTemp=0;
   Thread lastRejoinThread=null;
+  final java.util.concurrent.atomic.AtomicBoolean haveFailed=new AtomicBoolean(false);
   for (int zz=0; zz < 5; zz++) {
     client=ClientFactory.createClient(m_cconfig);
     client.createConnection("localhost",Client.VOLTDB_SERVER_PORT + toConnectToTemp);
@@ -83,9 +84,17 @@
     Thread recoveryThread=new Thread("Recovery thread"){
       @Override public void run(){
         for (        Integer dead : toKillFirst) {
-          while (!cluster.recoverOne(dead,toConnectTo,m_username + ":" + m_password+ "@localhost")) {
+          int attempts=0;
+          while (true) {
+            if (attempts == 6) {
+              haveFailed.set(true);
+              break;
+            }
+            if (cluster.recoverOne(dead,toConnectTo,m_username + ":" + m_password+ "@localhost")) {
+              break;
+            }
+            attempts++;
           }
-          ;
         }
       }
     }
@@ -159,7 +168,16 @@
       @Override public void run(){
         try {
           for (          Integer recover : toKillDuringRecovery) {
-            while (!cluster.recoverOne(recover,toConnectTo,m_username + ":" + m_password+ "@localhost")) {
+            int attempts=0;
+            while (true) {
+              if (attempts == 6) {
+                haveFailed.set(true);
+                break;
+              }
+              if (cluster.recoverOne(recover,toConnectTo,m_username + ":" + m_password+ "@localhost")) {
+                break;
+              }
+              attempts++;
             }
           }
         }
@@ -174,4 +192,5 @@
   }
   lastRejoinThread.join();
   cluster.shutDown();
+  assertFalse(haveFailed.get());
 }

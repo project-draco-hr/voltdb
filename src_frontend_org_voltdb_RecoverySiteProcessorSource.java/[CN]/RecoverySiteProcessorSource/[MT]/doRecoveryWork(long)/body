@@ -3,43 +3,44 @@
     recoveryLog.trace("Sending recovery initiate response from " + m_siteId + " before txnId "+ nextTxnId+ " to site "+ m_destinationSiteId);
     m_sentInitiateResponse=true;
     m_stopBeforeTxnId=Math.max(nextTxnId,m_destinationStoppedBeforeTxnId);
-    ByteBuffer buf=ByteBuffer.allocate(2048);
+    ByteBuffer buf=ByteBuffer.allocate(16);
     BBContainer cont=DBBPool.wrapBB(buf);
-    RecoveryMessage response=new RecoveryMessage(cont,m_siteId,m_stopBeforeTxnId);
-    try {
-      m_mailbox.send(m_destinationSiteId,0,response);
-    }
- catch (    MessagingException e) {
-      throw new RuntimeException(e);
-    }
+    buf.putInt(12);
+    buf.putInt(m_siteId);
+    buf.putLong(m_stopBeforeTxnId);
+    buf.flip();
+    m_outgoing.offer(cont);
   }
   if (nextTxnId < m_stopBeforeTxnId) {
     return;
   }
   recoveryLog.trace("Starting recovery of " + m_destinationSiteId + " work before txnId "+ nextTxnId);
   while (true) {
-    while (m_allowedBuffers > 0 && !m_tablesToStream.isEmpty() && !m_buffers.isEmpty()) {
-      m_allowedBuffers--;
+    while (m_allowedBuffers.get() > 0 && !m_tablesToStream.isEmpty() && !m_buffers.isEmpty()) {
+      m_allowedBuffers.decrementAndGet();
       BBContainer container=m_buffers.poll();
       ByteBuffer buffer=container.b;
-      RecoveryMessage rm=new RecoveryMessage(container,m_siteId,m_blockIndex++);
       buffer.clear();
-      buffer.position(RecoveryMessage.getHeaderLength());
+      buffer.position(4);
+      buffer.putInt(m_siteId);
+      buffer.putInt(m_blockIndex++);
       RecoveryTable table=m_tablesToStream.peek();
       long startSerializing=System.currentTimeMillis();
       int serialized=m_engine.tableStreamSerializeMore(container,table.m_tableId,TableStreamType.RECOVERY);
       long endSerializing=System.currentTimeMillis();
-      m_timeSpentSerializing+=endSerializing - startSerializing;
+      m_timeSpentSerializing.addAndGet(endSerializing - startSerializing);
       recoveryLog.trace("Serialized " + serialized + " for table "+ table.m_name);
       if (serialized <= 0) {
         VoltDB.crashVoltDB();
       }
  else {
         buffer.limit(buffer.position() + serialized);
+        buffer.putInt(0,buffer.limit() - 4);
+        buffer.position(0);
       }
       m_bytesSent+=buffer.remaining();
-      assert(rm != null);
-      if (rm.type() == RecoveryMessageType.Complete) {
+      RecoveryMessageType type=RecoveryMessageType.values()[buffer.get(messageTypeOffset)];
+      if (type == RecoveryMessageType.Complete) {
         m_tablesToStream.poll();
         RecoveryTable nextTable=m_tablesToStream.peek();
         if (nextTable != null) {
@@ -50,18 +51,8 @@
         }
       }
       final int numDestinations=table.m_destinationIds.length;
-      m_ackTracker.waitForAcks(rm.blockIndex(),numDestinations);
-      if (numDestinations == 1) {
-        try {
-          m_mailbox.send(table.m_destinationIds[0],0,rm);
-        }
- catch (        MessagingException e) {
-          throw new RuntimeException(e);
-        }
-      }
- else {
-        VoltDB.crashVoltDB();
-      }
+      m_ackTracker.waitForAcks(buffer.getInt(blockIndexOffset),numDestinations);
+      m_outgoing.offer(container);
     }
     if (m_tablesToStream.isEmpty()) {
       if (!m_recoveryComplete) {
@@ -76,18 +67,35 @@ synchronized (this) {
       if (!m_ackTracker.hasOutstanding()) {
         return;
       }
+ else {
+        try {
+          m_inThread.join(5000);
+        }
+ catch (        InterruptedException e) {
+        }
+synchronized (this) {
+          if (m_inThread.isAlive()) {
+            if (m_onCompletion != null) {
+              recoveryLog.error("Timed out waiting for acks for the last few recovery messages");
+              m_onCompletion.run();
+              m_onCompletion=null;
+              closeIO();
+            }
+          }
+        }
+      }
     }
-    VoltMessage message=m_mailbox.recv();
+    VoltMessage message=m_mailbox.recvBlocking();
     if (message != null) {
       if (message instanceof RecoveryMessage) {
-        handleRecoveryMessage((RecoveryMessage)message);
+        RecoveryMessage rm=(RecoveryMessage)message;
+        if (!rm.recoveryMessagesAvailable()) {
+          recoveryLog.error("Received a recovery initiate request from " + rm.sourceSite() + " while a recovery was already in progress. Ignoring it.");
+        }
       }
  else {
         m_messageHandler.handleMessage(message);
       }
-    }
- else {
-      Thread.yield();
     }
   }
 }

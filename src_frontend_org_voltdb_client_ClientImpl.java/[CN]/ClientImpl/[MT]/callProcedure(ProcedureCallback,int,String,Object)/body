@@ -9,8 +9,23 @@
     ((ProcedureArgumentCacher)callback).setArgs(parameters);
   }
   ProcedureInvocation invocation=new ProcedureInvocation(m_handle.getAndIncrement(),procName,parameters);
+  boolean isBlessed=m_blessedThreadIds.contains(Thread.currentThread().getId());
+  try {
+    m_maxOutstanding.acquire();
+  }
+ catch (  InterruptedException e) {
+    throw new java.io.InterruptedIOException(e.toString());
+  }
+  final ProcedureCallback userCallback=callback;
+  ProcedureCallback callbackToReturnPermit=new ProcedureCallback(){
+    @Override public void clientCallback(    ClientResponse clientResponse) throws Exception {
+      m_maxOutstanding.release();
+      userCallback.clientCallback(clientResponse);
+    }
+  }
+;
   if (m_blockingQueue) {
-    while (!m_distributer.queue(invocation,callback,expectedSerializedSize,m_blessedThreadIds.contains(Thread.currentThread().getId()))) {
+    while (!m_distributer.queue(invocation,callbackToReturnPermit,expectedSerializedSize,isBlessed)) {
       try {
         backpressureBarrier();
       }
@@ -21,6 +36,6 @@
     return true;
   }
  else {
-    return m_distributer.queue(invocation,callback,expectedSerializedSize,m_blessedThreadIds.contains(Thread.currentThread().getId()));
+    return m_distributer.queue(invocation,callbackToReturnPermit,expectedSerializedSize,isBlessed);
   }
 }

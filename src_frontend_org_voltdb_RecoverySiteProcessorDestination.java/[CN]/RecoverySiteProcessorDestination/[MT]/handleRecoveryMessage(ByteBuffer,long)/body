@@ -1,0 +1,47 @@
+{
+  RecoveryMessageType type=RecoveryMessageType.values()[message.get(messageTypeOffset)];
+  assert(type == RecoveryMessageType.ScanTuples || type == RecoveryMessageType.Complete);
+  message.getInt(siteIdOffset);
+  final int blockIndex=message.getInt(blockIndexOffset);
+  final int tableId=message.getInt(tableIdOffset);
+  ByteBuffer ackMessage=ByteBuffer.allocate(12);
+  ackMessage.putInt(8);
+  ackMessage.putInt(m_siteId);
+  ackMessage.putInt(blockIndex);
+  ackMessage.flip();
+  if (type == RecoveryMessageType.ScanTuples) {
+    if (m_toggleProfiling.tryAcquire()) {
+      m_engine.toggleProfiler(1);
+    }
+    m_bytesReceived+=message.remaining();
+    long startTime=System.currentTimeMillis();
+    message.position(messageTypeOffset);
+    m_engine.processRecoveryMessage(message,pointer);
+    long endTime=System.currentTimeMillis();
+    m_timeSpentHandlingData+=endTime - startTime;
+    recoveryLog.trace("Received tuple data at site " + m_siteId + " for table "+ m_tables.get(tableId).m_name);
+  }
+ else   if (type == RecoveryMessageType.Complete) {
+    RecoveryTable table=m_tables.remove(tableId);
+    recoveryLog.info("Received completion message at site " + m_siteId + " for table "+ table.m_name);
+  }
+ else {
+    recoveryLog.fatal("Received an unexpect message of type " + type);
+    VoltDB.crashVoltDB();
+  }
+  while (ackMessage.hasRemaining()) {
+    int written=0;
+    try {
+      written=m_sc.write(ackMessage);
+    }
+ catch (    IOException e) {
+      recoveryLog.fatal("Unable to write ack message",e);
+      VoltDB.crashVoltDB();
+    }
+    if (written == -1) {
+      recoveryLog.fatal("Unable to write ack message");
+      VoltDB.crashVoltDB();
+    }
+  }
+  recoveryLog.trace("Writing ack for block " + blockIndex + " from "+ m_siteId);
+}

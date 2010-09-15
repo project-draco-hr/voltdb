@@ -1,5 +1,4 @@
 {
-  m_timestamp=System.currentTimeMillis();
   SocketChannel socket=null;
   DataInputStream in=null;
   DataOutputStream out=null;
@@ -13,6 +12,8 @@
       InputStream s=socket.socket().getInputStream();
       in=new DataInputStream(new BufferedInputStream(s));
       int hostId=in.readInt();
+      m_timestamp=in.readLong();
+      m_addr=in.readInt();
       int numHosts=in.readInt();
       HashSet<Integer> hosts=new HashSet<Integer>(numHosts);
       for (int ii=0; ii < numHosts; ii++) {
@@ -24,11 +25,11 @@
         System.out.println(hostsFound.toString());
       }
  else       if (!hostsFound.equals(hosts)) {
-        if (m_hostLog != null)         m_hostLog.error("Inconsistent live host set during rejoin");
+        recoveryLog.fatal("Inconsistent live host set during rejoin");
         VoltDB.crashVoltDB();
       }
       m_sockets.put(hostId,socket);
-      System.out.println("Have " + m_sockets.size() + " of "+ (m_expectedHosts - 1)+ " with hostId "+ hostId);
+      recoveryLog.info("Have " + m_sockets.size() + " of "+ (m_expectedHosts - 1)+ " with hostId "+ hostId);
     }
     long difftimes[]=new long[m_expectedHosts - 1];
     int readHostIds[]=new int[m_expectedHosts - 1];
@@ -57,7 +58,7 @@
     long maxDiffMS=maximumDiff - minimumDiff;
     if (maxDiffMS > MAX_ACCEPTABLE_TIME_DIFF_IN_MS)     command=COMMAND_NTPFAIL;
     m_localHostId=readHostIds[0];
-    System.out.println("Selecting host id " + m_localHostId);
+    recoveryLog.info("Selecting host id " + m_localHostId);
     for (i=1; i < readHostIds.length; i++) {
       if (readHostIds[i] != m_localHostId) {
         command=COMMAND_HOSTIDFAIL;

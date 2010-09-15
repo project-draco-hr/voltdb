@@ -1,34 +1,52 @@
 {
   if (!m_sentInitiate) {
     m_sentInitiate=true;
-    sendInitiateMessage(txnId);
+    try {
+      sendInitiateMessage(txnId);
+    }
+ catch (    IOException e) {
+      recoveryLog.fatal("Error sending initiate message",e);
+      VoltDB.crashVoltDB();
+    }
   }
   if (txnId < m_stopBeforeTxnId) {
     return;
   }
   recoveryLog.trace("Starting recovery before txnid " + txnId + " for site "+ m_siteId+ " from "+ m_sourceSiteId);
-  m_recoveryBegan=true;
-  for (  RecoveryMessage rm : m_buffered) {
-    handleRecoveryMessage(rm);
-  }
-  m_buffered.clear();
   while (true) {
-    VoltMessage message=m_mailbox.recv();
+    BBContainer container=null;
+    while ((container=m_incoming.poll()) != null) {
+      try {
+        handleRecoveryMessage(container.b,container.address);
+      }
+  finally {
+        container.discard();
+      }
+    }
+    if (m_tables.isEmpty()) {
+synchronized (this) {
+        m_recoveryComplete=true;
+        BBContainer buffer=null;
+        while ((buffer=m_buffers.poll()) != null) {
+          m_bufferToOriginMap.remove(buffer).discard();
+        }
+      }
+      recoveryLog.info("Processor spent " + (m_timeSpentHandlingData / 1000.0) + " seconds handling data");
+      m_onCompletion.run();
+      m_iodaemon.close();
+      return;
+    }
+    VoltMessage message=m_mailbox.recvBlocking();
     if (message != null) {
       if (message instanceof RecoveryMessage) {
-        handleRecoveryMessage((RecoveryMessage)message);
+        RecoveryMessage rm=(RecoveryMessage)message;
+        if (!rm.recoveryMessagesAvailable()) {
+          recoveryLog.error("Received a recovery initiate request from " + rm.sourceSite() + " while a recovery was already in progress. Ignoring it.");
+        }
       }
  else {
         m_messageHandler.handleMessage(message);
       }
-    }
- else {
-      Thread.yield();
-    }
-    if (m_tables.isEmpty()) {
-      recoveryLog.info("Processor spent " + (m_timeSpentHandlingData / 1000.0) + " seconds handling data");
-      m_onCompletion.run();
-      return;
     }
   }
 }

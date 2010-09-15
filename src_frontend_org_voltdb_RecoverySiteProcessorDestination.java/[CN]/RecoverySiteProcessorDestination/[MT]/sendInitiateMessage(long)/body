@@ -1,7 +1,13 @@
 {
+  ServerSocketChannel ssc=ServerSocketChannel.open();
+  InetAddress addr=InetAddress.getByName(VoltDB.instance().getConfig().m_selectedRejoinInterface);
+  InetSocketAddress sockAddr=new InetSocketAddress(addr,0);
+  ssc.socket().bind(sockAddr);
+  final int port=ssc.socket().getLocalPort();
+  final byte address[]=ssc.socket().getInetAddress().getAddress();
   ByteBuffer buf=ByteBuffer.allocate(2048);
   BBContainer container=DBBPool.wrapBB(buf);
-  RecoveryMessage recoveryMessage=new RecoveryMessage(container,m_siteId,txnId);
+  RecoveryMessage recoveryMessage=new RecoveryMessage(container,m_siteId,txnId,address,port);
   recoveryLog.trace("Sending recovery initiate request before txnid " + txnId + " from site "+ m_siteId+ " to "+ m_sourceSiteId);
   try {
     m_mailbox.send(m_sourceSiteId,0,recoveryMessage);
@@ -9,28 +15,38 @@
  catch (  MessagingException e) {
     throw new RuntimeException(e);
   }
-  while (true) {
-    VoltMessage message=m_mailbox.recv();
-    if (message != null) {
-      if (message instanceof RecoveryMessage) {
-        RecoveryMessage rm=(RecoveryMessage)message;
-        if (rm.type() == RecoveryMessageType.Initiate) {
-          m_stopBeforeTxnId=rm.txnId();
-          recoveryLog.info("Recovery initiate ack received at site " + m_siteId + " from site "+ rm.sourceSite()+ " will sync after txnId "+ rm.txnId());
-          return;
-        }
- else {
-          VoltDB.crashVoltDB();
-        }
-        return;
-      }
- else {
-        m_messageHandler.handleMessage(message);
-      }
-      continue;
-    }
- else {
-      Thread.yield();
+  ssc.socket().setSoTimeout(5000);
+  try {
+    m_sc=ssc.accept();
+  }
+ catch (  IOException e) {
+    if (e instanceof java.net.SocketTimeoutException) {
+      recoveryLog.fatal("Timed out waiting for connection from source partition",e);
+      VoltDB.crashVoltDB();
     }
   }
+  m_sc.configureBlocking(true);
+  m_sc.socket().setTcpNoDelay(true);
+  ByteBuffer messageLength=ByteBuffer.allocate(4);
+  while (messageLength.hasRemaining()) {
+    int read=m_sc.read(messageLength);
+    if (read == -1) {
+      throw new EOFException();
+    }
+  }
+  messageLength.flip();
+  ByteBuffer response=ByteBuffer.allocate(messageLength.getInt());
+  while (response.hasRemaining()) {
+    int read=m_sc.read(response);
+    if (read == -1) {
+      throw new EOFException();
+    }
+  }
+  response.flip();
+  final int sourceSite=response.getInt();
+  m_stopBeforeTxnId=response.getLong();
+  recoveryLog.info("Recovery initiate ack received at site " + m_siteId + " from site "+ sourceSite+ " will sync after txnId "+ m_stopBeforeTxnId);
+  m_iodaemon=new IODaemon(m_sc);
+  ssc.close();
+  return;
 }
