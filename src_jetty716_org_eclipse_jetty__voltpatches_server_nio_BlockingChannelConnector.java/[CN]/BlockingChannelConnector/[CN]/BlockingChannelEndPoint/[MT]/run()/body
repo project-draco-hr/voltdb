@@ -1,0 +1,55 @@
+{
+  try {
+    _timeout=getMaxIdleTime();
+    connectionOpened(_connection);
+    _endpoints.add(this);
+    while (isOpen()) {
+      _idleTimestamp=System.currentTimeMillis();
+      if (_connection.isIdle()) {
+        if (getServer().getThreadPool().isLowOnThreads()) {
+          int lrmit=getLowResourcesMaxIdleTime();
+          if (lrmit >= 0 && _timeout != lrmit) {
+            _timeout=lrmit;
+          }
+        }
+      }
+ else {
+        if (_timeout != getMaxIdleTime()) {
+          _timeout=getMaxIdleTime();
+        }
+      }
+      _connection=_connection.handle();
+    }
+  }
+ catch (  EofException e) {
+    Log.debug("EOF",e);
+    try {
+      BlockingChannelEndPoint.this.close();
+    }
+ catch (    IOException e2) {
+      Log.ignore(e2);
+    }
+  }
+catch (  HttpException e) {
+    Log.debug("BAD",e);
+    try {
+      BlockingChannelEndPoint.this.close();
+    }
+ catch (    IOException e2) {
+      Log.ignore(e2);
+    }
+  }
+catch (  Throwable e) {
+    Log.warn("handle failed",e);
+    try {
+      BlockingChannelEndPoint.this.close();
+    }
+ catch (    IOException e2) {
+      Log.ignore(e2);
+    }
+  }
+ finally {
+    connectionClosed(_connection);
+    _endpoints.remove(this);
+  }
+}

@@ -1,0 +1,35 @@
+{
+  SessionData data=null;
+  Connection connection=getConnection();
+  PreparedStatement statement=null;
+  try {
+    statement=connection.prepareStatement(__selectSession);
+    statement.setString(1,id);
+    statement.setString(2,canonicalContextPath);
+    statement.setString(3,vhost);
+    ResultSet result=statement.executeQuery();
+    if (result.next()) {
+      data=new SessionData(id);
+      data.setRowId(result.getString("rowId"));
+      data.setCookieSet(result.getLong("cookieTime"));
+      data.setLastAccessed(result.getLong("lastAccessTime"));
+      data.setAccessed(result.getLong("accessTime"));
+      data.setCreated(result.getLong("createTime"));
+      data.setLastNode(result.getString("lastNode"));
+      data.setLastSaved(result.getLong("lastSavedTime"));
+      data.setExpiryTime(result.getLong("expiryTime"));
+      data.setCanonicalContext(result.getString("contextPath"));
+      data.setVirtualHost(result.getString("virtualHost"));
+      InputStream is=((JDBCSessionIdManager)getIdManager())._dbAdaptor.getBlobInputStream(result,"map");
+      ClassLoadingObjectInputStream ois=new ClassLoadingObjectInputStream(is);
+      Object o=ois.readObject();
+      data.setAttributeMap((ConcurrentHashMap)o);
+      ois.close();
+      if (Log.isDebugEnabled())       Log.debug("LOADED session " + data);
+    }
+    return data;
+  }
+  finally {
+    if (connection != null)     connection.close();
+  }
+}

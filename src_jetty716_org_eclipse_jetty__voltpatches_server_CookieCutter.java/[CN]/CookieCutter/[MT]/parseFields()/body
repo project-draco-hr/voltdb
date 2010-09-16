@@ -1,0 +1,155 @@
+{
+  _lastCookies=null;
+  _cookies=null;
+  Object cookies=null;
+  int version=0;
+  while (LazyList.size(_lazyFields) > _fields)   _lazyFields=LazyList.remove(_lazyFields,_fields);
+  for (int f=0; f < _fields; f++) {
+    String hdr=LazyList.get(_lazyFields,f);
+    String name=null;
+    String value=null;
+    Cookie cookie=null;
+    boolean invalue=false;
+    boolean quoted=false;
+    boolean escaped=false;
+    int tokenstart=-1;
+    int tokenend=-1;
+    for (int i=0, length=hdr.length(), last=length - 1; i < length; i++) {
+      char c=hdr.charAt(i);
+      if (quoted) {
+        if (escaped) {
+          escaped=false;
+          continue;
+        }
+switch (c) {
+case '"':
+          tokenend=i;
+        quoted=false;
+      if (i == last) {
+        if (invalue)         value=hdr.substring(tokenstart,tokenend + 1);
+ else {
+          name=hdr.substring(tokenstart,tokenend + 1);
+          value="";
+        }
+      }
+    break;
+case '\\':
+  escaped=true;
+continue;
+default :
+continue;
+}
+}
+ else {
+if (invalue) {
+switch (c) {
+case ' ':
+case '\t':
+continue;
+case '"':
+if (tokenstart < 0) {
+quoted=true;
+tokenstart=i;
+}
+tokenend=i;
+if (i == last) {
+value=hdr.substring(tokenstart,tokenend + 1);
+break;
+}
+continue;
+case ';':
+case ',':
+if (tokenstart >= 0) value=hdr.substring(tokenstart,tokenend + 1);
+ else value="";
+tokenstart=-1;
+invalue=false;
+break;
+default :
+if (tokenstart < 0) tokenstart=i;
+tokenend=i;
+if (i == last) {
+value=hdr.substring(tokenstart,tokenend + 1);
+break;
+}
+continue;
+}
+}
+ else {
+switch (c) {
+case ' ':
+case '\t':
+continue;
+case '"':
+if (tokenstart < 0) {
+quoted=true;
+tokenstart=i;
+}
+tokenend=i;
+if (i == last) {
+name=hdr.substring(tokenstart,tokenend + 1);
+value="";
+break;
+}
+continue;
+case ';':
+case ',':
+if (tokenstart >= 0) {
+name=hdr.substring(tokenstart,tokenend + 1);
+value="";
+}
+tokenstart=-1;
+break;
+case '=':
+if (tokenstart >= 0) name=hdr.substring(tokenstart,tokenend + 1);
+tokenstart=-1;
+invalue=true;
+continue;
+default :
+if (tokenstart < 0) tokenstart=i;
+tokenend=i;
+if (i == last) {
+name=hdr.substring(tokenstart,tokenend + 1);
+value="";
+break;
+}
+continue;
+}
+}
+}
+if (value != null && name != null) {
+name=QuotedStringTokenizer.unquote(name);
+value=QuotedStringTokenizer.unquote(value);
+try {
+if (name.startsWith("$")) {
+String lowercaseName=name.toLowerCase();
+if ("$path".equals(lowercaseName)) {
+if (cookie != null) cookie.setPath(value);
+}
+ else if ("$domain".equals(lowercaseName)) {
+if (cookie != null) cookie.setDomain(value);
+}
+ else if ("$port".equals(lowercaseName)) {
+if (cookie != null) cookie.setComment("$port=" + value);
+}
+ else if ("$version".equals(lowercaseName)) {
+version=Integer.parseInt(value);
+}
+}
+ else {
+cookie=new Cookie(name,value);
+if (version > 0) cookie.setVersion(version);
+cookies=LazyList.add(cookies,cookie);
+}
+}
+ catch (Exception e) {
+Log.warn(e.toString());
+Log.debug(e);
+}
+name=null;
+value=null;
+}
+}
+}
+_cookies=(Cookie[])LazyList.toArray(cookies,Cookie.class);
+_lastCookies=_cookies;
+}

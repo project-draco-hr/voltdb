@@ -1,0 +1,71 @@
+{
+  String msg;
+  Client client=null;
+  Continuation continuation=ContinuationSupport.getContinuation(request);
+  continuation.suspend(response);
+  try {
+    if (m_connections == null) {
+      int port=VoltDB.instance().getConfig().m_port;
+      m_connections=new AuthenticatedConnectionCache(10,"localhost",port);
+    }
+    String username=request.getParameter("User");
+    String password=request.getParameter("Password");
+    String hashedPassword=request.getParameter("Hashedpassword");
+    String procName=request.getParameter("Procedure");
+    String params=request.getParameter("Parameters");
+    byte[] hashedPasswordBytes=null;
+    if (password != null) {
+      try {
+        hashedPasswordBytes=m_md.digest(password.getBytes("UTF-8"));
+      }
+ catch (      UnsupportedEncodingException e) {
+        throw new RuntimeException("JVM doesn't support UTF-8. Please use a supported JVM",e);
+      }
+    }
+    if (hashedPassword != null) {
+      if (hashedPassword.length() != 40) {
+        throw new Exception("Hashedpassword must be a 40-byte hex-encoded SHA-1 hash (20 bytes unencoded).");
+      }
+      try {
+        hashedPasswordBytes=Encoder.hexDecode(hashedPassword);
+      }
+ catch (      Exception e) {
+        throw new Exception("Hashedpassword must be a 40-byte hex-encoded SHA-1 hash (20 bytes unencoded).");
+      }
+    }
+    assert((hashedPasswordBytes == null) || (hashedPasswordBytes.length == 20));
+    client=m_connections.getClient(username,hashedPasswordBytes);
+    JSONProcCallback cb=new JSONProcCallback(request,continuation);
+    boolean success;
+    if (params != null) {
+      ParameterSet paramSet=ParameterSet.fromJSONString(params);
+      success=client.callProcedure(cb,procName,paramSet.toArray());
+    }
+ else {
+      success=client.callProcedure(cb,procName);
+    }
+    if (!success) {
+      throw new Exception("Server is not accepting work at this time.");
+    }
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+    msg=e.getMessage();
+    ClientResponseImpl rimpl=new ClientResponseImpl(ClientResponse.UNEXPECTED_FAILURE,new VoltTable[0],msg);
+    msg=rimpl.toJSONString();
+    response.setStatus(HttpServletResponse.SC_OK);
+    request.setHandled(true);
+    try {
+      response.getWriter().print(msg);
+      continuation.complete();
+    }
+ catch (    IOException e1) {
+    }
+  }
+ finally {
+    if (client != null) {
+      assert(m_connections != null);
+      m_connections.releaseClient(client);
+    }
+  }
+}

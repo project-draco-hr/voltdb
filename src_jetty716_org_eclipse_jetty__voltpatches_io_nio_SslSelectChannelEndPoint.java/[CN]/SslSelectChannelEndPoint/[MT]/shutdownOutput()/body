@@ -1,0 +1,74 @@
+{
+  long end=System.currentTimeMillis() + ((SocketChannel)_channel).socket().getSoTimeout();
+  try {
+    if (isBufferingOutput()) {
+      flush();
+      while (isOpen() && isBufferingOutput() && System.currentTimeMillis() < end) {
+        Thread.sleep(100);
+        flush();
+      }
+    }
+    _engine.closeOutbound();
+    loop:     while (isOpen() && !(_engine.isInboundDone() && _engine.isOutboundDone()) && System.currentTimeMillis() < end) {
+      if (isBufferingOutput()) {
+        flush();
+        while (isOpen() && isBufferingOutput() && System.currentTimeMillis() < end) {
+          Thread.sleep(100);
+          flush();
+        }
+      }
+      if (_debug)       __log.debug(_session + " closing " + _engine.getHandshakeStatus());
+switch (_engine.getHandshakeStatus()) {
+case FINISHED:
+case NOT_HANDSHAKING:
+        _handshook=true;
+      break loop;
+case NEED_UNWRAP:
+    Buffer buffer=_buffers.getBuffer(_engine.getSession().getApplicationBufferSize());
+  try {
+    ByteBuffer bbuffer=((NIOBuffer)buffer).getByteBuffer();
+    if (!unwrap(bbuffer) && _engine.getHandshakeStatus() == HandshakeStatus.NEED_UNWRAP) {
+      break loop;
+    }
+  }
+ catch (  SSLException e) {
+    Log.ignore(e);
+  }
+ finally {
+    _buffers.returnBuffer(buffer);
+  }
+break;
+case NEED_TASK:
+{
+Runnable task;
+while ((task=_engine.getDelegatedTask()) != null) {
+  task.run();
+}
+break;
+}
+case NEED_WRAP:
+{
+needOutBuffer();
+ByteBuffer out_buffer=_outNIOBuffer.getByteBuffer();
+try {
+_outNIOBuffer.compact();
+int put=_outNIOBuffer.putIndex();
+out_buffer.position(put);
+_result=null;
+_result=_engine.wrap(__NO_BUFFERS,out_buffer);
+if (_debug) __log.debug(_session + " close wrap " + _result);
+_outNIOBuffer.setPutIndex(put + _result.bytesProduced());
+}
+  finally {
+out_buffer.position(0);
+freeOutBuffer();
+}
+break;
+}
+}
+}
+}
+ catch (InterruptedException e) {
+Log.ignore(e);
+}
+}

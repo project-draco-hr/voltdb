@@ -1,0 +1,264 @@
+{
+  try {
+    _selecting=Thread.currentThread();
+    final Selector selector=_selector;
+    Object change;
+    int changes=_changes.size();
+    while (changes-- > 0 && (change=_changes.poll()) != null) {
+      try {
+        if (change instanceof EndPoint) {
+          SelectChannelEndPoint endpoint=(SelectChannelEndPoint)change;
+          endpoint.doUpdateKey();
+        }
+ else         if (change instanceof Runnable) {
+          dispatch((Runnable)change);
+        }
+ else         if (change instanceof ChangeSelectableChannel) {
+          final ChangeSelectableChannel asc=(ChangeSelectableChannel)change;
+          final SelectableChannel channel=asc._channel;
+          final Object att=asc._attachment;
+          if ((channel instanceof SocketChannel) && ((SocketChannel)channel).isConnected()) {
+            SelectionKey key=channel.register(selector,SelectionKey.OP_READ,att);
+            SelectChannelEndPoint endpoint=createEndPoint((SocketChannel)channel,key);
+            key.attach(endpoint);
+            endpoint.schedule();
+          }
+ else           if (channel.isOpen()) {
+            channel.register(selector,SelectionKey.OP_CONNECT,att);
+          }
+        }
+ else         if (change instanceof SocketChannel) {
+          final SocketChannel channel=(SocketChannel)change;
+          if (channel.isConnected()) {
+            SelectionKey key=channel.register(selector,SelectionKey.OP_READ,null);
+            SelectChannelEndPoint endpoint=createEndPoint(channel,key);
+            key.attach(endpoint);
+            endpoint.schedule();
+          }
+ else           if (channel.isOpen()) {
+            channel.register(selector,SelectionKey.OP_CONNECT,null);
+          }
+        }
+ else         if (change instanceof ServerSocketChannel) {
+          ServerSocketChannel channel=(ServerSocketChannel)change;
+          channel.register(getSelector(),SelectionKey.OP_ACCEPT);
+        }
+ else         if (change instanceof ChangeTask) {
+          ((ChangeTask)change).run();
+        }
+ else         throw new IllegalArgumentException(change.toString());
+      }
+ catch (      Exception e) {
+        if (isRunning())         Log.warn(e);
+ else         Log.debug(e);
+      }
+    }
+    long retry_next;
+    long now=System.currentTimeMillis();
+    _timeout.setNow(now);
+    retry_next=_timeout.getTimeToNext();
+    long wait=_changes.size() == 0 ? __IDLE_TICK : 0L;
+    if (wait > 0 && retry_next >= 0 && wait > retry_next)     wait=retry_next;
+    if (wait > 0) {
+      if (_pausing) {
+        try {
+          Thread.sleep(__BUSY_PAUSE);
+        }
+ catch (        InterruptedException e) {
+          Log.ignore(e);
+        }
+      }
+      long before=now;
+      int selected=selector.select(wait);
+      now=System.currentTimeMillis();
+      _timeout.setNow(now);
+      _selects++;
+      if (now > _monitorNext) {
+        _selects=(int)(_selects * __MONITOR_PERIOD / (now - _monitorStart));
+        _pausing=_selects > __MAX_SELECTS;
+        if (_pausing)         _paused++;
+        _selects=0;
+        _jvmBug=0;
+        _monitorStart=now;
+        _monitorNext=now + __MONITOR_PERIOD;
+      }
+      if (now > _log) {
+        if (_paused > 0)         Log.debug(this + " Busy selector - injecting delay " + _paused+ " times");
+        if (_jvmFix2 > 0)         Log.debug(this + " JVM BUG(s) - injecting delay" + _jvmFix2+ " times");
+        if (_jvmFix1 > 0)         Log.debug(this + " JVM BUG(s) - recreating selector " + _jvmFix1+ " times, cancelled keys "+ _jvmFix0+ " times");
+ else         if (Log.isDebugEnabled() && _jvmFix0 > 0)         Log.debug(this + " JVM BUG(s) - cancelled keys " + _jvmFix0+ " times");
+        _paused=0;
+        _jvmFix2=0;
+        _jvmFix1=0;
+        _jvmFix0=0;
+        _log=now + 60000;
+      }
+      if (selected == 0 && wait > 10 && (now - before) < (wait / 2)) {
+        _jvmBug++;
+        if (_jvmBug > (__JVMBUG_THRESHHOLD)) {
+          try {
+            if (_jvmBug == __JVMBUG_THRESHHOLD + 1)             _jvmFix2++;
+            Thread.sleep(__BUSY_PAUSE);
+          }
+ catch (          InterruptedException e) {
+            Log.ignore(e);
+          }
+        }
+ else         if (_jvmBug == __JVMBUG_THRESHHOLD) {
+synchronized (this) {
+            final Selector new_selector=Selector.open();
+            for (            SelectionKey k : selector.keys()) {
+              if (!k.isValid() || k.interestOps() == 0)               continue;
+              final SelectableChannel channel=k.channel();
+              final Object attachment=k.attachment();
+              if (attachment == null)               addChange(channel);
+ else               addChange(channel,attachment);
+            }
+            Selector old_selector=_selector;
+            _selector=new_selector;
+            try {
+              old_selector.close();
+            }
+ catch (            Exception e) {
+              Log.ignore(e);
+            }
+            return;
+          }
+        }
+ else         if (_jvmBug % 32 == 31) {
+          int cancelled=0;
+          for (          SelectionKey k : selector.keys()) {
+            if (k.isValid() && k.interestOps() == 0) {
+              k.cancel();
+              cancelled++;
+            }
+          }
+          if (cancelled > 0)           _jvmFix0++;
+          return;
+        }
+      }
+ else       if (__BUSY_KEY > 0 && selected == 1 && _selects > __MAX_SELECTS) {
+        SelectionKey busy=selector.selectedKeys().iterator().next();
+        if (busy == _busyKey) {
+          if (++_busyKeyCount > __BUSY_KEY && !(busy.channel() instanceof ServerSocketChannel)) {
+            final SelectChannelEndPoint endpoint=(SelectChannelEndPoint)busy.attachment();
+            Log.warn("Busy Key " + busy.channel() + " "+ endpoint);
+            busy.cancel();
+            if (endpoint != null) {
+              dispatch(new Runnable(){
+                public void run(){
+                  try {
+                    endpoint.close();
+                  }
+ catch (                  IOException e) {
+                    Log.ignore(e);
+                  }
+                }
+              }
+);
+            }
+          }
+        }
+ else         _busyKeyCount=0;
+        _busyKey=busy;
+      }
+    }
+ else {
+      selector.selectNow();
+      _selects++;
+    }
+    if (_selector == null || !selector.isOpen())     return;
+    for (    SelectionKey key : selector.selectedKeys()) {
+      try {
+        if (!key.isValid()) {
+          key.cancel();
+          SelectChannelEndPoint endpoint=(SelectChannelEndPoint)key.attachment();
+          if (endpoint != null)           endpoint.doUpdateKey();
+          continue;
+        }
+        Object att=key.attachment();
+        if (att instanceof SelectChannelEndPoint) {
+          ((SelectChannelEndPoint)att).schedule();
+        }
+ else         if (key.isAcceptable()) {
+          SocketChannel channel=acceptChannel(key);
+          if (channel == null)           continue;
+          channel.configureBlocking(false);
+          _nextSet=++_nextSet % _selectSet.length;
+          if (_nextSet == _setID) {
+            SelectionKey cKey=channel.register(_selectSet[_nextSet].getSelector(),SelectionKey.OP_READ);
+            SelectChannelEndPoint endpoint=_selectSet[_nextSet].createEndPoint(channel,cKey);
+            cKey.attach(endpoint);
+            if (endpoint != null)             endpoint.schedule();
+          }
+ else {
+            _selectSet[_nextSet].addChange(channel);
+            _selectSet[_nextSet].wakeup();
+          }
+        }
+ else         if (key.isConnectable()) {
+          SocketChannel channel=(SocketChannel)key.channel();
+          boolean connected=false;
+          try {
+            connected=channel.finishConnect();
+          }
+ catch (          Exception e) {
+            connectionFailed(channel,e,att);
+          }
+ finally {
+            if (connected) {
+              key.interestOps(SelectionKey.OP_READ);
+              SelectChannelEndPoint endpoint=createEndPoint(channel,key);
+              key.attach(endpoint);
+              endpoint.schedule();
+            }
+ else {
+              key.cancel();
+            }
+          }
+        }
+ else {
+          SocketChannel channel=(SocketChannel)key.channel();
+          SelectChannelEndPoint endpoint=createEndPoint(channel,key);
+          key.attach(endpoint);
+          if (key.isReadable())           endpoint.schedule();
+        }
+        key=null;
+      }
+ catch (      CancelledKeyException e) {
+        Log.ignore(e);
+      }
+catch (      Exception e) {
+        if (isRunning())         Log.warn(e);
+ else         Log.ignore(e);
+        if (key != null && !(key.channel() instanceof ServerSocketChannel) && key.isValid())         key.cancel();
+      }
+    }
+    selector.selectedKeys().clear();
+    _timeout.setNow(now);
+    Task task=_timeout.expired();
+    while (task != null) {
+      if (task instanceof Runnable)       dispatch((Runnable)task);
+ else       task.expired();
+      task=_timeout.expired();
+    }
+    if (now - _idleTick > __IDLE_TICK) {
+      _idleTick=now;
+      final long idle_now=((_lowResourcesConnections > 0 && selector.keys().size() > _lowResourcesConnections)) ? (now + _maxIdleTime - _lowResourcesMaxIdleTime) : now;
+      dispatch(new Runnable(){
+        public void run(){
+          for (          SelectChannelEndPoint endp : _endPoints.keySet()) {
+            endp.checkIdleTimestamp(idle_now);
+          }
+        }
+      }
+);
+    }
+  }
+ catch (  CancelledKeyException e) {
+    Log.ignore(e);
+  }
+ finally {
+    _selecting=null;
+  }
+}

@@ -1,0 +1,65 @@
+{
+  if (!_bufferChunked) {
+    if (_content != null && _content.length() > 0 && _buffer != null && _buffer.space() > 0) {
+      int len=_buffer.put(_content);
+      _content.skip(len);
+      if (_content.length() == 0)       _content=null;
+    }
+    if (_contentLength == HttpTokens.CHUNKED_CONTENT) {
+      int size=_buffer == null ? 0 : _buffer.length();
+      if (size > 0) {
+        _bufferChunked=true;
+        if (_buffer.getIndex() == CHUNK_SPACE) {
+          _buffer.poke(_buffer.getIndex() - 2,HttpTokens.CRLF,0,2);
+          _buffer.setGetIndex(_buffer.getIndex() - 2);
+          BufferUtil.prependHexInt(_buffer,size);
+          if (_needCRLF) {
+            _buffer.poke(_buffer.getIndex() - 2,HttpTokens.CRLF,0,2);
+            _buffer.setGetIndex(_buffer.getIndex() - 2);
+            _needCRLF=false;
+          }
+        }
+ else {
+          if (_needCRLF) {
+            if (_header.length() > 0)             throw new IllegalStateException("EOC");
+            _header.put(HttpTokens.CRLF);
+            _needCRLF=false;
+          }
+          BufferUtil.putHexInt(_header,size);
+          _header.put(HttpTokens.CRLF);
+        }
+        if (_buffer.space() >= 2)         _buffer.put(HttpTokens.CRLF);
+ else         _needCRLF=true;
+      }
+      if (_needEOC && (_content == null || _content.length() == 0)) {
+        if (_needCRLF) {
+          if (_buffer == null && _header.space() >= 2) {
+            _header.put(HttpTokens.CRLF);
+            _needCRLF=false;
+          }
+ else           if (_buffer != null && _buffer.space() >= 2) {
+            _buffer.put(HttpTokens.CRLF);
+            _needCRLF=false;
+          }
+        }
+        if (!_needCRLF && _needEOC) {
+          if (_buffer == null && _header.space() >= LAST_CHUNK.length) {
+            if (!_head) {
+              _header.put(LAST_CHUNK);
+              _bufferChunked=true;
+            }
+            _needEOC=false;
+          }
+ else           if (_buffer != null && _buffer.space() >= LAST_CHUNK.length) {
+            if (!_head) {
+              _buffer.put(LAST_CHUNK);
+              _bufferChunked=true;
+            }
+            _needEOC=false;
+          }
+        }
+      }
+    }
+  }
+  if (_content != null && _content.length() == 0)   _content=null;
+}

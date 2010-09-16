@@ -1,0 +1,117 @@
+{
+  Request baseRequest=(request instanceof Request) ? ((Request)request) : HttpConnection.getCurrentConnection().getRequest();
+  Response base_response=baseRequest.getResponse();
+  response.resetBuffer();
+  base_response.fwdReset();
+  request.removeAttribute(__JSP_FILE);
+  final String old_uri=baseRequest.getRequestURI();
+  final String old_context_path=baseRequest.getContextPath();
+  final String old_servlet_path=baseRequest.getServletPath();
+  final String old_path_info=baseRequest.getPathInfo();
+  final String old_query=baseRequest.getQueryString();
+  final Attributes old_attr=baseRequest.getAttributes();
+  final DispatcherType old_type=baseRequest.getDispatcherType();
+  MultiMap old_params=baseRequest.getParameters();
+  try {
+    baseRequest.setDispatcherType(dispatch);
+    if (_named != null)     _contextHandler.handle(_named,baseRequest,(HttpServletRequest)request,(HttpServletResponse)response);
+ else {
+      String query=_dQuery;
+      if (query != null) {
+        if (old_params == null) {
+          baseRequest.extractParameters();
+          old_params=baseRequest.getParameters();
+        }
+        MultiMap parameters=new MultiMap();
+        UrlEncoded.decodeTo(query,parameters,request.getCharacterEncoding());
+        boolean merge_old_query=false;
+        if (old_params == null) {
+          baseRequest.getParameterNames();
+          old_params=baseRequest.getParameters();
+        }
+        if (old_params != null && old_params.size() > 0) {
+          Iterator iter=old_params.entrySet().iterator();
+          while (iter.hasNext()) {
+            Map.Entry entry=(Map.Entry)iter.next();
+            String name=(String)entry.getKey();
+            if (parameters.containsKey(name))             merge_old_query=true;
+            Object values=entry.getValue();
+            for (int i=0; i < LazyList.size(values); i++)             parameters.add(name,LazyList.get(values,i));
+          }
+        }
+        if (old_query != null && old_query.length() > 0) {
+          if (merge_old_query) {
+            StringBuilder overridden_query_string=new StringBuilder();
+            MultiMap overridden_old_query=new MultiMap();
+            UrlEncoded.decodeTo(old_query,overridden_old_query,request.getCharacterEncoding());
+            MultiMap overridden_new_query=new MultiMap();
+            UrlEncoded.decodeTo(query,overridden_new_query,request.getCharacterEncoding());
+            Iterator iter=overridden_old_query.entrySet().iterator();
+            while (iter.hasNext()) {
+              Map.Entry entry=(Map.Entry)iter.next();
+              String name=(String)entry.getKey();
+              if (!overridden_new_query.containsKey(name)) {
+                Object values=entry.getValue();
+                for (int i=0; i < LazyList.size(values); i++) {
+                  overridden_query_string.append("&").append(name).append("=").append(LazyList.get(values,i));
+                }
+              }
+            }
+            query=query + overridden_query_string;
+          }
+ else {
+            query=query + "&" + old_query;
+          }
+        }
+        baseRequest.setParameters(parameters);
+        baseRequest.setQueryString(query);
+      }
+      ForwardAttributes attr=new ForwardAttributes(old_attr);
+      if (old_attr.getAttribute(FORWARD_REQUEST_URI) != null) {
+        attr._pathInfo=(String)old_attr.getAttribute(FORWARD_PATH_INFO);
+        attr._query=(String)old_attr.getAttribute(FORWARD_QUERY_STRING);
+        attr._requestURI=(String)old_attr.getAttribute(FORWARD_REQUEST_URI);
+        attr._contextPath=(String)old_attr.getAttribute(FORWARD_CONTEXT_PATH);
+        attr._servletPath=(String)old_attr.getAttribute(FORWARD_SERVLET_PATH);
+      }
+ else {
+        attr._pathInfo=old_path_info;
+        attr._query=old_query;
+        attr._requestURI=old_uri;
+        attr._contextPath=old_context_path;
+        attr._servletPath=old_servlet_path;
+      }
+      baseRequest.setRequestURI(_uri);
+      baseRequest.setContextPath(_contextHandler.getContextPath());
+      baseRequest.setAttributes(attr);
+      baseRequest.setQueryString(query);
+      _contextHandler.handle(_path,baseRequest,(HttpServletRequest)request,(HttpServletResponse)response);
+      if (baseRequest.getConnection().getResponse().isWriting()) {
+        try {
+          response.getWriter().close();
+        }
+ catch (        IllegalStateException e) {
+          response.getOutputStream().close();
+        }
+      }
+ else {
+        try {
+          response.getOutputStream().close();
+        }
+ catch (        IllegalStateException e) {
+          response.getWriter().close();
+        }
+      }
+    }
+  }
+  finally {
+    baseRequest.setRequestURI(old_uri);
+    baseRequest.setContextPath(old_context_path);
+    baseRequest.setServletPath(old_servlet_path);
+    baseRequest.setPathInfo(old_path_info);
+    baseRequest.setAttributes(old_attr);
+    baseRequest.setParameters(old_params);
+    baseRequest.setQueryString(old_query);
+    baseRequest.setDispatcherType(old_type);
+  }
+}

@@ -1,0 +1,42 @@
+{
+  boolean proceed=handleAuthentication(request,response,serverAddress);
+  if (!proceed)   return;
+  String host=serverAddress;
+  int port=80;
+  int colon=serverAddress.indexOf(':');
+  if (colon > 0) {
+    host=serverAddress.substring(0,colon);
+    port=Integer.parseInt(serverAddress.substring(colon + 1));
+  }
+  if (!validateDestination(host)) {
+    Log.info("ProxyHandler: Forbidden destination " + host);
+    response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+    baseRequest.setHandled(true);
+    return;
+  }
+  SocketChannel channel=connectToServer(request,host,port);
+  HttpConnection httpConnection=HttpConnection.getCurrentConnection();
+  Buffer headerBuffer=((HttpParser)httpConnection.getParser()).getHeaderBuffer();
+  Buffer bodyBuffer=((HttpParser)httpConnection.getParser()).getBodyBuffer();
+  int length=headerBuffer == null ? 0 : headerBuffer.length();
+  length+=bodyBuffer == null ? 0 : bodyBuffer.length();
+  IndirectNIOBuffer buffer=null;
+  if (length > 0) {
+    buffer=new IndirectNIOBuffer(length);
+    if (headerBuffer != null) {
+      buffer.put(headerBuffer);
+      headerBuffer.clear();
+    }
+    if (bodyBuffer != null) {
+      buffer.put(bodyBuffer);
+      bodyBuffer.clear();
+    }
+  }
+  ConcurrentMap<String,Object> context=new ConcurrentHashMap<String,Object>();
+  prepareContext(request,context);
+  ClientToProxyConnection clientToProxy=prepareConnections(context,channel,buffer);
+  response.setStatus(HttpServletResponse.SC_OK);
+  baseRequest.getConnection().getGenerator().setPersistent(true);
+  response.getOutputStream().close();
+  upgradeConnection(request,response,clientToProxy);
+}

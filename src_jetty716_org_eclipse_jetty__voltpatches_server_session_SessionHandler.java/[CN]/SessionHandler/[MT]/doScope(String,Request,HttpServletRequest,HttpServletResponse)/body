@@ -1,0 +1,44 @@
+{
+  setRequestedId(baseRequest,request);
+  SessionManager old_session_manager=null;
+  HttpSession old_session=null;
+  try {
+    old_session_manager=baseRequest.getSessionManager();
+    old_session=baseRequest.getSession(false);
+    if (old_session_manager != _sessionManager) {
+      baseRequest.setSessionManager(_sessionManager);
+      baseRequest.setSession(null);
+    }
+    HttpSession session=null;
+    if (_sessionManager != null) {
+      session=baseRequest.getSession(false);
+      if (session != null) {
+        if (session != old_session) {
+          HttpCookie cookie=_sessionManager.access(session,request.isSecure());
+          if (cookie != null)           baseRequest.getResponse().addCookie(cookie);
+        }
+      }
+ else {
+        session=baseRequest.recoverNewSession(_sessionManager);
+        if (session != null)         baseRequest.setSession(session);
+      }
+    }
+    if (Log.isDebugEnabled()) {
+      Log.debug("sessionManager=" + _sessionManager);
+      Log.debug("session=" + session);
+    }
+    if (_nextScope != null)     _nextScope.doScope(target,baseRequest,request,response);
+ else     if (_outerScope != null)     _outerScope.doHandle(target,baseRequest,request,response);
+ else     doHandle(target,baseRequest,request,response);
+  }
+  finally {
+    HttpSession session=request.getSession(false);
+    if (old_session_manager != _sessionManager) {
+      if (session != null)       _sessionManager.complete(session);
+      if (old_session_manager != null) {
+        baseRequest.setSessionManager(old_session_manager);
+        baseRequest.setSession(old_session);
+      }
+    }
+  }
+}

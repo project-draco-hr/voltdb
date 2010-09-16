@@ -1,0 +1,52 @@
+{
+  PathMap contextMap=new PathMap();
+  Handler[] branches=getHandlers();
+  for (int b=0; branches != null && b < branches.length; b++) {
+    Handler[] handlers=null;
+    if (branches[b] instanceof ContextHandler) {
+      handlers=new Handler[]{branches[b]};
+    }
+ else     if (branches[b] instanceof HandlerContainer) {
+      handlers=((HandlerContainer)branches[b]).getChildHandlersByClass(ContextHandler.class);
+    }
+ else     continue;
+    for (int i=0; i < handlers.length; i++) {
+      ContextHandler handler=(ContextHandler)handlers[i];
+      String contextPath=handler.getContextPath();
+      if (contextPath == null || contextPath.indexOf(',') >= 0 || contextPath.startsWith("*"))       throw new IllegalArgumentException("Illegal context spec:" + contextPath);
+      if (!contextPath.startsWith("/"))       contextPath='/' + contextPath;
+      if (contextPath.length() > 1) {
+        if (contextPath.endsWith("/"))         contextPath+="*";
+ else         if (!contextPath.endsWith("/*"))         contextPath+="/*";
+      }
+      Object contexts=contextMap.get(contextPath);
+      String[] vhosts=handler.getVirtualHosts();
+      if (vhosts != null && vhosts.length > 0) {
+        Map hosts;
+        if (contexts instanceof Map)         hosts=(Map)contexts;
+ else {
+          hosts=new HashMap();
+          hosts.put("*",contexts);
+          contextMap.put(contextPath,hosts);
+        }
+        for (int j=0; j < vhosts.length; j++) {
+          String vhost=vhosts[j];
+          contexts=hosts.get(vhost);
+          contexts=LazyList.add(contexts,branches[b]);
+          hosts.put(vhost,contexts);
+        }
+      }
+ else       if (contexts instanceof Map) {
+        Map hosts=(Map)contexts;
+        contexts=hosts.get("*");
+        contexts=LazyList.add(contexts,branches[b]);
+        hosts.put("*",contexts);
+      }
+ else {
+        contexts=LazyList.add(contexts,branches[b]);
+        contextMap.put(contextPath,contexts);
+      }
+    }
+  }
+  _contextMap=contextMap;
+}

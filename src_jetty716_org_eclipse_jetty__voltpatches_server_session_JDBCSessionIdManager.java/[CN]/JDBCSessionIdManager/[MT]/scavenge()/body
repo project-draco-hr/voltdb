@@ -1,0 +1,52 @@
+{
+  Connection connection=null;
+  List expiredSessionIds=new ArrayList();
+  try {
+    if (Log.isDebugEnabled())     Log.debug("Scavenge sweep started at " + System.currentTimeMillis());
+    if (_lastScavengeTime > 0) {
+      connection=getConnection();
+      connection.setAutoCommit(true);
+      PreparedStatement statement=connection.prepareStatement(_selectExpiredSessions);
+      long lowerBound=(_lastScavengeTime - _scavengeIntervalMs);
+      long upperBound=_lastScavengeTime;
+      if (Log.isDebugEnabled())       Log.debug(" Searching for sessions expired between " + lowerBound + " and "+ upperBound);
+      statement.setLong(1,lowerBound);
+      statement.setLong(2,upperBound);
+      ResultSet result=statement.executeQuery();
+      while (result.next()) {
+        String sessionId=result.getString("sessionId");
+        expiredSessionIds.add(sessionId);
+        if (Log.isDebugEnabled())         Log.debug(" Found expired sessionId=" + sessionId);
+      }
+      Handler[] contexts=_server.getChildHandlersByClass(ContextHandler.class);
+      for (int i=0; contexts != null && i < contexts.length; i++) {
+        SessionManager manager=((SessionHandler)((ContextHandler)contexts[i]).getChildHandlerByClass(SessionHandler.class)).getSessionManager();
+        if (manager instanceof JDBCSessionManager) {
+          ((JDBCSessionManager)manager).expire(expiredSessionIds);
+        }
+      }
+      upperBound=_lastScavengeTime - (2 * _scavengeIntervalMs);
+      if (upperBound > 0) {
+        if (Log.isDebugEnabled())         Log.debug("Deleting old expired sessions expired before " + upperBound);
+        statement=connection.prepareStatement(_deleteOldExpiredSessions);
+        statement.setLong(1,upperBound);
+        statement.executeUpdate();
+      }
+    }
+  }
+ catch (  Exception e) {
+    Log.warn("Problem selecting expired sessions",e);
+  }
+ finally {
+    _lastScavengeTime=System.currentTimeMillis();
+    if (Log.isDebugEnabled())     Log.debug("Scavenge sweep ended at " + _lastScavengeTime);
+    if (connection != null) {
+      try {
+        connection.close();
+      }
+ catch (      SQLException e) {
+        Log.warn(e);
+      }
+    }
+  }
+}

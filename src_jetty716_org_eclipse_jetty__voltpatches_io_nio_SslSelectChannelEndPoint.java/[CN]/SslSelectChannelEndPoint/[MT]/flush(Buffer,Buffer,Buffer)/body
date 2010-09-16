@@ -1,0 +1,88 @@
+{
+  int consumed=0;
+  int available=header.length();
+  if (buffer != null)   available+=buffer.length();
+  needOutBuffer();
+  ByteBuffer out_buffer=_outNIOBuffer.getByteBuffer();
+  loop:   while (true) {
+    if (_outNIOBuffer.length() > 0) {
+      flush();
+      if (isBufferingOutput())       break loop;
+    }
+switch (_engine.getHandshakeStatus()) {
+case FINISHED:
+case NOT_HANDSHAKING:
+      if (_closing || available == 0) {
+        if (consumed == 0)         consumed=-1;
+        break loop;
+      }
+    int c;
+  if (header != null && header.length() > 0) {
+    if (buffer != null && buffer.length() > 0)     c=wrap(header,buffer);
+ else     c=wrap(header);
+  }
+ else   c=wrap(buffer);
+if (c > 0) {
+  _handshook=true;
+  consumed+=c;
+  available-=c;
+}
+ else if (c < 0) {
+  if (consumed == 0)   consumed=-1;
+  break loop;
+}
+break;
+case NEED_UNWRAP:
+checkRenegotiate();
+Buffer buf=_buffers.getBuffer(_engine.getSession().getApplicationBufferSize());
+try {
+ByteBuffer bbuf=((NIOBuffer)buf).getByteBuffer();
+if (!unwrap(bbuf) && _engine.getHandshakeStatus() == HandshakeStatus.NEED_UNWRAP) {
+break loop;
+}
+}
+  finally {
+_buffers.returnBuffer(buf);
+}
+break;
+case NEED_TASK:
+{
+Runnable task;
+while ((task=_engine.getDelegatedTask()) != null) {
+task.run();
+}
+break;
+}
+case NEED_WRAP:
+{
+checkRenegotiate();
+synchronized (out_buffer) {
+try {
+_outNIOBuffer.compact();
+int put=_outNIOBuffer.putIndex();
+out_buffer.position();
+_result=null;
+_result=_engine.wrap(__NO_BUFFERS,out_buffer);
+if (_debug) __log.debug(_session + " flush wrap " + _result);
+switch (_result.getStatus()) {
+case BUFFER_OVERFLOW:
+case BUFFER_UNDERFLOW:
+Log.warn("unwrap {}",_result);
+case CLOSED:
+_closing=true;
+}
+_outNIOBuffer.setPutIndex(put + _result.bytesProduced());
+}
+  finally {
+out_buffer.position(0);
+}
+}
+flush();
+if (isBufferingOutput()) break loop;
+break;
+}
+}
+}
+freeOutBuffer();
+return consumed;
+}

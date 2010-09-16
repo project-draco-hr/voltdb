@@ -1,0 +1,46 @@
+{
+  final Response base_response=baseRequest.getResponse();
+  final Thread thread=Thread.currentThread();
+  final String old_name=thread.getName();
+  boolean suspend=false;
+  boolean retry=false;
+  String name=(String)request.getAttribute("org.mortbay.jetty.thread.name");
+  if (name == null)   name=old_name + ":" + baseRequest.getScheme()+ "://"+ baseRequest.getLocalAddr()+ ":"+ baseRequest.getLocalPort()+ baseRequest.getUri();
+ else   retry=true;
+  String ex=null;
+  try {
+    final String d=_date.now();
+    final int ms=_date.lastMs();
+    if (retry)     _print.println(d + (ms > 99 ? "." : (ms > 9 ? ".0" : ".00")) + ms+ ":"+ name+ " RETRY");
+ else     _print.println(d + (ms > 99 ? "." : (ms > 9 ? ".0" : ".00")) + ms+ ":"+ name+ " "+ baseRequest.getRemoteAddr()+ " "+ request.getMethod()+ " "+ baseRequest.getHeader("Cookie")+ "; "+ baseRequest.getHeader("User-Agent"));
+    thread.setName(name);
+    getHandler().handle(target,baseRequest,request,response);
+  }
+ catch (  IOException ioe) {
+    ex=ioe.toString();
+    throw ioe;
+  }
+catch (  ServletException se) {
+    ex=se.toString() + ":" + se.getCause();
+    throw se;
+  }
+catch (  RuntimeException rte) {
+    ex=rte.toString();
+    throw rte;
+  }
+catch (  Error e) {
+    ex=e.toString();
+    throw e;
+  }
+ finally {
+    thread.setName(old_name);
+    final String d=_date.now();
+    final int ms=_date.lastMs();
+    suspend=baseRequest.getAsyncContinuation().isSuspended();
+    if (suspend) {
+      request.setAttribute("org.mortbay.jetty.thread.name",name);
+      _print.println(d + (ms > 99 ? "." : (ms > 9 ? ".0" : ".00")) + ms+ ":"+ name+ " SUSPEND");
+    }
+ else     _print.println(d + (ms > 99 ? "." : (ms > 9 ? ".0" : ".00")) + ms+ ":"+ name+ " "+ base_response.getStatus()+ (ex == null ? "" : ("/" + ex))+ " "+ base_response.getContentType()+ " "+ base_response.getContentCount());
+  }
+}

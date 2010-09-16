@@ -1,0 +1,84 @@
+{
+  final ByteBuffer bbuf=extractInputBuffer(buffer);
+  int size=buffer.length();
+  HandshakeStatus initialStatus=_engine.getHandshakeStatus();
+synchronized (bbuf) {
+    try {
+      unwrap(bbuf);
+      int wraps=0;
+      loop:       while (true) {
+        if (isBufferingOutput()) {
+          flush();
+          if (isBufferingOutput())           break loop;
+        }
+switch (_engine.getHandshakeStatus()) {
+case FINISHED:
+case NOT_HANDSHAKING:
+          if (_closing)           return -1;
+        break loop;
+case NEED_UNWRAP:
+      checkRenegotiate();
+    if (!unwrap(bbuf) && _engine.getHandshakeStatus() == HandshakeStatus.NEED_UNWRAP) {
+      break loop;
+    }
+  break;
+case NEED_TASK:
+{
+  Runnable task;
+  while ((task=_engine.getDelegatedTask()) != null) {
+    task.run();
+  }
+  if (initialStatus == HandshakeStatus.NOT_HANDSHAKING && _engine.getHandshakeStatus() == HandshakeStatus.NEED_UNWRAP && wraps == 0) {
+    if (_debug)     __log.warn(_session + " JETTY-567");
+    return -1;
+  }
+  break;
+}
+case NEED_WRAP:
+{
+checkRenegotiate();
+wraps++;
+needOutBuffer();
+ByteBuffer out_buffer=_outNIOBuffer.getByteBuffer();
+synchronized (out_buffer) {
+  try {
+    _outNIOBuffer.compact();
+    int put=_outNIOBuffer.putIndex();
+    out_buffer.position();
+    _result=null;
+    _result=_engine.wrap(__NO_BUFFERS,out_buffer);
+    if (_debug)     __log.debug(_session + " fill wrap " + _result);
+switch (_result.getStatus()) {
+case BUFFER_OVERFLOW:
+case BUFFER_UNDERFLOW:
+      Log.warn("wrap {}",_result);
+case CLOSED:
+    _closing=true;
+}
+_outNIOBuffer.setPutIndex(put + _result.bytesProduced());
+}
+  finally {
+out_buffer.position(0);
+}
+}
+flush();
+freeOutBuffer();
+break;
+}
+}
+}
+}
+ catch (SSLException e) {
+Log.warn(e.toString());
+Log.debug(e);
+throw e;
+}
+ finally {
+buffer.setPutIndex(bbuf.position());
+bbuf.position(0);
+}
+int filled=buffer.length() - size;
+if (filled > 0) _handshook=true;
+return filled;
+}
+}

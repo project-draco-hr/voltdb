@@ -1,0 +1,116 @@
+{
+  if (charset == null || StringUtil.isUTF8(charset)) {
+    Utf8StringBuffer buffer=null;
+    for (int i=0; i < length; i++) {
+      char c=encoded.charAt(offset + i);
+      if (c < 0 || c > 0xff) {
+        if (buffer == null) {
+          buffer=new Utf8StringBuffer(length);
+          buffer.getStringBuffer().append(encoded,offset,offset + i + 1);
+        }
+ else         buffer.getStringBuffer().append(c);
+      }
+ else       if (c == '+') {
+        if (buffer == null) {
+          buffer=new Utf8StringBuffer(length);
+          buffer.getStringBuffer().append(encoded,offset,offset + i);
+        }
+        buffer.getStringBuffer().append(' ');
+      }
+ else       if (c == '%' && (i + 2) < length) {
+        if (buffer == null) {
+          buffer=new Utf8StringBuffer(length);
+          buffer.getStringBuffer().append(encoded,offset,offset + i);
+        }
+        while (c == '%' && (i + 2) < length) {
+          try {
+            byte b=(byte)TypeUtil.parseInt(encoded,offset + i + 1,2,16);
+            buffer.append(b);
+            i+=3;
+          }
+ catch (          NumberFormatException nfe) {
+            buffer.getStringBuffer().append('%');
+            for (char next; ((next=encoded.charAt(++i + offset)) != '%'); )             buffer.getStringBuffer().append((next == '+' ? ' ' : next));
+          }
+          if (i < length)           c=encoded.charAt(offset + i);
+        }
+        i--;
+      }
+ else       if (buffer != null)       buffer.getStringBuffer().append(c);
+    }
+    if (buffer == null) {
+      if (offset == 0 && encoded.length() == length)       return encoded;
+      return encoded.substring(offset,offset + length);
+    }
+    return buffer.toString();
+  }
+ else {
+    StringBuffer buffer=null;
+    try {
+      for (int i=0; i < length; i++) {
+        char c=encoded.charAt(offset + i);
+        if (c < 0 || c > 0xff) {
+          if (buffer == null) {
+            buffer=new StringBuffer(length);
+            buffer.append(encoded,offset,offset + i + 1);
+          }
+ else           buffer.append(c);
+        }
+ else         if (c == '+') {
+          if (buffer == null) {
+            buffer=new StringBuffer(length);
+            buffer.append(encoded,offset,offset + i);
+          }
+          buffer.append(' ');
+        }
+ else         if (c == '%' && (i + 2) < length) {
+          if (buffer == null) {
+            buffer=new StringBuffer(length);
+            buffer.append(encoded,offset,offset + i);
+          }
+          byte[] ba=new byte[length];
+          int n=0;
+          while (c >= 0 && c <= 0xff) {
+            if (c == '%') {
+              if (i + 2 < length) {
+                try {
+                  ba[n++]=(byte)TypeUtil.parseInt(encoded,offset + i + 1,2,16);
+                  i+=3;
+                }
+ catch (                NumberFormatException nfe) {
+                  ba[n - 1]=(byte)'%';
+                  for (char next; ((next=encoded.charAt(++i + offset)) != '%'); )                   ba[n++]=(byte)(next == '+' ? ' ' : next);
+                }
+              }
+ else {
+                ba[n++]=(byte)'%';
+                i++;
+              }
+            }
+ else             if (c == '+') {
+              ba[n++]=(byte)' ';
+              i++;
+            }
+ else {
+              ba[n++]=(byte)c;
+              i++;
+            }
+            if (i >= length)             break;
+            c=encoded.charAt(offset + i);
+          }
+          i--;
+          buffer.append(new String(ba,0,n,charset));
+        }
+ else         if (buffer != null)         buffer.append(c);
+      }
+      if (buffer == null) {
+        if (offset == 0 && encoded.length() == length)         return encoded;
+        return encoded.substring(offset,offset + length);
+      }
+      return buffer.toString();
+    }
+ catch (    UnsupportedEncodingException e) {
+      throw new RuntimeException(e);
+    }
+  }
+}

@@ -1,0 +1,35 @@
+{
+  if (data == null)   return;
+  Connection connection=getConnection();
+  PreparedStatement statement=null;
+  try {
+    String rowId=calculateRowId(data);
+    long now=System.currentTimeMillis();
+    connection.setAutoCommit(true);
+    statement=connection.prepareStatement(__insertSession);
+    statement.setString(1,rowId);
+    statement.setString(2,data.getId());
+    statement.setString(3,data.getCanonicalContext());
+    statement.setString(4,data.getVirtualHost());
+    statement.setString(5,getIdManager().getWorkerName());
+    statement.setLong(6,data.getAccessed());
+    statement.setLong(7,data.getLastAccessed());
+    statement.setLong(8,data.getCreated());
+    statement.setLong(9,data.getCookieSet());
+    statement.setLong(10,now);
+    statement.setLong(11,data.getExpiryTime());
+    ByteArrayOutputStream baos=new ByteArrayOutputStream();
+    ObjectOutputStream oos=new ObjectOutputStream(baos);
+    oos.writeObject(data.getAttributeMap());
+    byte[] bytes=baos.toByteArray();
+    ByteArrayInputStream bais=new ByteArrayInputStream(bytes);
+    statement.setBinaryStream(12,bais,bytes.length);
+    statement.executeUpdate();
+    data.setRowId(rowId);
+    data.setLastSaved(now);
+    if (Log.isDebugEnabled())     Log.debug("Stored session " + data);
+  }
+  finally {
+    if (connection != null)     connection.close();
+  }
+}
