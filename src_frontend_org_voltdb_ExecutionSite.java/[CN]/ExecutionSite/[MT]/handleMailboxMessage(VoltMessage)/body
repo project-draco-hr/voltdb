@@ -87,7 +87,7 @@
     if (dmsg.shouldDump)     DumpManager.putDump(m_dumpId,m_currentDumpTimestamp,true,getDumpContents());
   }
  else   if (message instanceof ExecutionSiteNodeFailureMessage) {
-    discoverGlobalFaultData(((ExecutionSiteNodeFailureMessage)message).m_failedHosts);
+    discoverGlobalFaultData((ExecutionSiteNodeFailureMessage)message);
   }
  else   if (message instanceof CheckTxnStateCompletionMessage) {
     long txn_id=((CheckTxnStateCompletionMessage)message).m_txnId;
@@ -107,6 +107,13 @@
   }
  else   if (message instanceof PotentialSnapshotWorkMessage) {
     m_snapshotter.doSnapshotWork(ee);
+  }
+ else   if (message instanceof ExecutionSiteLocalSnapshotMessage) {
+    hostLog.info("Received ExecutionSiteLocalSnapshotMessage. Initiating local snapshot");
+    SnapshotSchedule schedule=m_context.cluster.getFaultsnapshots().get(FaultType.CLUSTER_PARTITION.toString());
+    SnapshotSaveAPI saveAPI=new SnapshotSaveAPI();
+    saveAPI.startSnapshotting(schedule.getPath(),schedule.getPrefix(),(byte)0x1,lastCommittedTxnId,m_systemProcedureContext,ConnectionUtil.getHostnameOrAddress());
+    VoltDB.crashVoltDB();
   }
  else {
     hostLog.l7dlog(Level.FATAL,LogKeys.org_voltdb_dtxn_SimpleDtxnConnection_UnkownMessageClass.name(),new Object[]{message.getClass().getName()},null);

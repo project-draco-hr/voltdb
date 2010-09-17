@@ -1,0 +1,50 @@
+{
+  TRACE_LOG.trace("Creating snapshot target and handing to EEs");
+  final VoltTable result=SnapshotSave.constructNodeResultsTable();
+  if (SnapshotSiteProcessor.m_snapshotCreateSetupPermit.tryAcquire()) {
+    createSetup(file_path,file_nonce,startTime,context,hostname,result);
+  }
+  VoltTable error=acquireSnapshotPermit(context,hostname,result);
+  if (error != null) {
+    return error;
+  }
+synchronized (SnapshotSiteProcessor.m_taskListsForSites) {
+    final Deque<SnapshotTableTask> m_taskList=SnapshotSiteProcessor.m_taskListsForSites.poll();
+    if (m_taskList == null) {
+      return result;
+    }
+ else {
+      if (SnapshotSiteProcessor.m_taskListsForSites.isEmpty()) {
+        assert(SnapshotSiteProcessor.m_snapshotCreateSetupPermit.availablePermits() == 1);
+        assert(SnapshotSiteProcessor.m_snapshotPermits.availablePermits() == 0);
+      }
+      assert(SnapshotSiteProcessor.ExecutionSitesCurrentlySnapshotting.get() > 0);
+      context.getExecutionSite().initiateSnapshots(m_taskList);
+    }
+  }
+  if (block != 0) {
+    HashSet<Exception> failures=null;
+    String status="SUCCESS";
+    String err="";
+    try {
+      failures=context.getExecutionSite().completeSnapshotWork();
+    }
+ catch (    InterruptedException e) {
+      status="FAILURE";
+      err=e.toString();
+    }
+    final VoltTable blockingResult=SnapshotSave.constructPartitionResultsTable();
+    if (failures.isEmpty()) {
+      blockingResult.addRow(Integer.parseInt(context.getSite().getHost().getTypeName()),hostname,Integer.parseInt(context.getSite().getTypeName()),status,err);
+    }
+ else {
+      status="FAILURE";
+      for (      Exception e : failures) {
+        err=e.toString();
+      }
+      blockingResult.addRow(Integer.parseInt(context.getSite().getHost().getTypeName()),hostname,Integer.parseInt(context.getSite().getTypeName()),status,err);
+    }
+    return blockingResult;
+  }
+  return result;
+}

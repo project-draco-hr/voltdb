@@ -1,0 +1,32 @@
+{
+  if (m_recovering) {
+    m_recoveryLog.fatal("Aborting recovery due to a remote node failure. Retry again.");
+    VoltDB.crashVoltDB();
+  }
+  HashSet<NodeFailureFault> failures=message.m_failedHosts;
+  m_context=VoltDB.instance().getCatalogContext();
+  HashSet<Integer> failedSiteIds=new HashSet<Integer>();
+  for (  NodeFailureFault fault : failures) {
+    failedSiteIds.addAll(m_context.siteTracker.getAllSitesForHost(fault.getHostId()));
+  }
+  m_knownFailedSites.addAll(failedSiteIds);
+  int expectedResponses=discoverGlobalFaultData_send();
+  long[] commit_and_safe=discoverGlobalFaultData_rcv(expectedResponses);
+  if (commit_and_safe == null) {
+    return;
+  }
+  HashSet<Integer> newFailedSiteIds=new HashSet<Integer>(failedSiteIds);
+  newFailedSiteIds.removeAll(m_handledFailedSites);
+  handleSiteFaults(message.m_partitionDetection,newFailedSiteIds,commit_and_safe[0],commit_and_safe[1]);
+  m_handledFailedSites.addAll(failedSiteIds);
+  for (  NodeFailureFault fault : failures) {
+    if (newFailedSiteIds.containsAll(m_context.siteTracker.getAllSitesForHost(fault.getHostId()))) {
+      if (message.m_partitionDetection) {
+        VoltDB.instance().getFaultDistributor().reportFaultHandled(m_faultHandler,new ClusterPartitionFault(fault));
+      }
+ else {
+        VoltDB.instance().getFaultDistributor().reportFaultHandled(m_faultHandler,fault);
+      }
+    }
+  }
+}

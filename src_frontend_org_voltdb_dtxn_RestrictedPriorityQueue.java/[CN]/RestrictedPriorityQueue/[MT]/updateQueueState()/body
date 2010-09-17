@@ -1,0 +1,41 @@
+{
+  QueueState newState=QueueState.UNBLOCKED;
+  TransactionState ts=super.peek();
+  LastInitiatorData lid=null;
+  if (m_state == QueueState.BLOCKED_CLOSED) {
+    newState=m_state;
+  }
+ else   if (ts == null) {
+    newState=QueueState.BLOCKED_EMPTY;
+  }
+  if (newState == QueueState.UNBLOCKED) {
+    newState=checkRoadBlock(ts.txnId);
+  }
+ else   if (newState == QueueState.BLOCKED_EMPTY) {
+    QueueState checkRoadBlock=checkRoadBlock(m_newestCandidateTransaction);
+    if (checkRoadBlock == QueueState.BLOCKED_CLOSED)     newState=checkRoadBlock;
+  }
+  if (newState == QueueState.UNBLOCKED) {
+    if (ts.txnId > m_newestCandidateTransaction) {
+      newState=QueueState.BLOCKED_ORDERING;
+    }
+ else {
+      lid=m_initiatorData.get(ts.initiatorSiteId);
+      if ((lid != null) && (ts.txnId > lid.m_lastSafeTxnId)) {
+        newState=QueueState.BLOCKED_SAFETY;
+      }
+    }
+  }
+  if (newState != m_state) {
+    if ((newState == QueueState.BLOCKED_ORDERING) || (newState == QueueState.BLOCKED_SAFETY)) {
+      m_blockTime=System.currentTimeMillis();
+    }
+    if (newState == QueueState.BLOCKED_SAFETY) {
+      assert(ts != null);
+      assert(lid != null);
+      sendHearbeatResponse(ts,lid);
+    }
+    m_state=newState;
+  }
+  return m_state;
+}
