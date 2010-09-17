@@ -50,7 +50,7 @@
       catalogVersions[i]=in.readInt();
       i++;
     }
-    int command=COMMAND_COMPLETE;
+    int errors=0;
     long minimumDiff=0;
     long maximumDiff=0;
     for (    long diff : difftimes) {
@@ -58,34 +58,57 @@
       if (diff < minimumDiff)       minimumDiff=diff;
     }
     long maxDiffMS=maximumDiff - minimumDiff;
-    if (maxDiffMS > MAX_ACCEPTABLE_TIME_DIFF_IN_MS)     command=COMMAND_NTPFAIL;
+    if (maxDiffMS > MAX_ACCEPTABLE_TIME_DIFF_IN_MS)     errors|=NTP_FAILURE;
     m_localHostId=readHostIds[0];
     recoveryLog.info("Selecting host id " + m_localHostId);
     for (i=1; i < readHostIds.length; i++) {
       if (readHostIds[i] != m_localHostId) {
-        command=COMMAND_HOSTIDFAIL;
+        errors|=HOSTID_FAILURE;
       }
     }
     for (    long crc : othercrcs) {
       if (crc != m_catalogCRC) {
-        command=COMMAND_CRCFAIL;
+        errors|=CRC_FAILURE;
       }
     }
     m_discoveredCatalogVersion=catalogVersions[0];
     for (    int version : catalogVersions) {
       if (version != m_discoveredCatalogVersion) {
-        command=COMMAND_CATVERFAIL;
+        errors|=CATVER_FAILURE;
       }
     }
     for (    Entry<Integer,SocketChannel> e : m_sockets.entrySet()) {
       out=getOutputForHost(e.getKey());
       out.writeLong(maxDiffMS);
-      out.writeInt(command);
+      if (errors == 0) {
+        out.writeInt(COMMAND_COMPLETE);
+      }
+ else {
+        out.writeInt(COMMAND_JOINFAIL);
+        out.writeInt(errors);
+      }
       out.flush();
     }
     if (m_hostLog != null)     m_hostLog.info("Maximum clock/network skew is " + maxDiffMS + " milliseconds (according to rejoined node)");
-    if (command == COMMAND_NTPFAIL) {
+    if ((errors & NTP_FAILURE) != 0) {
       if (m_hostLog != null)       m_hostLog.error("Maximum clock/network is " + (maxDiffMS * 100) / MAX_ACCEPTABLE_TIME_DIFF_IN_MS + "% higher than allowable limit");
+    }
+    if ((errors & CRC_FAILURE) != 0) {
+      if (m_hostLog != null)       m_hostLog.error("Catalog checksums do not match across cluster");
+    }
+    if ((errors & HOSTID_FAILURE) != 0) {
+      if (m_hostLog != null) {
+        m_hostLog.error("Cluster nodes didn't agree on a host id for the rejoining node.");
+        m_hostLog.error("This is likely a bug in VoltDB and you should contact the VoltDB team.");
+      }
+    }
+    if ((errors & CATVER_FAILURE) != 0) {
+      if (m_hostLog != null) {
+        m_hostLog.error("Cluster nodes didn't agree on all catalog metadata.");
+        m_hostLog.error("This is likely a bug in VoltDB and you should contact the VoltDB team.");
+      }
+    }
+    if (errors != 0) {
       VoltDB.crashVoltDB();
     }
   }
