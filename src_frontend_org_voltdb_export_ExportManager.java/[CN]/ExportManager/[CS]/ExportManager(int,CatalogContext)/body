@@ -1,0 +1,31 @@
+{
+  m_hostId=myHostId;
+  final Cluster cluster=catalogContext.catalog.getClusters().get("cluster");
+  final Database db=cluster.getDatabases().get("database");
+  final Connector conn=db.getConnectors().get("0");
+  if (conn == null) {
+    return;
+  }
+  if (conn.getEnabled() == false) {
+    exportLog.info("Export is disabled by user configuration.");
+    return;
+  }
+  final String elloader=conn.getLoaderclass();
+  try {
+    exportLog.info("Creating connector " + elloader);
+    ExportDataProcessor newProcessor=null;
+    final Class<?> loaderClass=Class.forName(elloader);
+    newProcessor=(ExportDataProcessor)loaderClass.newInstance();
+    newProcessor.addLogger(exportLog);
+    addTableInfos(catalogContext,conn,newProcessor);
+    newProcessor.readyForData();
+    m_processors.add(newProcessor);
+  }
+ catch (  final ClassNotFoundException e) {
+    exportLog.l7dlog(Level.ERROR,LogKeys.export_ExportManager_NoLoaderExtensions.name(),e);
+    throw new ExportManager.SetupException(e.getMessage());
+  }
+catch (  final Exception e) {
+    throw new ExportManager.SetupException(e.getMessage());
+  }
+}
