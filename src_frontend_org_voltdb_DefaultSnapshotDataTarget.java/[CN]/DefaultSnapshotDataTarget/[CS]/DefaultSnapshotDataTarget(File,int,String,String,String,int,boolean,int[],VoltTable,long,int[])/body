@@ -4,12 +4,6 @@
   m_tableName=tableName;
   m_fos=new FileOutputStream(file);
   m_channel=m_fos.getChannel();
-  m_es=Executors.newScheduledThreadPool(1,new ThreadFactory(){
-    @Override public Thread newThread(    Runnable r){
-      return new Thread(Thread.currentThread().getThreadGroup(),r,"Snapshot target for " + file.getName() + " host "+ hostId,131072);
-    }
-  }
-);
   final FastSerializer fs=new FastSerializer();
   fs.writeInt(0);
   fs.writeInt(0);
@@ -50,7 +44,6 @@
     m_writeException=new IOException("Disk full");
     m_writeFailed=true;
     m_fos.close();
-    m_es.shutdown();
     throw m_writeException;
   }
   m_acceptOneWrite=true;
@@ -60,37 +53,31 @@
   }
  catch (  InterruptedException e) {
     m_fos.close();
-    m_es.shutdown();
-    return;
+    throw new java.io.InterruptedIOException();
   }
 catch (  ExecutionException e) {
     m_fos.close();
-    m_es.shutdown();
     throw m_writeException;
   }
   if (m_writeFailed) {
     m_fos.close();
-    m_es.shutdown();
     throw m_writeException;
   }
-  m_es.scheduleAtFixedRate(new Runnable(){
+  ScheduledFuture<?> syncTask=null;
+  syncTask=m_syncService.scheduleAtFixedRate(new Runnable(){
     @Override public void run(){
-      final long now=System.currentTimeMillis();
-      if (now - m_lastSyncTime < 10000 || m_bytesWrittenSinceLastSync == 0) {
-        return;
+      int bytesSinceLastSync=0;
+      while ((bytesSinceLastSync=m_bytesWrittenSinceLastSync.getAndSet(0)) > 0) {
+        try {
+          m_channel.force(false);
+        }
+ catch (        IOException e) {
+          hostLog.error("Error syncing snapshot",e);
+        }
+        m_bytesAllowedBeforeSync.release(bytesSinceLastSync);
       }
-      try {
-        m_fos.getFD().sync();
-      }
- catch (      IOException e) {
-        m_writeException=e;
-        hostLog.error("Error while attempting to sync snapshot data for file " + m_file,e);
-        m_writeFailed=true;
-        throw new RuntimeException(e);
-      }
-      m_lastSyncTime=System.currentTimeMillis();
-      m_bytesWrittenSinceLastSync=0;
     }
   }
-,10000,10,TimeUnit.SECONDS);
+,1000,1,TimeUnit.SECONDS);
+  m_syncTask=syncTask;
 }

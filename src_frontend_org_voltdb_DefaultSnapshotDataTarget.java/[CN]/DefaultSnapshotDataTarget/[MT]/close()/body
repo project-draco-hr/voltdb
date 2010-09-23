@@ -1,8 +1,11 @@
 {
-  m_es.shutdown();
-  m_es.awaitTermination(1,TimeUnit.DAYS);
-  m_channel.force(true);
-  m_fos.getFD().sync();
+  m_syncTask.cancel(false);
+synchronized (m_outstandingWriteTasks) {
+    while (m_outstandingWriteTasks.get() > 0) {
+      m_outstandingWriteTasks.wait();
+    }
+  }
+  m_channel.force(false);
   m_channel.position(8);
   ByteBuffer completed=ByteBuffer.allocate(1);
   if (m_writeFailed) {
@@ -12,7 +15,7 @@
     completed.put((byte)1).flip();
   }
   m_channel.write(completed);
-  m_fos.getFD().sync();
+  m_channel.force(false);
   m_channel.close();
   if (m_onCloseHandler != null) {
     m_onCloseHandler.run();

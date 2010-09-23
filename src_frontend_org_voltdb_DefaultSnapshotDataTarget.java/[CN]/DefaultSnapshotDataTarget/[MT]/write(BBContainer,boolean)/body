@@ -7,7 +7,8 @@
     tupleData.b.putInt(tupleData.b.remaining() - 4);
     tupleData.b.position(0);
   }
-  return m_es.submit(new Callable<Object>(){
+  m_outstandingWriteTasks.incrementAndGet();
+  Future<?> writeTask=m_es.submit(new Callable<Object>(){
     @Override public Object call() throws Exception {
       try {
         if (m_acceptOneWrite) {
@@ -18,16 +19,13 @@
             throw new IOException("Disk full");
           }
         }
+        m_bytesAllowedBeforeSync.acquire(tupleData.b.remaining());
+        int totalWritten=0;
         while (tupleData.b.hasRemaining()) {
-          final long written=m_channel.write(tupleData.b);
-          m_bytesWritten+=written;
-          m_bytesWrittenSinceLastSync+=written;
+          totalWritten+=m_channel.write(tupleData.b);
         }
-        if (m_bytesWrittenSinceLastSync >= m_maxBytesWrittenBetweenSync) {
-          m_fos.getFD().sync();
-          m_bytesWrittenSinceLastSync=0;
-          m_lastSyncTime=System.currentTimeMillis();
-        }
+        m_bytesWritten+=totalWritten;
+        m_bytesWrittenSinceLastSync.addAndGet(totalWritten);
       }
  catch (      IOException e) {
         m_writeException=e;
@@ -37,9 +35,15 @@
       }
  finally {
         tupleData.discard();
+synchronized (m_outstandingWriteTasks) {
+          if (m_outstandingWriteTasks.decrementAndGet() == 0) {
+            m_outstandingWriteTasks.notify();
+          }
+        }
       }
       return null;
     }
   }
 );
+  return writeTask;
 }
