@@ -1,0 +1,45 @@
+{
+  DBBPool heapPool=new DBBPool(true,false);
+  ByteBuffer headerBuffer=ByteBuffer.allocateDirect(8);
+  try {
+    while (m_shouldContinue) {
+      try {
+        Pair<VoltMessage,Mailbox> nextPair=m_messagesToCommit.take();
+        if (nextPair.getFirst() instanceof SyncMessage) {
+          m_buffer.force();
+          while ((nextPair=m_messagesForNextSync.poll()) != null) {
+            final VoltMessage message=nextPair.getFirst();
+            message.setDurable();
+            nextPair.getSecond().deliver(message);
+          }
+          m_needToPerformSync=false;
+          continue;
+        }
+        final VoltMessage nextMessage=nextPair.getFirst();
+        ByteBuffer messageBuffer=nextMessage.getBuffer();
+        if (messageBuffer == null) {
+          messageBuffer=nextMessage.getBufferForMessaging(heapPool).b;
+        }
+ else {
+          messageBuffer=messageBuffer.duplicate();
+        }
+        messageBuffer.position(VoltMessage.HEADER_SIZE);
+        headerBuffer.clear();
+        headerBuffer.putInt(nextPair.getSecond().getSiteId());
+        headerBuffer.putInt(messageBuffer.remaining());
+        headerBuffer.flip();
+        write(headerBuffer);
+        write(messageBuffer);
+        if (m_waitForCommit && !(nextMessage instanceof HeartbeatMessage)) {
+          m_messagesForNextSync.offer(nextPair);
+        }
+      }
+ catch (      Exception e) {
+        e.printStackTrace();
+      }
+    }
+  }
+  finally {
+    m_buffer=null;
+  }
+}
