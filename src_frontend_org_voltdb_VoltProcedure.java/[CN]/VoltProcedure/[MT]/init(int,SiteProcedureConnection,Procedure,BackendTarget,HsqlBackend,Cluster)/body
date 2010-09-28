@@ -17,7 +17,7 @@
   if (catProc.getHasjava()) {
     int tempParamTypesLength=0;
     Method tempProcMethod=null;
-    Method[] methods=getClass().getMethods();
+    Method[] methods=getClass().getDeclaredMethods();
     Class<?> tempParamTypes[]=null;
     boolean tempParamTypeIsPrimitive[]=null;
     boolean tempParamTypeIsArray[]=null;
@@ -25,6 +25,7 @@
     for (    final Method m : methods) {
       String name=m.getName();
       if (name.equals("run")) {
+        if (Modifier.isPublic(m.getModifiers()) == false)         continue;
         tempProcMethod=m;
         tempParamTypes=tempProcMethod.getParameterTypes();
         tempParamTypesLength=tempParamTypes.length;
@@ -47,23 +48,32 @@
     if (m_procMethod == null) {
       log.debug("No good method found in: " + getClass().getName());
     }
-    Field[] fields=getClass().getFields();
+    Map<String,Field> stmtMap=null;
+    try {
+      stmtMap=ProcedureCompiler.getValidSQLStmts(null,getClass().getSimpleName(),getClass(),true);
+    }
+ catch (    Exception e1) {
+      e1.printStackTrace();
+    }
+    Field[] fields=new Field[stmtMap.size()];
+    int index=0;
+    for (    Field f : stmtMap.values()) {
+      fields[index++]=f;
+    }
     for (    final Field f : fields) {
-      if (f.getType() == SQLStmt.class) {
-        String name=f.getName();
-        Statement s=catProc.getStatements().get(name);
-        if (s != null) {
-          try {
-            SQLStmt stmt=(SQLStmt)f.get(this);
-            stmt.catStmt=s;
-            initSQLStmt(stmt);
-          }
- catch (          IllegalArgumentException e) {
-            e.printStackTrace();
-          }
-catch (          IllegalAccessException e) {
-            e.printStackTrace();
-          }
+      String name=f.getName();
+      Statement s=catProc.getStatements().get(name);
+      if (s != null) {
+        try {
+          SQLStmt stmt=(SQLStmt)f.get(this);
+          stmt.catStmt=s;
+          initSQLStmt(stmt);
+        }
+ catch (        IllegalArgumentException e) {
+          e.printStackTrace();
+        }
+catch (        IllegalAccessException e) {
+          e.printStackTrace();
         }
       }
     }
