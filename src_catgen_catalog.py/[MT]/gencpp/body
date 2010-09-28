@@ -37,7 +37,7 @@ def gencpp(classes, prepath, postpath):
         write('    friend class Catalog;')
         write(interp('    friend class CatalogMap<$clsname>;', locals()))
         write('\nprotected:')
-        write((('    ' + clsname) + '(Catalog * catalog, CatalogType * parent, const std::string &path, const std::string &name);\n'))
+        write((('    ' + clsname) + '(Catalog * catalog, CatalogType * parent, const std::string &path, const std::string &name);'))
         for field in cls.fields:
             ftype = cpptypify(field.type)
             privname = ('m_' + field.name)
@@ -47,6 +47,7 @@ def gencpp(classes, prepath, postpath):
         write('    virtual CatalogType * getChild(const std::string &collectionName, const std::string &childName) const;')
         write('    virtual bool removeChild(const std::string &collectionName, const std::string &childName);')
         write('\npublic:')
+        write((('    ~' + clsname) + '();\n'))
         for field in cls.fields:
             ftype = cpptypify(field.type)
             privname = ('m_' + field.name)
@@ -100,6 +101,20 @@ def gencpp(classes, prepath, postpath):
                 write(interp('    m_childCollections["$pubname"] = &$privname;', locals()))
             else:
                 write(interp('    m_fields["$pubname"] = value;', locals()))
+        write('}\n')
+        write((((clsname + '::~') + clsname) + '() {'))
+        for field in cls.fields:
+            if (field.type[(-1)] == '*'):
+                ftype = field.type.rstrip('*')
+                itr = (ftype.lower() + '_iter')
+                privname = ('m_' + field.name)
+                tab = '   '
+                write(interp('$tab std::map<std::string, $ftype*>::const_iterator $itr = $privname.begin();', locals()))
+                write(interp('$tab while ($itr != $privname.end()) {', locals()))
+                write(interp('$tab $tab delete $itr->second;', locals()))
+                write(interp('$tab $tab $itr++;', locals()))
+                write(interp('$tab }', locals()))
+                write(interp('$tab $privname.clear();\n', locals()))
         write('}\n')
         write(interp('void $clsname::update() {', locals()))
         for field in cls.fields:
