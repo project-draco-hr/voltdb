@@ -2,17 +2,26 @@
   String[] jarFileNames=m_projectBuilder.compileAllCatalogs(m_config.sitesPerHost,m_config.hosts.length,m_config.k_factor,m_config.hosts[0].getHostName());
   m_jarFileName=jarFileNames[0];
   m_pathToDeployment=m_projectBuilder.getPathToDeployment();
+  final ArrayList<File> pushFiles=parsePushFiles(m_config.pushfiles);
+  final ArrayList<String> pushedJarFiles=new ArrayList<String>();
+  for (  File f : pushFiles) {
+    if (f.getName().endsWith(".jar")) {
+      pushedJarFiles.add(f.getName());
+    }
+  }
   SSHTools ssh=new SSHTools(m_config.remoteUser);
   boolean status;
   if (m_config.localmode == false) {
-    for (    String fileName : jarFileNames) {
+    for (    String filename : jarFileNames) {
       for (      InetSocketAddress host : m_config.hosts) {
-        status=ssh.copyFromLocal(new File(fileName),host.getHostName(),m_config.remotePath);
-        if (!status)         System.out.println("SSH copyFromLocal failed to copy " + fileName + " to "+ m_config.remoteUser+ "@"+ host+ ":"+ m_config.remotePath);
+        status=ssh.copyFromLocal(new File(filename),host.getHostName(),m_config.remotePath);
+        if (!status)         System.out.println("SSH copyFromLocal failed to copy " + filename + " to "+ m_config.remoteUser+ "@"+ host+ ":"+ m_config.remotePath);
       }
+    }
+    for (    File file : pushFiles) {
       for (      String client : m_config.clients) {
-        status=ssh.copyFromLocal(new File(fileName),client,m_config.remotePath);
-        if (!status)         System.out.println("SSH copyFromLocal failed to copy " + fileName + " to "+ m_config.remoteUser+ "@"+ client+ ":"+ m_config.remotePath);
+        status=ssh.copyFromLocal(file,client,m_config.remotePath);
+        if (!status)         System.out.println("SSH copyFromLocal failed to copy " + file + " to "+ m_config.remoteUser+ "@"+ client+ ":"+ m_config.remotePath);
       }
     }
     for (    InetSocketAddress host : m_config.hosts) {
@@ -102,6 +111,9 @@
     if (System.getProperty("java.class.path") != null) {
       classpath=classpath + ":" + System.getProperty("java.class.path");
     }
+    for (    String jar : pushedJarFiles) {
+      classpath=classpath + ":" + jar;
+    }
     loaderCommand.append(" -cp \"" + classpath + "\" ");
     loaderCommand.append(m_loaderClass.getCanonicalName());
     for (    InetSocketAddress host : m_config.hosts) {
@@ -146,6 +158,9 @@
   if (System.getProperty("java.class.path") != null) {
     classpath=classpath + ":" + System.getProperty("java.class.path");
   }
+  for (  String jar : pushedJarFiles) {
+    classpath=classpath + ":" + jar;
+  }
   clArgs.add("-cp");
   clArgs.add("\"" + classpath + "\"");
   clArgs.add(m_clientClass.getCanonicalName());
@@ -157,6 +172,9 @@
   clArgs.add("STATSDATABASEURL=" + m_config.statsDatabaseURL);
   clArgs.add("STATSPOLLINTERVAL=" + m_config.interval);
   clArgs.add("PROJECTBUILDERNAME=" + m_builderClass.getName());
+  if (m_config.maxOutstanding != null) {
+    clArgs.add("MAXOUTSTANDING=" + m_config.maxOutstanding);
+  }
   clArgs.add("DEPLOYMENTFILEPATH=" + new File(m_pathToDeployment).getName());
   for (  InetSocketAddress host : m_config.hosts)   clArgs.add("HOST=" + host.getHostName() + ":"+ host.getPort());
   int clientIndex=0;
@@ -174,7 +192,7 @@
       StringBuilder fullCommand=new StringBuilder();
       for (      String s : args)       fullCommand.append(s).append(" ");
       uploader.setCommandLineForClient(client + ":" + String.valueOf(j),fullCommand.toString());
-      benchmarkLog.debug("Client Commnand: " + fullCommand.toString());
+      benchmarkLog.debug("Client Command: " + fullCommand.toString());
       m_clientPSM.startProcess(client + ":" + String.valueOf(j),args);
     }
   }
