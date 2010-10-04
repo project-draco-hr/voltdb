@@ -10,18 +10,28 @@
   }
  else {
     if (currentTime < lastUsedTime) {
-      System.err.println("Initiator time moved backwards from: " + lastUsedTime + " to "+ currentTime);
-      if ((lastUsedTime - currentTime) < 5) {
-        int count=0;
-        while ((currentTime <= lastUsedTime) && (count++ < 100000)) {
-          Thread.yield();
+      VoltLogger log=new VoltLogger("HOST");
+      double diffSeconds=(lastUsedTime - currentTime) / 1000.0;
+      String msg=String.format("Initiator time moved backwards from: %d to %d, a difference of %.2f seconds.",lastUsedTime,currentTime,diffSeconds);
+      log.error(msg);
+      System.err.println(msg);
+      if ((lastUsedTime - currentTime) < VoltDB.BACKWARD_TIME_FORGIVENESS_WINDOW_MS) {
+        int count=VoltDB.BACKWARD_TIME_FORGIVENESS_WINDOW_MS;
+        while ((currentTime <= lastUsedTime) && (count-- > 0)) {
+          try {
+            Thread.sleep(lastUsedTime - currentTime + 1);
+          }
+ catch (          InterruptedException e) {
+          }
           currentTime=System.currentTimeMillis();
         }
-        if (count >= 100000) {
+        if (count < 0) {
+          log.error("VoltDB was unable to recover after the system time was externally negatively adusted. " + "It is possible that there is a serious system time or NTP error. ");
           VoltDB.crashVoltDB();
         }
       }
  else {
+        log.error(String.format("%.2f is larger than the max allowable number of seconds that the clock can be negatively adjusted (%d)",diffSeconds,VoltDB.BACKWARD_TIME_FORGIVENESS_WINDOW_MS / 1000));
         VoltDB.crashVoltDB();
       }
     }
