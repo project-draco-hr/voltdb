@@ -68,10 +68,9 @@ synchronized (this) {
         return;
       }
  else {
-        try {
-          m_inThread.join(5000);
-        }
- catch (        InterruptedException e) {
+        final long startWait=System.currentTimeMillis();
+        while (m_inThread.isAlive() && System.currentTimeMillis() - startWait < 5000) {
+          checkMailbox(false);
         }
 synchronized (this) {
           if (m_inThread.isAlive()) {
@@ -83,19 +82,9 @@ synchronized (this) {
             }
           }
         }
+        return;
       }
     }
-    VoltMessage message=m_mailbox.recvBlocking();
-    if (message != null) {
-      if (message instanceof RecoveryMessage) {
-        RecoveryMessage rm=(RecoveryMessage)message;
-        if (!rm.recoveryMessagesAvailable()) {
-          recoveryLog.error("Received a recovery initiate request from " + rm.sourceSite() + " while a recovery was already in progress. Ignoring it.");
-        }
-      }
- else {
-        m_messageHandler.handleMessage(message);
-      }
-    }
+    checkMailbox(true);
   }
 }
