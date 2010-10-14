@@ -68,9 +68,18 @@
   final byte password[]=new byte[20];
   message.get(password);
   CatalogContext context=m_catalogContext.get();
-  boolean authenticated=context.authSystem.authenticate(username,password);
-  if (!authenticated) {
-    authLog.warn("Failure to authenticate connection(" + socket.socket().getRemoteSocketAddress() + "): user "+ username+ " failed authentication.");
+  if (!VoltDB.instance().recovering()) {
+    boolean authenticated=context.authSystem.authenticate(username,password);
+    if (!authenticated) {
+      authLog.warn("Failure to authenticate connection(" + socket.socket().getRemoteSocketAddress() + "): user "+ username+ " failed authentication.");
+      responseBuffer.put((byte)-1).flip();
+      socket.write(responseBuffer);
+      socket.close();
+      return null;
+    }
+  }
+ else {
+    authLog.warn("Failure to authenticate connection(" + socket.socket().getRemoteSocketAddress() + "): user "+ username+ " because this node is rejoining.");
     responseBuffer.put((byte)-1).flip();
     socket.write(responseBuffer);
     socket.close();
