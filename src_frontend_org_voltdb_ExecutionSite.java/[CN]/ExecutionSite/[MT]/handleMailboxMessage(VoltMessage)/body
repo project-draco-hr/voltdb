@@ -109,11 +109,18 @@
     m_snapshotter.doSnapshotWork(ee);
   }
  else   if (message instanceof ExecutionSiteLocalSnapshotMessage) {
-    hostLog.info("Received ExecutionSiteLocalSnapshotMessage. Initiating local snapshot");
+    hostLog.info("Received ExecutionSiteLocalSnapshotMessage. Completing any on-going snapshots.");
+    try {
+      m_snapshotter.completeSnapshotWork(ee);
+    }
+ catch (    InterruptedException e) {
+      hostLog.warn("Interrupted during snapshot completion",e);
+    }
+    hostLog.info("Received ExecutionSiteLocalSnapshotMessage. Creating final snapshot.");
     SnapshotSchedule schedule=m_context.cluster.getFaultsnapshots().get("CLUSTER_PARTITION");
     SnapshotSaveAPI saveAPI=new SnapshotSaveAPI();
     saveAPI.startSnapshotting(schedule.getPath(),schedule.getPrefix(),(byte)0x1,((ExecutionSiteLocalSnapshotMessage)message).m_roadblockTransactionId,m_systemProcedureContext,ConnectionUtil.getHostnameOrAddress());
-    hostLog.info("Received ExecutionSiteLocalSnapshotMessage. Finished local snapshot");
+    hostLog.info("Received ExecutionSiteLocalSnapshotMessage. Finished final snapshot. Shutting down.");
     if (SnapshotSiteProcessor.ExecutionSitesCurrentlySnapshotting.get() == -1) {
       VoltDB.crashVoltDB();
     }

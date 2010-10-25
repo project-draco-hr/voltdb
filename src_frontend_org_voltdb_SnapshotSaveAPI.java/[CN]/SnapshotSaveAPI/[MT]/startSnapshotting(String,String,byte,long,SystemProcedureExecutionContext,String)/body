@@ -1,8 +1,22 @@
 {
   TRACE_LOG.trace("Creating snapshot target and handing to EEs");
   final VoltTable result=SnapshotSave.constructNodeResultsTable();
-  if (SnapshotSiteProcessor.m_snapshotCreateSetupPermit.tryAcquire()) {
-    createSetup(file_path,file_nonce,startTime,context,hostname,result);
+  final int numLocalSites=VoltDB.instance().getLocalSites().values().size();
+synchronized (SnapshotSiteProcessor.m_snapshotCreateLock) {
+    if (SnapshotSiteProcessor.m_snapshotCreateSetupPermit == null) {
+      SnapshotSiteProcessor.m_snapshotCreateSetupPermit=new Semaphore(numLocalSites);
+    }
+    try {
+      SnapshotSiteProcessor.m_snapshotCreateSetupPermit.acquire();
+    }
+ catch (    InterruptedException e) {
+      result.addRow(Integer.parseInt(context.getSite().getHost().getTypeName()),hostname,"","FAILURE",e.toString());
+      return result;
+    }
+    if (SnapshotSiteProcessor.m_snapshotCreateSetupPermit.availablePermits() == 0) {
+      createSetup(file_path,file_nonce,startTime,context,hostname,result);
+      SnapshotSiteProcessor.m_snapshotCreateSetupPermit.release(numLocalSites);
+    }
   }
   VoltTable error=acquireSnapshotPermit(context,hostname,result);
   if (error != null) {
@@ -14,10 +28,6 @@ synchronized (SnapshotSiteProcessor.m_taskListsForSites) {
       return result;
     }
  else {
-      if (SnapshotSiteProcessor.m_taskListsForSites.isEmpty()) {
-        assert(SnapshotSiteProcessor.m_snapshotCreateSetupPermit.availablePermits() == 1);
-        assert(SnapshotSiteProcessor.m_snapshotPermits.availablePermits() == 0);
-      }
       assert(SnapshotSiteProcessor.ExecutionSitesCurrentlySnapshotting.get() > 0);
       context.getExecutionSite().initiateSnapshots(m_taskList);
     }
