@@ -1,5 +1,8 @@
 {
   MockVoltDB voltdb=new MockVoltDB();
+  FaultDistributor dut=new FaultDistributor(voltdb,true);
+  voltdb.setFaultDistributor(dut);
+  VoltDB.replaceVoltDBInstanceForTest(voltdb);
   voltdb.addPartition(1);
   voltdb.addHost(0);
   voltdb.addSite(100,0,1,true);
@@ -7,17 +10,12 @@
   voltdb.addHost(1);
   voltdb.addSite(101,1,1,true);
   voltdb.addSite(1010,1,1,false);
-  voltdb.addHost(2);
-  voltdb.addSite(102,2,1,true);
-  voltdb.addSite(1020,2,1,false);
   voltdb.getCatalogContext();
-  FaultDistributor dut=new FaultDistributor(voltdb,true);
-  MockFaultHandler nodeFaultHdlr=new MockFaultHandler(FaultType.NODE_FAILURE);
-  MockFaultHandler clusterPartHdlr=new MockFaultHandler(FaultType.CLUSTER_PARTITION);
-  dut.registerFaultHandler(1,nodeFaultHdlr,FaultType.NODE_FAILURE);
-  dut.registerFaultHandler(2,clusterPartHdlr,FaultType.CLUSTER_PARTITION);
-  dut.reportFault(new NodeFailureFault(0,"hostname"));
-  nodeFaultHdlr.m_handledFaults.acquire();
-  assertTrue(nodeFaultHdlr.m_gotFault);
-  assertFalse(clusterPartHdlr.m_handledFaults.tryAcquire());
+  voltdb.killSite(101);
+  voltdb.killSite(1010);
+  HashSet<Integer> failedSiteIds=new HashSet<Integer>();
+  failedSiteIds.add(101);
+  failedSiteIds.add(1010);
+  PPDPolicyDecision makePPDPolicyDecisions=dut.makePPDPolicyDecisions(failedSiteIds);
+  assertEquals(PPDPolicyDecision.NodeFailure,makePPDPolicyDecisions);
 }

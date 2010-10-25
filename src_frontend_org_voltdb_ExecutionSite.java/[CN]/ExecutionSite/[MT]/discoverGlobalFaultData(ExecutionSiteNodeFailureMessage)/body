@@ -17,16 +17,17 @@
   }
   HashSet<Integer> newFailedSiteIds=new HashSet<Integer>(failedSiteIds);
   newFailedSiteIds.removeAll(m_handledFailedSites);
-  handleSiteFaults(message.m_partitionDetection,newFailedSiteIds,commit_and_safe[0],commit_and_safe[1]);
+  PPDPolicyDecision makePPDPolicyDecisions=VoltDB.instance().getFaultDistributor().makePPDPolicyDecisions(newFailedSiteIds);
+  if (makePPDPolicyDecisions == PPDPolicyDecision.NodeFailure) {
+    handleSiteFaults(false,newFailedSiteIds,commit_and_safe[0],commit_and_safe[1]);
+  }
+ else   if (makePPDPolicyDecisions == PPDPolicyDecision.PartitionDetection) {
+    handleSiteFaults(true,newFailedSiteIds,commit_and_safe[0],commit_and_safe[1]);
+  }
   m_handledFailedSites.addAll(failedSiteIds);
   for (  NodeFailureFault fault : failures) {
     if (newFailedSiteIds.containsAll(m_context.siteTracker.getAllSitesForHost(fault.getHostId()))) {
-      if (message.m_partitionDetection) {
-        VoltDB.instance().getFaultDistributor().reportFaultHandled(m_faultHandler,new ClusterPartitionFault(fault));
-      }
- else {
-        VoltDB.instance().getFaultDistributor().reportFaultHandled(m_faultHandler,fault);
-      }
+      VoltDB.instance().getFaultDistributor().reportFaultHandled(m_faultHandler,fault);
     }
   }
 }
