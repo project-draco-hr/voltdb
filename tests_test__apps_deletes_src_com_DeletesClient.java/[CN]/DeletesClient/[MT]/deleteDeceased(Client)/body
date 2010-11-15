@@ -1,0 +1,38 @@
+{
+  System.out.println("Deleting deceased records...");
+  m_expectedDeadDeletes=NUM_NAMES;
+  long start_time=System.currentTimeMillis();
+  for (int i=0; i < NUM_NAMES; i++) {
+    try {
+      client.callProcedure(new ProcedureCallback(){
+        @Override public void clientCallback(        ClientResponse response){
+          if (response.getStatus() != ClientResponse.SUCCESS) {
+            System.out.println("failed insert");
+            System.out.println(response.getStatusString());
+          }
+ else {
+            m_totalRows-=response.getResults()[0].asScalarLong();
+            m_expectedDeadDeletes--;
+          }
+        }
+      }
+,"DeleteDeceased",m_names[i]);
+    }
+ catch (    NoConnectionsException e) {
+      e.printStackTrace();
+    }
+catch (    IOException e) {
+      e.printStackTrace();
+    }
+  }
+  while (m_expectedDeadDeletes != 0) {
+    Thread.yield();
+  }
+  long elapsed=System.currentTimeMillis() - start_time;
+  m_totalDeadDeletes+=NUM_NAMES;
+  m_totalDeadDeleteTime+=elapsed;
+  System.out.println("After dead deletes, total rows: " + m_totalRows);
+  System.out.println("Deleting deceased: " + NUM_NAMES + " took "+ elapsed+ " millis");
+  System.out.println("\t (" + ((NUM_NAMES * 1000) / elapsed) + " tps)");
+  System.out.println("Total delete TPS: " + (m_totalDeadDeletes * 1000) / m_totalDeadDeleteTime);
+}

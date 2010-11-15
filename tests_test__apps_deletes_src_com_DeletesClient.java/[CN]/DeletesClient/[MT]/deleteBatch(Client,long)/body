@@ -1,0 +1,41 @@
+{
+  long prune_ts=m_batchNumber - batchesToKeep;
+  System.out.println("Pruning batches older than batch: " + prune_ts);
+  m_expectedDeletes=NUM_NAMES;
+  long start_time=System.currentTimeMillis();
+  for (int i=0; i < NUM_NAMES; i++) {
+    try {
+      client.callProcedure(new ProcedureCallback(){
+        @Override public void clientCallback(        ClientResponse response){
+          if (response.getStatus() != ClientResponse.SUCCESS) {
+            System.out.println("failed insert");
+            System.out.println(response.getStatusString());
+          }
+ else {
+            m_totalRows-=response.getResults()[0].asScalarLong();
+            m_expectedDeletes--;
+            m_totalDeletedRows+=response.getResults()[0].asScalarLong();
+          }
+        }
+      }
+,"DeleteOldBatches",m_names[i],prune_ts);
+    }
+ catch (    NoConnectionsException e) {
+      e.printStackTrace();
+    }
+catch (    IOException e) {
+      e.printStackTrace();
+    }
+  }
+  while (m_expectedDeletes != 0) {
+    Thread.yield();
+  }
+  long elapsed=System.currentTimeMillis() - start_time;
+  m_totalDeletes+=NUM_NAMES;
+  m_totalDeleteTime+=elapsed;
+  System.out.println("After delete, total rows: " + m_totalRows);
+  System.out.println("Deleting batch: " + NUM_NAMES + " took "+ elapsed+ " millis");
+  System.out.println("\t (" + ((NUM_NAMES * 1000) / elapsed) + " tps)");
+  System.out.println("Total delete TPS: " + (m_totalDeletes * 1000) / m_totalDeleteTime);
+  System.out.println("Total delete RPS: " + (m_totalDeletedRows * 1000) / m_totalDeleteTime);
+}

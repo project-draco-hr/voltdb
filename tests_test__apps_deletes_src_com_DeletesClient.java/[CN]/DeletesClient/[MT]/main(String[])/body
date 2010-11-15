@@ -1,0 +1,45 @@
+{
+  if (args.length != 4) {
+    System.err.println("Client args: [average batch size] [num batches to keep] [cleanup frequency] [server list]");
+  }
+  m_averageBatchSize=Integer.valueOf(args[0]);
+  m_batchesToKeep=Integer.valueOf(args[1]);
+  m_deceasedCleanupFreq=Integer.valueOf(args[2]);
+  System.out.printf("Starting Deletes app with:\n\tAverage batch size of %d\n\tKeeping %d batches\n\tCleaning up deceased every %d batches\n",m_averageBatchSize,m_batchesToKeep,m_deceasedCleanupFreq);
+  String commaSeparatedServers=args[3];
+  List<String> servers=new LinkedList<String>();
+  String[] commaSeparatedServersParts=commaSeparatedServers.split(",");
+  for (  String server : commaSeparatedServersParts) {
+    servers.add(server.trim());
+  }
+  generateNames(16);
+  Client client=null;
+  ClientConfig config=new ClientConfig("program","none");
+  client=ClientFactory.createClient(config);
+  for (  String server : servers) {
+    try {
+      client.createConnection(server);
+    }
+ catch (    UnknownHostException e) {
+      e.printStackTrace();
+      System.exit(-1);
+    }
+catch (    IOException e) {
+      System.err.println("Could not connect to database, terminating: (" + server + ")");
+      System.exit(-1);
+    }
+  }
+  for (int i=0; i < m_batchesToKeep; i++) {
+    insertBatch(client);
+  }
+  long deceased_counter=0;
+  while (true) {
+    insertBatch(client);
+    deceased_counter++;
+    if (deceased_counter == m_deceasedCleanupFreq) {
+      deleteDeceased(client);
+      deceased_counter=0;
+    }
+    deleteBatch(client,m_batchesToKeep);
+  }
+}
