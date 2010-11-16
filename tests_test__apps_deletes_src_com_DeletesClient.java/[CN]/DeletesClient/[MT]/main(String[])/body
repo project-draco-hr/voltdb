@@ -5,13 +5,20 @@
   m_averageBatchSize=Integer.valueOf(args[0]);
   m_batchesToKeep=Integer.valueOf(args[1]);
   m_deceasedCleanupFreq=Integer.valueOf(args[2]);
-  System.out.printf("Starting Deletes app with:\n\tAverage batch size of %d\n\tKeeping %d batches\n\tCleaning up deceased every %d batches\n",m_averageBatchSize,m_batchesToKeep,m_deceasedCleanupFreq);
-  String commaSeparatedServers=args[3];
+  m_snapshotFreq=Integer.valueOf(args[3]);
+  System.out.println("Starting Deletes app with:");
+  System.out.printf("\tAverage batch size of %d\n",m_averageBatchSize);
+  System.out.printf("\tKeeping %d batches\n",m_batchesToKeep);
+  System.out.printf("\tCleaning up deceased every %d batches\n",m_deceasedCleanupFreq);
+  System.out.printf("\tSnapshotting every %d batches\n",m_snapshotFreq);
+  String commaSeparatedServers=args[4];
   List<String> servers=new LinkedList<String>();
   String[] commaSeparatedServersParts=commaSeparatedServers.split(",");
   for (  String server : commaSeparatedServersParts) {
     servers.add(server.trim());
   }
+  File tmpdir=new File(m_snapshotDir);
+  tmpdir.mkdir();
   generateNames(16);
   Client client=null;
   ClientConfig config=new ClientConfig("program","none");
@@ -33,8 +40,14 @@ catch (    IOException e) {
     insertBatch(client);
   }
   long deceased_counter=0;
+  long snapshot_counter=0;
   while (true) {
     insertBatch(client);
+    snapshot_counter++;
+    if (snapshot_counter == m_snapshotFreq) {
+      performSnapshot(client);
+      snapshot_counter=0;
+    }
     deceased_counter++;
     if (deceased_counter == m_deceasedCleanupFreq) {
       deleteDeceased(client);
