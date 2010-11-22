@@ -1,33 +1,36 @@
 {
-  Server server=new Server();
-  try {
-    SocketConnector connector=new SocketConnector();
-    connector.setPort(8080);
-    connector.setName("VoltDB-HTTPD");
-    server.addConnector(connector);
-    server.setHandler(new RequestHandler());
-    server.start();
+  int repeat=1000;
+  long start, duration, correct;
+  double per;
+  String processName=java.lang.management.ManagementFactory.getRuntimeMXBean().getName();
+  String pidString=processName.substring(0,processName.indexOf('@'));
+  int pid=Integer.valueOf(pidString);
+  org.voltdb.EELibraryLoader.loadExecutionEngineLibrary(false);
+  start=System.currentTimeMillis();
+  correct=0;
+  for (int i=0; i < repeat; i++) {
+    long rss=PSScraper.getPSData(pid).rss;
+    if (rss > 0)     correct++;
   }
- catch (  Exception e) {
-    try {
-      server.stop();
-    }
- catch (    Exception e2) {
-    }
-    try {
-      server.destroy();
-    }
- catch (    Exception e2) {
-    }
-    throw new RuntimeException(e);
+  duration=System.currentTimeMillis() - start;
+  per=duration / (double)repeat;
+  System.out.printf("%.2f ms per \"ps\" call / %d / %d correct\n",per,correct,repeat);
+  start=System.currentTimeMillis();
+  correct=0;
+  for (int i=0; i < repeat; i++) {
+    long rss=getRSSFromProcFS();
+    if (rss > 0)     correct++;
   }
-  while (true) {
-    asyncSampleSystemNow(false,false);
-    try {
-      Thread.sleep(2000);
-    }
- catch (    InterruptedException e) {
-      e.printStackTrace();
-    }
+  duration=System.currentTimeMillis() - start;
+  per=duration / (double)repeat;
+  System.out.printf("%.2f ms per procfs read / %d / %d correct\n",per,correct,repeat);
+  start=System.currentTimeMillis();
+  correct=0;
+  for (int i=0; i < repeat; i++) {
+    long rss=ExecutionEngine.nativeGetRSS();
+    if (rss > 0)     correct++;
   }
+  duration=System.currentTimeMillis() - start;
+  per=duration / (double)repeat;
+  System.out.printf("%.2f ms per ee.nativeGetRSS call / %d / %d correct\n",per,correct,repeat);
 }
