@@ -1,5 +1,5 @@
 {
-  if (args.length != 6) {
+  if (args.length != 7) {
     System.err.println("Client args: [average batch size] [num batches to keep] [cleanup frequency] [blocking snapshots (1 or 0)] [server list]");
     System.exit(-1);
   }
@@ -8,12 +8,13 @@
   m_deceasedCleanupFreq=Integer.valueOf(args[2]);
   m_snapshotFreq=Integer.valueOf(args[3]);
   m_blockingSnapshots=Integer.valueOf(args[4]) != 0;
+  m_smallStrings=Integer.valueOf(args[5]) != 0;
   System.out.println("Starting Deletes app with:");
   System.out.printf("\tAverage batch size of %d\n",m_averageBatchSize);
   System.out.printf("\tKeeping %d batches\n",m_batchesToKeep);
   System.out.printf("\tCleaning up deceased every %d batches\n",m_deceasedCleanupFreq);
   System.out.printf("\tSnapshotting every %d batches\n",m_snapshotFreq);
-  String commaSeparatedServers=args[5];
+  String commaSeparatedServers=args[6];
   List<String> servers=new LinkedList<String>();
   String[] commaSeparatedServersParts=commaSeparatedServers.split(",");
   for (  String server : commaSeparatedServersParts) {
@@ -38,13 +39,32 @@ catch (    IOException e) {
       System.exit(-1);
     }
   }
-  for (int i=0; i < m_batchesToKeep; i++) {
-    insertBatch(client);
+  for (int i=0; i <= m_batchesToKeep; i++) {
+    insertBatch(client,true);
   }
   long deceased_counter=0;
   long snapshot_counter=0;
+  long max_batch_counter=0;
+  boolean fill_max=false;
+  long max_batch_remaining=0;
   while (true) {
-    insertBatch(client);
+    if (max_batch_counter == m_maxBatchFreq) {
+      fill_max=true;
+      max_batch_remaining=m_batchesToKeep;
+      max_batch_counter=0;
+    }
+ else     if (fill_max) {
+      max_batch_remaining--;
+      fill_max=true;
+      if (max_batch_remaining == 0) {
+        fill_max=false;
+      }
+    }
+ else {
+      max_batch_counter++;
+      fill_max=false;
+    }
+    insertBatch(client,fill_max);
     collectStats(client);
     snapshot_counter++;
     if (snapshot_counter == m_snapshotFreq) {
