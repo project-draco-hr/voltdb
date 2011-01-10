@@ -2,11 +2,17 @@
   SiteTracker siteTracker=catalogContext.siteTracker;
   ArrayList<Integer> sites=siteTracker.getLiveExecutionSitesForHost(hostId);
   long tmp=(long)(catalogContext.catalogVersion) << 32L;
-  long delegateId=tmp + table.getRelativeIndex();
+  final long delegateId=tmp + table.getRelativeIndex();
   for (  Integer site : sites) {
-    ExportDataSource exportDataSource=new ExportDataSource("database",table.getTypeName(),table.getIsreplicated(),siteTracker.getPartitionForSite(site),site,delegateId,table.getColumns());
-    if (!m_dataSources.contains(exportDataSource)) {
-      m_dataSources.add(exportDataSource);
+    Integer partition=siteTracker.getPartitionForSite(site);
+    ExportDataSource exportDataSource=new ExportDataSource("database",table.getTypeName(),table.getIsreplicated(),partition,site,delegateId,table.getColumns());
+    TreeMap<Long,ExportDataSource> dataSourcesForPartition=m_dataSourcesByPartition.get(partition);
+    if (dataSourcesForPartition == null) {
+      dataSourcesForPartition=new TreeMap<Long,ExportDataSource>();
+      m_dataSourcesByPartition.put(partition,dataSourcesForPartition);
+    }
+    if (!dataSourcesForPartition.containsKey(delegateId)) {
+      dataSourcesForPartition.put(delegateId,exportDataSource);
       newProcessor.addDataSource(exportDataSource);
     }
   }

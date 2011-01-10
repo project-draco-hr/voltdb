@@ -2,12 +2,6 @@
   VoltDB.replaceVoltDBInstanceForTest(m_mockVoltDB);
   Table table=m_mockVoltDB.getCatalogContext().database.getTables().get("TableName");
   ExportDataSource s=new ExportDataSource("database",table.getTypeName(),table.getIsreplicated(),m_part,m_site,table.getRelativeIndex(),table.getColumns());
-  ByteBuffer foo=ByteBuffer.allocate(24);
-  foo.order(java.nio.ByteOrder.LITTLE_ENDIAN);
-  foo.putInt(20);
-  foo.order(java.nio.ByteOrder.BIG_ENDIAN);
-  foo.position(0);
-  s.pushExportBuffer(23,0,foo);
   ExportProtoMessage m=new ExportProtoMessage(m_part,table.getRelativeIndex());
   RawProcessor.ExportInternalMessage pair=new RawProcessor.ExportInternalMessage(null,m);
   final AtomicReference<ExportInternalMessage> ref=new AtomicReference<ExportInternalMessage>();
@@ -20,9 +14,17 @@
   m.poll();
   s.exportAction(pair);
   ExportInternalMessage mbp=ref.get();
-  assertEquals(m_part,mbp.m_m.m_partitionId);
-  assertEquals(table.getRelativeIndex(),mbp.m_m.m_tableId);
-  assertEquals(43,mbp.m_m.m_offset);
-  foo.flip();
-  assertEquals(foo,mbp.m_m.m_data);
+  assertEquals(mbp.m_m.getAckOffset(),0);
+  assertEquals(mbp.m_m.m_data.getInt(),0);
+  ByteBuffer firstBuffer=ByteBuffer.allocate(4 + MAGIC_TUPLE_SIZE * 9);
+  s.pushExportBuffer(0,0,firstBuffer);
+  ByteBuffer secondBuffer=ByteBuffer.allocate(4 + MAGIC_TUPLE_SIZE * 10);
+  s.pushExportBuffer(MAGIC_TUPLE_SIZE * 9,0,secondBuffer);
+  m.ack(MAGIC_TUPLE_SIZE * 9);
+  m.poll();
+  ref.set(null);
+  s.exportAction(pair);
+  mbp=ref.get();
+  assertEquals(MAGIC_TUPLE_SIZE * 19,mbp.m_m.getAckOffset());
+  assertEquals(MAGIC_TUPLE_SIZE * 10,mbp.m_m.m_data.remaining() - 4);
 }
