@@ -44,6 +44,7 @@
   double minCost=Double.MAX_VALUE;
   HashMap<String,String> planOutputs=new HashMap<String,String>();
   HashMap<String,String> dotPlanOutputs=new HashMap<String,String>();
+  HashMap<String,String> explainPlanOutputs=new HashMap<String,String>();
   String winnerName="";
   int i=0;
   PlanStatistics stats=null;
@@ -60,6 +61,7 @@
       if (rawplan == null)       break;
       List<CompiledPlan> optimizedPlans=MicroOptimizationRunner.applyAll(rawplan);
       for (      CompiledPlan plan : optimizedPlans) {
+        plan.sql=sql;
         plan.fragments.get(0).planGraph.resolveColumnIndexes();
         stats=new PlanStatistics();
         AbstractPlanNode planGraph=plan.fragments.get(0).planGraph;
@@ -76,16 +78,21 @@
           m_recentErrorMsg="Plan for sql: '" + sql + "' can't be serialized to JSON";
           return null;
         }
-        double cost=costModel.getPlanCost(stats);
-        if (cost < minCost) {
-          minCost=cost;
+        plan.cost=costModel.getPlanCost(stats);
+        if (plan.cost < minCost) {
+          minCost=plan.cost;
           bestPlan=plan;
         }
         String filename=String.valueOf(i++);
         if (bestPlan == plan)         winnerName=filename;
-        json="COST: " + String.valueOf(cost) + "\n"+ json;
+        json="PLAN:\n" + json;
+        json="COST: " + String.valueOf(plan.cost) + "\n"+ json;
+        assert(plan.sql != null);
+        json="SQL: " + plan.sql + "\n"+ json;
         planOutputs.put(filename,json);
         dotPlanOutputs.put(filename,nodeList.toDOTString("name"));
+        plan.explainedPlan=planGraph.toExplainPlanString();
+        explainPlanOutputs.put(filename,plan.explainedPlan);
       }
     }
   }
@@ -100,7 +107,7 @@
       if (winnerName.equals(filename)) {
         filename="WINNER " + filename;
       }
-      PrintStream candidatePlanOut=BuildDirectoryUtils.getDebugOutputPrintStream("statement-all-plans/" + procName + "_"+ stmtName,filename + ".txt");
+      PrintStream candidatePlanOut=BuildDirectoryUtils.getDebugOutputPrintStream("statement-all-plans/" + procName + "_"+ stmtName,filename + "-json.txt");
       candidatePlanOut.println(output.getValue());
       candidatePlanOut.close();
     }
@@ -110,6 +117,15 @@
         filename="WINNER " + filename;
       }
       PrintStream candidatePlanOut=BuildDirectoryUtils.getDebugOutputPrintStream("statement-all-plans/" + procName + "_"+ stmtName,filename + ".dot");
+      candidatePlanOut.println(output.getValue());
+      candidatePlanOut.close();
+    }
+    for (    Entry<String,String> output : explainPlanOutputs.entrySet()) {
+      String filename=output.getKey();
+      if (winnerName.equals(filename)) {
+        filename="WINNER " + filename;
+      }
+      PrintStream candidatePlanOut=BuildDirectoryUtils.getDebugOutputPrintStream("statement-all-plans/" + procName + "_"+ stmtName,filename + ".txt");
       candidatePlanOut.println(output.getValue());
       candidatePlanOut.close();
     }
