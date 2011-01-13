@@ -1,0 +1,60 @@
+{
+  if (m_fc == null) {
+    open();
+  }
+  if (m_objectReadIndex >= getNumEntries()) {
+    return null;
+  }
+  m_objectReadIndex++;
+  if (m_objectReadIndex >= getNumEntries()) {
+    m_currentPollSegmentIndex++;
+  }
+  m_bufferForNumEntries.clear();
+  while (m_bufferForNumEntries.hasRemaining()) {
+    int read=m_fc.read(m_bufferForNumEntries);
+    if (read == -1) {
+      throw new EOFException();
+    }
+  }
+  m_bufferForNumEntries.flip();
+  int length=m_bufferForNumEntries.getInt();
+  if (length < 1) {
+    throw new IOException("Read an invalid length");
+  }
+  ByteBuffer resultBuffer=ByteBuffer.allocate(length);
+  while (resultBuffer.hasRemaining()) {
+    int read=m_fc.read(resultBuffer);
+    if (read == -1) {
+      throw new EOFException();
+    }
+  }
+  resultBuffer.flip();
+  return new BBContainer(resultBuffer,0L){
+    private boolean discarded=false;
+    @Override public void discard(){
+      if (!discarded) {
+        discarded=true;
+        m_discardsUntilDeletion--;
+        if (m_discardsUntilDeletion == 0) {
+          m_finishedSegments.remove(m_index);
+          try {
+            closeAndDelete();
+          }
+ catch (          IOException e) {
+            exportLog.error(e);
+          }
+        }
+      }
+ else {
+        exportLog.error("An export buffer was discarded multiple times");
+      }
+    }
+    @Override public void finalize(){
+      if (!discarded) {
+        exportLog.error(m_file + " had a buffer that was finalized without being discarded");
+        discard();
+      }
+    }
+  }
+;
+}
