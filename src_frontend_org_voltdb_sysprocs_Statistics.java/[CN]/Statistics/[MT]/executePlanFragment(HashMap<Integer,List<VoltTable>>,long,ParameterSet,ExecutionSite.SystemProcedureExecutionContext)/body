@@ -131,6 +131,31 @@
     }
     return new DependencyPair(DEP_ioDataAggregator,result);
   }
+ else   if (fragmentId == SysProcFragmentId.PF_liveClientData) {
+    int hostId=context.getExecutionSite().getCorrespondingHostId();
+    Integer lowestSiteId=VoltDB.instance().getCatalogContext().siteTracker.getLowestLiveExecSiteIdForHost(hostId);
+    VoltTable result=new VoltTable(LiveClientStats.liveClientColumnInfo);
+    if (context.getExecutionSite().getSiteId() == lowestSiteId) {
+      assert(params.toArray().length == 2);
+      final Long now=(Long)params.toArray()[1];
+      Map<Long,Pair<String,long[]>> stats=new HashMap<Long,Pair<String,long[]>>();
+      for (      ClientInterface ci : VoltDB.instance().getClientInterfaces()) {
+        stats.putAll(ci.getLiveClientStats());
+      }
+      final String hostname=VoltDB.instance().getHostMessenger().getHostname();
+      for (      Map.Entry<Long,Pair<String,long[]>> e : stats.entrySet()) {
+        final Long connectionId=e.getKey();
+        final String remoteHostname=e.getValue().getFirst();
+        final long counters[]=e.getValue().getSecond();
+        result.addRow(now,hostId,hostname,connectionId,remoteHostname,counters[0],counters[1],counters[2],counters[3]);
+      }
+    }
+    return new DependencyPair(DEP_liveClientData,result);
+  }
+ else   if (fragmentId == SysProcFragmentId.PF_liveClientDataAggregator) {
+    VoltTable result=unionTables(dependencies.get(DEP_liveClientData));
+    return new DependencyPair(DEP_liveClientDataAggregator,result);
+  }
   assert(false);
   return null;
 }
