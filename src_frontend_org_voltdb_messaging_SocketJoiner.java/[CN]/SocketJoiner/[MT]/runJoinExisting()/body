@@ -36,6 +36,7 @@
     long othercrcs[]=new long[m_expectedHosts - 1];
     long otherdepcrcs[]=new long[m_expectedHosts - 1];
     int catalogVersions[]=new int[m_expectedHosts - 1];
+    boolean haveDoneRestore[]=new boolean[m_expectedHosts - 1];
     for (    Entry<Integer,SocketChannel> e : m_sockets.entrySet()) {
       out=getOutputForHost(e.getKey());
       out.writeInt(COMMAND_SENDTIME_AND_CRC);
@@ -50,6 +51,7 @@
       long timestamp=in.readLong();
       difftimes[i]=System.currentTimeMillis() - timestamp;
       catalogVersions[i]=in.readInt();
+      haveDoneRestore[i]=in.readByte() == 0 ? false : true;
       i++;
     }
     int errors=0;
@@ -82,6 +84,12 @@
     for (    int version : catalogVersions) {
       if (version != m_discoveredCatalogVersion) {
         errors|=CATVER_FAILURE;
+      }
+    }
+    boolean b_haveDoneRestore=haveDoneRestore[0];
+    for (    boolean b__haveDoneRestore : haveDoneRestore) {
+      if (b_haveDoneRestore != b__haveDoneRestore) {
+        errors|=HAVE_DONE_RESTORE_FAILURE;
       }
     }
     for (    Entry<Integer,SocketChannel> e : m_sockets.entrySet()) {
@@ -117,6 +125,12 @@
     }
     if ((errors & DEPCRC_FAILURE) != 0) {
       if (m_hostLog != null)       m_hostLog.error("Deployment file checksums do not match across cluster");
+    }
+    if ((errors & HAVE_DONE_RESTORE_FAILURE) != 0) {
+      if (m_hostLog != null)       m_hostLog.error("Cluster does not agree on whether a restore has been performed");
+    }
+ else {
+      org.voltdb.sysprocs.SnapshotRestore.m_haveDoneRestore=b_haveDoneRestore;
     }
     if (errors != 0) {
       VoltDB.crashVoltDB();
