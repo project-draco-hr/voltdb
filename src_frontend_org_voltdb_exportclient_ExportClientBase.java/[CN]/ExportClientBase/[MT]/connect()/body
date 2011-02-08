@@ -1,0 +1,61 @@
+{
+  if (m_connected.get()) {
+    m_logger.error("Export client already connected.");
+    throw new IOException("Export client already connected.");
+  }
+  if (m_servers.size() == 0) {
+    m_logger.error("No servers provided for export client.");
+    throw new IOException("No servers provided for export client.");
+  }
+  for (  InetSocketAddress serverAddr : m_servers) {
+    ExportConnection exportConnection=null;
+    try {
+      exportConnection=new ExportConnection(m_username,m_password,serverAddr,m_sinks);
+      exportConnection.openExportConnection();
+      constructExportDataSinks(exportConnection);
+      m_servers.clear();
+      m_servers.add(serverAddr);
+      for (      String hostname : exportConnection.hosts) {
+        assert(hostname.contains(":"));
+        String[] parts=hostname.split(":");
+        InetSocketAddress addr=new InetSocketAddress(parts[0],Integer.valueOf(parts[1]));
+        m_servers.add(addr);
+      }
+      m_exportConnections.put(serverAddr,exportConnection);
+      break;
+    }
+ catch (    IOException e) {
+      if (exportConnection != null)       exportConnection.closeExportConnection();
+      m_sinks.clear();
+      m_exportConnections.clear();
+      if (e.getMessage().contains("Authentication")) {
+        throw e;
+      }
+    }
+  }
+  if (m_exportConnections.size() == 0) {
+    return false;
+  }
+  assert(m_exportConnections.size() == 1);
+  for (int tryCount=0; tryCount < 3; tryCount++) {
+    for (    InetSocketAddress addr : m_servers) {
+      if (m_exportConnections.containsKey(addr))       continue;
+      ExportConnection connection=connectToServer(addr);
+      if (connection != null)       m_exportConnections.put(addr,connection);
+    }
+    if (m_servers.size() != m_exportConnections.size())     break;
+    try {
+      Thread.sleep(250);
+    }
+ catch (    InterruptedException e) {
+    }
+  }
+  if (m_servers.size() != m_exportConnections.size()) {
+    m_sinks.clear();
+    for (    ExportConnection ec : m_exportConnections.values())     ec.closeExportConnection();
+    m_exportConnections.clear();
+    return false;
+  }
+  m_connected.set(true);
+  return true;
+}
