@@ -1,5 +1,6 @@
 {
-  long transactions_per_second=Long.valueOf(args[0]);
+  long transactions_per_second_requested=Long.valueOf(args[0]);
+  long transactions_per_second=transactions_per_second_requested;
   long transactions_per_milli=transactions_per_second / 1000l;
   long client_feedback_interval_secs=Long.valueOf(args[1]);
   long test_duration_secs=Long.valueOf(args[2]);
@@ -12,11 +13,24 @@
   long initial_size=Long.valueOf(args[8]);
   int percent_gets=Integer.valueOf(args[9]);
   final int behavior_type=Integer.valueOf(args[10]);
+  boolean use_auto_tuning=Boolean.valueOf(args[11]) && (transactions_per_second > 1000);
+  double auto_tuning_target_latency_millis=Double.valueOf(args[12]);
+  double auto_tuning_adjustment_rate=Double.valueOf(args[13]);
+  if (auto_tuning_adjustment_rate > 1.0) {
+    auto_tuning_adjustment_rate=auto_tuning_adjustment_rate / 100.0;
+  }
+  long auto_tuning_interval_secs=Long.valueOf(args[14]);
   long thisOutstanding=0;
   long lastOutstanding=0;
   long put_value_compressed_bytes=0;
   long put_value_uncompressed_bytes=0;
   m_logger.info(String.format("Submitting %,d SP Calls/sec",transactions_per_second));
+  if (use_auto_tuning) {
+    m_logger.info(String.format("Auto-Tuning = ON"));
+    m_logger.info(String.format(" - Tuning interval = %,d second(s)",auto_tuning_interval_secs));
+    m_logger.info(String.format(" - Target latency = %.2f ms",auto_tuning_target_latency_millis));
+    m_logger.info(String.format(" - Adjustment rate = %.2f%%",auto_tuning_adjustment_rate * 100.0));
+  }
   m_logger.info(String.format("Feedback interval = %,d second(s)",client_feedback_interval_secs));
   m_logger.info(String.format("Running for %,d second(s)",test_duration_secs));
   m_logger.info(String.format("Latency not recorded for %d second(s)",lag_latency_seconds));
@@ -59,7 +73,9 @@
   long endTime=startTime + (1000l * test_duration_secs);
   long currentTime=startTime;
   long lastFeedbackTime=startTime;
+  long lastAutoTuningTime=startTime;
   long num_sp_calls=0;
+  long cycle_num_sp_calls=0;
   long startRecordingLatency=startTime + lag_latency_millis;
   long num_gets=0;
   long num_puts=0;
@@ -250,6 +266,10 @@ catch (    NoConnectionsException e) {
   tot_executions_latency=0;
   latency_counter=new long[]{0,0,0,0,0,0,0,0,0};
   checkLatency=false;
+  cycle_min_execution_milliseconds=999999999l;
+  cycle_max_execution_milliseconds=-1l;
+  cycle_tot_execution_milliseconds=0;
+  cycle_tot_executions_latency=0;
   transactions_this_second=0;
   last_millisecond=System.currentTimeMillis();
   this_millisecond=System.currentTimeMillis();
@@ -257,7 +277,9 @@ catch (    NoConnectionsException e) {
   endTime=startTime + (1000l * test_duration_secs);
   currentTime=startTime;
   lastFeedbackTime=startTime;
+  lastAutoTuningTime=startTime;
   num_sp_calls=0;
+  cycle_num_sp_calls=0;
   startRecordingLatency=startTime + lag_latency_millis;
   num_gets=0;
   num_puts=0;
@@ -266,6 +288,7 @@ catch (    NoConnectionsException e) {
   m_logger.info(String.format("******************************************************************************************************************************"));
   while (currentTime < endTime) {
     num_sp_calls++;
+    cycle_num_sp_calls++;
     int getTest=rand.nextInt(99) + 1;
     long current_key=(long)((rand.nextDouble() * initial_size) + 1);
     if (getTest <= percent_gets) {
@@ -319,6 +342,29 @@ catch (    NoConnectionsException e) {
     currentTime=System.currentTimeMillis();
     if ((!checkLatency) && (currentTime >= startRecordingLatency)) {
       checkLatency=true;
+    }
+    if (use_auto_tuning && (currentTime >= (lastAutoTuningTime + (auto_tuning_interval_secs * 1000)))) {
+synchronized (lockObject) {
+        long cycle_elapsedTimeMillis2=System.currentTimeMillis() - lastAutoTuningTime;
+        float cycle_elapsedTimeSec2=cycle_elapsedTimeMillis2 / 1000F;
+        lastAutoTuningTime=currentTime;
+        if ((((double)cycle_tot_execution_milliseconds / (double)cycle_tot_executions_latency) > auto_tuning_target_latency_millis) && (((double)tot_execution_milliseconds / (double)tot_executions_latency) > auto_tuning_target_latency_millis)) {
+          long new_transactions_per_second=(((long)(Math.min(cycle_num_sp_calls / cycle_elapsedTimeSec2,transactions_per_second) * auto_tuning_adjustment_rate)) / 1000l) * 1000l;
+          String last_tuning_warning="";
+          if ((new_transactions_per_second <= 1000) || (new_transactions_per_second == transactions_per_second)) {
+            use_auto_tuning=false;
+            last_tuning_warning=" | WARNING: Minimum load boundary reached.  Auto-Tuning De-activated";
+          }
+          m_logger.info(String.format("[%s] Auto-Tuning | Observed: %,.2f SPC/sec | Latency: min = %d | max = %d | avg = %.2f | Adjusting to %,d SPC/s%s",new Date().toString(),(cycle_num_sp_calls / cycle_elapsedTimeSec2),cycle_min_execution_milliseconds,cycle_max_execution_milliseconds,((double)cycle_tot_execution_milliseconds / (double)cycle_tot_executions_latency),new_transactions_per_second,last_tuning_warning));
+          transactions_per_second=new_transactions_per_second;
+          transactions_per_milli=transactions_per_second / 1000l;
+        }
+        cycle_num_sp_calls=0;
+        cycle_min_execution_milliseconds=999999999l;
+        cycle_max_execution_milliseconds=-1l;
+        cycle_tot_execution_milliseconds=0;
+        cycle_tot_executions_latency=0;
+      }
     }
     if (currentTime >= (lastFeedbackTime + (client_feedback_interval_secs * 1000))) {
 synchronized (lockObject) {
@@ -413,6 +459,12 @@ catch (  NoConnectionsException e) {
   m_logger.info(String.format(" -   Latency 150ms - 175ms = %,d",latency_counter[6]));
   m_logger.info(String.format(" -   Latency 175ms - 200ms = %,d",latency_counter[7]));
   m_logger.info(String.format(" -   Latency 200ms+        = %,d",latency_counter[8]));
+  if (transactions_per_second < transactions_per_second_requested) {
+    m_logger.info(String.format("*************************************************************************"));
+    m_logger.info(String.format("Auto-Tuning Results"));
+    m_logger.info(String.format("*************************************************************************"));
+    m_logger.info(String.format(" - Optimal Load: %,d SPC/s to match/approach desired %.2f ms Latency",transactions_per_second,auto_tuning_target_latency_millis));
+  }
   try {
     voltclient.close();
   }
