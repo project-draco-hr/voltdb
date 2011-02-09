@@ -7,28 +7,49 @@
   try {
 synchronized (m_committedBuffers) {
       if (message.isAck() && message.getAckOffset() > 0) {
-        if (!releaseExportBytes(message.getAckOffset(),blocksToDelete)) {
+        try {
+          releaseExportBytes(message.getAckOffset(),blocksToDelete);
+        }
+ catch (        IOException e) {
+          exportLog.error(e);
           result.error();
           ExportManager.instance().queueMessage(mbp);
           return;
         }
       }
       if (message.isClose()) {
-        resetPollMarker();
+        try {
+          resetPollMarker();
+        }
+ catch (        IOException e) {
+          exportLog.error(e);
+        }
       }
-      if (message.isPoll()) {
-        Iterator<StreamBlock> iter=m_committedBuffers.iterator();
-        while (iter.hasNext()) {
-          StreamBlock block=iter.next();
-          if (m_firstUnpolledUso < block.m_uso + block.totalUso()) {
-            first_unpolled_block=block;
-            m_firstUnpolledUso=block.m_uso + block.totalUso();
-            break;
-          }
+      try {
+        if (message.isPoll()) {
+          Iterator<StreamBlock> iter=m_committedBuffers.iterator();
+          while (iter.hasNext()) {
+            StreamBlock block=iter.next();
+            if (m_firstUnpolledUso < block.uso() + block.totalUso()) {
+              first_unpolled_block=block;
+              m_firstUnpolledUso=block.uso() + block.totalUso();
+              break;
+            }
  else {
-            blocksToDelete.add(block);
-            iter.remove();
+              blocksToDelete.add(block);
+              iter.remove();
+            }
           }
+        }
+      }
+ catch (      RuntimeException e) {
+        if (e.getCause() instanceof IOException) {
+          exportLog.error(e);
+          result.error();
+          ExportManager.instance().queueMessage(mbp);
+        }
+ else {
+          throw e;
         }
       }
     }
@@ -45,7 +66,7 @@ synchronized (m_committedBuffers) {
       result.pollResponse(m_firstUnpolledUso,buf);
     }
  else {
-      result.pollResponse(first_unpolled_block.m_uso + first_unpolled_block.totalUso(),first_unpolled_block.unreleasedBuffer());
+      result.pollResponse(first_unpolled_block.uso() + first_unpolled_block.totalUso(),first_unpolled_block.unreleasedBuffer());
     }
     ExportManager.instance().queueMessage(mbp);
   }

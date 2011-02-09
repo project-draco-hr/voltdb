@@ -1,17 +1,34 @@
 {
   m_path=path;
   m_nonce=nonce;
+  if (!path.exists() || !path.canRead() || !path.canWrite()|| !path.canExecute()|| !path.isDirectory()) {
+    throw new IOException(path + " is not usable ( !exists || !readable " + "|| !writable || !executable || !directory)");
+  }
   path.listFiles(new FileFilter(){
     @Override public boolean accept(    File pathname){
       String name=pathname.getName();
       if (name.startsWith(nonce) && name.endsWith(".pbd")) {
         Long index=Long.valueOf(name.substring(nonce.length() + 1,name.length() - 4));
-        m_finishedSegments.put(index,new DequeSegment(index,pathname));
+        DequeSegment ds=new DequeSegment(index,pathname);
+        m_finishedSegments.put(index,ds);
+        m_sizeInBytes.addAndGet(ds.sizeInBytes());
       }
       return false;
     }
   }
 );
+  Long lastKey=null;
+  for (  Long key : m_finishedSegments.keySet()) {
+    if (lastKey == null) {
+      lastKey=key;
+    }
+ else {
+      if (lastKey + 1 != key) {
+        throw new IOException("Missing " + nonce + " pbd segments between "+ lastKey+ " and "+ key+ " in directory "+ path+ ". The data files found in the export overflow directory were inconsistent.");
+      }
+      lastKey=key;
+    }
+  }
   Long writeSegmentIndex=0L;
   try {
     m_currentPollSegmentIndex=m_finishedSegments.firstKey();
@@ -19,6 +36,7 @@
   }
  catch (  NoSuchElementException e) {
   }
-  m_writeSegment=new DequeSegment(writeSegmentIndex,new File(m_path,m_nonce + "." + writeSegmentIndex+ ".pbd"));
+  m_writeSegment=new DequeSegment(writeSegmentIndex,new VoltFile(m_path,m_nonce + "." + writeSegmentIndex+ ".pbd"));
   m_writeSegment.open();
+  m_writeSegment.initNumEntries();
 }

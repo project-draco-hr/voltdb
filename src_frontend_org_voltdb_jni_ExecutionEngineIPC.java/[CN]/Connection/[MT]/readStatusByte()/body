@@ -49,7 +49,7 @@
       ExecutionEngine.crashVoltDB(message,traces,filename,lineno);
     }
     if (status == kErrorCode_pushExportBuffer) {
-      ByteBuffer header=ByteBuffer.allocate(20);
+      ByteBuffer header=ByteBuffer.allocate(21);
       while (header.hasRemaining()) {
         final int read=m_socket.getChannel().read(header);
         if (read == -1) {
@@ -60,12 +60,9 @@
       int partitionId=header.getInt();
       long delegateId=header.getLong();
       long uso=header.getLong();
-      header.order(ByteOrder.LITTLE_ENDIAN);
+      boolean sync=header.get() == 1 ? true : false;
       int length=header.getInt();
-      ByteBuffer exportBuffer=ByteBuffer.allocateDirect(length + 4);
-      exportBuffer.order(ByteOrder.LITTLE_ENDIAN);
-      exportBuffer.putInt(length);
-      exportBuffer.order(ByteOrder.BIG_ENDIAN);
+      ByteBuffer exportBuffer=ByteBuffer.allocateDirect(length);
       while (exportBuffer.hasRemaining()) {
         final int read=m_socket.getChannel().read(exportBuffer);
         if (read == -1) {
@@ -73,7 +70,26 @@
         }
       }
       exportBuffer.flip();
-      ExportManager.pushExportBuffer(partitionId,delegateId,uso,0,exportBuffer);
+      ExportManager.pushExportBuffer(partitionId,delegateId,uso,0,length == 0 ? null : exportBuffer,sync);
+      continue;
+    }
+    if (status == kErrorCode_getQueuedExportBytes) {
+      ByteBuffer header=ByteBuffer.allocate(12);
+      while (header.hasRemaining()) {
+        final int read=m_socket.getChannel().read(header);
+        if (read == -1) {
+          throw new EOFException();
+        }
+      }
+      header.flip();
+      int partitionId=header.getInt();
+      long delegateId=header.getLong();
+      long retval=ExportManager.getQueuedExportBytes(partitionId,delegateId);
+      ByteBuffer buf=ByteBuffer.allocate(8);
+      buf.putLong(retval).flip();
+      while (buf.hasRemaining()) {
+        m_socketChannel.write(buf);
+      }
       continue;
     }
     try {

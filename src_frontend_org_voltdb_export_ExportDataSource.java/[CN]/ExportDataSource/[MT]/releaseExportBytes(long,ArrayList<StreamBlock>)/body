@@ -1,53 +1,20 @@
 {
-  if (!m_committedBuffers.isEmpty() && releaseOffset < m_committedBuffers.peek().m_uso) {
-    return true;
+  if (!m_committedBuffers.isEmpty() && releaseOffset < m_committedBuffers.peek().uso()) {
+    return;
   }
-  long committedUso=0;
-  if (m_committedBuffers.isEmpty()) {
-    if (m_firstUnpolledUso < releaseOffset) {
-      m_firstUnpolledUso=releaseOffset;
-    }
-    return true;
-  }
- else {
-    committedUso=m_committedBuffers.peekLast().m_uso + m_committedBuffers.peekLast().totalUso();
-  }
-  if (releaseOffset > committedUso) {
-    releaseOffset=committedUso;
-  }
-  boolean retval=false;
-  StreamBlock lastBlock=m_committedBuffers.peekLast();
-  if (releaseOffset >= lastBlock.m_uso) {
-    while (m_committedBuffers.size() > 1) {
-      StreamBlock sb=m_committedBuffers.poll();
-      blocksToDelete.add(sb);
-    }
-    assert(lastBlock.unreleasedSize() > 0);
-    lastBlock.releaseUso(releaseOffset);
-    if (lastBlock.unreleasedSize() == 0) {
-      blocksToDelete.add(lastBlock);
-      m_committedBuffers.poll();
-    }
-    retval=true;
-  }
- else {
+  long lastUso=m_firstUnpolledUso;
+  while (!m_committedBuffers.isEmpty() && releaseOffset >= m_committedBuffers.peek().uso()) {
     StreamBlock sb=m_committedBuffers.peek();
-    while (!m_committedBuffers.isEmpty() && !retval) {
-      if (releaseOffset >= sb.m_uso + sb.totalUso()) {
-        m_committedBuffers.pop();
-        blocksToDelete.add(sb);
-        sb=m_committedBuffers.peek();
-      }
- else {
-        sb.releaseUso(releaseOffset);
-        retval=true;
-      }
+    if (releaseOffset >= sb.uso() + sb.totalUso()) {
+      m_committedBuffers.pop();
+      blocksToDelete.add(sb);
+      lastUso=sb.uso() + sb.totalUso();
+    }
+ else     if (releaseOffset >= sb.uso()) {
+      sb.releaseUso(releaseOffset);
+      lastUso=releaseOffset;
+      break;
     }
   }
-  if (retval) {
-    if (m_firstUnpolledUso < releaseOffset) {
-      m_firstUnpolledUso=releaseOffset;
-    }
-  }
-  return retval;
+  m_firstUnpolledUso=Math.max(m_firstUnpolledUso,lastUso);
 }
