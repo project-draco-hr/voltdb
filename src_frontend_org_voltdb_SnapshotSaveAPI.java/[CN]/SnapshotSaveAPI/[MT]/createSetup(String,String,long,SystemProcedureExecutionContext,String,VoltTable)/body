@@ -7,16 +7,16 @@
       final ArrayList<SnapshotTableTask> replicatedSnapshotTasks=new ArrayList<SnapshotTableTask>();
       assert(SnapshotSiteProcessor.ExecutionSitesCurrentlySnapshotting.get() == -1);
       final List<Table> tables=SnapshotUtil.getTablesToSave(context.getDatabase());
-      SnapshotUtil.recordSnapshotTableList(startTime,file_path,file_nonce,tables);
+      SnapshotUtil.recordSnapshotTableList(txnId,file_path,file_nonce,tables);
       final AtomicInteger numTables=new AtomicInteger(tables.size());
-      final SnapshotRegistry.Snapshot snapshotRecord=SnapshotRegistry.startSnapshot(startTime,context.getExecutionSite().getCorrespondingHostId(),file_path,file_nonce,tables.toArray(new Table[0]));
+      final SnapshotRegistry.Snapshot snapshotRecord=SnapshotRegistry.startSnapshot(txnId,context.getExecutionSite().getCorrespondingHostId(),file_path,file_nonce,tables.toArray(new Table[0]));
       for (      final Table table : SnapshotUtil.getTablesToSave(context.getDatabase())) {
         String canSnapshot="SUCCESS";
         String err_msg="";
         final File saveFilePath=SnapshotUtil.constructFileForTable(table,file_path,file_nonce,context.getSite().getHost().getTypeName());
         SnapshotDataTarget sdt=null;
         try {
-          sdt=constructSnapshotDataTargetForTable(context,saveFilePath,table,context.getSite().getHost(),context.getCluster().getPartitions().size(),startTime);
+          sdt=constructSnapshotDataTargetForTable(context,saveFilePath,table,context.getSite().getHost(),context.getCluster().getPartitions().size(),txnId);
           targets.add(sdt);
           final SnapshotDataTarget sdtFinal=sdt;
           final Runnable onClose=new Runnable(){
@@ -30,7 +30,7 @@
               int tablesLeft=numTables.decrementAndGet();
               if (tablesLeft == 0) {
                 final SnapshotRegistry.Snapshot completed=SnapshotRegistry.finishSnapshot(snapshotRecord);
-                final double duration=(completed.timeFinished - completed.timeStarted) / 1000.0;
+                final double duration=(completed.timeFinished - org.voltdb.TransactionIdManager.getTimestampFromTransactionId(completed.txnId)) / 1000.0;
                 HOST_LOG.info("Snapshot " + snapshotRecord.nonce + " finished at "+ completed.timeFinished+ " and took "+ duration+ " seconds ");
               }
             }
