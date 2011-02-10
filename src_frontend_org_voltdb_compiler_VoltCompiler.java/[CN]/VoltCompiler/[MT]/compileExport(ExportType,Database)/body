@@ -1,0 +1,52 @@
+{
+  if (export == null) {
+    return;
+  }
+  org.voltdb.catalog.Connector catconn=catdb.getConnectors().add("0");
+  final ArrayList<String> groupslist=new ArrayList<String>();
+  if (export.getGroups() != null) {
+    for (    String group : export.getGroups().split(",")) {
+      groupslist.add(group);
+    }
+  }
+  for (  String groupName : groupslist) {
+    final Group group=catdb.getGroups().get(groupName);
+    if (group == null) {
+      throw new VoltCompilerException("Export has a group " + groupName + " that does not exist");
+    }
+    final GroupRef groupRef=catconn.getAuthgroups().add(groupName);
+    groupRef.setGroup(group);
+  }
+  Integer i=0;
+  if (export.getTables() != null) {
+    for (    Tables.Table xmltable : export.getTables().getTable()) {
+      String tablename=xmltable.getName();
+      org.voltdb.catalog.Table tableref=catdb.getTables().getIgnoreCase(tablename);
+      if (tableref == null) {
+        throw new VoltCompilerException("While configuring export, table " + tablename + " was not present in "+ "the catalog.");
+      }
+      if (CatalogUtil.isTableMaterializeViewSource(catdb,tableref)) {
+        compilerLog.error("While configuring export, table " + tablename + " is a source table "+ "for a materialized view. Export only tables do not support views.");
+        throw new VoltCompilerException("Export-only table configured with materialized view.");
+      }
+      if (tableref.getMaterializer() != null) {
+        compilerLog.error("While configuring export, table " + tablename + " is a "+ "materialized view.  A view cannot be an export-only table.");
+        throw new VoltCompilerException("View configured as an export-only table");
+      }
+      if (tableref.getIsreplicated()) {
+        compilerLog.error("While configuring export, table " + tablename + " is a "+ "replicated table. An export only table must be partitioned.");
+        throw new VoltCompilerException("View configured as an export-only table");
+      }
+      org.voltdb.catalog.ConnectorTableInfo connTableInfo=catconn.getTableinfo().add(tablename);
+      connTableInfo.setAppendonly(true);
+      connTableInfo.setTable(tableref);
+      ++i;
+    }
+    if (export.getTables().getTable().isEmpty()) {
+      compilerLog.warn("Export defined with an empty <tables> element");
+    }
+  }
+ else {
+    compilerLog.warn("Export defined with no <tables> element");
+  }
+}
