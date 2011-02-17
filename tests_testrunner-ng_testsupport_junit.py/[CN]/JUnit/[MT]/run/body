@@ -1,0 +1,35 @@
+def run(self):
+    print ('Running JUnit test: %s' % self.name)
+    command = ['java']
+    command += ['-ea']
+    command += ['-Xmx1024m']
+    command += ['-Djava.library.path=nativelibs']
+    command += ['org.voltdb.VoltTestRunner']
+    command += [self.task]
+    command += [self.timestamp]
+    classpath = '../../third_party/java/jars/junit-4.8.2.jar'
+    classpath += ':../../third_party'
+    classpath += ':prod'
+    classpath += ':test'
+    env = {'CLASSPATH': classpath, }
+    pipe = None
+    try:
+        start = datetime.now()
+        pipe = Popen(args=command, env=env, stdout=PIPE)
+        self.duration = (datetime.now() - start).seconds
+        while (self.duration < self.timeout):
+            pipe.poll()
+            if (pipe.returncode != None):
+                self.processResults(pipe.stdout)
+                return
+            else:
+                time.sleep(1)
+            self.duration = (datetime.now() - start).seconds
+        self.didtimeout = True
+        self.failures = 1
+        self.testsrun = 1
+    finally:
+        if (pipe != None):
+            pipe.poll()
+            if (pipe.returncode == None):
+                os.system(('kill -9 %d' % pipe.pid))
