@@ -90,36 +90,48 @@
       msg+="Partition column '" + tableName + "."+ colName+ "' is nullable. "+ "Partition columns must be constrained \"NOT NULL\".";
       throw new VoltCompilerException(msg);
     }
-    t.setPartitioncolumn(c);
-    t.setIsreplicated(false);
-    final CatalogMap<MaterializedViewInfo> views=t.getViews();
-    for (    final MaterializedViewInfo mvi : views) {
-      mvi.getDest().setIsreplicated(false);
-    }
-  }
-  String catData=m_catalog.serialize();
-  m_catalog=new Catalog();
-  m_catalog.execute(catData);
-  db=m_catalog.getClusters().get("cluster").getDatabases().get(databaseName);
-  addDatabaseEstimatesInfo(m_estimates,db);
-  try {
-    addSystemProcsToCatalog(m_catalog,db);
-  }
- catch (  final VoltCompilerException ex) {
-    throw new RuntimeException(ex);
-  }
-  if (database.getExport() != null) {
-    ExportType export=database.getExport();
-    compileExport(export,db);
-  }
-  for (  final ProcedureDescriptor procedureDescriptor : procedures) {
-    final String procedureName=procedureDescriptor.m_className;
-    m_currentFilename=procedureName.substring(procedureName.lastIndexOf('.') + 1);
-    m_currentFilename+=".class";
-    ProcedureCompiler.compile(this,m_hsql,m_estimates,m_catalog,db,procedureDescriptor);
-  }
-  for (  final Class<?> classDependency : classDependencies) {
-    addClassToJar(classDependency,this);
-  }
-  m_hsql.close();
+    VoltType pcolType=VoltType.get((byte)c.getType());
+switch (pcolType) {
+case TINYINT:
+case SMALLINT:
+case INTEGER:
+case BIGINT:
+case STRING:
+      break;
+default :
+    msg+="Partition column '" + tableName + "."+ colName+ "' is not a valid type. "+ "Partition columns must be an integer or varchar type.";
+  throw new VoltCompilerException(msg);
+}
+t.setPartitioncolumn(c);
+t.setIsreplicated(false);
+final CatalogMap<MaterializedViewInfo> views=t.getViews();
+for (final MaterializedViewInfo mvi : views) {
+mvi.getDest().setIsreplicated(false);
+}
+}
+String catData=m_catalog.serialize();
+m_catalog=new Catalog();
+m_catalog.execute(catData);
+db=m_catalog.getClusters().get("cluster").getDatabases().get(databaseName);
+addDatabaseEstimatesInfo(m_estimates,db);
+try {
+addSystemProcsToCatalog(m_catalog,db);
+}
+ catch (final VoltCompilerException ex) {
+throw new RuntimeException(ex);
+}
+if (database.getExport() != null) {
+ExportType export=database.getExport();
+compileExport(export,db);
+}
+for (final ProcedureDescriptor procedureDescriptor : procedures) {
+final String procedureName=procedureDescriptor.m_className;
+m_currentFilename=procedureName.substring(procedureName.lastIndexOf('.') + 1);
+m_currentFilename+=".class";
+ProcedureCompiler.compile(this,m_hsql,m_estimates,m_catalog,db,procedureDescriptor);
+}
+for (final Class<?> classDependency : classDependencies) {
+addClassToJar(classDependency,this);
+}
+m_hsql.close();
 }

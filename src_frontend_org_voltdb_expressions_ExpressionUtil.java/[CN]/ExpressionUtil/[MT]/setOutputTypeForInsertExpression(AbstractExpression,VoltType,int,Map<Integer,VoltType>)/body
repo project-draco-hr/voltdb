@@ -1,0 +1,54 @@
+{
+  if (input.getExpressionType() == ExpressionType.VALUE_PARAMETER) {
+    ParameterValueExpression pve=(ParameterValueExpression)input;
+    paramTypeOverrideMap.put(pve.m_paramIndex,neededType);
+    input.setValueType(neededType);
+    input.setValueSize(neededSize);
+  }
+ else   if (input.getExpressionType() == ExpressionType.VALUE_CONSTANT) {
+    ConstantValueExpression cve=(ConstantValueExpression)input;
+    if (cve.m_isNull) {
+      cve.setValueType(neededType);
+      cve.setValueSize(neededSize);
+      return;
+    }
+    if (cve.getValueType() == neededType) {
+      if (cve.getValueType() == VoltType.STRING) {
+        if (cve.getValue().length() > neededSize)         throw new StringIndexOutOfBoundsException("Constant VARCHAR value too long for column.");
+      }
+      cve.setValueSize(neededSize);
+      checkConstantValueTypeSafety(cve);
+      return;
+    }
+    if (neededType.isInteger()) {
+      if (cve.getValueType().isInteger()) {
+        castIntegerValueDownSafely(cve,neededType);
+        checkConstantValueTypeSafety(cve);
+        return;
+      }
+    }
+    if (neededType == VoltType.FLOAT) {
+      if (cve.getValueType().isExactNumeric()) {
+        cve.setValueType(neededType);
+        cve.setValueSize(neededSize);
+        checkConstantValueTypeSafety(cve);
+        return;
+      }
+    }
+    if (neededType == VoltType.DECIMAL) {
+      if ((cve.getValueType().isExactNumeric()) || (cve.getValueType() == VoltType.FLOAT)) {
+        cve.setValueType(neededType);
+        cve.setValueSize(neededSize);
+        checkConstantValueTypeSafety(cve);
+        return;
+      }
+    }
+    throw new Exception("Constant value cannot be converted to column type.");
+  }
+ else {
+    input.setValueType(neededType);
+    input.setValueSize(neededSize);
+    setOutputTypeForInsertExpressionRecursively(input.getLeft(),neededType,neededSize,paramTypeOverrideMap);
+    setOutputTypeForInsertExpressionRecursively(input.getRight(),neededType,neededSize,paramTypeOverrideMap);
+  }
+}
