@@ -12,60 +12,28 @@
       final int size=c.b.remaining();
       final VoltTable vt=PrivateVoltTableFactory.createVoltTableFromBuffer(c.b,true);
       StringBuilder sb=new StringBuilder(size * 2);
-      final SimpleDateFormat sdf=new SimpleDateFormat("yyyy.MM.dd HH:mm:ss:SSS:");
       while (vt.advanceRow()) {
         for (int ii=0; ii < vt.getColumnCount(); ii++) {
           final VoltType type=vt.getColumnType(ii);
-          if (ii != 0) {
-            sb.append(m_delimeter);
+          if (vt.wasNull()) {
+            m_escaper.writeRawField(sb,"NULL",ii > 0);
           }
-          if (type == VoltType.BIGINT || type == VoltType.INTEGER || type == VoltType.SMALLINT || type == VoltType.TINYINT) {
-            long value=vt.getLong(ii);
-            if (vt.wasNull()) {
-              sb.append("NULL");
-            }
- else {
-              sb.append(value);
-            }
+ else           if (type == VoltType.BIGINT || type == VoltType.INTEGER || type == VoltType.SMALLINT || type == VoltType.TINYINT) {
+            m_escaper.writeRawField(sb,String.valueOf(vt.getLong(ii)),ii > 0);
           }
  else           if (type == VoltType.FLOAT) {
-            double value=vt.getDouble(ii);
-            if (vt.wasNull()) {
-              sb.append("NULL");
-            }
- else {
-              sb.append(value);
-            }
+            m_escaper.writeRawField(sb,String.valueOf(vt.getDouble(ii)),ii > 0);
           }
  else           if (type == VoltType.DECIMAL) {
-            BigDecimal value=vt.getDecimalAsBigDecimal(ii);
-            if (vt.wasNull()) {
-              sb.append("NULL");
-            }
- else {
-              sb.append(value.toString());
-            }
+            m_escaper.writeRawField(sb,vt.getDecimalAsBigDecimal(ii).toString(),ii > 0);
           }
  else           if (type == VoltType.STRING) {
-            String value=vt.getString(ii);
-            if (vt.wasNull()) {
-              sb.append("NULL");
-            }
- else {
-              sb.append(m_escaper.escape(value));
-            }
+            m_escaper.writeEscapedField(sb,vt.getString(ii),ii > 0);
           }
  else           if (type == VoltType.TIMESTAMP) {
             final TimestampType timestamp=vt.getTimestampAsTimestamp(ii);
-            if (vt.wasNull()) {
-              sb.append("NULL");
-            }
- else {
-              StringBuilder builder=new StringBuilder(64);
-              builder.append(sdf.format(timestamp.asApproximateJavaDate()));
-              builder.append(timestamp.getUSec());
-              sb.append(m_escaper.escape(builder.toString()));
-            }
+            m_escaper.writeRawField(sb,m_sdf.format(timestamp.asApproximateJavaDate()),ii > 0);
+            m_escaper.writeRawField(sb,String.valueOf(timestamp.getUSec()),false);
           }
         }
         sb.append('\n');

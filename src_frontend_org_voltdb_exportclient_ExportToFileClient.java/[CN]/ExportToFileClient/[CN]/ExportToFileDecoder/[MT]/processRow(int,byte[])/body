@@ -1,4 +1,5 @@
 {
+  if (m_discard)   return true;
   Object[] row=null;
   try {
     row=decodeRow(rowData);
@@ -7,45 +8,32 @@
     m_logger.error("Unable to decode row for table: " + m_source.tableName());
     return false;
   }
-  StringBuilder sb=new StringBuilder();
-  final SimpleDateFormat sdf=new SimpleDateFormat("yyyy.MM.dd HH:mm:ss:SSS:");
-  for (int i=0; i < m_tableSchema.size(); i++) {
-    if (i != 0) {
-      sb.append(m_escaper.getDelimiter());
-    }
-    if (row[i] == null) {
-      sb.append("NULL");
-    }
- else     if (m_tableSchema.get(i) == VoltType.STRING) {
-      sb.append(m_escaper.escape((String)row[i]));
-    }
- else     if (m_tableSchema.get(i) == VoltType.TIMESTAMP) {
-      StringBuilder builder=new StringBuilder(64);
-      TimestampType timestamp=(TimestampType)row[i];
-      builder.append(sdf.format(timestamp.asApproximateJavaDate()));
-      builder.append(timestamp.getUSec());
-      sb.append(m_escaper.escape(builder.toString()));
-    }
+  try {
+    for (int i=m_firstfield; i < m_tableSchema.size(); i++) {
+      if (row[i] == null) {
+        m_escaper.writeRawField(m_Writer,"NULL",i > m_firstfield);
+      }
+ else       if (m_tableSchema.get(i) == VoltType.STRING) {
+        m_escaper.writeEscapedField(m_Writer,(String)row[i],i > m_firstfield);
+      }
+ else       if (m_tableSchema.get(i) == VoltType.TIMESTAMP) {
+        TimestampType timestamp=(TimestampType)row[i];
+        m_escaper.writeRawField(m_Writer,m_sdf.format(timestamp.asApproximateJavaDate()),i > m_firstfield);
+        m_escaper.writeRawField(m_Writer,String.valueOf(timestamp.getUSec()),false);
+      }
  else {
-      sb.append(row[i].toString());
+        m_escaper.writeRawField(m_Writer,row[i].toString(),i > m_firstfield);
+      }
     }
-  }
-  sb.append("\n");
-  byte bytes[]=null;
-  try {
-    bytes=sb.toString().getBytes("UTF-8");
-  }
- catch (  UnsupportedEncodingException e) {
-    e.printStackTrace();
-    return false;
-  }
-  try {
-    m_fos.write(bytes);
-    m_fos.flush();
+    m_Writer.write("\n");
   }
  catch (  IOException e) {
     e.printStackTrace();
     throw new RuntimeException(e.getMessage());
+  }
+catch (  Exception x) {
+    x.printStackTrace();
+    return false;
   }
   return true;
 }
