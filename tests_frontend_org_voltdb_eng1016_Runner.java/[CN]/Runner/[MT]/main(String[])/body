@@ -1,0 +1,36 @@
+{
+  VoltProjectBuilder project=new VoltProjectBuilder();
+  project.addLiteralSchema("create table items (id bigint not null, created bigint not null, primary key (id));");
+  project.addLiteralSchema("create index idx_item_tree on items (created, id);");
+  project.addProcedures(GetItems.class);
+  project.addStmtProcedure("CreateItem","insert into items (id, created) values (?,?);");
+  project.addPartitionInfo("items","id");
+  boolean success=project.compile(Configuration.getPathToCatalogForTest("poc.jar"));
+  if (!success) {
+    System.err.println("Failure to compile catalog.");
+    System.exit(-1);
+  }
+  String pathToDeployment=project.getPathToDeployment();
+  ServerThread server=new ServerThread(Configuration.getPathToCatalogForTest("poc.jar"),pathToDeployment,BackendTarget.NATIVE_EE_JNI);
+  server.start();
+  server.waitForInitialization();
+  final org.voltdb.client.Client voltclient=ClientFactory.createClient();
+  voltclient.createConnection("localhost");
+  long numItems=20;
+  for (long questionid=0; questionid < numItems; questionid++) {
+    voltclient.callProcedure("CreateItem",questionid,System.currentTimeMillis());
+  }
+  System.out.printf("Created %,d items\n",numItems);
+  VoltTable result;
+  result=voltclient.callProcedure("GetItems",0,System.currentTimeMillis(),20,1).getResults()[0];
+  if (result.asScalarLong() != 20) {
+    System.err.printf("First call failed with %d rows\n",result.asScalarLong());
+  }
+  result=voltclient.callProcedure("GetItems",0,System.currentTimeMillis(),10,2).getResults()[0];
+  if (result.asScalarLong() != 20) {
+    System.err.printf("REPRODUCED with %d rows\n",result.asScalarLong());
+  }
+  voltclient.close();
+  server.shutdown();
+  server.join();
+}
