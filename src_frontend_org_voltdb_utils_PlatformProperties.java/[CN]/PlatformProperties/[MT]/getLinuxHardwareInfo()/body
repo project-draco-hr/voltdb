@@ -1,0 +1,58 @@
+{
+  HardwareInfo hw=new HardwareInfo();
+  try {
+    File statFile=new File("/proc/meminfo");
+    FileInputStream fis=new FileInputStream(statFile);
+    try {
+      BufferedReader r=new BufferedReader(new InputStreamReader(fis));
+      String stats=r.readLine();
+      String[] parts=stats.split("\\s+");
+      long memInKB=Long.parseLong(parts[1]);
+      hw.ramInMegabytes=(int)(memInKB / 1024);
+    }
+  finally {
+      fis.close();
+    }
+  }
+ catch (  Exception e) {
+    System.err.println("Unable to read /proc/meminfo. Stopping.");
+    System.exit(-1);
+  }
+  StringBuilder sb=new StringBuilder();
+  try {
+    File statFile=new File("/proc/cpuinfo");
+    FileInputStream fis=new FileInputStream(statFile);
+    try {
+      BufferedReader r=new BufferedReader(new InputStreamReader(fis));
+      String line=null;
+      while ((line=r.readLine()) != null)       sb.append(line).append("\n");
+    }
+  finally {
+      fis.close();
+    }
+  }
+ catch (  Exception e) {
+    System.err.println("Unable to read /proc/cpuinfo. Stopping.");
+    System.exit(-1);
+  }
+  String[] cpus=sb.toString().trim().split("\n\n");
+  hw.hardwareThreads=cpus.length;
+  String[] lines=cpus[0].trim().split("\n");
+  for (  String line : lines) {
+    String[] parts=line.trim().split(":");
+    if (parts.length < 2)     continue;
+    if (parts[0].trim().compareToIgnoreCase("model name") == 0) {
+      hw.cpuDesc=parts[1].trim();
+    }
+    if (parts[0].trim().compareToIgnoreCase("cache size") == 0) {
+      hw.cpuDesc+=" " + parts[1].trim() + " cache";
+    }
+    if (parts[0].trim().compareToIgnoreCase("siblings") == 0) {
+      hw.socketCount=hw.hardwareThreads / Integer.parseInt(parts[1].trim());
+    }
+    if (parts[0].trim().compareToIgnoreCase("cpu cores") == 0) {
+      hw.coreCount=Integer.parseInt(parts[1].trim()) * hw.socketCount;
+    }
+  }
+  return hw;
+}

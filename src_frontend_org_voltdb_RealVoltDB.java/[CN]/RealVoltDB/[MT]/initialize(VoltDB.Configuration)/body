@@ -1,5 +1,6 @@
 {
 synchronized (m_startAndStopLock) {
+    PlatformProperties.fetchPlatformProperties();
     if (config.m_useCommitLog) {
       try {
         m_commitLog=new CommitLogImpl(config.m_commitLogDir,config.m_commitInterval,config.m_waitForCommit);
@@ -38,19 +39,23 @@ synchronized (m_startAndStopLock) {
         hostLog.error("Error creating PID file " + m_pidFile,e);
       }
     }
-    try {
-      System.setOut(new PrintStream(System.out,true,"UTF-8"));
-      System.setErr(new PrintStream(System.err,true,"UTF-8"));
-    }
- catch (    UnsupportedEncodingException e) {
-      hostLog.fatal("Support for the UTF-8 encoding is required for VoltDB. This means you are likely running an unsupported JVM.");
-      VoltDB.crashVoltDB();
-    }
     if (config.m_port != VoltDB.DEFAULT_PORT) {
       VLog.setPortNo(config.m_port);
     }
     VLog.log("\n### RealVoltDB.initialize() for port %d ###",config.m_port);
     hostLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_StartupString.name(),null);
+    try {
+      System.setOut(new PrintStream(System.out,true,"UTF-8"));
+      System.setErr(new PrintStream(System.err,true,"UTF-8"));
+    }
+ catch (    UnsupportedEncodingException e) {
+      hostLog.fatal("Support for the UTF-8 encoding is required for VoltDB. This means you are likely running an unsupported JVM. Exiting.");
+      System.exit(-1);
+    }
+    if (System.getProperty("java.vm.name").contains("64") == false) {
+      hostLog.fatal("You are running on an unsupported (probably 32 bit) JVM. Exiting.");
+      System.exit(-1);
+    }
     if (config.listenForDumpRequests)     DumpManager.init();
     readBuildInfo();
     m_config=config;
@@ -84,6 +89,7 @@ synchronized (m_startAndStopLock) {
     TheHashinator.initialize(catalog);
     int httpPort=m_catalogContext.cluster.getHttpdportno();
     boolean jsonEnabled=m_catalogContext.cluster.getJsonapi();
+    String httpPortExtraLogMessage=null;
     if (httpPort == 0) {
       httpPort=8080;
       for (; true; httpPort++) {
@@ -94,17 +100,16 @@ synchronized (m_startAndStopLock) {
  catch (        Exception e1) {
         }
       }
-      if (httpPort == 8081)       hostLog.info("HTTP admin console unable to bind to port 8080");
- else       if (httpPort > 8081)       hostLog.info("HTTP admin console unable to bind to ports 8080 through " + (httpPort - 1));
-      hostLog.info("HTTP admin console listening on port " + httpPort);
+      if (httpPort == 8081)       httpPortExtraLogMessage="HTTP admin console unable to bind to port 8080";
+ else       if (httpPort > 8081)       httpPortExtraLogMessage="HTTP admin console unable to bind to ports 8080 through " + String.valueOf(httpPort - 1);
     }
  else {
       try {
         m_adminListener=new HTTPAdminListener(jsonEnabled,httpPort);
-        hostLog.info("HTTP admin console listening on port " + httpPort);
       }
  catch (      Exception e1) {
-        hostLog.info("HTTP admin console unable to bind to port " + httpPort);
+        hostLog.info("HTTP admin console unable to bind to port " + httpPort + ". Exiting.");
+        System.exit(-1);
       }
     }
     InetAddress addr=null;
@@ -135,7 +140,8 @@ synchronized (m_startAndStopLock) {
         hostLog.l7dlog(Level.FATAL,LogKeys.host_VoltDB_InvalidHostCount.name(),new Object[]{m_catalogContext.numberOfNodes},null);
         VoltDB.crashVoltDB();
       }
-      hostLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_CreatingVoltDB.name(),new Object[]{m_catalogContext.numberOfNodes,leader},null);
+      hostLog.l7dlog(Level.TRACE,LogKeys.host_VoltDB_CreatingVoltDB.name(),new Object[]{m_catalogContext.numberOfNodes,leader},null);
+      hostLog.info(String.format("Beginning inter-node communicaton on port %d.",config.m_internalPort));
       m_messenger=new HostMessenger(m_network,leader,m_catalogContext.numberOfNodes,m_catalogContext.catalogCRC,depCRC,hostLog);
       Object retval[]=m_messenger.waitForGroupJoin();
       m_instanceId=new Object[]{retval[0],retval[1]};
@@ -217,12 +223,14 @@ synchronized (runner) {
         m_localSites.put(runner.m_siteId,runner.m_siteObj);
       }
     }
-    if (m_localSites.size() == 1) {
-      if (m_config.m_profilingLevel != ProcedureProfiler.Level.DISABLED)       hostLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_ProfileLevelIs.name(),new Object[]{m_config.m_profilingLevel},null);
-      ProcedureProfiler.profilingLevel=m_config.m_profilingLevel;
-    }
+    if (m_config.m_profilingLevel != ProcedureProfiler.Level.DISABLED) {
+      if (m_localSites.size() == 1) {
+        hostLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_ProfileLevelIs.name(),new Object[]{m_config.m_profilingLevel},null);
+        ProcedureProfiler.profilingLevel=m_config.m_profilingLevel;
+      }
  else {
-      hostLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_InternalProfilingDisabledOnMultipartitionHosts.name(),null);
+        hostLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_InternalProfilingDisabledOnMultipartitionHosts.name(),null);
+      }
     }
     ProcedureProfiler.initializeWorkloadTrace(catalog);
     int portOffset=0;
@@ -256,7 +264,7 @@ synchronized (runner) {
     }
  catch (    Exception e) {
     }
-    hostLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_StartingNetwork.name(),null);
+    hostLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_StartingNetwork.name(),new Object[]{m_network.threadPoolSize},null);
     m_network.start();
     m_messenger.sendReadyMessage();
     if (config.m_rejoinToHostAndPort == null) {
@@ -264,7 +272,11 @@ synchronized (runner) {
     }
     fivems=new PeriodicWorkTimerThread(m_clientInterfaces,m_statsManager);
     fivems.start();
-    hostLog.info(String.format("The Server is%s running in admin mode on port %d",m_inAdminMode ? "" : " not",adminPort));
+    logDebuggingInfo(adminPort,httpPort,httpPortExtraLogMessage,jsonEnabled);
+    int k=m_catalogContext.numberOfExecSites / m_catalogContext.numberOfPartitions;
+    if (k == 1) {
+      hostLog.warn("Running without redundancy (k=0) is not recommended for production use.");
+    }
     hostLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_ServerCompletedInitialization.name(),null);
   }
 }
