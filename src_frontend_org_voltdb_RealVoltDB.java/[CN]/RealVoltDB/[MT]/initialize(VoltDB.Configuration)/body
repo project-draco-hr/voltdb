@@ -74,7 +74,7 @@ synchronized (m_startAndStopLock) {
     long depCRC=CatalogUtil.compileDeploymentAndGetCRC(catalog,m_config.m_pathToDeployment);
     if (depCRC < 0)     System.exit(-1);
     serializedCatalog=catalog.serialize();
-    m_catalogContext=new CatalogContext(catalog,m_config.m_pathToCatalog,depCRC,catalogVersion,-1);
+    m_catalogContext=new CatalogContext(TransactionIdManager.makeIdFromComponents(System.currentTimeMillis(),0,0),catalog,m_config.m_pathToCatalog,depCRC,catalogVersion,-1);
     m_inAdminMode=false;
     if (m_catalogContext.cluster.getAdminenabled() && m_catalogContext.cluster.getAdminstartup()) {
       m_inAdminMode=true;
@@ -208,7 +208,7 @@ synchronized (m_startAndStopLock) {
       }
     }
     int siteId=Integer.parseInt(siteForThisThread.getTypeName());
-    ExecutionSite siteObj=new ExecutionSite(VoltDB.instance(),VoltDB.instance().getMessenger().createMailbox(siteId,VoltDB.DTXN_MAILBOX_ID,m_commitLog),siteId,serializedCatalog,null,m_recovering,downHosts);
+    ExecutionSite siteObj=new ExecutionSite(VoltDB.instance(),VoltDB.instance().getMessenger().createMailbox(siteId,VoltDB.DTXN_MAILBOX_ID,m_commitLog),siteId,serializedCatalog,null,m_recovering,downHosts,m_catalogContext.m_transactionId);
     m_localSites.put(Integer.parseInt(siteForThisThread.getTypeName()),siteObj);
     m_currentThreadSite=siteObj;
     for (    ExecutionSiteRunner runner : m_runners) {
@@ -258,13 +258,6 @@ synchronized (runner) {
     m_memoryStats=new MemoryStats("Memory Stats");
     m_statsAgent.registerStatsSource(SysProcSelector.MEMORY,0,m_memoryStats);
     m_statsManager=null;
-    try {
-      final Class<?> statsManagerClass=Class.forName("org.voltdb.management.JMXStatsManager");
-      m_statsManager=(StatsManager)statsManagerClass.newInstance();
-      m_statsManager.initialize(new ArrayList<Integer>(m_localSites.keySet()));
-    }
- catch (    Exception e) {
-    }
     hostLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_StartingNetwork.name(),new Object[]{m_network.threadPoolSize},null);
     m_network.start();
     m_messenger.sendReadyMessage();

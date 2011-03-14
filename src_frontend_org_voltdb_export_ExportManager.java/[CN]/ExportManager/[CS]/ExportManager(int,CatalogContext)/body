@@ -13,16 +13,21 @@
   }
   exportLog.info(String.format("Export is enabled and can overflow to %s.",cluster.getExportoverflow()));
   final String elloader=conn.getLoaderclass();
+  m_loaderClass=conn.getLoaderclass();
   try {
-    exportLog.info("Creating connector " + elloader);
+    exportLog.info("Creating connector " + m_loaderClass);
     ExportDataProcessor newProcessor=null;
-    final Class<?> loaderClass=Class.forName(elloader);
+    final Class<?> loaderClass=Class.forName(m_loaderClass);
     newProcessor=(ExportDataProcessor)loaderClass.newInstance();
+    m_processor.set(newProcessor);
     newProcessor.addLogger(exportLog);
-    addDiskBasedTableInfos(catalogContext,conn,newProcessor);
-    addTableInfos(catalogContext,conn,newProcessor);
+    File exportOverflowDirectory=new File(catalogContext.cluster.getExportoverflow());
+    initializePersistedGenerations(exportOverflowDirectory,catalogContext,conn);
+    ExportGeneration currentGeneration=new ExportGeneration(catalogContext.m_transactionId,m_onGenerationDrained,exportOverflowDirectory);
+    currentGeneration.initializeGenerationFromCatalog(catalogContext,conn,m_hostId);
+    m_generations.get().put(catalogContext.m_transactionId,currentGeneration);
+    newProcessor.setExportGeneration(m_generations.get().firstEntry().getValue());
     newProcessor.readyForData();
-    m_processors.add(newProcessor);
   }
  catch (  final ClassNotFoundException e) {
     exportLog.l7dlog(Level.ERROR,LogKeys.export_ExportManager_NoLoaderExtensions.name(),e);

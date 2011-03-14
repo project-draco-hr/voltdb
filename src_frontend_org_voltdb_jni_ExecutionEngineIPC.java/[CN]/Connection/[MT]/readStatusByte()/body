@@ -49,7 +49,7 @@
       ExecutionEngine.crashVoltDB(message,traces,filename,lineno);
     }
     if (status == kErrorCode_pushExportBuffer) {
-      ByteBuffer header=ByteBuffer.allocate(21);
+      ByteBuffer header=ByteBuffer.allocate(30);
       while (header.hasRemaining()) {
         final int read=m_socket.getChannel().read(header);
         if (read == -1) {
@@ -57,10 +57,15 @@
         }
       }
       header.flip();
+      long exportGeneration=header.getLong();
       int partitionId=header.getInt();
-      long delegateId=header.getLong();
+      int signatureLength=header.getInt();
+      byte signatureBytes[]=new byte[signatureLength];
+      header.get(signatureBytes);
+      String signature=new String(signatureBytes,"UTF-8");
       long uso=header.getLong();
       boolean sync=header.get() == 1 ? true : false;
+      boolean isEndOfGeneration=header.get() == 1 ? true : false;
       int length=header.getInt();
       ByteBuffer exportBuffer=ByteBuffer.allocateDirect(length);
       while (exportBuffer.hasRemaining()) {
@@ -70,7 +75,7 @@
         }
       }
       exportBuffer.flip();
-      ExportManager.pushExportBuffer(partitionId,delegateId,uso,0,length == 0 ? null : exportBuffer,sync);
+      ExportManager.pushExportBuffer(exportGeneration,partitionId,signature,uso,0,length == 0 ? null : exportBuffer,sync,isEndOfGeneration);
       continue;
     }
     if (status == kErrorCode_getQueuedExportBytes) {
@@ -83,8 +88,11 @@
       }
       header.flip();
       int partitionId=header.getInt();
-      long delegateId=header.getLong();
-      long retval=ExportManager.getQueuedExportBytes(partitionId,delegateId);
+      int signatureLength=header.getInt();
+      byte signatureBytes[]=new byte[signatureLength];
+      header.get(signatureBytes);
+      String signature=new String(signatureBytes,"UTF-8");
+      long retval=ExportManager.getQueuedExportBytes(partitionId,signature);
       ByteBuffer buf=ByteBuffer.allocate(8);
       buf.putLong(retval).flip();
       while (buf.hasRemaining()) {
