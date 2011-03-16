@@ -4,12 +4,31 @@
     m_stopBeforeTxnId=Math.max(nextTxnId,m_destinationStoppedBeforeTxnId);
     recoveryLog.info("Sending recovery initiate response from " + m_siteId + " before txnId "+ nextTxnId+ " to site "+ m_destinationSiteId+ " choosing to stop before txnId "+ m_stopBeforeTxnId);
     m_sentInitiateResponse=true;
-    ByteBuffer buf=ByteBuffer.allocate(17);
+    StringBuilder sb=new StringBuilder();
+    if (m_site != null) {
+      for (      Table t : m_site.m_context.database.getTables()) {
+        if (!CatalogUtil.isTableExportOnly(m_site.m_context.database,t))         continue;
+        String sig=t.getSignature();
+        sb.append(sig);
+        long[] temp=m_engine.getUSOForExportTable(sig);
+        sb.append(",").append(temp[0]).append(",").append(temp[1]).append("\n");
+      }
+      assert(m_site.ee == m_engine);
+    }
+    byte[] exportUSOBytes=null;
+    try {
+      exportUSOBytes=sb.toString().getBytes("UTF-8");
+    }
+ catch (    UnsupportedEncodingException e) {
+    }
+    ByteBuffer buf=ByteBuffer.allocate(21 + exportUSOBytes.length);
     BBContainer cont=DBBPool.wrapBB(buf);
-    buf.putInt(13);
+    buf.putInt(17 + exportUSOBytes.length);
     buf.putInt(m_siteId);
     buf.put(kSTOP_AT_TXN);
     buf.putLong(m_stopBeforeTxnId);
+    buf.putInt(exportUSOBytes.length);
+    buf.put(exportUSOBytes);
     buf.flip();
     m_outgoing.offer(cont);
   }
