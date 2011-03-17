@@ -1,0 +1,80 @@
+{
+  String simpleSchema="CREATE TABLE HELLOWORLD (\n" + "    HELLO VARCHAR(15),\n" + "    WORLD VARCHAR(15),\n"+ "    DIALECT VARCHAR(15) NOT NULL,\n"+ "    PRIMARY KEY (DIALECT)\n"+ ");";
+  File schemaFile=VoltProjectBuilder.writeStringToTempFile(simpleSchema);
+  String schemaPath=schemaFile.getPath();
+  schemaPath=URLEncoder.encode(schemaPath,"UTF-8");
+  VoltProjectBuilder builder=new VoltProjectBuilder();
+  builder.addSchema(schemaPath);
+  builder.addPartitionInfo("HELLOWORLD","DIALECT");
+  GroupInfo gi=new GroupInfo("foo",true,true);
+  builder.addGroups(new GroupInfo[]{gi});
+  UserInfo[] ui=new UserInfo[15];
+  ui[0]=new UserInfo("ry@nlikesthe","y@nkees",new String[]{"foo"});
+  for (int i=1; i < ui.length; i++) {
+    ui[i]=new UserInfo("USER" + String.valueOf(i),"PASS" + String.valueOf(i),new String[]{"foo"});
+  }
+  builder.addUsers(ui);
+  builder.setSecurityEnabled(true);
+  ProcedureInfo[] pi=new ProcedureInfo[2];
+  pi[0]=new ProcedureInfo(new String[]{"foo"},"Insert","insert into HELLOWORLD values (?,?,?);",null);
+  pi[1]=new ProcedureInfo(new String[]{"foo"},"Select","select * from HELLOWORLD;",null);
+  builder.addProcedures(pi);
+  builder.setHTTPDPort(8095);
+  boolean success=builder.compile(Configuration.getPathToCatalogForTest("json.jar"));
+  assertTrue(success);
+  VoltDB.Configuration config=new VoltDB.Configuration();
+  config.m_pathToCatalog=config.setPathToCatalogForTest("json.jar");
+  config.m_pathToDeployment=builder.getPathToDeployment();
+  ServerThread server=new ServerThread(config);
+  server.start();
+  server.waitForInitialization();
+  for (  UserInfo u : ui) {
+    ParameterSet pset=new ParameterSet();
+    pset.setParameters(u.name,u.password,u.name);
+    String response=callProcOverJSON("Insert",pset,u.name,u.password,true);
+    Response r=responseFromJSON(response);
+    assertEquals(ClientResponse.SUCCESS,r.status);
+  }
+  for (  UserInfo u : ui) {
+    ParameterSet pset=new ParameterSet();
+    pset.setParameters(u.name + "-X",u.password + "-X",u.name + "-X");
+    String response=callProcOverJSON("Insert",pset,u.name,u.password,false);
+    Response r=responseFromJSON(response);
+    assertEquals(ClientResponse.SUCCESS,r.status);
+  }
+  UserInfo u=ui[0];
+  ParameterSet pset=new ParameterSet();
+  pset.setParameters(u.name + "-X1",u.password + "-X1",u.name + "-X1");
+  String response=callProcOverJSON("Insert",pset,u.name,"ick",true);
+  Response r=responseFromJSON(response);
+  assertEquals(ClientResponse.UNEXPECTED_FAILURE,r.status);
+  response=callProcOverJSON("Insert",pset,u.name,"ick",false);
+  r=responseFromJSON(response);
+  assertEquals(ClientResponse.UNEXPECTED_FAILURE,r.status);
+  pset=new ParameterSet();
+  pset.setParameters(u.name + "-X2",u.password + "-X2",u.name + "-X2");
+  String paramsInJSON=pset.toJSONString();
+  HashMap<String,String> params=new HashMap<String,String>();
+  params.put("Procedure","Insert");
+  params.put("Parameters",paramsInJSON);
+  params.put("User",u.name);
+  params.put("Password",Encoder.hexEncode(new byte[]{1,2,3}));
+  String varString=getHTTPVarString(params);
+  response=callProcOverJSONRaw(varString,200);
+  r=responseFromJSON(response);
+  assertEquals(ClientResponse.UNEXPECTED_FAILURE,r.status);
+  pset=new ParameterSet();
+  pset.setParameters(u.name + "-X3",u.password + "-X3",u.name + "-X3");
+  paramsInJSON=pset.toJSONString();
+  params=new HashMap<String,String>();
+  params.put("Procedure","Insert");
+  params.put("Parameters",paramsInJSON);
+  params.put("User",u.name);
+  params.put("Password","abcdefghiabcdefghiabcdefghiabcdefghi");
+  varString=getHTTPVarString(params);
+  response=callProcOverJSONRaw(varString,200);
+  r=responseFromJSON(response);
+  assertEquals(ClientResponse.UNEXPECTED_FAILURE,r.status);
+  server.shutdown();
+  server.join();
+}
