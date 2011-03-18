@@ -7,6 +7,9 @@
   File outdir=null;
   boolean discard=false;
   int firstfield=0;
+  int period=60;
+  char connect=' ';
+  SimpleDateFormat dateformat=new SimpleDateFormat("yyyyMMddHHmmss");
   for (int ii=0; ii < args.length; ii++) {
     String arg=args[ii];
     if (arg.equals("--help")) {
@@ -17,6 +20,24 @@
     }
  else     if (arg.equals("--skipinternals")) {
       firstfield=6;
+    }
+ else     if (arg.equals("--connect")) {
+      if (args.length < ii + 1) {
+        System.err.println("Error: Not enough args following --connect");
+        printHelpAndQuit(-1);
+      }
+      String connectStr=args[ii + 1];
+      if (connectStr.equalsIgnoreCase("admin")) {
+        connect='a';
+      }
+ else       if (connectStr.equalsIgnoreCase("client")) {
+        connect='c';
+      }
+ else {
+        System.err.println("Error: --type must be one of \"admin\" or \"client\"");
+        printHelpAndQuit(-1);
+      }
+      ii++;
     }
  else     if (arg.equals("--servers")) {
       if (args.length < ii + 1) {
@@ -96,11 +117,32 @@
       password=args[ii + 1];
       ii++;
     }
+ else     if (arg.equals("--period")) {
+      if (args.length < ii + 1) {
+        System.err.println("Error: Not enough args following --period");
+        printHelpAndQuit(-1);
+      }
+      period=Integer.parseInt(args[ii + 1]);
+      ii++;
+    }
+ else     if (arg.equals("--dateformat")) {
+      if (args.length < ii + 1) {
+        System.err.println("Error: Not enough args following --dateformat");
+        printHelpAndQuit(-1);
+      }
+      dateformat=new SimpleDateFormat(args[ii + 1]);
+      ii++;
+    }
   }
   if (volt_servers == null || volt_servers.length < 1) {
     System.err.println("ExportToFile: must provide at least one VoltDB server");
     printHelpAndQuit(-1);
   }
+  if (connect == ' ') {
+    System.err.println("ExportToFile: must specify connection type as admin or client using --connect argument");
+    printHelpAndQuit(-1);
+  }
+  assert((connect == 'c') || (connect == 'a'));
   if (user == null) {
     user="";
   }
@@ -125,10 +167,10 @@
     System.err.println("ExportToFile: must provide an output type");
     printHelpAndQuit(-1);
   }
-  ExportToFileClient client=new ExportToFileClient(escaper,nonce,outdir,firstfield);
-  client.setVoltServers(volt_servers);
+  ExportToFileClient client=new ExportToFileClient(escaper,nonce,outdir,period,dateformat,firstfield,connect == 'a');
+  for (  String server : volt_servers)   client.addServerInfo(server,connect == 'a');
+  client.addCredentials(user,password);
   try {
-    client.addCredentials(user,password);
     client.run();
   }
  catch (  IOException e) {
