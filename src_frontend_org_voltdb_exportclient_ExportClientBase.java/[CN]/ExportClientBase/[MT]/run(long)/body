@@ -1,21 +1,63 @@
 {
   long pollTimeMS=0;
   long now=System.currentTimeMillis();
-  while ((System.currentTimeMillis() - now) < timeout) {
+  while ((timeout == 0) || ((System.currentTimeMillis() - now) < timeout)) {
+    boolean connected=m_connected.get();
     int offeredMsgs=0;
-    try {
-      offeredMsgs=work();
-    }
- catch (    IOException e) {
-      e.printStackTrace();
-    }
-    pollTimeMS=getNextPollDuration(pollTimeMS,offeredMsgs == 0);
-    if (pollTimeMS > 0) {
+    boolean disconnectedWithError=false;
+    boolean disconnectedForUpdate=false;
+    if (!connected) {
       try {
-        Thread.sleep(pollTimeMS);
+        connected=connect();
       }
- catch (      InterruptedException e) {
-      }
-    }
-  }
+ catch (      ExportClientException e) {
+        m_logger.warn(e.getMessage(),e);
+        e.printStackTrace();
+switch (e.type) {
+case AUTH_FAILURE:
+          disconnectedWithError=true;
+        break;
+case DISCONNECT_UNEXPECTED:
+      disconnectedWithError=true;
+    break;
+case DISCONNECT_UPDATE:
+  disconnectedForUpdate=true;
+break;
+case USER_ERROR:
+throw e;
+}
+}
+}
+if (connected) {
+try {
+offeredMsgs=work();
+}
+ catch (ExportClientException e) {
+m_logger.warn(e.getMessage(),e);
+e.printStackTrace();
+switch (e.type) {
+case AUTH_FAILURE:
+assert(false);
+break;
+case DISCONNECT_UNEXPECTED:
+disconnectedWithError=true;
+break;
+case DISCONNECT_UPDATE:
+disconnectedForUpdate=true;
+break;
+case USER_ERROR:
+throw e;
+}
+}
+}
+pollTimeMS=getNextPollDuration(pollTimeMS,offeredMsgs == 0,disconnectedWithError,disconnectedForUpdate);
+if (pollTimeMS > 0) {
+m_logger.trace(String.format("Sleeping for %d ms due to inactivity or no connection.",pollTimeMS));
+try {
+Thread.sleep(pollTimeMS);
+}
+ catch (InterruptedException e) {
+}
+}
+}
 }
