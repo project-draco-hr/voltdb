@@ -32,43 +32,10 @@
       while (forWhomTheBellTolls.equals(safeNode)) {
         forWhomTheBellTolls=nodes[r.nextInt(nodes.length)];
       }
-      psm.killProcess(forWhomTheBellTolls);
-      new KillStragglers(remoteUser,forWhomTheBellTolls,remotePath).run();
-      System.out.printf("****************** killing process %s\n",forWhomTheBellTolls);
-      String failureDetectionComplete=new String("Handling node faults");
-      int detectionCompleteCount=0;
-      while (detectionCompleteCount != ((nodes.length - 1) * 2)) {
-        line=psm.nextBlocking();
-        if (line.message.contains(failureDetectionComplete)) {
-          detectionCompleteCount++;
-          System.out.printf("****************** detectionCompleteCount %d\n",detectionCompleteCount);
-        }
-        System.err.printf("(%s): \"%s\"\n",line.processName,line.message);
-      }
+      killNode(forWhomTheBellTolls,psm);
       Thread.sleep(1000);
     }
     String recoverConnectTo=safeNode;
-    String recoverCommand[]=ssh.convert(forWhomTheBellTolls,remotePath,rejoinCommand + recoverConnectTo);
-    psm.startProcess(forWhomTheBellTolls,recoverCommand);
-    String recoverMessage="Node recovery completed after";
-    String retryMessage="Timed out waiting";
-    String retryMessage2="Recovering node timed out rejoining";
-    line=psm.nextBlocking();
-    boolean recovered=line.message.contains(recoverMessage);
-    boolean retry=line.message.contains(retryMessage) || line.message.contains(retryMessage2);
-    System.err.printf("(%s): \"%s\"\n",line.processName,line.message);
-    while (!recovered && !retry) {
-      line=psm.nextBlocking();
-      recovered=line.message.contains(recoverMessage);
-      retry=line.message.contains(retryMessage) || line.message.contains(retryMessage2);
-      System.err.printf("(%s): \"%s\"\n",line.processName,line.message);
-    }
-    if (!recovered) {
-      assert(retry);
-      retryRejoinNode=forWhomTheBellTolls;
-    }
- else {
-      retryRejoinNode=null;
-    }
+    retryRejoinNode=rejoinNodeFull(forWhomTheBellTolls,recoverConnectTo,ssh,psm);
   }
 }
