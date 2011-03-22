@@ -1,0 +1,42 @@
+{
+  Client client=getClient();
+  for (int i=0; i < 10; i++) {
+    final Object[] rowdata=TestSQLTypesSuite.m_midValues;
+    m_tester.addRow(m_tester.m_generationsSeen.last(),"NO_NULLS",i,convertValsToRow(i,'I',rowdata));
+    final Object[] params=convertValsToParams("NO_NULLS",i,rowdata);
+    client.callProcedure("Insert",params);
+  }
+  client.drain();
+  ((LocalCluster)m_config).shutDownSingleHost(1);
+  Thread.sleep(500);
+  boolean threwException=false;
+  try {
+    m_tester.work(1000);
+  }
+ catch (  ExportClientException e) {
+    m_tester.disconnect();
+    m_tester.reserveVerifiers();
+    boolean success=m_tester.connect();
+    assertTrue(success);
+    System.out.println(e.toString());
+    threwException=true;
+  }
+  assertTrue(threwException);
+  ((LocalCluster)m_config).recoverOne(1,null,"localhost");
+  Thread.sleep(500);
+  threwException=false;
+  try {
+    m_tester.work(1000);
+  }
+ catch (  ExportClientException e) {
+    m_tester.disconnect();
+    m_tester.reserveVerifiers();
+    boolean success=m_tester.connect();
+    assertTrue(success);
+    System.out.println(e.toString());
+    threwException=true;
+  }
+  assertTrue(threwException);
+  Thread.sleep(1000);
+  quiesceAndVerifyRetryWorkOnIOException(getClient(),m_tester);
+}

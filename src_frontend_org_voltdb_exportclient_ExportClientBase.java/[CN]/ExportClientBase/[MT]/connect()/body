@@ -7,7 +7,6 @@
     m_logger.error("No servers provided for export client.");
     throw new ExportClientException(ExportClientException.Type.USER_ERROR,"No servers provided for export client.");
   }
-  m_sinks.clear();
   m_exportConnections.clear();
   boolean foundOneActiveServer=false;
   for (  InetSocketAddress serverAddr : m_servers) {
@@ -39,12 +38,14 @@
   if (!foundOneActiveServer) {
     return false;
   }
+  HashSet<AdvertisedDataSource> foundSources=new HashSet<AdvertisedDataSource>();
   for (int tryCount=0; tryCount < 3; tryCount++) {
     for (    InetSocketAddress addr : m_servers) {
       if (m_exportConnections.containsKey(addr))       continue;
       ExportConnection connection=connectToServer(addr);
       if (connection != null) {
         m_exportConnections.put(addr,connection);
+        foundSources.addAll(connection.dataSources);
       }
     }
     if (m_servers.size() == m_exportConnections.size())     break;
@@ -54,10 +55,24 @@
  catch (    InterruptedException e) {
     }
   }
+  HashSet<AdvertisedDataSource> knownSources=new HashSet<AdvertisedDataSource>(m_knownDataSources);
+  knownSources.removeAll(foundSources);
+  for (  AdvertisedDataSource source : knownSources) {
+    HashMap<String,HashMap<Integer,ExportDataSink>> gen_map=m_sinks.get(source.m_generation);
+    HashMap<Integer,ExportDataSink> part_map=gen_map.get(source.signature);
+    ExportDataSink sink=part_map.remove(source.partitionId);
+    if (part_map.isEmpty()) {
+      gen_map.remove(source.signature);
+    }
+    if (gen_map.isEmpty()) {
+      m_sinks.remove(source.m_generation);
+    }
+    sink.sourceNoLongerAdvertised();
+  }
+  m_knownDataSources.clear();
+  m_knownDataSources.addAll(foundSources);
   if (m_servers.size() != m_exportConnections.size()) {
-    m_sinks.clear();
-    for (    ExportConnection ec : m_exportConnections.values())     ec.closeExportConnection();
-    m_exportConnections.clear();
+    disconnect();
     return false;
   }
   m_connected.set(true);
