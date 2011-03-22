@@ -85,26 +85,21 @@ synchronized (this) {
           }
         }
       }
-      if (!m_ackTracker.hasOutstanding()) {
-        return;
+      final long startWait=System.currentTimeMillis();
+      while (m_inThread.isAlive() && System.currentTimeMillis() - startWait < 5000) {
+        checkMailbox(false);
       }
- else {
-        final long startWait=System.currentTimeMillis();
-        while (m_inThread.isAlive() && System.currentTimeMillis() - startWait < 5000) {
-          checkMailbox(false);
-        }
 synchronized (this) {
-          if (m_inThread.isAlive()) {
-            if (m_onCompletion != null) {
-              recoveryLog.error("Timed out waiting for acks for the last few recovery messages");
-              m_onCompletion.run();
-              m_onCompletion=null;
-              closeIO();
-            }
-          }
+        if (m_inThread.isAlive()) {
+          recoveryLog.error("Timed out waiting for acks for the last few recovery messages");
+          closeIO();
         }
-        return;
+        if (m_onCompletion != null) {
+          m_onCompletion.run();
+          m_onCompletion=null;
+        }
       }
+      return;
     }
     checkMailbox(true);
   }
