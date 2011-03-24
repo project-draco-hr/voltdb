@@ -20,20 +20,26 @@ synchronized (m_committedBuffers) {
     }
     assert(!m_endOfStream);
     if (buffer != null) {
-      try {
-        m_committedBuffers.offer(new StreamBlock(new BBContainer(buffer,bufferPtr){
-          @Override public void discard(){
-            DBBPool.deleteCharArrayMemory(address);
-            deleted.set(true);
+      if (buffer.capacity() > 0) {
+        try {
+          m_committedBuffers.offer(new StreamBlock(new BBContainer(buffer,bufferPtr){
+            @Override public void discard(){
+              DBBPool.deleteCharArrayMemory(address);
+              deleted.set(true);
+            }
+          }
+,uso,false));
+        }
+ catch (        IOException e) {
+          exportLog.error(e);
+          if (!deleted.get()) {
+            DBBPool.deleteCharArrayMemory(bufferPtr);
           }
         }
-,uso,false));
       }
- catch (      IOException e) {
-        exportLog.error(e);
-        if (!deleted.get()) {
-          DBBPool.deleteCharArrayMemory(bufferPtr);
-        }
+ else {
+        exportLog.info("Syncing first unpolled USO to " + uso + " for table "+ m_tableName+ " partition "+ m_partitionId);
+        m_firstUnpolledUso=uso;
       }
     }
     if (sync) {
