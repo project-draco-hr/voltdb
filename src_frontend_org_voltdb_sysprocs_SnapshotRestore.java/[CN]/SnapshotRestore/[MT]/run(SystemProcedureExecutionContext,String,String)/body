@@ -6,6 +6,22 @@
   HOST_LOG.info("Restoring from path: " + path + ", with ID: "+ nonce+ " at "+ startTime);
   VoltTable[] savefile_data;
   savefile_data=performRestoreScanWork(path,nonce);
+  List<JSONObject> digests;
+  Map<String,Map<Integer,Long>> exportSequenceNumbers;
+  try {
+    Pair<List<JSONObject>,Map<String,Map<Integer,Long>>> digestScanResult=performRestoreDigestScanWork();
+    digests=digestScanResult.getFirst();
+    exportSequenceNumbers=digestScanResult.getSecond();
+  }
+ catch (  VoltAbortException e) {
+    ColumnInfo[] result_columns=new ColumnInfo[2];
+    int ii=0;
+    result_columns[ii++]=new ColumnInfo("RESULT",VoltType.STRING);
+    result_columns[ii++]=new ColumnInfo("ERR_MSG",VoltType.STRING);
+    VoltTable results[]=new VoltTable[]{new VoltTable(result_columns)};
+    results[0].addRow("FAILURE",e.toString());
+    return results;
+  }
   ClusterSaveFileState savefile_state=null;
   try {
     savefile_state=new ClusterSaveFileState(savefile_data[0]);
@@ -13,9 +29,17 @@
  catch (  IOException e) {
     throw new VoltAbortException(e.getMessage());
   }
-  List<String> relevantTableNames=null;
+  HashSet<String> relevantTableNames=new HashSet<String>();
   try {
-    relevantTableNames=SnapshotUtil.retrieveRelevantTableNames(path,nonce);
+    if (digests.isEmpty()) {
+      throw new Exception("No digests found");
+    }
+    for (    JSONObject obj : digests) {
+      JSONArray tables=obj.getJSONArray("tables");
+      for (int ii=0; ii < tables.length(); ii++) {
+        relevantTableNames.add(tables.getString(ii));
+      }
+    }
   }
  catch (  Exception e) {
     ColumnInfo[] result_columns=new ColumnInfo[2];
@@ -54,6 +78,23 @@
   }
   if (results != null) {
     return results;
+  }
+  try {
+    ByteArrayOutputStream baos=new ByteArrayOutputStream();
+    ObjectOutputStream oos=new ObjectOutputStream(baos);
+    oos.writeObject(exportSequenceNumbers);
+    oos.flush();
+    byte exportSequenceNumberBytes[]=baos.toByteArray();
+    oos.close();
+    results=performDistributeExportSequenceNumbers(exportSequenceNumberBytes);
+  }
+ catch (  IOException e) {
+    throw new VoltAbortException(e);
+  }
+  while (results[0].advanceRow()) {
+    if (results[0].getString("RESULT").equals("FAILURE")) {
+      throw new VoltAbortException("Error distributing export sequence numbers");
+    }
   }
   results=performTableRestoreWork(savefile_state);
   final long endTime=System.currentTimeMillis();

@@ -1,6 +1,89 @@
 {
   String hostname=ConnectionUtil.getHostnameOrAddress();
-  if (fragmentId == SysProcFragmentId.PF_restoreScan) {
+  if (fragmentId == SysProcFragmentId.PF_restoreDistributeExportSequenceNumbers) {
+    assert(params.toArray()[0] != null);
+    assert(params.toArray()[0] instanceof byte[]);
+    VoltTable result=new VoltTable(new VoltTable.ColumnInfo("RESULT",VoltType.STRING));
+    try {
+      ByteArrayInputStream bais=new ByteArrayInputStream((byte[])params.toArray()[0]);
+      ObjectInputStream ois=new ObjectInputStream(bais);
+      Map<String,Map<Integer,Long>> exportSequenceNumbers=(Map<String,Map<Integer,Long>>)ois.readObject();
+      Database db=context.getDatabase();
+      Integer myPartitionId=context.getExecutionSite().getCorrespondingPartitionId();
+      for (      Table t : db.getTables()) {
+        if (!CatalogUtil.isTableExportOnly(db,t))         continue;
+        String signature=t.getSignature();
+        String name=t.getTypeName();
+        Map<Integer,Long> sequenceNumberPerPartition=exportSequenceNumbers.get(name);
+        if (sequenceNumberPerPartition == null) {
+          HOST_LOG.warn("Could not find export sequence number for table " + name + ". This warning is safe to ignore if you are loading a pre 1.3 snapshot"+ " which would not contain these sequence numbers (added in 1.3)."+ " If this is a post 1.3 snapshot then the restore has failed and export sequence "+ " are reset to 0");
+          continue;
+        }
+        Long sequenceNumber=sequenceNumberPerPartition.get(myPartitionId);
+        if (sequenceNumber == null) {
+          HOST_LOG.warn("Could not find an export sequence number for table " + name + " partition "+ myPartitionId+ ". This warning is safe to ignore if you are loading a pre 1.3 snapshot "+ " which would not contain these sequence numbers (added in 1.3)."+ " If this is a post 1.3 snapshot then the restore has failed and export sequence "+ " are reset to 0");
+          continue;
+        }
+        context.getExecutionEngine().exportAction(false,0,sequenceNumber,myPartitionId,signature);
+      }
+    }
+ catch (    Exception e) {
+      e.printStackTrace();
+      HOST_LOG.error(e);
+      result.addRow("FAILURE");
+    }
+    return new DependencyPair(DEP_restoreDistributeExportSequenceNumbers,result);
+  }
+ else   if (fragmentId == SysProcFragmentId.PF_restoreDistributeExportSequenceNumbersResults) {
+    TRACE_LOG.trace("Aggregating digest scan state");
+    assert(dependencies.size() > 0);
+    List<VoltTable> dep=dependencies.get(DEP_restoreDistributeExportSequenceNumbers);
+    VoltTable result=new VoltTable(new VoltTable.ColumnInfo("RESULT",VoltType.STRING));
+    for (    VoltTable table : dep) {
+      while (table.advanceRow()) {
+        result.add(table);
+      }
+    }
+    return new DependencyPair(DEP_restoreDistributeExportSequenceNumbersResults,result);
+  }
+ else   if (fragmentId == SysProcFragmentId.PF_restoreDigestScan) {
+    VoltTable result=new VoltTable(new VoltTable.ColumnInfo("DIGEST",VoltType.STRING),new VoltTable.ColumnInfo("RESULT",VoltType.STRING),new VoltTable.ColumnInfo("ERR_MSG",VoltType.STRING));
+    int host_id=context.getExecutionSite().getCorrespondingHostId();
+    Integer lowest_site_id=VoltDB.instance().getCatalogContext().siteTracker.getLowestLiveExecSiteIdForHost(host_id);
+    if (context.getExecutionSite().getSiteId() == lowest_site_id) {
+      try {
+        TRACE_LOG.trace("Checking saved table digest state for restore of: " + m_filePath + ", "+ m_fileNonce);
+        List<JSONObject> digests=SnapshotUtil.retrieveDigests(m_filePath,m_fileNonce);
+        for (        JSONObject obj : digests) {
+          result.addRow(obj.toString(),"SUCCESS",null);
+        }
+      }
+ catch (      Exception e) {
+        StringWriter sw=new StringWriter();
+        PrintWriter pw=new PrintWriter(sw);
+        e.printStackTrace(pw);
+        pw.flush();
+        e.printStackTrace();
+        HOST_LOG.error(e);
+        result.addRow(null,"FAILURE",sw.toString());
+        return new DependencyPair(DEP_restoreDigestScan,result);
+      }
+    }
+    return new DependencyPair(DEP_restoreDigestScan,result);
+  }
+ else   if (fragmentId == SysProcFragmentId.PF_restoreDigestScanResults) {
+    TRACE_LOG.trace("Aggregating digest scan state");
+    assert(dependencies.size() > 0);
+    List<VoltTable> dep=dependencies.get(DEP_restoreDigestScan);
+    VoltTable result=new VoltTable(new VoltTable.ColumnInfo("DIGEST",VoltType.STRING),new VoltTable.ColumnInfo("RESULT",VoltType.STRING),new VoltTable.ColumnInfo("ERR_MSG",VoltType.STRING));
+    for (    VoltTable table : dep) {
+      while (table.advanceRow()) {
+        result.add(table);
+      }
+    }
+    return new DependencyPair(DEP_restoreDigestScanResults,result);
+  }
+ else   if (fragmentId == SysProcFragmentId.PF_restoreScan) {
     assert(params.toArray()[0] != null);
     assert(params.toArray()[1] != null);
     VoltTable result=ClusterSaveFileState.constructEmptySaveFileStateVoltTable();

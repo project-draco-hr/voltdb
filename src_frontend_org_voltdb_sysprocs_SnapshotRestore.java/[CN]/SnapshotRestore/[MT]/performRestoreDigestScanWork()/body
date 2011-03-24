@@ -1,0 +1,59 @@
+{
+  SynthesizedPlanFragment[] pfs=new SynthesizedPlanFragment[2];
+  pfs[0]=new SynthesizedPlanFragment();
+  pfs[0].fragmentId=SysProcFragmentId.PF_restoreDigestScan;
+  pfs[0].outputDepId=DEP_restoreDigestScan;
+  pfs[0].inputDepIds=new int[]{};
+  pfs[0].multipartition=true;
+  pfs[0].parameters=new ParameterSet();
+  pfs[1]=new SynthesizedPlanFragment();
+  pfs[1].fragmentId=SysProcFragmentId.PF_restoreDigestScanResults;
+  pfs[1].outputDepId=DEP_restoreDigestScanResults;
+  pfs[1].inputDepIds=new int[]{DEP_restoreDigestScan};
+  pfs[1].multipartition=false;
+  pfs[1].parameters=new ParameterSet();
+  VoltTable[] results;
+  results=executeSysProcPlanFragments(pfs,DEP_restoreDigestScanResults);
+  HashMap<String,Map<Integer,Long>> exportSequenceNumbers=new HashMap<String,Map<Integer,Long>>();
+  Long digestTxnId=null;
+  ArrayList<JSONObject> digests=new ArrayList<JSONObject>();
+  try {
+    while (results[0].advanceRow()) {
+      if (results[0].getString("RESULT").equals("FAILURE")) {
+        throw new VoltAbortException(results[0].getString("ERR_MSG"));
+      }
+      JSONObject digest=new JSONObject(results[0].getString(0));
+      digests.add(digest);
+      if (digestTxnId == null) {
+        digestTxnId=digest.getLong("txnId");
+      }
+ else {
+        if (digest.getLong("txnId") != digestTxnId) {
+          throw new VoltAbortException("Retrieved a digest with txnId " + digest.getLong("txnId") + " that doesn't match the txnId seen previously "+ digestTxnId+ " inspect the digests"+ " with the provided nonce and ensure that they are all really from the same snapshot");
+        }
+      }
+      if (digest.has("exportSequenceNumbers")) {
+        JSONArray sequenceNumbers=digest.getJSONArray("exportSequenceNumbers");
+        for (int ii=0; ii < sequenceNumbers.length(); ii++) {
+          JSONObject tableSequenceNumbers=sequenceNumbers.getJSONObject(ii);
+          String tableName=tableSequenceNumbers.getString("exportTableName");
+          Map<Integer,Long> partitionSequenceNumbers=exportSequenceNumbers.get(tableName);
+          if (partitionSequenceNumbers == null) {
+            partitionSequenceNumbers=new HashMap<Integer,Long>();
+            exportSequenceNumbers.put(tableName,partitionSequenceNumbers);
+          }
+          JSONArray sourcePartitionSequenceNumbers=tableSequenceNumbers.getJSONArray("sequenceNumberPerPartition");
+          for (int zz=0; zz < sourcePartitionSequenceNumbers.length(); zz++) {
+            int partition=sourcePartitionSequenceNumbers.getJSONObject(zz).getInt("partition");
+            long sequenceNumber=sourcePartitionSequenceNumbers.getJSONObject(zz).getInt("exportSequenceNumber");
+            partitionSequenceNumbers.put(partition,sequenceNumber);
+          }
+        }
+      }
+    }
+  }
+ catch (  JSONException e) {
+    throw new VoltAbortException(e);
+  }
+  return Pair.of((List<JSONObject>)digests,(Map<String,Map<Integer,Long>>)exportSequenceNumbers);
+}
