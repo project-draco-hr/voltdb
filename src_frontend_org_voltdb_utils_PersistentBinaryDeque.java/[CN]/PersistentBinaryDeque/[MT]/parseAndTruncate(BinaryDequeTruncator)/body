@@ -8,57 +8,68 @@
     File segmentFile=segment.m_file;
     RandomAccessFile ras=new RandomAccessFile(segmentFile,"rw");
     FileChannel fc=ras.getChannel();
-    while (readBuffer.hasRemaining()) {
-      int read=fc.read(readBuffer);
-      if (read == -1) {
+    try {
+      while (readBuffer.hasRemaining()) {
+        int read=fc.read(readBuffer);
+        if (read == -1) {
+          break;
+        }
+      }
+      readBuffer.flip();
+      int numObjects=readBuffer.getInt();
+      for (int ii=0; ii < numObjects; ii++) {
+        final int nextObjectLength=readBuffer.getInt();
+        ByteBuffer nextObject=ByteBuffer.allocate(nextObjectLength);
+        final int oldLimit=readBuffer.limit();
+        readBuffer.limit(readBuffer.position() + nextObjectLength);
+        nextObject.put(readBuffer).flip();
+        readBuffer.limit(oldLimit);
+        ByteBuffer retval=truncator.parse(nextObject);
+        if (retval == null) {
+          continue;
+        }
+ else {
+          long startSize=fc.size();
+          if (retval.remaining() == 0) {
+            if (ii == 0) {
+              lastSegmentIndex=segmentIndex - 1;
+            }
+ else {
+              ByteBuffer numObjectsBuffer=ByteBuffer.allocate(4);
+              numObjectsBuffer.putInt(0,ii);
+              fc.position(0);
+              while (numObjectsBuffer.hasRemaining()) {
+                fc.write(numObjectsBuffer);
+              }
+              fc.truncate(readBuffer.position() - (nextObjectLength + 4));
+            }
+          }
+ else {
+            readBuffer.position(readBuffer.position() - (nextObjectLength + 4));
+            readBuffer.putInt(retval.remaining());
+            readBuffer.put(retval);
+            readBuffer.flip();
+            readBuffer.putInt(0,ii + 1);
+            fc.position(0);
+            fc.truncate(0);
+            while (readBuffer.hasRemaining()) {
+              fc.write(readBuffer);
+            }
+          }
+          long endSize=fc.size();
+          m_sizeInBytes.addAndGet(endSize - startSize);
+          if (lastSegmentIndex == null) {
+            lastSegmentIndex=segmentIndex;
+          }
+          break;
+        }
+      }
+      if (lastSegmentIndex != null) {
         break;
       }
     }
-    readBuffer.flip();
-    int numObjects=readBuffer.getInt();
-    for (int ii=0; ii < numObjects; ii++) {
-      final int nextObjectLength=readBuffer.getInt();
-      ByteBuffer nextObject=ByteBuffer.allocate(nextObjectLength);
-      final int oldLimit=readBuffer.limit();
-      readBuffer.limit(readBuffer.position() + nextObjectLength);
-      nextObject.put(readBuffer).flip();
-      readBuffer.limit(oldLimit);
-      ByteBuffer retval=truncator.parse(nextObject);
-      if (retval == null) {
-        continue;
-      }
- else {
-        if (retval.remaining() == 0) {
-          ByteBuffer numObjectsBuffer=ByteBuffer.allocate(4);
-          numObjectsBuffer.putInt(0,ii);
-          fc.position(0);
-          while (numObjectsBuffer.hasRemaining()) {
-            fc.write(numObjectsBuffer);
-          }
-          fc.truncate(readBuffer.position() - (nextObjectLength + 4));
-          m_sizeInBytes.addAndGet(-(nextObjectLength + 4));
-        }
- else {
-          final int retvalSize=retval.remaining();
-          final int delta=nextObjectLength - retvalSize;
-          m_sizeInBytes.addAndGet(-delta);
-          readBuffer.position(readBuffer.position() - (nextObjectLength + 4));
-          readBuffer.putInt(retval.remaining());
-          readBuffer.put(retval);
-          readBuffer.flip();
-          readBuffer.putInt(0,ii + 1);
-          fc.position(0);
-          fc.truncate(0);
-          while (readBuffer.hasRemaining()) {
-            fc.write(readBuffer);
-          }
-        }
-        lastSegmentIndex=segmentIndex;
-        break;
-      }
-    }
-    if (lastSegmentIndex != null) {
-      break;
+  finally {
+      fc.close();
     }
   }
   Iterator<Map.Entry<Long,DequeSegment>> iterator=m_finishedSegments.entrySet().iterator();
