@@ -94,6 +94,7 @@
     Integer lowest_site_id=VoltDB.instance().getCatalogContext().siteTracker.getLowestLiveExecSiteIdForHost(host_id);
     if (context.getExecutionSite().getSiteId() == lowest_site_id) {
       m_initializedTableSaveFileNames.clear();
+      m_saveFiles.clear();
       m_filePath=(String)params.toArray()[0];
       m_fileNonce=(String)params.toArray()[1];
       TRACE_LOG.trace("Checking saved table state for restore of: " + m_filePath + ", "+ m_fileNonce);
@@ -160,9 +161,9 @@ catch (        IOException e) {
       result.addRow(m_hostId,hostname,m_siteId,table_name,-1,"FAILURE","Unable to load table: " + table_name + " error: "+ e.getMessage());
       return new DependencyPair(dependency_id,result);
     }
-    while (savefile.hasMoreChunks()) {
-      VoltTable table=null;
-      try {
+    try {
+      while (savefile.hasMoreChunks()) {
+        VoltTable table=null;
         final org.voltdb.utils.DBBPool.BBContainer c=savefile.getNextChunk();
         if (c == null) {
           continue;
@@ -171,25 +172,25 @@ catch (        IOException e) {
         Table new_catalog_table=getCatalogTable(table_name);
         table=SavedTableConverter.convertTable(old_table,new_catalog_table);
         c.discard();
+        try {
+          super.voltLoadTable(context.getCluster().getTypeName(),context.getDatabase().getTypeName(),table_name,table);
+        }
+ catch (        VoltAbortException e) {
+          result_str="FAILURE";
+          error_msg=e.getMessage();
+          break;
+        }
       }
- catch (      IOException e) {
-        VoltTable result=constructResultsTable();
-        result.addRow(m_hostId,hostname,m_siteId,table_name,-1,"FAILURE","Unable to load table: " + table_name + " error: "+ e.getMessage());
-        return new DependencyPair(dependency_id,result);
-      }
-catch (      VoltTypeException e) {
-        VoltTable result=constructResultsTable();
-        result.addRow(m_hostId,hostname,m_siteId,table_name,-1,"FAILURE","Unable to load table: " + table_name + " error: "+ e.getMessage());
-        return new DependencyPair(dependency_id,result);
-      }
-      try {
-        super.voltLoadTable(context.getCluster().getTypeName(),context.getDatabase().getTypeName(),table_name,table);
-      }
- catch (      VoltAbortException e) {
-        result_str="FAILURE";
-        error_msg=e.getMessage();
-        break;
-      }
+    }
+ catch (    IOException e) {
+      VoltTable result=constructResultsTable();
+      result.addRow(m_hostId,hostname,m_siteId,table_name,-1,"FAILURE","Unable to load table: " + table_name + " error: "+ e.getMessage());
+      return new DependencyPair(dependency_id,result);
+    }
+catch (    VoltTypeException e) {
+      VoltTable result=constructResultsTable();
+      result.addRow(m_hostId,hostname,m_siteId,table_name,-1,"FAILURE","Unable to load table: " + table_name + " error: "+ e.getMessage());
+      return new DependencyPair(dependency_id,result);
     }
     VoltTable result=constructResultsTable();
     result.addRow(m_hostId,hostname,m_siteId,table_name,-1,result_str,error_msg);
