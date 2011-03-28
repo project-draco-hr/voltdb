@@ -1,4 +1,8 @@
 {
+  if (m_finishedSegments.isEmpty()) {
+    exportLog.debug("PBD " + m_nonce + " has no finished segments");
+    return;
+  }
   ByteBuffer readBuffer=ByteBuffer.allocateDirect(DequeSegment.m_chunkSize + 16);
   Long lastSegmentIndex=null;
   for (  Map.Entry<Long,DequeSegment> entry : m_finishedSegments.entrySet()) {
@@ -17,6 +21,7 @@
       }
       readBuffer.flip();
       int numObjects=readBuffer.getInt();
+      exportLog.debug("PBD " + m_nonce + " has "+ numObjects+ " objects to parse and truncate");
       for (int ii=0; ii < numObjects; ii++) {
         final int nextObjectLength=readBuffer.getInt();
         ByteBuffer nextObject=ByteBuffer.allocate(nextObjectLength);
@@ -72,6 +77,9 @@
       fc.close();
     }
   }
+  if (lastSegmentIndex == null) {
+    return;
+  }
   Iterator<Map.Entry<Long,DequeSegment>> iterator=m_finishedSegments.entrySet().iterator();
   while (iterator.hasNext()) {
     Map.Entry<Long,DequeSegment> entry=iterator.next();
@@ -83,6 +91,7 @@
     ds.closeAndDelete();
   }
   m_writeSegment.closeAndDelete();
+  m_currentPollSegmentIndex=0L;
   Long writeSegmentIndex=0L;
   try {
     m_currentPollSegmentIndex=m_finishedSegments.firstKey();
@@ -93,4 +102,7 @@
   m_writeSegment=new DequeSegment(writeSegmentIndex,new VoltFile(m_path,m_nonce + "." + writeSegmentIndex+ ".pbd"));
   m_writeSegment.open();
   m_writeSegment.initNumEntries();
+  if (m_finishedSegments.isEmpty()) {
+    assert(m_writeSegment.m_index.equals(m_currentPollSegmentIndex));
+  }
 }
