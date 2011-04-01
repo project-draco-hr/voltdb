@@ -1,6 +1,9 @@
 {
   if (admin) {
     ClientImpl adminClient=null;
+    if (checkRejectHold()) {
+      throw new IOException("Admin connection was rejected due to too many recent rejected attempts. " + "Wait " + REJECT_TIMEOUT_S + " seconds and try again.");
+    }
     try {
       adminClient=(ClientImpl)ClientFactory.createClient();
       if ((userName == null) || (userName == "")) {
@@ -14,6 +17,7 @@
       }
     }
  catch (    IOException ioe) {
+      setRejectHold();
       try {
         adminClient.close();
       }
@@ -28,21 +32,25 @@
     if ((hashedPassword != null) && (hashedPassword.length > 0)) {
       throw new IOException("Username was null but password was not.");
     }
-    try {
-      if (m_unauthClient == null) {
+    if (m_unauthClient == null) {
+      if (checkRejectHold()) {
+        throw new IOException("Unauthenticated connection was rejected due to too many recent rejected attempts. " + "Wait " + REJECT_TIMEOUT_S + " seconds and try again.");
+      }
+      try {
         m_unauthClient=(ClientImpl)ClientFactory.createClient();
         m_unauthClient.createConnection(m_hostname,m_port);
       }
-    }
- catch (    IOException e) {
-      try {
-        m_unauthClient.close();
+ catch (      IOException e) {
+        setRejectHold();
+        try {
+          m_unauthClient.close();
+        }
+ catch (        InterruptedException ex) {
+          throw new IOException("Unable to close rejected unauthenticated client connection",ex);
+        }
+        m_unauthClient=null;
+        throw e;
       }
- catch (      InterruptedException ex) {
-        throw new IOException("Unable to close rejected unauthenticated client connection",ex);
-      }
-      m_unauthClient=null;
-      throw e;
     }
     assert(m_unauthClient != null);
     return m_unauthClient;
@@ -57,6 +65,9 @@
     conn.refCount++;
   }
  else {
+    if (checkRejectHold()) {
+      throw new IOException("Authenticated connection for user " + userName + " was rejected due to too many recent rejected attempts. "+ "Wait "+ REJECT_TIMEOUT_S+ " seconds and try again.");
+    }
     conn=new Connection();
     conn.refCount=1;
     conn.passHash=passHash;
@@ -67,6 +78,7 @@
       conn.client.createConnectionWithHashedCredentials(m_hostname,m_port,userName,hashedPassword);
     }
  catch (    IOException ioe) {
+      setRejectHold();
       try {
         conn.client.close();
       }
