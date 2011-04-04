@@ -1,13 +1,33 @@
 {
   Client client=getClient();
-  for (int i=0; i < 10; i++) {
+  for (int i=0; i < 40; i++) {
     final Object[] rowdata=TestSQLTypesSuite.m_midValues;
     m_tester.addRow(m_tester.m_generationsSeen.first(),"NO_NULLS",i,convertValsToRow(i,'I',rowdata));
     final Object[] params=convertValsToParams("NO_NULLS",i,rowdata);
     client.callProcedure("Insert",params);
   }
   client.callProcedure("@SnapshotSave","/tmp/" + System.getProperty("user.name"),"testnonce",(byte)1);
-  for (int i=10; i < 20; i++) {
+  VoltTable stats=client.callProcedure("@Statistics","table",(byte)0).getResults()[0];
+  while (stats.advanceRow()) {
+    if (stats.getString("TABLE_NAME").equals("NO_NULLS")) {
+      if (stats.getLong("PARTITION_ID") == 0) {
+        assertEquals(14,stats.getLong("TUPLE_COUNT"));
+        assertEquals(2,stats.getLong("TUPLE_ALLOCATED_MEMORY"));
+      }
+ else       if (stats.getLong("PARTITION_ID") == 1) {
+        assertEquals(13,stats.getLong("TUPLE_COUNT"));
+        assertEquals(2,stats.getLong("TUPLE_ALLOCATED_MEMORY"));
+      }
+ else       if (stats.getLong("PARTITION_ID") == 2) {
+        assertEquals(13,stats.getLong("TUPLE_COUNT"));
+        assertEquals(2,stats.getLong("TUPLE_ALLOCATED_MEMORY"));
+      }
+ else {
+        fail();
+      }
+    }
+  }
+  for (int i=40; i < 50; i++) {
     final Object[] rowdata=TestSQLTypesSuite.m_midValues;
     final Object[] params=convertValsToParams("NO_NULLS",i,rowdata);
     client.callProcedure("Insert",params);
@@ -18,4 +38,24 @@
   client=getClient();
   client.callProcedure("@SnapshotRestore","/tmp/" + System.getProperty("user.name"),"testnonce");
   quiesceAndVerifyRetryWorkOnIOException(client,m_tester);
+  stats=client.callProcedure("@Statistics","table",(byte)0).getResults()[0];
+  while (stats.advanceRow()) {
+    if (stats.getString("TABLE_NAME").equals("NO_NULLS")) {
+      if (stats.getLong("PARTITION_ID") == 0) {
+        assertEquals(0,stats.getLong("TUPLE_COUNT"));
+        assertEquals(0,stats.getLong("TUPLE_ALLOCATED_MEMORY"));
+      }
+ else       if (stats.getLong("PARTITION_ID") == 1) {
+        assertEquals(0,stats.getLong("TUPLE_COUNT"));
+        assertEquals(0,stats.getLong("TUPLE_ALLOCATED_MEMORY"));
+      }
+ else       if (stats.getLong("PARTITION_ID") == 2) {
+        assertEquals(0,stats.getLong("TUPLE_COUNT"));
+        assertEquals(0,stats.getLong("TUPLE_ALLOCATED_MEMORY"));
+      }
+ else {
+        fail();
+      }
+    }
+  }
 }

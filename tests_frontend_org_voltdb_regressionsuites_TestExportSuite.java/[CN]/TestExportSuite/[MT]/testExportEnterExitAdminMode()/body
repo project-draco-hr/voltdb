@@ -1,13 +1,34 @@
 {
-  final Client client=getClient();
+  m_username="admin";
+  m_password="admin";
   final Object[] rowdata=TestSQLTypesSuite.m_midValues;
-  for (int i=0; i < 10; i++) {
-    m_tester.addRow(m_tester.m_generationsSeen.last(),"NO_NULLS",i,convertValsToRow(i,'I',rowdata));
+  Client client=getClient();
+  for (int i=0; i < 40; i++) {
+    m_tester.addRow(m_tester.m_generationsSeen.first(),"NO_NULLS",i,convertValsToRow(i,'I',rowdata));
     final Object[] params=convertValsToParams("NO_NULLS",i,rowdata);
     client.callProcedure("Insert",params);
   }
-  client.drain();
   quiesce(client);
+  VoltTable stats=client.callProcedure("@Statistics","table",(byte)0).getResults()[0];
+  while (stats.advanceRow()) {
+    if (stats.getString("TABLE_NAME").equals("NO_NULLS")) {
+      if (stats.getLong("PARTITION_ID") == 0) {
+        assertEquals(14,stats.getLong("TUPLE_COUNT"));
+        assertEquals(2,stats.getLong("TUPLE_ALLOCATED_MEMORY"));
+      }
+ else       if (stats.getLong("PARTITION_ID") == 1) {
+        assertEquals(13,stats.getLong("TUPLE_COUNT"));
+        assertEquals(2,stats.getLong("TUPLE_ALLOCATED_MEMORY"));
+      }
+ else       if (stats.getLong("PARTITION_ID") == 2) {
+        assertEquals(13,stats.getLong("TUPLE_COUNT"));
+        assertEquals(2,stats.getLong("TUPLE_ALLOCATED_MEMORY"));
+      }
+ else {
+        fail();
+      }
+    }
+  }
   ExportToFileClient exportClient=new ExportToFileClient(new CSVWriter(),"testnonce",new File("/tmp/" + System.getProperty("user.name")),60,new SimpleDateFormat("yyyyMMddHHmmss"),0,false);
   exportClient.addServerInfo(new InetSocketAddress("localhost",VoltDB.DEFAULT_PORT));
   exportClient.addCredentials("export","export");
@@ -33,6 +54,32 @@
     threwException=true;
   }
   assertTrue(threwException);
+  final Client adminClient=org.voltdb.client.ClientFactory.createClient();
+  adminClient.createConnection("localhost",VoltDB.DEFAULT_ADMIN_PORT,"admin","admin");
+  adminClient.callProcedure("@Pause");
+  new Thread(){
+    @Override public void run(){
+      try {
+        Thread.sleep(2000);
+        adminClient.callProcedure("@Resume");
+        Thread.sleep(1000);
+        currentThread.interrupt();
+      }
+ catch (      Exception e) {
+        e.printStackTrace();
+      }
+    }
+  }
+.start();
+  threwException=false;
+  try {
+    exportClient.run();
+  }
+ catch (  ExportClientException e) {
+    assertTrue(e.getCause() instanceof InterruptedException);
+    threwException=true;
+  }
+  assertTrue(threwException);
   File tempDir=new File("/tmp/" + System.getProperty("user.name"));
   File outfile=null;
   for (  File f : tempDir.listFiles()) {
@@ -50,7 +97,7 @@
   while ((nextLine=br.readLine()) != null) {
     lines.add(nextLine);
   }
-  assertEquals(lines.size(),10);
+  assertEquals(lines.size(),40);
   ArrayList<String[]> splitLines=new ArrayList<String[]>();
   for (  String line : lines) {
     line.split(",");
