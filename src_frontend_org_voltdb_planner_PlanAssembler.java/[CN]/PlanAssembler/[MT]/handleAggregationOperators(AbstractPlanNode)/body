@@ -11,15 +11,21 @@
   }
   if (containsAggregateExpression) {
     aggNode=new HashAggregatePlanNode();
+    HashAggregatePlanNode topAggNode=new HashAggregatePlanNode();
     for (    ParsedSelectStmt.ParsedColInfo col : m_parsedSelect.groupByColumns) {
       aggNode.addGroupByExpression(col.expression);
+      topAggNode.addGroupByExpression(col.expression);
     }
     int outputColumnIndex=0;
+    int topOutputColumnIndex=0;
     NodeSchema agg_schema=new NodeSchema();
+    NodeSchema topAggSchema=new NodeSchema();
+    boolean onlyCountStar=true;
     for (    ParsedSelectStmt.ParsedColInfo col : m_parsedSelect.displayColumns) {
       AbstractExpression rootExpr=col.expression;
       AbstractExpression agg_input_expr=null;
       SchemaColumn schema_col=null;
+      SchemaColumn topSchemaCol=null;
       ExpressionType agg_expression_type=rootExpr.getExpressionType();
       if (rootExpr.getExpressionType() == ExpressionType.AGGREGATE_SUM || rootExpr.getExpressionType() == ExpressionType.AGGREGATE_MIN || rootExpr.getExpressionType() == ExpressionType.AGGREGATE_MAX || rootExpr.getExpressionType() == ExpressionType.AGGREGATE_AVG || rootExpr.getExpressionType() == ExpressionType.AGGREGATE_COUNT || rootExpr.getExpressionType() == ExpressionType.AGGREGATE_COUNT_STAR) {
         agg_input_expr=rootExpr.getLeft();
@@ -45,17 +51,53 @@
         boolean is_distinct=((AggregateExpression)rootExpr).m_distinct;
         aggNode.addAggregate(agg_expression_type,is_distinct,outputColumnIndex,agg_input_expr);
         schema_col=new SchemaColumn("VOLT_TEMP_TABLE","",col.alias,tve);
+        if (agg_expression_type == ExpressionType.AGGREGATE_COUNT_STAR) {
+          TupleValueExpression topOutputExpr=new TupleValueExpression();
+          topOutputExpr.setValueType(rootExpr.getValueType());
+          topOutputExpr.setValueSize(rootExpr.getValueSize());
+          topOutputExpr.setColumnIndex(topOutputColumnIndex);
+          topOutputExpr.setColumnName("");
+          topOutputExpr.setColumnAlias(col.alias);
+          topOutputExpr.setTableName("VOLT_TEMP_TABLE");
+          topAggNode.addAggregate(ExpressionType.AGGREGATE_SUM,false,outputColumnIndex,tve);
+          topSchemaCol=new SchemaColumn("VOLT_TEMP_TABLE","",col.alias,topOutputExpr);
+        }
+ else {
+          onlyCountStar=false;
+        }
       }
  else {
         schema_col=new SchemaColumn(col.tableName,col.columnName,col.alias,col.expression);
       }
+      if (topSchemaCol == null) {
+        topSchemaCol=new SchemaColumn(schema_col.getTableName(),schema_col.getColumnName(),schema_col.getColumnAlias(),schema_col.getExpression());
+      }
       agg_schema.addColumn(schema_col);
+      topAggSchema.addColumn(topSchemaCol);
       outputColumnIndex++;
+      topOutputColumnIndex++;
+    }
+    AbstractPlanNode accessPlanTemp=root;
+    if (onlyCountStar && root instanceof ReceivePlanNode) {
+      root=root.getChild(0).getChild(0);
+      root.clearParents();
+    }
+ else {
+      accessPlanTemp=null;
     }
     aggNode.setOutputSchema(agg_schema);
     aggNode.addAndLinkChild(root);
     aggNode.generateOutputSchema(m_catalogDb);
     root=aggNode;
+    if (accessPlanTemp != null) {
+      accessPlanTemp.getChild(0).clearChildren();
+      accessPlanTemp.getChild(0).addAndLinkChild(root);
+      root=accessPlanTemp;
+      topAggNode.setOutputSchema(agg_schema.clone());
+      topAggNode.addAndLinkChild(root);
+      topAggNode.generateOutputSchema(m_catalogDb);
+      root=topAggNode;
+    }
   }
   if (aggNode == null && m_parsedSelect.distinct) {
     if (m_parsedSelect.displayColumns.size() > 1) {
