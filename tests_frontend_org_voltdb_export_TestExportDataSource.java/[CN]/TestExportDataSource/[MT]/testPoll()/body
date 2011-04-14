@@ -12,49 +12,55 @@
   s.pushExportBuffer(63,0,null,true,false);
   assertEquals(96,s.sizeInBytes());
   ExportProtoMessage m=new ExportProtoMessage(0,m_part,table.getSignature());
-  RawProcessor.ExportInternalMessage pair=new RawProcessor.ExportInternalMessage(null,m);
-  final AtomicReference<ExportInternalMessage> ref=new AtomicReference<ExportInternalMessage>();
-  ExportManager.setInstanceForTest(new ExportManager(){
-    @Override public void queueMessage(    ExportInternalMessage mbp){
-      ref.set(mbp);
+  final AtomicReference<ExportProtoMessage> ref=new AtomicReference<ExportProtoMessage>();
+  ExportStateBlock esb=new ExportStateBlock(){
+    @Override public void event(    ExportProtoMessage m){
+      ref.set(m);
     }
   }
-);
+;
+  ExportInternalMessage pair=new ExportInternalMessage(esb,m);
   m.poll();
   s.exportAction(pair);
   assertEquals(96,s.sizeInBytes());
-  ExportInternalMessage mbp=ref.get();
-  assertEquals(m_part,mbp.m_m.m_partitionId);
-  assertEquals(table.getSignature(),mbp.m_m.m_signature);
-  assertEquals(43,mbp.m_m.m_offset);
+  m=ref.get();
+  assertEquals(m_part,m.m_partitionId);
+  assertEquals(table.getSignature(),m.m_signature);
+  assertEquals(43,m.m_offset);
   foo=ByteBuffer.allocate(24);
   foo.order(ByteOrder.LITTLE_ENDIAN);
   foo.putInt(20);
   foo.position(0);
-  assertEquals(foo,mbp.m_m.m_data);
+  assertEquals(foo,m.m_data);
   m.ack(43);
+  m.poll();
+  pair=new ExportInternalMessage(esb,m);
   s.exportAction(pair);
   assertEquals(96,s.sizeInBytes());
-  mbp=ref.get();
-  assertEquals(m_part,mbp.m_m.m_partitionId);
-  assertEquals(table.getSignature(),mbp.m_m.m_signature);
-  assertEquals(63,mbp.m_m.m_offset);
-  assertEquals(foo,mbp.m_m.m_data);
+  m=ref.get();
+  assertEquals(m_part,m.m_partitionId);
+  assertEquals(table.getSignature(),m.m_signature);
+  assertEquals(63,m.m_offset);
+  assertEquals(foo,m.m_data);
   m.ack(63);
+  m.poll();
+  pair=new ExportInternalMessage(esb,m);
   s.exportAction(pair);
   assertEquals(32,s.sizeInBytes());
-  mbp=ref.get();
-  assertEquals(m_part,mbp.m_m.m_partitionId);
-  assertEquals(table.getSignature(),mbp.m_m.m_signature);
-  assertEquals(83,mbp.m_m.m_offset);
-  assertEquals(foo,mbp.m_m.m_data);
+  m=ref.get();
+  assertEquals(m_part,m.m_partitionId);
+  assertEquals(table.getSignature(),m.m_signature);
+  assertEquals(83,m.m_offset);
+  assertEquals(foo,m.m_data);
   m.ack(83);
+  m.poll();
+  pair=new ExportInternalMessage(esb,m);
   s.exportAction(pair);
   assertEquals(0,s.sizeInBytes());
   System.out.println(s.sizeInBytes());
-  mbp=ref.get();
-  assertEquals(m_part,mbp.m_m.m_partitionId);
-  assertEquals(table.getSignature(),mbp.m_m.m_signature);
-  assertEquals(83,mbp.m_m.m_offset);
-  assertEquals(0,mbp.m_m.m_data.getInt());
+  m=ref.get();
+  assertEquals(m_part,m.m_partitionId);
+  assertEquals(table.getSignature(),m.m_signature);
+  assertEquals(83,m.m_offset);
+  assertEquals(0,m.m_data.getInt());
 }

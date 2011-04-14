@@ -3,19 +3,19 @@
   Table table=m_mockVoltDB.getCatalogContext().database.getTables().get("TableName");
   ExportDataSource s=new ExportDataSource(null,"database",table.getTypeName(),m_part,m_site,table.getSignature(),0,table.getColumns(),"/tmp");
   ExportProtoMessage m=new ExportProtoMessage(0,m_part,table.getSignature());
-  RawProcessor.ExportInternalMessage pair=new RawProcessor.ExportInternalMessage(null,m);
-  final AtomicReference<ExportInternalMessage> ref=new AtomicReference<ExportInternalMessage>();
-  ExportManager.setInstanceForTest(new ExportManager(){
-    @Override public void queueMessage(    ExportInternalMessage mbp){
-      ref.set(mbp);
+  final AtomicReference<ExportProtoMessage> ref=new AtomicReference<ExportProtoMessage>();
+  ExportStateBlock esb=new ExportStateBlock(){
+    @Override public void event(    ExportProtoMessage m){
+      ref.set(m);
     }
   }
-);
+;
+  ExportInternalMessage pair=new ExportInternalMessage(esb,m);
   m.poll();
   s.exportAction(pair);
-  ExportInternalMessage mbp=ref.get();
-  assertEquals(mbp.m_m.getAckOffset(),0);
-  assertEquals(mbp.m_m.m_data.getInt(),0);
+  m=ref.get();
+  assertEquals(m.getAckOffset(),0);
+  assertEquals(m.m_data.getInt(),0);
   ByteBuffer firstBuffer=ByteBuffer.allocate(MAGIC_TUPLE_SIZE * 9);
   s.pushExportBuffer(0,0,firstBuffer,false,false);
   ByteBuffer secondBuffer=ByteBuffer.allocate(MAGIC_TUPLE_SIZE * 10);
@@ -23,8 +23,9 @@
   m.ack(MAGIC_TUPLE_SIZE * 9);
   m.poll();
   ref.set(null);
+  pair=new ExportInternalMessage(esb,m);
   s.exportAction(pair);
-  mbp=ref.get();
-  assertEquals(MAGIC_TUPLE_SIZE * 19,mbp.m_m.getAckOffset());
-  assertEquals(MAGIC_TUPLE_SIZE * 10,mbp.m_m.m_data.remaining() - 4);
+  m=ref.get();
+  assertEquals(MAGIC_TUPLE_SIZE * 19,m.getAckOffset());
+  assertEquals(MAGIC_TUPLE_SIZE * 10,m.m_data.remaining() - 4);
 }
