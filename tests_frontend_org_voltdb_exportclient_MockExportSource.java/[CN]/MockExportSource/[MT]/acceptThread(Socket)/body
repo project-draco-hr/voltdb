@@ -1,0 +1,57 @@
+{
+  try {
+    DataInputStream in=new DataInputStream(socket.getInputStream());
+    DataOutputStream out=new DataOutputStream(socket.getOutputStream());
+    int messageLen=in.readInt();
+    assert(messageLen == 35);
+    byte version=in.readByte();
+    assert(version == 0);
+    String service=readString(in);
+    assert(service.equals("export"));
+    String username=readString(in);
+    assert(username.equals(""));
+    byte[] password=new byte[20];
+    in.read(password);
+    byte buildString[]="Dummy Buildstring".getBytes("UTF-8");
+    out.writeInt(30 + buildString.length);
+    out.write((byte)0);
+    out.write((byte)0);
+    out.writeInt(0);
+    out.writeLong(0);
+    out.writeLong(0);
+    out.writeInt(0);
+    out.writeInt(buildString.length);
+    out.write(buildString);
+    ExportProtoMessage m=getNextExportMessage(in);
+    assert(m.isOpen());
+    FastSerializer fs=new FastSerializer();
+    fs.writeInt(1);
+    fs.writeLong(0);
+    fs.writeInt(0);
+    fs.writeString("i");
+    fs.writeString("DUMMY");
+    fs.writeLong(ManagementFactory.getRuntimeMXBean().getStartTime());
+    fs.writeInt(1);
+    fs.writeString("A");
+    fs.writeInt(VoltType.INTEGER.getValue());
+    fs.writeInt(1);
+    fs.writeString("127.0.0.1:21212:-1:-1");
+    m=new ExportProtoMessage(0,0,"i");
+    m.openResponse(fs.getBuffer());
+    fs=new FastSerializer();
+    m.writeToFastSerializer(fs);
+    byte[] openResponseBytes=fs.getBytes();
+    out.write(openResponseBytes);
+    m=getNextExportMessage(in);
+    assert(m.isPoll());
+    while (socket.isConnected())     Thread.sleep(100);
+  }
+ catch (  EOFException e) {
+    System.out.println("Connection closed");
+    System.out.flush();
+    return;
+  }
+catch (  Exception e) {
+    e.printStackTrace();
+  }
+}
