@@ -23,6 +23,7 @@
       m_transactionQueue.gotFaultForInitiator(i);
     }
   }
+  ArrayList<Long> faultedTxns=new ArrayList<Long>();
   Iterator<Long> it=m_transactionsById.keySet().iterator();
   while (it.hasNext()) {
     final long tid=it.next();
@@ -31,6 +32,9 @@
     if (ts.txnId > globalInitiationPoint && failedSites.contains(ts.initiatorSiteId)) {
       m_recoveryLog.info("Faulting non-globally initiated transaction " + ts.txnId);
       it.remove();
+      if (!ts.isReadOnly()) {
+        faultedTxns.add(ts.txnId);
+      }
       m_transactionQueue.faultTransaction(ts);
     }
  else     if (ts instanceof MultiPartitionParticipantTxnState && failedSites.contains(ts.coordinatorSiteId)) {
@@ -43,11 +47,17 @@
  else       if (ts.isInProgress() && ts.txnId > globalMultiPartCommitPoint) {
         m_recoveryLog.info("Rolling back in progress multi-partition txn " + ts.txnId + " because the coordinator was on a failed host and the txnId > "+ "the global multi-part commit point");
         CompleteTransactionMessage ft=mpts.createCompleteTransactionMessage(true,false);
+        if (!ts.isReadOnly()) {
+          faultedTxns.add(ts.txnId);
+        }
         m_mailbox.deliverFront(ft);
       }
  else {
         m_recoveryLog.info("Faulting multi-part transaction " + ts.txnId + " because the coordinator was on a failed node");
         it.remove();
+        if (!ts.isReadOnly()) {
+          faultedTxns.add(ts.txnId);
+        }
         m_transactionQueue.faultTransaction(ts);
       }
     }
@@ -59,5 +69,12 @@
   }
   if (m_recoveryProcessor != null) {
     m_recoveryProcessor.handleSiteFaults(failedSites,m_context.siteTracker);
+  }
+  try {
+    VoltDB.instance().getCommandLog().logFault(failedSites,faultedTxns).acquire();
+  }
+ catch (  InterruptedException e) {
+    hostLog.fatal("Interrupted while attempting to log a fault",e);
+    VoltDB.crashVoltDB();
   }
 }
