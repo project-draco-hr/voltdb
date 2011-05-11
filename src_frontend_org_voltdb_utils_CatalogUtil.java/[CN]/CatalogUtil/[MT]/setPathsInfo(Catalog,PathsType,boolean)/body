@@ -1,5 +1,6 @@
 {
   File voltDbRoot;
+  final Cluster cluster=catalog.getClusters().get("cluster");
   if (paths == null || paths.getVoltdbroot() == null || paths.getVoltdbroot().getPath() == null) {
     voltDbRoot=new VoltFile("voltdbroot");
     if (!voltDbRoot.exists()) {
@@ -53,14 +54,43 @@
     exportOverflowPath=new VoltFile(paths.getExportoverflow().getPath());
   }
   validateDirectory("export overflow",exportOverflowPath,crashOnFailedValidation);
+  File commandLogPath;
+  if (paths == null || paths.getCommandlog() == null) {
+    commandLogPath=new VoltFile(voltDbRoot,"command_log");
+    if (!commandLogPath.exists()) {
+      if (!commandLogPath.mkdir()) {
+        hostLog.fatal("Failed to create command log directory \"" + commandLogPath + "\"");
+      }
+    }
+  }
+ else {
+    commandLogPath=new VoltFile(paths.getCommandlog().getPath());
+  }
+  validateDirectory("command log",commandLogPath,crashOnFailedValidation);
+  File commandLogSnapshotPath;
+  if (paths == null || paths.getCommandlogsnapshot() == null) {
+    commandLogSnapshotPath=new VoltFile(voltDbRoot,"command_log_snapshot");
+    if (!commandLogSnapshotPath.exists()) {
+      if (!commandLogSnapshotPath.mkdir()) {
+        hostLog.fatal("Failed to create command log snapshot directory \"" + commandLogSnapshotPath + "\"");
+      }
+    }
+  }
+ else {
+    commandLogSnapshotPath=new VoltFile(paths.getCommandlogsnapshot().getPath());
+  }
+  validateDirectory("command log snapshot",commandLogSnapshotPath,crashOnFailedValidation);
   catalog.getClusters().get("cluster").setVoltroot(voltDbRoot.getPath());
-  SnapshotSchedule schedule=catalog.getClusters().get("cluster").getDatabases().get("database").getSnapshotschedule().get("default");
+  SnapshotSchedule schedule=cluster.getDatabases().get("database").getSnapshotschedule().get("default");
   if (schedule != null) {
     schedule.setPath(snapshotPath.getPath());
   }
-  schedule=catalog.getClusters().get("cluster").getFaultsnapshots().get("CLUSTER_PARTITION");
+  schedule=cluster.getFaultsnapshots().get("CLUSTER_PARTITION");
   if (schedule != null) {
     schedule.setPath(ppdSnapshotPath.getPath());
   }
-  catalog.getClusters().get("cluster").setExportoverflow(exportOverflowPath.getPath());
+  cluster.setExportoverflow(exportOverflowPath.getPath());
+  final org.voltdb.catalog.CommandLog commandLogConfig=cluster.getLogconfig().add("log");
+  commandLogConfig.setInternalsnapshotpath(commandLogSnapshotPath.getPath());
+  commandLogConfig.setLogpath(commandLogPath.getPath());
 }

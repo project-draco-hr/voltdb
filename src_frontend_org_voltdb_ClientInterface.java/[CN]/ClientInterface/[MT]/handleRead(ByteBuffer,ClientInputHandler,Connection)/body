@@ -29,13 +29,24 @@
         c.writeStream().enqueue(errorResponse);
         return;
       }
-      task.buildParameterSet();
-      if (task.params.m_params.length != 1) {
-        final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],"Adhoc system procedure requires exactly one parameter, the SQL statement to execute.",task.clientHandle);
+      ParameterSet params=null;
+      try {
+        params=task.getParams();
+      }
+ catch (      RuntimeException e) {
+        Writer result=new StringWriter();
+        PrintWriter pw=new PrintWriter(result);
+        e.printStackTrace(pw);
+        final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.GRACEFUL_FAILURE,new VoltTable[0],"Exception while deserializing procedure params\n" + result.toString(),task.clientHandle);
         c.writeStream().enqueue(errorResponse);
         return;
       }
-      String sql=(String)task.params.m_params[0];
+      if (params.m_params.length != 1) {
+        final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.GRACEFUL_FAILURE,new VoltTable[0],"Adhoc system procedure requires exactly one parameter, the SQL statement to execute.",task.clientHandle);
+        c.writeStream().enqueue(errorResponse);
+        return;
+      }
+      String sql=(String)params.m_params[0];
       m_asyncCompilerWorkThread.planSQL(sql,task.clientHandle,handler.connectionId(),handler.m_hostname,handler.isAdmin(),c);
       return;
     }
@@ -46,14 +57,25 @@
       return;
     }
     if (task.procName.equals("@UpdateApplicationCatalog")) {
-      task.buildParameterSet();
-      if (task.params.m_params.length != 2 || task.params.m_params[0] == null || task.params.m_params[1] == null) {
+      ParameterSet params=null;
+      try {
+        params=task.getParams();
+      }
+ catch (      RuntimeException e) {
+        Writer result=new StringWriter();
+        PrintWriter pw=new PrintWriter(result);
+        e.printStackTrace(pw);
+        final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.GRACEFUL_FAILURE,new VoltTable[0],"Exception while deserializing procedure params\n" + result.toString(),task.clientHandle);
+        c.writeStream().enqueue(errorResponse);
+        return;
+      }
+      if (params.m_params.length != 2 || params.m_params[0] == null || params.m_params[1] == null) {
         final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],"UpdateApplicationCatalog system procedure requires exactly " + "two parameters, the URL of the catalog to load and the URL " + "of a deployment file.",task.clientHandle);
         c.writeStream().enqueue(errorResponse);
         return;
       }
-      String catalogURL=(String)task.params.m_params[0];
-      String deploymentURL=(String)task.params.m_params[1];
+      String catalogURL=(String)params.m_params[0];
+      String deploymentURL=(String)params.m_params[1];
       m_asyncCompilerWorkThread.prepareCatalogUpdate(catalogURL,deploymentURL,task.clientHandle,handler.connectionId(),handler.m_hostname,handler.isAdmin(),handler.sequenceId(),c);
       return;
     }
@@ -65,11 +87,23 @@
       }
     }
  else     if (task.procName.equals("@SystemInformation")) {
-      task.buildParameterSet();
-      if (task.params.m_params.length == 0) {
-        task.params.m_params=new Object[1];
-        task.params.m_params[0]=new String("OVERVIEW");
+      ParameterSet params=null;
+      try {
+        params=task.getParams();
       }
+ catch (      RuntimeException e) {
+        Writer result=new StringWriter();
+        PrintWriter pw=new PrintWriter(result);
+        e.printStackTrace(pw);
+        final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.GRACEFUL_FAILURE,new VoltTable[0],"Exception while deserializing procedure params\n" + result.toString(),task.clientHandle);
+        c.writeStream().enqueue(errorResponse);
+        return;
+      }
+      if (params.m_params.length == 0) {
+        params.m_params=new Object[1];
+        params.m_params[0]=new String("OVERVIEW");
+      }
+      task.unserializedParams=null;
     }
   }
  else   if (!user.hasPermission(catProc)) {
@@ -82,11 +116,9 @@
     int[] involvedPartitions=null;
     if (catProc.getEverysite() == true) {
       involvedPartitions=m_allPartitions;
-      task.buildParameterSet();
     }
  else     if (catProc.getSinglepartition() == false) {
       involvedPartitions=m_allPartitions;
-      task.buildParameterSet();
     }
  else {
       try {

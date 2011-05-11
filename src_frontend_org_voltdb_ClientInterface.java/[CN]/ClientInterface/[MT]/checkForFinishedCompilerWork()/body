@@ -4,25 +4,37 @@
   while ((result=m_asyncCompilerWorkThread.getPlannedStmt()) != null) {
     if (result.errorMsg == null) {
       if (result instanceof AdHocPlannedStmt) {
-        AdHocPlannedStmt plannedStmt=(AdHocPlannedStmt)result;
+        final AdHocPlannedStmt plannedStmt=(AdHocPlannedStmt)result;
         if (plannedStmt.catalogVersion != m_catalogContext.get().catalogVersion) {
           m_asyncCompilerWorkThread.planSQL(plannedStmt.sql,plannedStmt.clientHandle,plannedStmt.connectionId,plannedStmt.hostname,plannedStmt.adminConnection,plannedStmt.clientData);
         }
  else {
           StoredProcedureInvocation task=new StoredProcedureInvocation();
           task.procName="@AdHoc";
-          task.params=new ParameterSet();
-          task.params.m_params=new Object[]{plannedStmt.aggregatorFragment,plannedStmt.collectorFragment,plannedStmt.sql,plannedStmt.isReplicatedTableDML ? 1 : 0};
+          task.params=new FutureTask<ParameterSet>(new Callable<ParameterSet>(){
+            @Override public ParameterSet call(){
+              ParameterSet params=new ParameterSet();
+              params.m_params=new Object[]{plannedStmt.aggregatorFragment,plannedStmt.collectorFragment,plannedStmt.sql,plannedStmt.isReplicatedTableDML ? 1 : 0};
+              return params;
+            }
+          }
+);
           task.clientHandle=plannedStmt.clientHandle;
           m_initiator.createTransaction(plannedStmt.connectionId,plannedStmt.hostname,plannedStmt.adminConnection,task,false,false,false,m_allPartitions,m_allPartitions.length,plannedStmt.clientData,0,EstTime.currentTimeMillis());
         }
       }
  else       if (result instanceof CatalogChangeResult) {
-        CatalogChangeResult changeResult=(CatalogChangeResult)result;
+        final CatalogChangeResult changeResult=(CatalogChangeResult)result;
         StoredProcedureInvocation task=new StoredProcedureInvocation();
         task.procName="@UpdateApplicationCatalog";
-        task.params=new ParameterSet();
-        task.params.m_params=new Object[]{changeResult.encodedDiffCommands,changeResult.catalogURL,changeResult.expectedCatalogVersion,changeResult.deploymentURL,changeResult.deploymentCRC};
+        task.params=new FutureTask<ParameterSet>(new Callable<ParameterSet>(){
+          @Override public ParameterSet call(){
+            ParameterSet params=new ParameterSet();
+            params.m_params=new Object[]{changeResult.encodedDiffCommands,changeResult.catalogURL,changeResult.expectedCatalogVersion,changeResult.deploymentURL,changeResult.deploymentCRC};
+            return params;
+          }
+        }
+);
         task.clientHandle=changeResult.clientHandle;
         m_initiator.createTransaction(changeResult.connectionId,changeResult.hostname,changeResult.adminConnection,task,false,true,true,m_allPartitions,m_allPartitions.length,changeResult.clientData,0,EstTime.currentTimeMillis());
       }
