@@ -8,21 +8,32 @@
     return;
   }
   final CatalogContext catalogContext=m_catalogContext.get();
-  final Procedure catProc=catalogContext.procedures.get(task.procName);
   AuthSystem.AuthUser user=catalogContext.authSystem.getUser(handler.m_username);
+  final Procedure catProc=catalogContext.procedures.get(task.procName);
+  Config sysProc=SystemProcedureCatalog.listing.get(task.procName);
   if (user == null) {
     final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],"User " + handler.m_username + " has been removed from the system via a catalog update",task.clientHandle);
     authLog.info("User " + handler.m_username + " has been removed from the system via a catalog update");
     c.writeStream().enqueue(errorResponse);
     return;
   }
-  if (task.procName.startsWith("@")) {
-    if (task.procName.equals("@ping")) {
-      final ClientResponseImpl pingResponse=new ClientResponseImpl(ClientResponseImpl.SUCCESS,new VoltTable[0],"pong",task.clientHandle);
-      c.writeStream().enqueue(pingResponse);
+  if (catProc == null && sysProc == null) {
+    String errorMessage="Procedure " + task.procName + " was not found";
+    authLog.l7dlog(Level.WARN,LogKeys.auth_ClientInterface_ProcedureNotFound.name(),new Object[]{task.procName},null);
+    final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],errorMessage,task.clientHandle);
+    c.writeStream().enqueue(errorResponse);
+    return;
+  }
+  if (sysProc == null) {
+    if (!user.hasPermission(catProc)) {
+      authLog.l7dlog(Level.INFO,LogKeys.auth_ClientInterface_LackingPermissionForProcedure.name(),new String[]{user.m_name,task.procName},null);
+      final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],"User does not have permission to invoke " + task.procName,task.clientHandle);
+      c.writeStream().enqueue(errorResponse);
       return;
     }
- else     if (task.procName.equals("@AdHoc")) {
+  }
+ else {
+    if (task.procName.equals("@AdHoc")) {
       if (!user.hasAdhocPermission()) {
         final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],"User does not have @AdHoc permission",task.clientHandle);
         authLog.l7dlog(Level.INFO,LogKeys.auth_ClientInterface_LackingPermissionForAdhoc.name(),new String[]{user.m_name},null);
@@ -50,7 +61,7 @@
       m_asyncCompilerWorkThread.planSQL(sql,task.clientHandle,handler.connectionId(),handler.m_hostname,handler.isAdmin(),c);
       return;
     }
-    if (!user.hasSystemProcPermission()) {
+ else     if (!user.hasSystemProcPermission()) {
       authLog.l7dlog(Level.INFO,LogKeys.auth_ClientInterface_LackingPermissionForSysproc.name(),new String[]{user.m_name,task.procName},null);
       final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],"User " + user.m_name + " does not have sysproc permission",task.clientHandle);
       c.writeStream().enqueue(errorResponse);
@@ -79,7 +90,7 @@
       m_asyncCompilerWorkThread.prepareCatalogUpdate(catalogURL,deploymentURL,task.clientHandle,handler.connectionId(),handler.m_hostname,handler.isAdmin(),handler.sequenceId(),c);
       return;
     }
-    if (task.procName.equals("@Pause") || task.procName.equals("@Resume")) {
+ else     if (task.procName.equals("@Pause") || task.procName.equals("@Resume")) {
       if (!handler.isAdmin()) {
         final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],"" + task.procName + " is not available to this client",task.clientHandle);
         c.writeStream().enqueue(errorResponse);
@@ -106,18 +117,9 @@
       task.unserializedParams=null;
     }
   }
- else   if (!user.hasPermission(catProc)) {
-    authLog.l7dlog(Level.INFO,LogKeys.auth_ClientInterface_LackingPermissionForProcedure.name(),new String[]{user.m_name,task.procName},null);
-    final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],"User does not have permission to invoke " + task.procName,task.clientHandle);
-    c.writeStream().enqueue(errorResponse);
-    return;
-  }
   if (catProc != null) {
     int[] involvedPartitions=null;
-    if (catProc.getEverysite() == true) {
-      involvedPartitions=m_allPartitions;
-    }
- else     if (catProc.getSinglepartition() == false) {
+    if (catProc.getSinglepartition() == false) {
       involvedPartitions=m_allPartitions;
     }
  else {
@@ -135,10 +137,8 @@
       m_initiator.createTransaction(handler.connectionId(),handler.m_hostname,handler.isAdmin(),task,catProc.getReadonly(),catProc.getSinglepartition(),catProc.getEverysite(),involvedPartitions,involvedPartitions.length,c,buf.capacity(),now);
     }
   }
- else {
-    String errorMessage="Procedure " + task.procName + " was not found";
-    authLog.l7dlog(Level.WARN,LogKeys.auth_ClientInterface_ProcedureNotFound.name(),new Object[]{task.procName},null);
-    final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],errorMessage,task.clientHandle);
-    c.writeStream().enqueue(errorResponse);
+ else   if (sysProc != null) {
+    int[] involvedPartitions=m_allPartitions;
+    m_initiator.createTransaction(handler.connectionId(),handler.m_hostname,handler.isAdmin(),task,sysProc.getReadonly(),sysProc.getSinglepartition(),sysProc.getEverysite(),involvedPartitions,involvedPartitions.length,c,buf.capacity(),now);
   }
 }

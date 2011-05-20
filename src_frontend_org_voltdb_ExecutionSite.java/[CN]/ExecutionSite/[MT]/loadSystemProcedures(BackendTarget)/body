@@ -1,0 +1,31 @@
+{
+  Set<Entry<String,Config>> entrySet=SystemProcedureCatalog.listing.entrySet();
+  for (  Entry<String,Config> entry : entrySet) {
+    Config sysProc=entry.getValue();
+    Procedure proc=sysProc.asCatalogProcedure();
+    VoltProcedure wrapper=null;
+    final String className=sysProc.getClassname();
+    Class<?> procClass=null;
+    try {
+      procClass=m_context.classForProcedure(className);
+    }
+ catch (    final ClassNotFoundException e) {
+      if (sysProc.commercial) {
+        continue;
+      }
+      hostLog.l7dlog(Level.WARN,LogKeys.host_ExecutionSite_GenericException.name(),new Object[]{getSiteId(),siteIndex},e);
+      VoltDB.crashVoltDB();
+    }
+    try {
+      wrapper=(VoltProcedure)procClass.newInstance();
+    }
+ catch (    final InstantiationException e) {
+      hostLog.l7dlog(Level.WARN,LogKeys.host_ExecutionSite_GenericException.name(),new Object[]{getSiteId(),siteIndex},e);
+    }
+catch (    final IllegalAccessException e) {
+      hostLog.l7dlog(Level.WARN,LogKeys.host_ExecutionSite_GenericException.name(),new Object[]{getSiteId(),siteIndex},e);
+    }
+    wrapper.init(m_context.cluster.getPartitions().size(),this,proc,backendTarget,hsql,m_context.cluster);
+    procs.put(entry.getKey(),wrapper);
+  }
+}
