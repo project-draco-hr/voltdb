@@ -1,0 +1,77 @@
+{
+  if (!multi && pending != null) {
+    pending=null;
+  }
+  if (nextLine == null) {
+    if (pending != null) {
+      String s=pending;
+      pending=null;
+      return new String[]{s};
+    }
+ else {
+      return null;
+    }
+  }
+  List<String> tokensOnThisLine=new ArrayList<String>();
+  StringBuilder sb=new StringBuilder(INITIAL_READ_SIZE);
+  boolean inQuotes=false;
+  if (pending != null) {
+    sb.append(pending);
+    pending=null;
+    inQuotes=true;
+  }
+  for (int i=0; i < nextLine.length(); i++) {
+    char c=nextLine.charAt(i);
+    if (c == this.escape) {
+      if (isNextCharacterEscapable(nextLine,inQuotes || inField,i)) {
+        sb.append(nextLine.charAt(i + 1));
+        i++;
+      }
+    }
+ else     if (c == quotechar) {
+      if (isNextCharacterEscapedQuote(nextLine,inQuotes || inField,i)) {
+        sb.append(nextLine.charAt(i + 1));
+        i++;
+      }
+ else {
+        if (!strictQuotes) {
+          if (i > 2 && nextLine.charAt(i - 1) != this.separator && nextLine.length() > (i + 1) && nextLine.charAt(i + 1) != this.separator) {
+            if (ignoreLeadingWhiteSpace && sb.length() > 0 && isAllWhiteSpace(sb)) {
+              sb.setLength(0);
+            }
+ else {
+              sb.append(c);
+            }
+          }
+        }
+        inQuotes=!inQuotes;
+      }
+      inField=!inField;
+    }
+ else     if (c == separator && !inQuotes) {
+      tokensOnThisLine.add(sb.toString());
+      sb.setLength(0);
+      inField=false;
+    }
+ else {
+      if (!strictQuotes || inQuotes) {
+        sb.append(c);
+        inField=true;
+      }
+    }
+  }
+  if (inQuotes) {
+    if (multi) {
+      sb.append("\n");
+      pending=sb.toString();
+      sb=null;
+    }
+ else {
+      throw new IOException("Un-terminated quoted field at end of CSV line");
+    }
+  }
+  if (sb != null) {
+    tokensOnThisLine.add(sb.toString());
+  }
+  return tokensOnThisLine.toArray(new String[tokensOnThisLine.size()]);
+}
