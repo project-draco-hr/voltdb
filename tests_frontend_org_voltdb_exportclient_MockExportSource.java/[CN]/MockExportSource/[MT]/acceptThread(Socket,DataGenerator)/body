@@ -24,16 +24,20 @@
     out.write(buildString);
     ExportProtoMessage m=getNextExportMessage(in);
     assert(m.isOpen());
+    VoltTable schema=dataGen.tableForSchema();
     FastSerializer fs=new FastSerializer();
     fs.writeInt(1);
     fs.writeLong(0);
     fs.writeInt(0);
-    fs.writeString("i");
-    fs.writeString("DUMMY");
+    String signature=dataGen.getSignature();
+    fs.writeString(signature);
+    fs.writeString("unnamed table");
     fs.writeLong(ManagementFactory.getRuntimeMXBean().getStartTime());
-    fs.writeInt(1);
-    fs.writeString("A");
-    fs.writeInt(VoltType.INTEGER.getValue());
+    fs.writeInt(schema.getColumnCount());
+    for (int i=0; i < schema.getColumnCount(); i++) {
+      fs.writeString(schema.getColumnName(i));
+      fs.writeInt(schema.getColumnType(i).getValue());
+    }
     fs.writeInt(1);
     fs.writeString("127.0.0.1:21212:-1:-1");
     m=new ExportProtoMessage(0,0,"i");
@@ -42,17 +46,23 @@
     m.writeToFastSerializer(fs);
     byte[] openResponseBytes=fs.getBytes();
     out.write(openResponseBytes);
-    m=getNextExportMessage(in);
-    assert(m.isPoll());
-    VoltTable t=new VoltTable(new VoltTable.ColumnInfo("foo",VoltType.INTEGER));
-    t.addRow(5);
-    ByteBuffer buf=ExportEncoder.getEncodedTable(t);
-    m=new ExportProtoMessage(0,0,"i");
-    m.pollResponse(0,buf);
-    fs=new FastSerializer();
-    m.writeToFastSerializer(fs);
-    byte[] pollResponseBytes=fs.getBytes();
-    out.write(pollResponseBytes);
+    while ((dataGen.eof() == false) && socket.isConnected()) {
+      System.out.println("Starting the mock export loop");
+      m=getNextExportMessage(in);
+      assert(m.isPoll());
+      System.out.println("Got ack");
+      VoltTable t=dataGen.nextBlock();
+      System.out.printf("exported: %s\n",t.toJSONString());
+      if (t.getRowCount() == 0)       break;
+      ByteBuffer buf=ExportEncoder.getEncodedTable(t);
+      m=new ExportProtoMessage(0,0,dataGen.getSignature());
+      m.pollResponse(0,buf);
+      fs=new FastSerializer();
+      m.writeToFastSerializer(fs);
+      byte[] pollResponseBytes=fs.getBytes();
+      out.write(pollResponseBytes);
+      System.out.println("Sent block");
+    }
     while (socket.isConnected())     Thread.sleep(100);
   }
  catch (  EOFException e) {
