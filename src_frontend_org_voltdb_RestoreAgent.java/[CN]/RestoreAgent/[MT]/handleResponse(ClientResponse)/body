@@ -8,11 +8,25 @@
       VoltDB.crashVoltDB();
     }
   }
-  if (m_state == State.RESTORE) {
-    m_replayAgent.replay();
-    m_state=State.REPLAY;
+ else {
+    VoltTable[] results=res.getResults();
+    if (results.length != 1) {
+      LOG.fatal("Snapshot response doesn't contain any results");
+      VoltDB.crashVoltDB();
+    }
+    while (results[0].advanceRow()) {
+      String err=results[0].getString("ERR_MSG");
+      if (!err.isEmpty()) {
+        LOG.fatal(err);
+        VoltDB.crashVoltDB();
+      }
+      String result=results[0].getString("RESULT");
+      if (!result.equalsIgnoreCase("success")) {
+        String host=results[0].getString("HOSTNAME");
+        LOG.fatal(host + " failed: " + result);
+        VoltDB.crashVoltDB();
+      }
+    }
   }
- else   if (m_state == State.TRUNCATE) {
-    VoltDB.instance().onRestoreCompletion();
-  }
+  changeState();
 }
