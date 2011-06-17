@@ -1,6 +1,9 @@
 {
-  long lastHeartbeatTime=System.currentTimeMillis();
   try {
+    if (m_recovering) {
+      recoveryRunLoop();
+    }
+    long lastHeartbeatTime=System.currentTimeMillis();
     while (m_shouldContinue) {
       VoltMessage message=m_mailbox.recvBlocking(5);
       if (message != null) {
@@ -14,24 +17,51 @@
       if (m_recovering) {
         continue;
       }
-      AgreementTransactionState txnState=(AgreementTransactionState)m_txnQueue.poll();
-      if (txnState != null) {
-        if (txnState.txnId <= m_minTxnIdAfterRecovery) {
+      OrderableTransaction ot=m_txnQueue.poll();
+      if (ot != null) {
+        if (m_recoverBeforeTxn != null) {
+          assert(m_recoveryStage == RecoveryStage.RECOVERED);
+          assert(m_recovering == false);
+          assert(m_siteRequestingRecovery != null);
+          if (ot.txnId >= m_recoverBeforeTxn) {
+            shipZKDatabaseSnapshot(m_siteRequestingRecovery,ot.txnId);
+          }
+        }
+        if (ot.txnId <= m_minTxnIdAfterRecovery) {
           m_recoveryLog.fatal("Transaction queue released a transaction from before this " + " node was recovered was complete");
           VoltDB.crashVoltDB();
         }
-        m_transactionsById.remove(txnState.txnId);
-        txnState.m_request.setOwner(txnState.initiatorSiteId);
-        m_server.prepRequest(txnState.m_request,txnState.txnId);
+        m_transactionsById.remove(ot.txnId);
+        if (ot instanceof AgreementRejoinTransactionState) {
+          AgreementRejoinTransactionState txnState=(AgreementRejoinTransactionState)ot;
+        }
+ else         if (ot instanceof AgreementTransactionState) {
+          AgreementTransactionState txnState=(AgreementTransactionState)ot;
+          txnState.m_request.setOwner(txnState.initiatorSiteId);
+          m_server.prepRequest(txnState.m_request,txnState.txnId);
+        }
+      }
+ else       if (m_recoverBeforeTxn != null) {
+        assert(m_recoveryStage == RecoveryStage.RECOVERED);
+        assert(m_recovering == false);
+        assert(m_siteRequestingRecovery != null);
+        Long foo=m_txnQueue.safeToRecover();
+        if (foo != null && foo.longValue() >= m_recoverBeforeTxn.longValue()) {
+          shipZKDatabaseSnapshot(m_siteRequestingRecovery,foo);
+        }
       }
     }
   }
-  finally {
+ catch (  Exception e) {
+    m_agreementLog.fatal("Error in agreement site",e);
+    VoltDB.crashVoltDB();
+  }
+ finally {
     try {
       shutdownInternal();
     }
   finally {
-      m_shutdownComplete.release();
+      m_shutdownComplete.countDown();
     }
   }
 }

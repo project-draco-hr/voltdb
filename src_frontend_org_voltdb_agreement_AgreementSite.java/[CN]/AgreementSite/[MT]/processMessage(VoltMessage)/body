@@ -60,44 +60,37 @@
   }
  else   if (message instanceof BinaryPayloadMessage) {
     BinaryPayloadMessage bpm=(BinaryPayloadMessage)message;
-    if (bpm.m_payload != null) {
-      processZKSnapshot(bpm);
+    assert(m_recovering);
+    assert(m_recoveryStage == RecoveryStage.SENT_PROPOSAL);
+    if (m_recoveryStage != RecoveryStage.SENT_PROPOSAL) {
+      m_recoveryLog.fatal("Received a recovery snapshot in stage " + m_recoveryStage);
+      VoltDB.crashVoltDB();
     }
- else {
-      ByteBuffer buf=ByteBuffer.wrap(bpm.m_metadata);
-      int initiatorId=buf.getInt();
-      if (!m_sitesCompletedRecoveryShipping.remove(initiatorId)) {
-        m_recoveryLog.fatal("Received a notice that recovery shipping is complete from " + initiatorId + " but didn't not expect to receive one from that site");
-        VoltDB.crashVoltDB();
-      }
-      if (m_sitesCompletedRecoveryShipping.isEmpty()) {
-        m_recovering=false;
-      }
+    long selectedRecoverBeforeTxn=ByteBuffer.wrap(bpm.m_metadata).getLong();
+    if (selectedRecoverBeforeTxn < m_recoverBeforeTxn) {
+      m_recoveryLog.fatal("Selected recover before txn was earlier than the  proposed recover before txn");
+      VoltDB.crashVoltDB();
     }
+    m_recoverBeforeTxn=selectedRecoverBeforeTxn;
+    m_recoverySnapshot=bpm.m_payload;
+    m_recoveryStage=RecoveryStage.RECEIVED_SNAPSHOT;
   }
  else   if (message instanceof FaultMessage) {
     FaultMessage fm=(FaultMessage)message;
     for (    NodeFailureFault fault : fm.nodeFaults) {
       for (      Integer faultedInitiator : fault.getFailedNonExecSites()) {
-        if (fm.cleared) {
-          m_safetyState.addRejoinedState(faultedInitiator);
-          m_txnQueue.ensureInitiatorIsKnown(faultedInitiator);
-          try {
-            shipRecoveryData(faultedInitiator);
-          }
- catch (          IOException e) {
-            m_agreementLog.fatal("Unable to ship recovery data",e);
-            VoltDB.crashVoltDB();
-          }
-          m_siteIds.add(faultedInitiator);
-        }
- else {
-          m_safetyState.removeState(faultedInitiator);
-        }
+        m_safetyState.removeState(faultedInitiator);
       }
     }
-    if (!fm.cleared) {
-      discoverGlobalFaultData(fm);
-    }
+    discoverGlobalFaultData(fm);
+  }
+ else   if (message instanceof RecoveryMessage) {
+    RecoveryMessage rm=(RecoveryMessage)message;
+    assert(m_recoverBeforeTxn == null);
+    assert(m_siteRequestingRecovery == null);
+    assert(m_recovering == false);
+    assert(m_recoveryStage == RecoveryStage.RECOVERED);
+    m_recoverBeforeTxn=rm.txnId();
+    m_siteRequestingRecovery=rm.sourceSite();
   }
 }
