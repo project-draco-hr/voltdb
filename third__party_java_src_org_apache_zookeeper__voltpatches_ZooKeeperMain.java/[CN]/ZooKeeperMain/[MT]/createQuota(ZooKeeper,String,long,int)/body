@@ -1,0 +1,63 @@
+{
+  Stat initStat=zk.exists(path,false);
+  if (initStat == null) {
+    throw new IllegalArgumentException(path + " does not exist.");
+  }
+  String quotaPath=Quotas.quotaZookeeper;
+  String realPath=Quotas.quotaZookeeper + path;
+  try {
+    List<String> children=zk.getChildren(realPath,false);
+    for (    String child : children) {
+      if (!child.startsWith("zookeeper_")) {
+        throw new IllegalArgumentException(path + " has child " + child+ " which has a quota");
+      }
+    }
+  }
+ catch (  KeeperException.NoNodeException ne) {
+  }
+  checkIfParentQuota(zk,path);
+  if (zk.exists(quotaPath,false) == null) {
+    try {
+      zk.create(Quotas.procZookeeper,null,Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+      zk.create(Quotas.quotaZookeeper,null,Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+    }
+ catch (    KeeperException.NodeExistsException ne) {
+    }
+  }
+  String[] splits=path.split("/");
+  StringBuilder sb=new StringBuilder();
+  sb.append(quotaPath);
+  for (int i=1; i < splits.length; i++) {
+    sb.append("/" + splits[i]);
+    quotaPath=sb.toString();
+    try {
+      zk.create(quotaPath,null,Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+    }
+ catch (    KeeperException.NodeExistsException ne) {
+    }
+  }
+  String statPath=quotaPath + "/" + Quotas.statNode;
+  quotaPath=quotaPath + "/" + Quotas.limitNode;
+  StatsTrack strack=new StatsTrack(null);
+  strack.setBytes(bytes);
+  strack.setCount(numNodes);
+  try {
+    zk.create(quotaPath,strack.toString().getBytes(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+    StatsTrack stats=new StatsTrack(null);
+    stats.setBytes(0L);
+    stats.setCount(0);
+    zk.create(statPath,stats.toString().getBytes(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+  }
+ catch (  KeeperException.NodeExistsException ne) {
+    byte[] data=zk.getData(quotaPath,false,new Stat());
+    StatsTrack strackC=new StatsTrack(new String(data));
+    if (bytes != -1L) {
+      strackC.setBytes(bytes);
+    }
+    if (numNodes != -1) {
+      strackC.setCount(numNodes);
+    }
+    zk.setData(quotaPath,strackC.toString().getBytes(),-1);
+  }
+  return true;
+}

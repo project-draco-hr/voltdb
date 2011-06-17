@@ -1,0 +1,62 @@
+{
+  Set<Watcher> result=new HashSet<Watcher>();
+switch (type) {
+case None:
+    result.add(defaultWatcher);
+  for (  Set<Watcher> ws : dataWatches.values()) {
+    result.addAll(ws);
+  }
+for (Set<Watcher> ws : existWatches.values()) {
+  result.addAll(ws);
+}
+for (Set<Watcher> ws : childWatches.values()) {
+result.addAll(ws);
+}
+if (ClientCnxn.getDisableAutoResetWatch() && state != Watcher.Event.KeeperState.SyncConnected) {
+synchronized (dataWatches) {
+dataWatches.clear();
+}
+synchronized (existWatches) {
+existWatches.clear();
+}
+synchronized (childWatches) {
+childWatches.clear();
+}
+}
+return result;
+case NodeDataChanged:
+case NodeCreated:
+synchronized (dataWatches) {
+addTo(dataWatches.remove(clientPath),result);
+}
+synchronized (existWatches) {
+addTo(existWatches.remove(clientPath),result);
+}
+break;
+case NodeChildrenChanged:
+synchronized (childWatches) {
+addTo(childWatches.remove(clientPath),result);
+}
+break;
+case NodeDeleted:
+synchronized (dataWatches) {
+addTo(dataWatches.remove(clientPath),result);
+}
+synchronized (existWatches) {
+Set<Watcher> list=existWatches.remove(clientPath);
+if (list != null) {
+addTo(existWatches.remove(clientPath),result);
+LOG.warn("We are triggering an exists watch for delete! Shouldn't happen!");
+}
+}
+synchronized (childWatches) {
+addTo(childWatches.remove(clientPath),result);
+}
+break;
+default :
+String msg="Unhandled watch event type " + type + " with state "+ state+ " on path "+ clientPath;
+LOG.error(msg);
+throw new RuntimeException(msg);
+}
+return result;
+}

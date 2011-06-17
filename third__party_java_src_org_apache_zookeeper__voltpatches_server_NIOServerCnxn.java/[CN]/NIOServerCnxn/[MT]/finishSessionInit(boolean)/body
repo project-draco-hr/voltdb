@@ -1,0 +1,36 @@
+{
+  try {
+    jmxConnectionBean=new ConnectionBean(this,zk);
+    MBeanRegistry.getInstance().register(jmxConnectionBean,zk.jmxServerBean);
+  }
+ catch (  Exception e) {
+    LOG.warn("Failed to register with JMX",e);
+    jmxConnectionBean=null;
+  }
+  try {
+    ConnectResponse rsp=new ConnectResponse(0,valid ? sessionTimeout : 0,valid ? sessionId : 0,valid ? zk.generatePasswd(sessionId) : new byte[16]);
+    ByteArrayOutputStream baos=new ByteArrayOutputStream();
+    BinaryOutputArchive bos=BinaryOutputArchive.getArchive(baos);
+    bos.writeInt(-1,"len");
+    rsp.serialize(bos,"connect");
+    baos.close();
+    ByteBuffer bb=ByteBuffer.wrap(baos.toByteArray());
+    bb.putInt(bb.remaining() - 4).rewind();
+    sendBuffer(bb);
+    if (!valid) {
+      LOG.info("Invalid session 0x" + Long.toHexString(sessionId) + " for client "+ sock.socket().getRemoteSocketAddress()+ ", probably expired");
+      sendCloseSession();
+    }
+ else {
+      LOG.info("Established session 0x" + Long.toHexString(sessionId) + " with negotiated timeout "+ sessionTimeout+ " for client "+ sock.socket().getRemoteSocketAddress());
+    }
+synchronized (this.factory) {
+      sk.selector().wakeup();
+      enableRecv();
+    }
+  }
+ catch (  Exception e) {
+    LOG.warn("Exception while establishing session, closing",e);
+    close();
+  }
+}

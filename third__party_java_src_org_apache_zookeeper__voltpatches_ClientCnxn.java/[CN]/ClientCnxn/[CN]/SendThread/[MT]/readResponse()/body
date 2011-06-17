@@ -1,0 +1,68 @@
+{
+  ByteBufferInputStream bbis=new ByteBufferInputStream(incomingBuffer);
+  BinaryInputArchive bbia=BinaryInputArchive.getArchive(bbis);
+  ReplyHeader replyHdr=new ReplyHeader();
+  replyHdr.deserialize(bbia,"header");
+  if (replyHdr.getXid() == -2) {
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Got ping response for sessionid: 0x" + Long.toHexString(sessionId) + " after "+ ((System.nanoTime() - lastPingSentNs) / 1000000)+ "ms");
+    }
+    return;
+  }
+  if (replyHdr.getXid() == -4) {
+    if (replyHdr.getErr() == KeeperException.Code.AUTHFAILED.intValue()) {
+      zooKeeper.state=States.AUTH_FAILED;
+      eventThread.queueEvent(new WatchedEvent(Watcher.Event.EventType.None,Watcher.Event.KeeperState.AuthFailed,null));
+    }
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Got auth sessionid:0x" + Long.toHexString(sessionId));
+    }
+    return;
+  }
+  if (replyHdr.getXid() == -1) {
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Got notification sessionid:0x" + Long.toHexString(sessionId));
+    }
+    WatcherEvent event=new WatcherEvent();
+    event.deserialize(bbia,"response");
+    if (chrootPath != null) {
+      String serverPath=event.getPath();
+      if (serverPath.compareTo(chrootPath) == 0)       event.setPath("/");
+ else       event.setPath(serverPath.substring(chrootPath.length()));
+    }
+    WatchedEvent we=new WatchedEvent(event);
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Got " + we + " for sessionid 0x"+ Long.toHexString(sessionId));
+    }
+    eventThread.queueEvent(we);
+    return;
+  }
+  if (pendingQueue.size() == 0) {
+    throw new IOException("Nothing in the queue, but got " + replyHdr.getXid());
+  }
+  Packet packet=null;
+synchronized (pendingQueue) {
+    packet=pendingQueue.remove();
+  }
+  try {
+    if (packet.header.getXid() != replyHdr.getXid()) {
+      packet.replyHeader.setErr(KeeperException.Code.CONNECTIONLOSS.intValue());
+      throw new IOException("Xid out of order. Got " + replyHdr.getXid() + " expected "+ packet.header.getXid());
+    }
+    packet.replyHeader.setXid(replyHdr.getXid());
+    packet.replyHeader.setErr(replyHdr.getErr());
+    packet.replyHeader.setZxid(replyHdr.getZxid());
+    if (replyHdr.getZxid() > 0) {
+      lastZxid=replyHdr.getZxid();
+    }
+    if (packet.response != null && replyHdr.getErr() == 0) {
+      packet.response.deserialize(bbia,"response");
+    }
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Reading reply sessionid:0x" + Long.toHexString(sessionId) + ", packet:: "+ packet);
+    }
+  }
+  finally {
+    finishPacket(packet);
+  }
+}

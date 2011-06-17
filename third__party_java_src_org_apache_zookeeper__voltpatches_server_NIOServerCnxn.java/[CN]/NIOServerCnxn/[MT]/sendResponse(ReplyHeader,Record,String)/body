@@ -1,0 +1,35 @@
+{
+  try {
+    ByteArrayOutputStream baos=new ByteArrayOutputStream();
+    BinaryOutputArchive bos=BinaryOutputArchive.getArchive(baos);
+    try {
+      baos.write(fourBytes);
+      bos.writeRecord(h,"header");
+      if (r != null) {
+        bos.writeRecord(r,tag);
+      }
+      baos.close();
+    }
+ catch (    IOException e) {
+      LOG.error("Error serializing response");
+    }
+    byte b[]=baos.toByteArray();
+    ByteBuffer bb=ByteBuffer.wrap(b);
+    bb.putInt(b.length - 4).rewind();
+    sendBuffer(bb);
+    if (h.getXid() > 0) {
+synchronized (this) {
+        outstandingRequests--;
+      }
+synchronized (this.factory) {
+        if (zk.getInProcess() < factory.outstandingLimit || outstandingRequests < 1) {
+          sk.selector().wakeup();
+          enableRecv();
+        }
+      }
+    }
+  }
+ catch (  Exception e) {
+    LOG.warn("Unexpected exception. Destruction averted.",e);
+  }
+}

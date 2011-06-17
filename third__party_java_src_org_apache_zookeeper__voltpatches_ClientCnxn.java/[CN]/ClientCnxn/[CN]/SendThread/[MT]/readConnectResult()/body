@@ -1,0 +1,20 @@
+{
+  ByteBufferInputStream bbis=new ByteBufferInputStream(incomingBuffer);
+  BinaryInputArchive bbia=BinaryInputArchive.getArchive(bbis);
+  ConnectResponse conRsp=new ConnectResponse();
+  conRsp.deserialize(bbia,"connect");
+  negotiatedSessionTimeout=conRsp.getTimeOut();
+  if (negotiatedSessionTimeout <= 0) {
+    zooKeeper.state=States.CLOSED;
+    eventThread.queueEvent(new WatchedEvent(Watcher.Event.EventType.None,Watcher.Event.KeeperState.Expired,null));
+    eventThread.queueEventOfDeath();
+    throw new SessionExpiredException("Unable to reconnect to ZooKeeper service, session 0x" + Long.toHexString(sessionId) + " has expired");
+  }
+  readTimeout=negotiatedSessionTimeout * 2 / 3;
+  connectTimeout=negotiatedSessionTimeout / serverAddrs.size();
+  sessionId=conRsp.getSessionId();
+  sessionPasswd=conRsp.getPasswd();
+  zooKeeper.state=States.CONNECTED;
+  LOG.info("Session establishment complete on server " + ((SocketChannel)sockKey.channel()).socket().getRemoteSocketAddress() + ", sessionid = 0x"+ Long.toHexString(sessionId)+ ", negotiated timeout = "+ negotiatedSessionTimeout);
+  eventThread.queueEvent(new WatchedEvent(Watcher.Event.EventType.None,Watcher.Event.KeeperState.SyncConnected,null));
+}

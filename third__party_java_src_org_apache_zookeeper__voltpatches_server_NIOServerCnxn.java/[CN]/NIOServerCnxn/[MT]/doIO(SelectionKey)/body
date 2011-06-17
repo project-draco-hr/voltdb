@@ -1,0 +1,97 @@
+{
+  try {
+    if (sock == null) {
+      LOG.warn("trying to do i/o on a null socket for session:0x" + Long.toHexString(sessionId));
+      return;
+    }
+    if (k.isReadable()) {
+      int rc=sock.read(incomingBuffer);
+      if (rc < 0) {
+        throw new EndOfStreamException("Unable to read additional data from client sessionid 0x" + Long.toHexString(sessionId) + ", likely client has closed socket");
+      }
+      if (incomingBuffer.remaining() == 0) {
+        boolean isPayload;
+        if (incomingBuffer == lenBuffer) {
+          incomingBuffer.flip();
+          isPayload=readLength(k);
+          incomingBuffer.clear();
+        }
+ else {
+          isPayload=true;
+        }
+        if (isPayload) {
+          readPayload();
+        }
+ else {
+          return;
+        }
+      }
+    }
+    if (k.isWritable()) {
+      if (outgoingBuffers.size() > 0) {
+        ByteBuffer directBuffer=factory.directBuffer;
+        directBuffer.clear();
+        for (        ByteBuffer b : outgoingBuffers) {
+          if (directBuffer.remaining() < b.remaining()) {
+            b=(ByteBuffer)b.slice().limit(directBuffer.remaining());
+          }
+          int p=b.position();
+          directBuffer.put(b);
+          b.position(p);
+          if (directBuffer.remaining() == 0) {
+            break;
+          }
+        }
+        directBuffer.flip();
+        int sent=sock.write(directBuffer);
+        ByteBuffer bb;
+        while (outgoingBuffers.size() > 0) {
+          bb=outgoingBuffers.peek();
+          if (bb == closeConn) {
+            throw new CloseRequestException("close requested");
+          }
+          int left=bb.remaining() - sent;
+          if (left > 0) {
+            bb.position(bb.position() + sent);
+            break;
+          }
+          packetSent();
+          sent-=bb.remaining();
+          outgoingBuffers.remove();
+        }
+      }
+synchronized (this.factory) {
+        if (outgoingBuffers.size() == 0) {
+          if (!initialized && (sk.interestOps() & SelectionKey.OP_READ) == 0) {
+            throw new CloseRequestException("responded to info probe");
+          }
+          sk.interestOps(sk.interestOps() & (~SelectionKey.OP_WRITE));
+        }
+ else {
+          sk.interestOps(sk.interestOps() | SelectionKey.OP_WRITE);
+        }
+      }
+    }
+  }
+ catch (  CancelledKeyException e) {
+    LOG.warn("Exception causing close of session 0x" + Long.toHexString(sessionId) + " due to "+ e);
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("CancelledKeyException stack trace",e);
+    }
+    close();
+  }
+catch (  CloseRequestException e) {
+    close();
+  }
+catch (  EndOfStreamException e) {
+    LOG.warn(e);
+    close();
+  }
+catch (  IOException e) {
+    LOG.warn("Exception causing close of session 0x" + Long.toHexString(sessionId) + " due to "+ e);
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("IOException stack trace",e);
+    }
+    close();
+  }
+}

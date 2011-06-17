@@ -1,0 +1,50 @@
+{
+  int lastSlash=path.lastIndexOf('/');
+  String parentName=path.substring(0,lastSlash);
+  String childName=path.substring(lastSlash + 1);
+  DataNode node=nodes.get(path);
+  if (node == null) {
+    throw new KeeperException.NoNodeException();
+  }
+  nodes.remove(path);
+  DataNode parent=nodes.get(parentName);
+  if (parent == null) {
+    throw new KeeperException.NoNodeException();
+  }
+synchronized (parent) {
+    parent.removeChild(childName);
+    parent.stat.setCversion(parent.stat.getCversion() + 1);
+    parent.stat.setPzxid(zxid);
+    long eowner=node.stat.getEphemeralOwner();
+    if (eowner != 0) {
+      HashSet<String> nodes=ephemerals.get(eowner);
+      if (nodes != null) {
+synchronized (nodes) {
+          nodes.remove(path);
+        }
+      }
+    }
+    node.parent=null;
+  }
+  if (parentName.startsWith(procZookeeper)) {
+    if (Quotas.limitNode.equals(childName)) {
+      pTrie.deletePath(parentName.substring(quotaZookeeper.length()));
+    }
+  }
+  String lastPrefix=pTrie.findMaxPrefix(path);
+  if (!rootZookeeper.equals(lastPrefix) && !("".equals(lastPrefix))) {
+    updateCount(lastPrefix,-1);
+    int bytes=0;
+synchronized (node) {
+      bytes=(node.data == null ? 0 : -(node.data.length));
+    }
+    updateBytes(lastPrefix,bytes);
+  }
+  if (LOG.isTraceEnabled()) {
+    ZooTrace.logTraceMessage(LOG,ZooTrace.EVENT_DELIVERY_TRACE_MASK,"dataWatches.triggerWatch " + path);
+    ZooTrace.logTraceMessage(LOG,ZooTrace.EVENT_DELIVERY_TRACE_MASK,"childWatches.triggerWatch " + parentName);
+  }
+  Set<Watcher> processed=dataWatches.triggerWatch(path,EventType.NodeDeleted);
+  childWatches.triggerWatch(path,EventType.NodeDeleted,processed);
+  childWatches.triggerWatch(parentName.equals("") ? "/" : parentName,EventType.NodeChildrenChanged);
+}

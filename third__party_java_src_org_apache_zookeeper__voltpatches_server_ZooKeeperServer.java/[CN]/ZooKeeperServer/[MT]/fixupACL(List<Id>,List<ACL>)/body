@@ -1,0 +1,51 @@
+{
+  if (skipACL) {
+    return true;
+  }
+  if (acl == null || acl.size() == 0) {
+    return false;
+  }
+  Iterator<ACL> it=acl.iterator();
+  LinkedList<ACL> toAdd=null;
+  while (it.hasNext()) {
+    ACL a=it.next();
+    Id id=a.getId();
+    if (id.getScheme().equals("world") && id.getId().equals("anyone")) {
+    }
+ else     if (id.getScheme().equals("auth")) {
+      it.remove();
+      if (toAdd == null) {
+        toAdd=new LinkedList<ACL>();
+      }
+      boolean authIdValid=false;
+      for (      Id cid : authInfo) {
+        AuthenticationProvider ap=ProviderRegistry.getProvider(cid.getScheme());
+        if (ap == null) {
+          LOG.error("Missing AuthenticationProvider for " + cid.getScheme());
+        }
+ else         if (ap.isAuthenticated()) {
+          authIdValid=true;
+          toAdd.add(new ACL(a.getPerms(),cid));
+        }
+      }
+      if (!authIdValid) {
+        return false;
+      }
+    }
+ else {
+      AuthenticationProvider ap=ProviderRegistry.getProvider(id.getScheme());
+      if (ap == null) {
+        return false;
+      }
+      if (!ap.isValid(id.getId())) {
+        return false;
+      }
+    }
+  }
+  if (toAdd != null) {
+    for (    ACL a : toAdd) {
+      acl.add(a);
+    }
+  }
+  return acl.size() > 0;
+}

@@ -1,0 +1,194 @@
+{
+  Stat stat=new Stat();
+  String[] args=co.getArgArray();
+  String cmd=co.getCommand();
+  if (args.length < 1) {
+    usage();
+    return false;
+  }
+  if (!commandMap.containsKey(cmd)) {
+    usage();
+    return false;
+  }
+  boolean watch=args.length > 2;
+  String path=null;
+  List<ACL> acl=Ids.OPEN_ACL_UNSAFE;
+  LOG.debug("Processing " + cmd);
+  if (cmd.equals("quit")) {
+    System.out.println("Quitting...");
+    zk.close();
+    System.exit(0);
+  }
+ else   if (cmd.equals("redo") && args.length >= 2) {
+    Integer i=Integer.decode(args[1]);
+    if (commandCount <= i) {
+      System.out.println("Command index out of range");
+      return false;
+    }
+    cl.parseCommand(history.get(i));
+    if (cl.getCommand().equals("redo")) {
+      System.out.println("No redoing redos");
+      return false;
+    }
+    history.put(commandCount,history.get(i));
+    processCmd(cl);
+  }
+ else   if (cmd.equals("history")) {
+    for (int i=commandCount - 10; i <= commandCount; ++i) {
+      if (i < 0)       continue;
+      System.out.println(i + " - " + history.get(i));
+    }
+  }
+ else   if (cmd.equals("printwatches")) {
+    if (args.length == 1) {
+      System.out.println("printwatches is " + (printWatches ? "on" : "off"));
+    }
+ else {
+      printWatches=args[1].equals("on");
+    }
+  }
+ else   if (cmd.equals("connect")) {
+    if (args.length >= 2) {
+      connectToZK(args[1]);
+    }
+ else {
+      connectToZK(host);
+    }
+  }
+  if (zk == null || !zk.state.isAlive()) {
+    System.out.println("Not connected");
+    return false;
+  }
+  if (cmd.equals("create") && args.length >= 3) {
+    int first=0;
+    CreateMode flags=CreateMode.PERSISTENT;
+    if ((args[1].equals("-e") && args[2].equals("-s")) || (args[1]).equals("-s") && (args[2].equals("-e"))) {
+      first+=2;
+      flags=CreateMode.EPHEMERAL_SEQUENTIAL;
+    }
+ else     if (args[1].equals("-e")) {
+      first++;
+      flags=CreateMode.EPHEMERAL;
+    }
+ else     if (args[1].equals("-s")) {
+      first++;
+      flags=CreateMode.PERSISTENT_SEQUENTIAL;
+    }
+    if (args.length == first + 4) {
+      acl=parseACLs(args[first + 3]);
+    }
+    path=args[first + 1];
+    String newPath=zk.create(path,args[first + 2].getBytes(),acl,flags);
+    System.err.println("Created " + newPath);
+  }
+ else   if (cmd.equals("delete") && args.length >= 2) {
+    path=args[1];
+    zk.delete(path,watch ? Integer.parseInt(args[2]) : -1);
+  }
+ else   if (cmd.equals("set") && args.length >= 3) {
+    path=args[1];
+    stat=zk.setData(path,args[2].getBytes(),args.length > 3 ? Integer.parseInt(args[3]) : -1);
+    printStat(stat);
+  }
+ else   if (cmd.equals("aget") && args.length >= 2) {
+    path=args[1];
+    zk.getData(path,watch,dataCallback,path);
+  }
+ else   if (cmd.equals("get") && args.length >= 2) {
+    path=args[1];
+    byte data[]=zk.getData(path,watch,stat);
+    data=(data == null) ? "null".getBytes() : data;
+    System.out.println(new String(data));
+    printStat(stat);
+  }
+ else   if (cmd.equals("ls") && args.length >= 2) {
+    path=args[1];
+    List<String> children=zk.getChildren(path,watch);
+    System.out.println(children);
+  }
+ else   if (cmd.equals("ls2") && args.length >= 2) {
+    path=args[1];
+    List<String> children=zk.getChildren(path,watch,stat);
+    System.out.println(children);
+    printStat(stat);
+  }
+ else   if (cmd.equals("getAcl") && args.length >= 2) {
+    path=args[1];
+    acl=zk.getACL(path,stat);
+    for (    ACL a : acl) {
+      System.out.println(a.getId() + ": " + getPermString(a.getPerms()));
+    }
+  }
+ else   if (cmd.equals("setAcl") && args.length >= 3) {
+    path=args[1];
+    stat=zk.setACL(path,parseACLs(args[2]),args.length > 4 ? Integer.parseInt(args[3]) : -1);
+    printStat(stat);
+  }
+ else   if (cmd.equals("stat") && args.length >= 2) {
+    path=args[1];
+    stat=zk.exists(path,watch);
+    printStat(stat);
+  }
+ else   if (cmd.equals("listquota") && args.length >= 2) {
+    path=args[1];
+    String absolutePath=Quotas.quotaZookeeper + path + "/"+ Quotas.limitNode;
+    byte[] data=null;
+    try {
+      System.err.println("absolute path is " + absolutePath);
+      data=zk.getData(absolutePath,false,stat);
+      StatsTrack st=new StatsTrack(new String(data));
+      System.out.println("Output quota for " + path + " "+ st.toString());
+      data=zk.getData(Quotas.quotaZookeeper + path + "/"+ Quotas.statNode,false,stat);
+      System.out.println("Output stat for " + path + " "+ new StatsTrack(new String(data)).toString());
+    }
+ catch (    KeeperException.NoNodeException ne) {
+      System.err.println("quota for " + path + " does not exist.");
+    }
+  }
+ else   if (cmd.equals("setquota") && args.length >= 4) {
+    String option=args[1];
+    String val=args[2];
+    path=args[3];
+    System.err.println("Comment: the parts are " + "option " + option + " val "+ val+ " path "+ path);
+    if ("-b".equals(option)) {
+      createQuota(zk,path,Long.parseLong(val),-1);
+    }
+ else     if ("-n".equals(option)) {
+      createQuota(zk,path,-1L,Integer.parseInt(val));
+    }
+ else {
+      usage();
+    }
+  }
+ else   if (cmd.equals("delquota") && args.length >= 2) {
+    if (args.length == 3) {
+      String option=args[1];
+      path=args[2];
+      if ("-b".equals(option)) {
+        delQuota(zk,path,true,false);
+      }
+ else       if ("-n".equals(option)) {
+        delQuota(zk,path,false,true);
+      }
+    }
+ else     if (args.length == 2) {
+      path=args[1];
+      delQuota(zk,path,true,true);
+    }
+ else     if (cmd.equals("help")) {
+      usage();
+    }
+  }
+ else   if (cmd.equals("close")) {
+    zk.close();
+  }
+ else   if (cmd.equals("addauth") && args.length >= 2) {
+    byte[] b=null;
+    if (args.length >= 3)     b=args[2].getBytes();
+    zk.addAuthInfo(args[1],b);
+  }
+ else {
+    usage();
+  }
+  return watch;
+}

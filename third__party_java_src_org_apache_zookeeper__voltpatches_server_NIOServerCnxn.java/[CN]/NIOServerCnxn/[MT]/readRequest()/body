@@ -1,0 +1,51 @@
+{
+  InputStream bais=new ByteBufferInputStream(incomingBuffer);
+  BinaryInputArchive bia=BinaryInputArchive.getArchive(bais);
+  RequestHeader h=new RequestHeader();
+  h.deserialize(bia,"header");
+  incomingBuffer=incomingBuffer.slice();
+  if (h.getType() == OpCode.auth) {
+    AuthPacket authPacket=new AuthPacket();
+    ZooKeeperServer.byteBuffer2Record(incomingBuffer,authPacket);
+    String scheme=authPacket.getScheme();
+    AuthenticationProvider ap=ProviderRegistry.getProvider(scheme);
+    if (ap == null || (ap.handleAuthentication(this,authPacket.getAuth()) != KeeperException.Code.OK)) {
+      if (ap == null) {
+        LOG.warn("No authentication provider for scheme: " + scheme + " has "+ ProviderRegistry.listProviders());
+      }
+ else {
+        LOG.warn("Authentication failed for scheme: " + scheme);
+      }
+      ReplyHeader rh=new ReplyHeader(h.getXid(),0,KeeperException.Code.AUTHFAILED.intValue());
+      sendResponse(rh,null,null);
+      sendCloseSession();
+      disableRecv();
+    }
+ else {
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Authentication succeeded for scheme: " + scheme);
+      }
+      ReplyHeader rh=new ReplyHeader(h.getXid(),0,KeeperException.Code.OK.intValue());
+      sendResponse(rh,null,null);
+    }
+    return;
+  }
+ else {
+    Request si=new Request(this,sessionId,h.getXid(),h.getType(),incomingBuffer,authInfo);
+    si.setOwner(ServerCnxn.me);
+    zk.submitRequest(si);
+  }
+  if (h.getXid() >= 0) {
+synchronized (this) {
+      outstandingRequests++;
+    }
+synchronized (this.factory) {
+      if (zk.getInProcess() > factory.outstandingLimit) {
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("Throttling recv " + zk.getInProcess());
+        }
+        disableRecv();
+      }
+    }
+  }
+}

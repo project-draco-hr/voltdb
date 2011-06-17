@@ -1,0 +1,33 @@
+{
+  LOG.info("Socket connection established to " + ((SocketChannel)sockKey.channel()).socket().getRemoteSocketAddress() + ", initiating session");
+  lastConnectIndex=currentConnectIndex;
+  ConnectRequest conReq=new ConnectRequest(0,lastZxid,sessionTimeout,sessionId,sessionPasswd);
+  ByteArrayOutputStream baos=new ByteArrayOutputStream();
+  BinaryOutputArchive boa=BinaryOutputArchive.getArchive(baos);
+  boa.writeInt(-1,"len");
+  conReq.serialize(boa,"connect");
+  baos.close();
+  ByteBuffer bb=ByteBuffer.wrap(baos.toByteArray());
+  bb.putInt(bb.capacity() - 4);
+  bb.rewind();
+synchronized (outgoingQueue) {
+    if (!disableAutoWatchReset && (!zooKeeper.getDataWatches().isEmpty() || !zooKeeper.getExistWatches().isEmpty() || !zooKeeper.getChildWatches().isEmpty())) {
+      SetWatches sw=new SetWatches(lastZxid,zooKeeper.getDataWatches(),zooKeeper.getExistWatches(),zooKeeper.getChildWatches());
+      RequestHeader h=new RequestHeader();
+      h.setType(ZooDefs.OpCode.setWatches);
+      h.setXid(-8);
+      Packet packet=new Packet(h,new ReplyHeader(),sw,null,null,null);
+      outgoingQueue.addFirst(packet);
+    }
+    for (    AuthData id : authInfo) {
+      outgoingQueue.addFirst(new Packet(new RequestHeader(-4,OpCode.auth),null,new AuthPacket(0,id.scheme,id.data),null,null,null));
+    }
+    outgoingQueue.addFirst((new Packet(null,null,null,null,bb,null)));
+  }
+synchronized (this) {
+    k.interestOps(SelectionKey.OP_READ | SelectionKey.OP_WRITE);
+  }
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Session establishment request sent on " + ((SocketChannel)sockKey.channel()).socket().getRemoteSocketAddress());
+  }
+}

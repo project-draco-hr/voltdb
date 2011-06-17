@@ -1,0 +1,60 @@
+{
+  int lastSlash=path.lastIndexOf('/');
+  String parentName=path.substring(0,lastSlash);
+  String childName=path.substring(lastSlash + 1);
+  StatPersisted stat=new StatPersisted();
+  stat.setCtime(time);
+  stat.setMtime(time);
+  stat.setCzxid(zxid);
+  stat.setMzxid(zxid);
+  stat.setPzxid(zxid);
+  stat.setVersion(0);
+  stat.setAversion(0);
+  stat.setEphemeralOwner(ephemeralOwner);
+  DataNode parent=nodes.get(parentName);
+  if (parent == null) {
+    throw new KeeperException.NoNodeException();
+  }
+synchronized (parent) {
+    Set<String> children=parent.getChildren();
+    if (children != null) {
+      if (children.contains(childName)) {
+        throw new KeeperException.NodeExistsException();
+      }
+    }
+    int cver=parent.stat.getCversion();
+    cver++;
+    parent.stat.setCversion(cver);
+    parent.stat.setPzxid(zxid);
+    Long longval=convertAcls(acl);
+    DataNode child=new DataNode(parent,data,longval,stat);
+    parent.addChild(childName);
+    nodes.put(path,child);
+    if (ephemeralOwner != 0) {
+      HashSet<String> list=ephemerals.get(ephemeralOwner);
+      if (list == null) {
+        list=new HashSet<String>();
+        ephemerals.put(ephemeralOwner,list);
+      }
+synchronized (list) {
+        list.add(path);
+      }
+    }
+  }
+  if (parentName.startsWith(quotaZookeeper)) {
+    if (Quotas.limitNode.equals(childName)) {
+      pTrie.addPath(parentName.substring(quotaZookeeper.length()));
+    }
+    if (Quotas.statNode.equals(childName)) {
+      updateQuotaForPath(parentName.substring(quotaZookeeper.length()));
+    }
+  }
+  String lastPrefix=pTrie.findMaxPrefix(path);
+  if (!rootZookeeper.equals(lastPrefix) && !("".equals(lastPrefix))) {
+    updateCount(lastPrefix,1);
+    updateBytes(lastPrefix,data == null ? 0 : data.length);
+  }
+  dataWatches.triggerWatch(path,Event.EventType.NodeCreated);
+  childWatches.triggerWatch(parentName.equals("") ? "/" : parentName,Event.EventType.NodeChildrenChanged);
+  return path;
+}

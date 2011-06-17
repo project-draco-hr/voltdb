@@ -1,0 +1,50 @@
+{
+  ProcessTxnResult rc=new ProcessTxnResult();
+  String debug="";
+  try {
+    rc.clientId=header.getClientId();
+    rc.cxid=header.getCxid();
+    rc.zxid=header.getZxid();
+    rc.type=header.getType();
+    rc.err=0;
+    if (rc.zxid > lastProcessedZxid) {
+      lastProcessedZxid=rc.zxid;
+    }
+switch (header.getType()) {
+case OpCode.create:
+      CreateTxn createTxn=(CreateTxn)txn;
+    debug="Create transaction for " + createTxn.getPath();
+  createNode(createTxn.getPath(),createTxn.getData(),createTxn.getAcl(),createTxn.getEphemeral() ? header.getClientId() : 0,header.getZxid(),header.getTime());
+rc.path=createTxn.getPath();
+break;
+case OpCode.delete:
+DeleteTxn deleteTxn=(DeleteTxn)txn;
+debug="Delete transaction for " + deleteTxn.getPath();
+deleteNode(deleteTxn.getPath(),header.getZxid());
+break;
+case OpCode.setData:
+SetDataTxn setDataTxn=(SetDataTxn)txn;
+debug="Set data for  transaction for " + setDataTxn.getPath();
+rc.stat=setData(setDataTxn.getPath(),setDataTxn.getData(),setDataTxn.getVersion(),header.getZxid(),header.getTime());
+break;
+case OpCode.setACL:
+SetACLTxn setACLTxn=(SetACLTxn)txn;
+debug="Set ACL for  transaction for " + setACLTxn.getPath();
+rc.stat=setACL(setACLTxn.getPath(),setACLTxn.getAcl(),setACLTxn.getVersion());
+break;
+case OpCode.closeSession:
+killSession(header.getClientId(),header.getZxid());
+break;
+case OpCode.error:
+ErrorTxn errTxn=(ErrorTxn)txn;
+rc.err=errTxn.getErr();
+break;
+}
+}
+ catch (KeeperException e) {
+if (initialized || (e.code() != Code.NONODE && e.code() != Code.NODEEXISTS)) {
+LOG.warn("Failed:" + debug,e);
+}
+}
+return rc;
+}

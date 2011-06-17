@@ -1,0 +1,29 @@
+{
+  if (ia == null) {
+    return false;
+  }
+  try {
+    long crcValue=ia.readLong("crcvalue");
+    byte[] bytes=Util.readTxnBytes(ia);
+    if (bytes == null || bytes.length == 0)     throw new EOFException("Failed to read");
+    Checksum crc=makeChecksumAlgorithm();
+    crc.update(bytes,0,bytes.length);
+    if (crcValue != crc.getValue())     throw new IOException(CRC_ERROR);
+    if (bytes == null || bytes.length == 0)     return false;
+    InputArchive iab=BinaryInputArchive.getArchive(new ByteArrayInputStream(bytes));
+    hdr=new TxnHeader();
+    record=SerializeUtils.deserializeTxn(iab,hdr);
+  }
+ catch (  EOFException e) {
+    LOG.debug("EOF excepton " + e);
+    inputStream.close();
+    inputStream=null;
+    ia=null;
+    hdr=null;
+    if (!goToNextLog()) {
+      return false;
+    }
+    return next();
+  }
+  return true;
+}

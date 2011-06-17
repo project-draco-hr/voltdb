@@ -1,0 +1,34 @@
+{
+  deserializeList(longKeyMap,ia);
+  nodes.clear();
+  String path=ia.readString("path");
+  while (!path.equals("/")) {
+    DataNode node=new DataNode();
+    ia.readRecord(node,"node");
+    nodes.put(path,node);
+    int lastSlash=path.lastIndexOf('/');
+    if (lastSlash == -1) {
+      root=node;
+    }
+ else {
+      String parentPath=path.substring(0,lastSlash);
+      node.parent=nodes.get(parentPath);
+      if (node.parent == null) {
+        throw new IOException("Invalid Datatree, unable to find " + "parent " + parentPath + " of path "+ path);
+      }
+      node.parent.addChild(path.substring(lastSlash + 1));
+      long eowner=node.stat.getEphemeralOwner();
+      if (eowner != 0) {
+        HashSet<String> list=ephemerals.get(eowner);
+        if (list == null) {
+          list=new HashSet<String>();
+          ephemerals.put(eowner,list);
+        }
+        list.add(path);
+      }
+    }
+    path=ia.readString("path");
+  }
+  nodes.put("/",root);
+  setupQuota();
+}

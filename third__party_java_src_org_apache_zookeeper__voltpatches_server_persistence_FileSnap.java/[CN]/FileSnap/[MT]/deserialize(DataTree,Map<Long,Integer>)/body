@@ -1,0 +1,39 @@
+{
+  List<File> snapList=findNValidSnapshots(100);
+  if (snapList.size() == 0) {
+    return -1L;
+  }
+  File snap=null;
+  boolean foundValid=false;
+  for (int i=0; i < snapList.size(); i++) {
+    snap=snapList.get(i);
+    InputStream snapIS=null;
+    CheckedInputStream crcIn=null;
+    try {
+      LOG.info("Reading snapshot " + snap);
+      snapIS=new BufferedInputStream(new FileInputStream(snap));
+      crcIn=new CheckedInputStream(snapIS,new Adler32());
+      InputArchive ia=BinaryInputArchive.getArchive(crcIn);
+      deserialize(dt,sessions,ia);
+      long checkSum=crcIn.getChecksum().getValue();
+      long val=ia.readLong("val");
+      if (val != checkSum) {
+        throw new IOException("CRC corruption in snapshot :  " + snap);
+      }
+      foundValid=true;
+      break;
+    }
+ catch (    IOException e) {
+      LOG.warn("problem reading snap file " + snap,e);
+    }
+ finally {
+      if (snapIS != null)       snapIS.close();
+      if (crcIn != null)       crcIn.close();
+    }
+  }
+  if (!foundValid) {
+    throw new IOException("Not able to find valid snapshots in " + snapDir);
+  }
+  dt.lastProcessedZxid=Util.getZxidFromName(snap.getName(),"snapshot");
+  return dt.lastProcessedZxid;
+}

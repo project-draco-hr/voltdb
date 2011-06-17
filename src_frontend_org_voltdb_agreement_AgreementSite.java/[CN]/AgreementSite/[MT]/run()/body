@@ -1,0 +1,37 @@
+{
+  long lastHeartbeatTime=System.currentTimeMillis();
+  try {
+    while (m_shouldContinue) {
+      VoltMessage message=m_mailbox.recvBlocking(5);
+      if (message != null) {
+        processMessage(message);
+      }
+      final long now=System.currentTimeMillis();
+      if (now - lastHeartbeatTime > 5) {
+        lastHeartbeatTime=now;
+        sendHeartbeats();
+      }
+      if (m_recovering) {
+        continue;
+      }
+      AgreementTransactionState txnState=(AgreementTransactionState)m_txnQueue.poll();
+      if (txnState != null) {
+        if (txnState.txnId <= m_minTxnIdAfterRecovery) {
+          m_recoveryLog.fatal("Transaction queue released a transaction from before this " + " node was recovered was complete");
+          VoltDB.crashVoltDB();
+        }
+        m_transactionsById.remove(txnState.txnId);
+        txnState.m_request.setOwner(txnState.initiatorSiteId);
+        m_server.prepRequest(txnState.m_request,txnState.txnId);
+      }
+    }
+  }
+  finally {
+    try {
+      shutdownInternal();
+    }
+  finally {
+      m_shutdownComplete.release();
+    }
+  }
+}

@@ -1,0 +1,35 @@
+{
+  BinaryInputArchive bia=BinaryInputArchive.getArchive(new ByteBufferInputStream(incomingBuffer));
+  ConnectRequest connReq=new ConnectRequest();
+  connReq.deserialize(bia,"connect");
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Session establishment request from client " + sock.socket().getRemoteSocketAddress() + " client's lastZxid is 0x"+ Long.toHexString(connReq.getLastZxidSeen()));
+  }
+  if (zk == null) {
+    throw new IOException("ZooKeeperServer not running");
+  }
+  if (connReq.getLastZxidSeen() > zk.getZKDatabase().getDataTreeLastProcessedZxid()) {
+    String msg="Refusing session request for client " + sock.socket().getRemoteSocketAddress() + " as it has seen zxid 0x"+ Long.toHexString(connReq.getLastZxidSeen())+ " our last zxid is 0x"+ Long.toHexString(zk.getZKDatabase().getDataTreeLastProcessedZxid())+ " client must try another server";
+    LOG.info(msg);
+    throw new CloseRequestException(msg);
+  }
+  sessionTimeout=connReq.getTimeOut();
+  byte passwd[]=connReq.getPasswd();
+  int minSessionTimeout=zk.getMinSessionTimeout();
+  if (sessionTimeout < minSessionTimeout) {
+    sessionTimeout=minSessionTimeout;
+  }
+  int maxSessionTimeout=zk.getMaxSessionTimeout();
+  if (sessionTimeout > maxSessionTimeout) {
+    sessionTimeout=maxSessionTimeout;
+  }
+  disableRecv();
+  if (connReq.getSessionId() != 0) {
+    throw new IOException("Reopening sessions is not supported anymore");
+  }
+ else {
+    LOG.info("Client attempting to establish new session at " + sock.socket().getRemoteSocketAddress());
+    zk.createSession(this,passwd,sessionTimeout);
+  }
+  initialized=true;
+}

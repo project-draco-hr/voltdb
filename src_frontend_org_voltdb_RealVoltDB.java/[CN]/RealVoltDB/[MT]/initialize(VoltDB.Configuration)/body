@@ -134,6 +134,7 @@ catch (      IllegalAccessException e) {
     m_localMetadata=localMetadata;
     m_network=new VoltNetwork();
     final HashSet<Integer> downHosts=new HashSet<Integer>();
+    final Set<Integer> downNonExecSites=new HashSet<Integer>();
     boolean isRejoin=config.m_rejoinToHostAndPort != null;
     if (!isRejoin) {
       InetAddress leader=null;
@@ -157,7 +158,8 @@ catch (      IllegalAccessException e) {
  else {
       downHosts.addAll(initializeForRejoin(config,m_catalogContext.catalogCRC,depCRC));
       for (      Integer downHost : downHosts) {
-        m_faultManager.reportFault(new NodeFailureFault(downHost,"UNKNOWN"));
+        downNonExecSites.addAll(m_catalogContext.siteTracker.getNonExecSitesForHost(downHost));
+        m_faultManager.reportFault(new NodeFailureFault(downHost,m_catalogContext.siteTracker.getNonExecSitesForHost(downHost),"UNKNOWN"));
       }
       try {
         m_faultHandler.m_waitForFaultReported.acquire(downHosts.size());
@@ -170,6 +172,37 @@ catch (      IllegalAccessException e) {
     m_catalogContext.m_transactionId=m_messenger.getDiscoveredCatalogTxnId();
     assert(m_messenger.getDiscoveredCatalogTxnId() != 0);
     int myHostId=m_messenger.getHostId();
+{
+      int myAgreementSiteId=-1;
+      HashSet<Integer> agreementSiteIds=new HashSet<Integer>();
+      int myAgreementInitiatorId=0;
+      for (      Site site : m_catalogContext.siteTracker.getAllSites()) {
+        int sitesHostId=Integer.parseInt(site.getHost().getTypeName());
+        int currSiteId=Integer.parseInt(site.getTypeName());
+        if (sitesHostId == myHostId) {
+          log.l7dlog(Level.TRACE,LogKeys.org_voltdb_VoltDB_CreatingLocalSite.name(),new Object[]{currSiteId},null);
+          m_messenger.createLocalSite(currSiteId);
+        }
+        if (site.getIsexec() == false) {
+          agreementSiteIds.add(currSiteId);
+          if (sitesHostId == myHostId) {
+            myAgreementSiteId=currSiteId;
+            myAgreementInitiatorId=site.getInitiatorid();
+          }
+        }
+      }
+      assert(m_agreementSite == null);
+      assert(myAgreementSiteId != -1);
+      Mailbox agreementMailbox=m_messenger.createMailbox(myAgreementSiteId,VoltDB.AGREEMENT_MAILBOX_ID);
+      try {
+        m_agreementSite=new AgreementSite(myAgreementSiteId,agreementSiteIds,myAgreementInitiatorId,downNonExecSites,agreementMailbox,new InetSocketAddress(2181),m_faultManager,m_recovering);
+        m_agreementSite.start();
+      }
+ catch (      Exception e) {
+        hostLog.fatal(null,e);
+        System.exit(-1);
+      }
+    }
     m_clusterMetadata.put(myHostId,m_localMetadata);
     try {
       ExportManager.initialize(myHostId,m_catalogContext,isRejoin);
@@ -199,8 +232,6 @@ catch (      IllegalAccessException e) {
       int sitesHostId=Integer.parseInt(site.getHost().getTypeName());
       int siteId=Integer.parseInt(site.getTypeName());
       if (sitesHostId == myHostId) {
-        log.l7dlog(Level.TRACE,LogKeys.org_voltdb_VoltDB_CreatingLocalSite.name(),new Object[]{siteId},null);
-        m_messenger.createLocalSite(siteId);
         if (site.getIsexec()) {
           if (siteForThisThread == null) {
             siteForThisThread=site;

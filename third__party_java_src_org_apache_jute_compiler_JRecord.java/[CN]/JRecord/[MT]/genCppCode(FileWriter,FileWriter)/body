@@ -1,0 +1,103 @@
+{
+  String[] ns=getCppNameSpace().split("::");
+  for (int i=0; i < ns.length; i++) {
+    hh.write("namespace " + ns[i] + " {\n");
+  }
+  hh.write("class " + getName() + " : public ::hadoop::Record {\n");
+  hh.write("private:\n");
+  for (Iterator<JField> i=mFields.iterator(); i.hasNext(); ) {
+    JField jf=i.next();
+    hh.write(jf.genCppDecl());
+  }
+  hh.write("  mutable std::bitset<" + mFields.size() + "> bs_;\n");
+  hh.write("public:\n");
+  hh.write("  virtual void serialize(::hadoop::OArchive& a_, const char* tag) const;\n");
+  hh.write("  virtual void deserialize(::hadoop::IArchive& a_, const char* tag);\n");
+  hh.write("  virtual const ::std::string& type() const;\n");
+  hh.write("  virtual const ::std::string& signature() const;\n");
+  hh.write("  virtual bool validate() const;\n");
+  hh.write("  virtual bool operator<(const " + getName() + "& peer_) const;\n");
+  hh.write("  virtual bool operator==(const " + getName() + "& peer_) const;\n");
+  hh.write("  virtual ~" + getName() + "() {};\n");
+  int fIdx=0;
+  for (Iterator<JField> i=mFields.iterator(); i.hasNext(); fIdx++) {
+    JField jf=i.next();
+    hh.write(jf.genCppGetSet(fIdx));
+  }
+  hh.write("}; // end record " + getName() + "\n");
+  for (int i=ns.length - 1; i >= 0; i--) {
+    hh.write("} // end namespace " + ns[i] + "\n");
+  }
+  cc.write("void " + getCppFQName() + "::serialize(::hadoop::OArchive& a_, const char* tag) const {\n");
+  cc.write("  if (!validate()) throw new ::hadoop::IOException(\"All fields not set.\");\n");
+  cc.write("  a_.startRecord(*this,tag);\n");
+  fIdx=0;
+  for (Iterator<JField> i=mFields.iterator(); i.hasNext(); fIdx++) {
+    JField jf=i.next();
+    String name=jf.getName();
+    if (jf.getType() instanceof JBuffer) {
+      cc.write("  a_.serialize(" + name + ","+ name+ ".length(),\""+ jf.getTag()+ "\");\n");
+    }
+ else {
+      cc.write("  a_.serialize(" + name + ",\""+ jf.getTag()+ "\");\n");
+    }
+    cc.write("  bs_.reset(" + fIdx + ");\n");
+  }
+  cc.write("  a_.endRecord(*this,tag);\n");
+  cc.write("  return;\n");
+  cc.write("}\n");
+  cc.write("void " + getCppFQName() + "::deserialize(::hadoop::IArchive& a_, const char* tag) {\n");
+  cc.write("  a_.startRecord(*this,tag);\n");
+  fIdx=0;
+  for (Iterator<JField> i=mFields.iterator(); i.hasNext(); fIdx++) {
+    JField jf=i.next();
+    String name=jf.getName();
+    if (jf.getType() instanceof JBuffer) {
+      cc.write("  { size_t len=0; a_.deserialize(" + name + ",len,\""+ jf.getTag()+ "\");}\n");
+    }
+ else {
+      cc.write("  a_.deserialize(" + name + ",\""+ jf.getTag()+ "\");\n");
+    }
+    cc.write("  bs_.set(" + fIdx + ");\n");
+  }
+  cc.write("  a_.endRecord(*this,tag);\n");
+  cc.write("  return;\n");
+  cc.write("}\n");
+  cc.write("bool " + getCppFQName() + "::validate() const {\n");
+  cc.write("  if (bs_.size() != bs_.count()) return false;\n");
+  for (Iterator i=mFields.iterator(); i.hasNext(); fIdx++) {
+    JField jf=(JField)i.next();
+    JType type=jf.getType();
+    if (type instanceof JRecord) {
+      cc.write("  if (!" + jf.getName() + ".validate()) return false;\n");
+    }
+  }
+  cc.write("  return true;\n");
+  cc.write("}\n");
+  cc.write("bool " + getCppFQName() + "::operator< (const "+ getCppFQName()+ "& peer_) const {\n");
+  cc.write("  return (1\n");
+  for (Iterator<JField> i=mFields.iterator(); i.hasNext(); ) {
+    JField jf=i.next();
+    String name=jf.getName();
+    cc.write("    && (" + name + " < peer_."+ name+ ")\n");
+  }
+  cc.write("  );\n");
+  cc.write("}\n");
+  cc.write("bool " + getCppFQName() + "::operator== (const "+ getCppFQName()+ "& peer_) const {\n");
+  cc.write("  return (1\n");
+  for (Iterator<JField> i=mFields.iterator(); i.hasNext(); ) {
+    JField jf=i.next();
+    String name=jf.getName();
+    cc.write("    && (" + name + " == peer_."+ name+ ")\n");
+  }
+  cc.write("  );\n");
+  cc.write("}\n");
+  cc.write("const ::std::string&" + getCppFQName() + "::type() const {\n");
+  cc.write("  static const ::std::string type_(\"" + mName + "\");\n");
+  cc.write("  return type_;\n");
+  cc.write("}\n");
+  cc.write("const ::std::string&" + getCppFQName() + "::signature() const {\n");
+  cc.write("  static const ::std::string sig_(\"" + getSignature() + "\");\n");
+  cc.write("  return sig_;\n");
+  cc.write("}\n");
+}

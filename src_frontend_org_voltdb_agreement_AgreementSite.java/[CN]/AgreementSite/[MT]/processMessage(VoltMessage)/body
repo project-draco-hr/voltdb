@@ -1,0 +1,103 @@
+{
+  if (message instanceof TransactionInfoBaseMessage) {
+    TransactionInfoBaseMessage info=(TransactionInfoBaseMessage)message;
+    if (info instanceof HeartbeatMessage) {
+      long lastSeenTxnFromInitiator=m_txnQueue.noteTransactionRecievedAndReturnLastSeen(info.getInitiatorSiteId(),info.getTxnId(),true,((HeartbeatMessage)info).getLastSafeTxnId());
+      HeartbeatResponseMessage response=new HeartbeatResponseMessage(m_siteId,lastSeenTxnFromInitiator,m_txnQueue.getQueueState() == QueueState.BLOCKED_SAFETY);
+      try {
+        m_mailbox.send(info.getInitiatorSiteId(),VoltDB.AGREEMENT_MAILBOX_ID,response);
+      }
+ catch (      MessagingException e) {
+        throw new RuntimeException(e);
+      }
+      return;
+    }
+    assert(false);
+  }
+ else   if (message instanceof HeartbeatResponseMessage) {
+    HeartbeatResponseMessage hrm=(HeartbeatResponseMessage)message;
+    m_safetyState.updateLastSeenTxnIdFromExecutorBySiteId(hrm.getExecSiteId(),hrm.getLastReceivedTxnId(),hrm.isBlocked());
+  }
+ else   if (message instanceof LocalObjectMessage) {
+    LocalObjectMessage lom=(LocalObjectMessage)message;
+    if (lom.payload instanceof Runnable) {
+      ((Runnable)lom.payload).run();
+    }
+ else     if (lom.payload instanceof Request) {
+      Request r=(Request)lom.payload;
+      long txnId=0;
+      if (r.type == OpCode.createSession) {
+        txnId=r.sessionId;
+      }
+ else {
+        txnId=m_idManager.getNextUniqueTransactionId();
+      }
+      for (      int initiatorId : m_siteIds) {
+        if (initiatorId == m_siteId)         continue;
+        AgreementTaskMessage atm=new AgreementTaskMessage(r,txnId,m_siteId,m_safetyState.getNewestSafeTxnIdForExecutorBySiteId(initiatorId));
+        try {
+          m_mailbox.send(initiatorId,VoltDB.AGREEMENT_MAILBOX_ID,atm);
+        }
+ catch (        MessagingException e) {
+          throw new RuntimeException(e);
+        }
+      }
+      AgreementTaskMessage atm=new AgreementTaskMessage(r,txnId,m_siteId,m_safetyState.getNewestSafeTxnIdForExecutorBySiteId(m_siteId));
+      processMessage(atm);
+    }
+  }
+ else   if (message instanceof AgreementTaskMessage) {
+    AgreementTaskMessage atm=(AgreementTaskMessage)message;
+    if (!m_transactionsById.containsKey(atm.m_txnId) && atm.m_txnId > m_minTxnIdAfterRecovery) {
+      m_txnQueue.noteTransactionRecievedAndReturnLastSeen(atm.m_initiatorId,atm.m_txnId,false,atm.m_lastSafeTxnId);
+      AgreementTransactionState transactionState=new AgreementTransactionState(atm.m_txnId,atm.m_initiatorId,atm.m_request);
+      m_txnQueue.add(transactionState);
+      m_transactionsById.put(transactionState.txnId,transactionState);
+    }
+ else {
+      m_recoveryLog.info("Agreement, discarding duplicate txn during recovery, txnid is " + atm.m_txnId + " this should only occur during recovery.");
+    }
+  }
+ else   if (message instanceof BinaryPayloadMessage) {
+    BinaryPayloadMessage bpm=(BinaryPayloadMessage)message;
+    if (bpm.m_payload != null) {
+      processZKSnapshot(bpm);
+    }
+ else {
+      ByteBuffer buf=ByteBuffer.wrap(bpm.m_metadata);
+      int initiatorId=buf.getInt();
+      if (!m_sitesCompletedRecoveryShipping.remove(initiatorId)) {
+        m_recoveryLog.fatal("Received a notice that recovery shipping is complete from " + initiatorId + " but didn't not expect to receive one from that site");
+        VoltDB.crashVoltDB();
+      }
+      if (m_sitesCompletedRecoveryShipping.isEmpty()) {
+        m_recovering=false;
+      }
+    }
+  }
+ else   if (message instanceof FaultMessage) {
+    FaultMessage fm=(FaultMessage)message;
+    for (    NodeFailureFault fault : fm.nodeFaults) {
+      for (      Integer faultedInitiator : fault.getFailedNonExecSites()) {
+        if (fm.cleared) {
+          m_safetyState.addRejoinedState(faultedInitiator);
+          m_txnQueue.ensureInitiatorIsKnown(faultedInitiator);
+          try {
+            shipRecoveryData(faultedInitiator);
+          }
+ catch (          IOException e) {
+            m_agreementLog.fatal("Unable to ship recovery data",e);
+            VoltDB.crashVoltDB();
+          }
+          m_siteIds.add(faultedInitiator);
+        }
+ else {
+          m_safetyState.removeState(faultedInitiator);
+        }
+      }
+    }
+    if (!fm.cleared) {
+      discoverGlobalFaultData(fm);
+    }
+  }
+}

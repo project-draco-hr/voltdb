@@ -1,0 +1,23 @@
+{
+  m_minTxnIdAfterRecovery=ByteBuffer.wrap(bpm.m_metadata).getLong();
+  Iterator<Map.Entry<Long,AgreementTransactionState>> iter=m_transactionsById.entrySet().iterator();
+  while (iter.hasNext()) {
+    Map.Entry<Long,AgreementTransactionState> entry=iter.next();
+    if (entry.getKey() <= m_minTxnIdAfterRecovery) {
+      iter.remove();
+      m_txnQueue.faultTransaction(entry.getValue());
+    }
+  }
+  ByteArrayInputStream bais=new ByteArrayInputStream(bpm.m_payload);
+  try {
+    GZIPInputStream gis=new GZIPInputStream(bais);
+    DataInputStream dis=new DataInputStream(gis);
+    BinaryInputArchive bia=new BinaryInputArchive(dis);
+    m_server.getZKDatabase().deserializeSnapshot(bia);
+    m_server.createSessionTracker();
+  }
+ catch (  Exception e) {
+    m_recoveryLog.fatal("Error loading agreement database",e);
+    VoltDB.crashVoltDB();
+  }
+}
