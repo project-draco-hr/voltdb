@@ -64,7 +64,7 @@ synchronized (m_startAndStopLock) {
     m_catalogContext=new CatalogContext(0,catalog,m_config.m_pathToCatalog,depCRC,catalogVersion,-1);
     if (m_catalogContext.cluster.getLogconfig().get("log").getEnabled()) {
       try {
-        @SuppressWarnings("rawtypes") Class loggerClass=loadProClass("org.voltdb.CommandLogImpl","Command logging",false);
+        @SuppressWarnings("rawtypes") Class loggerClass=MiscUtils.loadProClass("org.voltdb.CommandLogImpl","Command logging",false);
         if (loggerClass != null) {
           m_commandLog=(CommandLog)loggerClass.newInstance();
         }
@@ -171,7 +171,7 @@ catch (      IllegalAccessException e) {
     }
     m_catalogContext.m_transactionId=m_messenger.getDiscoveredCatalogTxnId();
     assert(m_messenger.getDiscoveredCatalogTxnId() != 0);
-    int myHostId=m_messenger.getHostId();
+    final int myHostId=m_messenger.getHostId();
 {
       int myAgreementSiteId=-1;
       HashSet<Integer> agreementSiteIds=new HashSet<Integer>();
@@ -332,42 +332,18 @@ synchronized (runner) {
     assert(m_clientInterfaces.size() > 0);
     ClientInterface ci=m_clientInterfaces.get(0);
     TransactionInitiator initiator=ci.getInitiator();
-    boolean replay=false;
+    boolean replay=true;
     if (!isRejoin && replay) {
-      LogReader reader=null;
       try {
-        String logpath=m_catalogContext.cluster.getLogconfig().get("log").getLogpath();
-        File path=new File(logpath);
-        Class<?> readerClass=loadProClass("org.voltdb.utils.LogReaderImpl",null,true);
-        if (readerClass != null) {
-          Constructor<?> constructor=readerClass.getConstructor(File.class);
-          reader=(LogReader)constructor.newInstance(path);
-        }
+        m_restoreAgent=new RestoreAgent(m_catalogContext,initiator);
       }
- catch (      InvocationTargetException e) {
-        hostLog.info("Unable to instantiate command log reader: " + e.getTargetException().getMessage());
-      }
-catch (      Exception e) {
-        hostLog.fatal("Unable to instantiate command log reader",e);
-        VoltDB.crashVoltDB();
-      }
-      try {
-        Class<?> replayClass=loadProClass("org.voltdb.CommandLogReinitiatorImpl","Command log replay",false);
-        if (replayClass != null) {
-          Constructor<?> constructor=replayClass.getConstructor(LogReader.class,long.class,TransactionInitiator.class,CatalogContext.class);
-          if (reader != null && !reader.isEmpty()) {
-            m_commandLogReplay=(CommandLogReinitiator)constructor.newInstance(reader,0,initiator,m_catalogContext);
-          }
- else {
-            hostLog.info("No command log to replay");
-          }
-        }
-      }
- catch (      Exception e) {
-        hostLog.fatal("Unable to instantiate command log reinitiator",e);
+ catch (      IOException e) {
+        hostLog.fatal("Unable to establish a ZooKeeper connection: " + e.getMessage());
         VoltDB.crashVoltDB();
       }
     }
-    m_restoreAgent=new RestoreAgent(m_catalogContext,initiator,m_commandLogReplay);
+ else {
+      onRestoreCompletion();
+    }
   }
 }

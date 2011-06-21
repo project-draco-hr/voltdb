@@ -1,0 +1,33 @@
+{
+  LogReader reader=null;
+  try {
+    String logpath=m_context.cluster.getLogconfig().get("log").getLogpath();
+    File path=new File(logpath);
+    Class<?> readerClass=MiscUtils.loadProClass("org.voltdb.utils.LogReaderImpl",null,true);
+    if (readerClass != null) {
+      Constructor<?> constructor=readerClass.getConstructor(File.class);
+      reader=(LogReader)constructor.newInstance(path);
+    }
+  }
+ catch (  Exception e) {
+    LOG.fatal("Unable to instantiate command log reader",e);
+    VoltDB.crashVoltDB();
+  }
+  try {
+    Class<?> replayClass=MiscUtils.loadProClass("org.voltdb.CommandLogReinitiatorImpl","Command log replay",false);
+    if (replayClass != null) {
+      Constructor<?> constructor=replayClass.getConstructor(LogReader.class,int.class,TransactionInitiator.class,CatalogContext.class,ZooKeeper.class);
+      if (reader != null) {
+        m_replayAgent=(CommandLogReinitiator)constructor.newInstance(reader,m_hostId,m_initiator,m_context,m_zk);
+      }
+ else {
+        LOG.info("No command log to replay");
+      }
+    }
+  }
+ catch (  Exception e) {
+    LOG.fatal("Unable to instantiate command log reinitiator",e);
+    VoltDB.crashVoltDB();
+  }
+  m_replayAgent.setCallback(this);
+}

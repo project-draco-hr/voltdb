@@ -1,0 +1,97 @@
+{
+  if (!isLowestHost()) {
+    return null;
+  }
+  LOG.debug("Waiting for all hosts to send their snapshot information");
+  List<String> children=null;
+  while (true) {
+    try {
+      children=m_zk.getChildren(RESTORE,false);
+    }
+ catch (    KeeperException e2) {
+      LOG.fatal(e2.getMessage());
+      VoltDB.crashVoltDB();
+    }
+catch (    InterruptedException e2) {
+      continue;
+    }
+    Set<Integer> liveHosts=m_context.siteTracker.getAllLiveHosts();
+    if (children.size() < liveHosts.size()) {
+      try {
+        Thread.sleep(500);
+      }
+ catch (      InterruptedException e1) {
+      }
+    }
+ else {
+      break;
+    }
+  }
+  if (children == null) {
+    LOG.fatal("Unable to read agreement messages from other hosts for" + " restore plan");
+    VoltDB.crashVoltDB();
+  }
+  TreeMap<Long,Set<SnapshotInfo>> snapshotFragments=new TreeMap<Long,Set<SnapshotInfo>>();
+  long clStartTxnId=deserializeRestoreInformation(children,snapshotFragments);
+  Iterator<Long> iter=snapshotFragments.keySet().iterator();
+  while (iter.hasNext()) {
+    Long txnId=iter.next();
+    if (txnId < clStartTxnId) {
+      iter.remove();
+    }
+  }
+  LOG.debug("There are " + snapshotFragments.size() + " snapshots available in the cluster");
+  if (clStartTxnId > 0 && snapshotFragments.size() == 0) {
+    LOG.fatal("No viable snapshots to restore");
+    VoltDB.crashVoltDB();
+  }
+  HashMap<Long,Map<String,Set<Integer>>> snapshotTablePartitions=new HashMap<Long,Map<String,Set<Integer>>>();
+  Iterator<Entry<Long,Set<SnapshotInfo>>> it=snapshotFragments.entrySet().iterator();
+  while (it.hasNext()) {
+    Entry<Long,Set<SnapshotInfo>> e=it.next();
+    long txnId=e.getKey();
+    Map<String,Set<Integer>> tablePartitions=snapshotTablePartitions.get(txnId);
+    if (tablePartitions == null) {
+      tablePartitions=new HashMap<String,Set<Integer>>();
+      snapshotTablePartitions.put(txnId,tablePartitions);
+    }
+    int totalPartitions=-1;
+    boolean inconsistent=false;
+    Set<SnapshotInfo> fragments=e.getValue();
+    for (    SnapshotInfo s : fragments) {
+      if (totalPartitions == -1) {
+        totalPartitions=s.partitionCount;
+      }
+ else       if (totalPartitions != s.partitionCount) {
+        inconsistent=true;
+        break;
+      }
+      for (      Entry<String,Set<Integer>> entry : s.partitions.entrySet()) {
+        Set<Integer> partitions=tablePartitions.get(entry.getKey());
+        if (partitions == null) {
+          tablePartitions.put(entry.getKey(),entry.getValue());
+        }
+ else {
+          partitions.addAll(entry.getValue());
+        }
+      }
+      if (inconsistent) {
+        break;
+      }
+    }
+    for (    Set<Integer> partitions : tablePartitions.values()) {
+      if (partitions.size() != totalPartitions) {
+        inconsistent=true;
+        break;
+      }
+    }
+    if (inconsistent) {
+      it.remove();
+    }
+  }
+  if (clStartTxnId > 0 && snapshotFragments.size() == 0) {
+    LOG.fatal("No viable snapshots to restore");
+    VoltDB.crashVoltDB();
+  }
+  return snapshotFragments.lastEntry();
+}
