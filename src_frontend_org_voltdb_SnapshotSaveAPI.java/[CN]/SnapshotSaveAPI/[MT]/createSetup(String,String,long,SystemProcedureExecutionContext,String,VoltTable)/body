@@ -65,6 +65,7 @@
         result.addRow(Integer.parseInt(context.getSite().getHost().getTypeName()),hostname,table.getTypeName(),canSnapshot,err_msg);
       }
 synchronized (SnapshotSiteProcessor.m_taskListsForSites) {
+        boolean aborted=false;
         if (!partitionedSnapshotTasks.isEmpty() || !replicatedSnapshotTasks.isEmpty()) {
           SnapshotSiteProcessor.ExecutionSitesCurrentlySnapshotting.set(VoltDB.instance().getLocalSites().values().size());
           for (int ii=0; ii < numLocalSites; ii++) {
@@ -73,6 +74,7 @@ synchronized (SnapshotSiteProcessor.m_taskListsForSites) {
         }
  else {
           SnapshotRegistry.discardSnapshot(snapshotRecord);
+          aborted=true;
         }
         for (int ii=0; ii < numLocalSites && !partitionedSnapshotTasks.isEmpty(); ii++) {
           SnapshotSiteProcessor.m_taskListsForSites.get(ii).addAll(partitionedSnapshotTasks);
@@ -80,6 +82,9 @@ synchronized (SnapshotSiteProcessor.m_taskListsForSites) {
         int siteIndex=0;
         for (        SnapshotTableTask t : replicatedSnapshotTasks) {
           SnapshotSiteProcessor.m_taskListsForSites.get(siteIndex++ % numLocalSites).offer(t);
+        }
+        if (!aborted) {
+          logSnapshotStartToZK(txnId,context,file_nonce);
         }
       }
     }

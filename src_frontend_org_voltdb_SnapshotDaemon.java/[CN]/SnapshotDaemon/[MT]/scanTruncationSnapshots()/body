@@ -1,0 +1,47 @@
+{
+  if (m_truncationSnapshotPath == null) {
+    return;
+  }
+  Object params[]=new Object[1];
+  params[0]=m_truncationSnapshotPath;
+  long handle=m_nextCallbackHandle++;
+  m_procedureCallbacks.put(handle,new ProcedureCallback(){
+    @Override public void clientCallback(    final ClientResponse clientResponse) throws Exception {
+      if (clientResponse.getStatus() != ClientResponse.SUCCESS) {
+        hostLog.error(clientResponse.getStatusString());
+        return;
+      }
+      final VoltTable results[]=clientResponse.getResults();
+      if (results.length == 1) {
+        setState(State.FAILURE);
+        final VoltTable result=results[0];
+        boolean advanced=result.advanceRow();
+        assert(advanced);
+        assert(result.getColumnCount() == 1);
+        assert(result.getColumnType(0) == VoltType.STRING);
+        loggingLog.error("Snapshot scan failed with failure response: " + result.getString("ERR_MSG"));
+        return;
+      }
+      assert(results.length == 3);
+      final VoltTable snapshots=results[0];
+      assert(snapshots.getColumnCount() == 9);
+      TreeMap<Long,TruncationSnapshotAttempt> foundSnapshots=new TreeMap<Long,TruncationSnapshotAttempt>();
+      while (snapshots.advanceRow()) {
+        final String path=snapshots.getString("PATH");
+        final String nonce=snapshots.getString("NONCE");
+        final Long txnId=snapshots.getLong("TXNID");
+        TruncationSnapshotAttempt snapshotAttempt=new TruncationSnapshotAttempt();
+        snapshotAttempt.path=path;
+        snapshotAttempt.nonce=nonce;
+        foundSnapshots.put(txnId,snapshotAttempt);
+      }
+      for (      Map.Entry<Long,TruncationSnapshotAttempt> entry : foundSnapshots.entrySet()) {
+        if (!m_truncationSnapshotAttempts.containsKey(entry.getKey())) {
+          m_truncationSnapshotAttempts.put(entry.getKey(),entry.getValue());
+        }
+      }
+    }
+  }
+);
+  m_initiator.initiateSnapshotDaemonWork("@SnapshotScan",handle,params);
+}

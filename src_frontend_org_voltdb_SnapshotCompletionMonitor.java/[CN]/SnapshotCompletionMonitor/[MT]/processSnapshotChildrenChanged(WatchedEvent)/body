@@ -1,0 +1,37 @@
+{
+  try {
+    TreeSet<String> children=new TreeSet<String>(m_zk.getChildren("/completed_snapshots",m_newSnapshotWatcher));
+    TreeSet<String> newChildren=new TreeSet<String>(children);
+    newChildren.removeAll(m_lastKnownSnapshots);
+    m_lastKnownSnapshots=children;
+    for (    String newSnapshot : newChildren) {
+      String path="/completed_snapshots/" + newSnapshot;
+      try {
+        byte data[]=m_zk.getData(path,new Watcher(){
+          @Override public void process(          final WatchedEvent event){
+switch (event.getType()) {
+case NodeDataChanged:
+              m_es.execute(new Runnable(){
+                @Override public void run(){
+                  processSnapshotDataChangedEvent(event);
+                }
+              }
+);
+            break;
+default :
+          break;
+      }
+    }
+  }
+,null);
+  processSnapshotData(data);
+}
+ catch (NoNodeException e) {
+}
+}
+}
+ catch (Exception e) {
+LOG.fatal("Exception in snapshot completion monitor",e);
+VoltDB.crashVoltDB();
+}
+}

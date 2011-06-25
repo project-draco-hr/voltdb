@@ -1,0 +1,73 @@
+{
+  ZooKeeper zk=VoltDB.instance().getZK();
+  final String snapshotPath="/completed_snapshots/" + txnId;
+  boolean success=false;
+  while (!success) {
+    Stat stat=new Stat();
+    byte data[]=null;
+    try {
+      data=zk.getData(snapshotPath,false,stat);
+    }
+ catch (    Exception e) {
+      hostLog.fatal("This ZK get should never fail",e);
+      VoltDB.crashVoltDB();
+    }
+    if (data == null) {
+      hostLog.fatal("Data should not be null if the node exists");
+      VoltDB.crashVoltDB();
+    }
+    final ByteBuffer buf=ByteBuffer.wrap(data);
+    if (buf.getLong() != txnId) {
+      hostLog.fatal("TxnId should match");
+      VoltDB.crashVoltDB();
+    }
+    if (buf.getInt() != numHosts) {
+      hostLog.fatal("Num hosts should match");
+      VoltDB.crashVoltDB();
+    }
+    int numHostsFinished=buf.getInt() + 1;
+    buf.putInt(12,numHostsFinished);
+    if (!snapshotSuccess) {
+      hostLog.error("Snapshot failed at this node, snapshot will not be viable for log truncation");
+      buf.put(16,(byte)0);
+    }
+    try {
+      zk.setData(snapshotPath,buf.array(),stat.getVersion());
+    }
+ catch (    KeeperException.BadVersionException e) {
+    }
+catch (    Exception e) {
+      hostLog.fatal("This ZK call should never fail",e);
+      VoltDB.crashVoltDB();
+    }
+    success=true;
+  }
+  try {
+    TreeSet<String> snapshots=new TreeSet<String>(zk.getChildren("/completed_snapshots",false));
+    while (snapshots.size() > 30) {
+      try {
+        zk.delete("/completed_snapshots/" + snapshots.first(),-1);
+      }
+ catch (      NoNodeException e) {
+      }
+catch (      Exception e) {
+        hostLog.fatal("Deleting a snapshot completion record from ZK should only fail with NoNodeException",e);
+        VoltDB.crashVoltDB();
+      }
+      snapshots.remove(snapshots.first());
+    }
+  }
+ catch (  Exception e) {
+    hostLog.fatal("Retrieving list of completed snapshots from ZK should never fail",e);
+    VoltDB.crashVoltDB();
+  }
+  try {
+    VoltDB.instance().getZK().delete("/nodes_currently_snapshotting/" + VoltDB.instance().getHostMessenger().getHostId(),-1);
+  }
+ catch (  NoNodeException e) {
+    hostLog.warn("Expect the snapshot node to already exist during deletion",e);
+  }
+catch (  Exception e) {
+    VoltDB.crashVoltDB();
+  }
+}

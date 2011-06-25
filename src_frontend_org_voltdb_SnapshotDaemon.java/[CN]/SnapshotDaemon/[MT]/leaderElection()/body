@@ -1,0 +1,54 @@
+{
+  loggingLog.info("Starting leader election for snapshot truncation daemon");
+  try {
+    while (true) {
+      Stat stat=m_zk.exists("/snapshot_truncation_master",new Watcher(){
+        @Override public void process(        WatchedEvent event){
+switch (event.getType()) {
+case NodeDeleted:
+            loggingLog.info("Detected the snapshot truncation leader's ephemeral node deletion");
+          m_es.execute(new Runnable(){
+            @Override public void run(){
+              leaderElection();
+            }
+          }
+);
+        break;
+default :
+      break;
+  }
+}
+}
+);
+if (stat == null) {
+try {
+  m_zk.create("/snapshot_truncation_master",null,Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL);
+  loggingLog.info("This node was selected as the leader for snapshot truncation");
+  m_truncationSnapshotScanTask=m_es.schedule(new Runnable(){
+    @Override public void run(){
+      try {
+        scanTruncationSnapshots();
+      }
+ catch (      Exception e) {
+        loggingLog.error("Error during scan and group of truncation snapshots");
+      }
+    }
+  }
+,5,TimeUnit.MINUTES);
+  truncationRequestExistenceCheck();
+  return;
+}
+ catch (NodeExistsException e) {
+}
+}
+ else {
+loggingLog.info("Leader election concluded, a leader already exists");
+break;
+}
+}
+}
+ catch (Exception e) {
+loggingLog.fatal("Exception in snapshot daemon electing master via ZK",e);
+VoltDB.crashVoltDB();
+}
+}

@@ -1,0 +1,62 @@
+{
+  ZKUtil.StringCallback cb1=new ZKUtil.StringCallback();
+  ZKUtil.StringCallback cb2=new ZKUtil.StringCallback();
+  try {
+    assert(VoltDB.instance().getZK().exists("/nodes_currently_snapshotting/" + VoltDB.instance().getHostMessenger().getHostId(),false) == null);
+    ByteBuffer snapshotTxnId=ByteBuffer.allocate(8);
+    snapshotTxnId.putLong(txnId);
+    VoltDB.instance().getZK().create("/nodes_currently_snapshotting/" + VoltDB.instance().getHostMessenger().getHostId(),snapshotTxnId.array(),Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL,cb1,null);
+  }
+ catch (  NodeExistsException e) {
+    HOST_LOG.warn("Didn't expect the snapshot node to already exist",e);
+  }
+catch (  Exception e) {
+    VoltDB.crashVoltDB();
+  }
+  ByteBuffer buf=ByteBuffer.allocate(17);
+  buf.putLong(txnId);
+  buf.putInt(context.getExecutionSite().m_context.siteTracker.getAllLiveHosts().size());
+  buf.putInt(0);
+  String nextTruncationNonce=null;
+  try {
+    ByteBuffer payload=ByteBuffer.wrap(VoltDB.instance().getZK().getData("/request_truncation_snapshot",false,null));
+    nextTruncationNonce=Long.toString(payload.getLong());
+  }
+ catch (  KeeperException.NoNodeException e) {
+  }
+catch (  Exception e) {
+    HOST_LOG.error("Getting the nonce should never fail with anything other than no node",e);
+    VoltDB.crashVoltDB();
+  }
+  if (nextTruncationNonce == null) {
+    buf.put((byte)0);
+  }
+ else {
+    if (nextTruncationNonce.equals(nonce)) {
+      buf.put((byte)1);
+    }
+ else {
+      buf.put((byte)0);
+    }
+  }
+  final String snapshotPath="/completed_snapshots/" + txnId;
+  VoltDB.instance().getZK().create(snapshotPath,buf.array(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT,cb2,null);
+  try {
+    cb1.get();
+  }
+ catch (  NodeExistsException e) {
+    HOST_LOG.warn("Didn't expect the snapshot node to already exist",e);
+  }
+catch (  Exception e) {
+    VoltDB.crashVoltDB();
+  }
+  try {
+    cb2.get();
+  }
+ catch (  KeeperException.NodeExistsException e) {
+  }
+catch (  Exception e) {
+    HOST_LOG.fatal("Unexpected exception logging snapshot completion to ZK",e);
+    VoltDB.crashVoltDB();
+  }
+}
