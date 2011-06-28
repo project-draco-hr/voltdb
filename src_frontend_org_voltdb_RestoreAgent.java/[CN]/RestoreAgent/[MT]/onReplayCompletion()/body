@@ -2,10 +2,18 @@
   if (m_replayAgent.hasReplayed()) {
     CommandLog commandLogElement=m_context.cluster.getLogconfig().get("log");
     if (isLowestHost() && commandLogElement != null) {
-      String path=commandLogElement.getInternalsnapshotpath();
-      Date now=new Date(System.currentTimeMillis());
-      String nonce=CL_NONCE_PREFIX + m_dateFormat.format(now);
-      initSnapshotWork(null,Pair.of("@SnapshotSave",new Object[]{path,nonce,1}));
+      byte[] pathBytes=commandLogElement.getInternalsnapshotpath().getBytes();
+      ByteBuffer buf=ByteBuffer.allocate(pathBytes.length + 8);
+      buf.position(8);
+      buf.put(pathBytes);
+      VoltDB.instance().getSnapshotCompletionMonitor().addInterest(this);
+      try {
+        m_zk.create("/request_truncation_snapshot",buf.array(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+      }
+ catch (      Exception e) {
+        LOG.fatal("Requesting a truncation snapshot via ZK should always succeed",e);
+        VoltDB.crashVoltDB();
+      }
     }
  else {
       m_state=State.TRUNCATE;
