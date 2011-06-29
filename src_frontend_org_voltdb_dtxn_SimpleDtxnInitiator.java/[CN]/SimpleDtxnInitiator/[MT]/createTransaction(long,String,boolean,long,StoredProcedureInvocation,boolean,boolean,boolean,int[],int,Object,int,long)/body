@@ -7,19 +7,28 @@
     return;
   }
  else {
-    int[] allSiteIds=VoltDB.instance().getCatalogContext().siteTracker.getLiveSitesForEachPartition(partitions);
-    int coordinatorId=allSiteIds[0];
-    int[] otherSiteIds=new int[allSiteIds.length - 1];
-    for (int i=1; i < allSiteIds.length; i++) {
-      if (m_hostId == allSiteIds[i] / VoltDB.SITES_TO_HOST_DIVISOR) {
-        otherSiteIds[i - 1]=coordinatorId;
-        coordinatorId=allSiteIds[i];
-      }
- else {
-        otherSiteIds[i - 1]=allSiteIds[i];
+    SiteTracker tracker=VoltDB.instance().getCatalogContext().siteTracker;
+    ArrayList<Integer> sitesOnThisHost=tracker.m_hostsToSites.get(m_hostId);
+    int coordinatorId=sitesOnThisHost.get(1);
+    ArrayList<Integer> replicaIds=new ArrayList<Integer>();
+    for (    Integer replica : tracker.getAllSitesForPartition(tracker.getPartitionForSite(coordinatorId))) {
+      if (replica != coordinatorId && tracker.getAllLiveSites().contains(replica)) {
+        replicaIds.add(replica);
       }
     }
-    InFlightTxnState txn=new InFlightTxnState(txnId,coordinatorId,otherSiteIds,isReadOnly,false,invocation,clientData,messageSize,now,connectionId,connectionHostname,adminConnection);
+    ArrayList<Integer> otherSiteIds=new ArrayList<Integer>();
+    int[] allSiteIds=VoltDB.instance().getCatalogContext().siteTracker.getLiveSitesForEachPartition(partitions);
+    for (int i=0; i < allSiteIds.length; i++) {
+      if (allSiteIds[i] != coordinatorId && !replicaIds.contains(allSiteIds[i])) {
+        otherSiteIds.add(allSiteIds[i]);
+      }
+    }
+    int otherSiteIdsArr[]=new int[otherSiteIds.size()];
+    int ii=0;
+    for (    Integer otherSiteId : otherSiteIds) {
+      otherSiteIdsArr[ii++]=otherSiteId;
+    }
+    InFlightTxnState txn=new InFlightTxnState(txnId,coordinatorId,replicaIds,otherSiteIdsArr,isReadOnly,false,invocation,clientData,messageSize,now,connectionId,connectionHostname,adminConnection);
     dispatchMultiPartitionTxn(txn);
   }
 }

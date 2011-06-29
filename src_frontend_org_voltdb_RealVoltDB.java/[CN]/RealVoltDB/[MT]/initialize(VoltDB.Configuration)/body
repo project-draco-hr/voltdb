@@ -136,6 +136,7 @@ catch (      IllegalAccessException e) {
     m_network=new VoltNetwork();
     final HashSet<Integer> downHosts=new HashSet<Integer>();
     final Set<Integer> downNonExecSites=new HashSet<Integer>();
+    final Set<Integer> downSites=new HashSet<Integer>();
     boolean isRejoin=config.m_rejoinToHostAndPort != null;
     if (!isRejoin) {
       InetAddress leader=null;
@@ -160,6 +161,7 @@ catch (      IllegalAccessException e) {
       downHosts.addAll(initializeForRejoin(config,m_catalogContext.catalogCRC,depCRC));
       for (      Integer downHost : downHosts) {
         downNonExecSites.addAll(m_catalogContext.siteTracker.getNonExecSitesForHost(downHost));
+        downSites.addAll(m_catalogContext.siteTracker.getNonExecSitesForHost(downHost));
         m_faultManager.reportFault(new NodeFailureFault(downHost,m_catalogContext.siteTracker.getNonExecSitesForHost(downHost),"UNKNOWN"));
       }
       try {
@@ -169,6 +171,7 @@ catch (      IllegalAccessException e) {
         VoltDB.crashVoltDB();
       }
       ExecutionSite.recoveringSiteCount.set(m_catalogContext.siteTracker.getLiveExecutionSitesForHost(m_messenger.getHostId()).size());
+      downSites.addAll(m_catalogContext.siteTracker.getAllSitesForHost(m_messenger.getHostId()));
     }
     m_catalogContext.m_transactionId=m_messenger.getDiscoveredCatalogTxnId();
     assert(m_messenger.getDiscoveredCatalogTxnId() != 0);
@@ -319,6 +322,9 @@ synchronized (runner) {
       hostLog.fatal("Error initializing snapshot completion monitor",e);
       VoltDB.crashVoltDB();
     }
+    if (m_commandLog != null && isRejoin) {
+      m_commandLog.initForRejoin(m_catalogContext,m_messenger.getDiscoveredFaultSequenceNumber(),downSites);
+    }
     m_messenger.sendReadyMessage();
     if (config.m_rejoinToHostAndPort == null) {
       m_messenger.waitForAllHostsToBeReady();
@@ -345,7 +351,7 @@ synchronized (runner) {
       }
     }
  else {
-      onRestoreCompletion();
+      onRestoreCompletion(!isRejoin);
     }
   }
 }

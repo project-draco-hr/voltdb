@@ -8,5 +8,17 @@
  catch (  MessagingException e) {
     throw new RuntimeException(e);
   }
-  sendTransactionToCoordinator(txn,txn.firstCoordinatorId);
+  long newestSafeTxnId=m_safetyState.getNewestSafeTxnIdForExecutorBySiteId(txn.firstCoordinatorId);
+  InitiateTaskMessage workRequest=new InitiateTaskMessage(m_siteId,txn.firstCoordinatorId,txn.txnId,txn.isReadOnly,txn.isSinglePartition,txn.invocation,newestSafeTxnId);
+  try {
+    m_mailbox.send(txn.firstCoordinatorId,0,workRequest);
+    for (    Integer replica : txn.coordinatorReplicas) {
+      newestSafeTxnId=m_safetyState.getNewestSafeTxnIdForExecutorBySiteId(replica);
+      workRequest=new InitiateTaskMessage(m_siteId,txn.firstCoordinatorId,txn.txnId,txn.isReadOnly,txn.isSinglePartition,txn.invocation,newestSafeTxnId);
+      m_mailbox.send(replica,0,workRequest);
+    }
+  }
+ catch (  MessagingException e) {
+    throw new RuntimeException(e);
+  }
 }
