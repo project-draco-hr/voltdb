@@ -1,0 +1,22 @@
+{
+  String simpleSchema="create table blah (" + "ival bigint default 0 not null, " + "b varbinary default null, "+ "PRIMARY KEY(ival));";
+  VoltProjectBuilder builder=new VoltProjectBuilder();
+  builder.addLiteralSchema(simpleSchema);
+  builder.addPartitionInfo("blah","ival");
+  builder.addStmtProcedure("Insert","insert into blah values (?, ?);",null);
+  boolean success=builder.compile(Configuration.getPathToCatalogForTest("hsqldbbin.jar"),1,1,0,"localhost");
+  assertTrue(success);
+  MiscUtils.copyFile(builder.getPathToDeployment(),Configuration.getPathToCatalogForTest("hsqldbbin.xml"));
+  VoltDB.Configuration config=new VoltDB.Configuration();
+  config.m_pathToCatalog=Configuration.getPathToCatalogForTest("hsqldbbin.jar");
+  config.m_pathToDeployment=Configuration.getPathToCatalogForTest("hsqldbbin.xml");
+  config.m_backend=BackendTarget.HSQLDB_BACKEND;
+  ServerThread localServer=new ServerThread(config);
+  localServer.start();
+  localServer.waitForInitialization();
+  Client client=ClientFactory.createClient();
+  client.createConnection("localhost");
+  ClientResponse cr=client.callProcedure("Insert",5,new byte[]{'a'});
+  assertTrue(cr.getStatus() == ClientResponse.SUCCESS);
+  VoltDB.instance().shutdown(localServer);
+}

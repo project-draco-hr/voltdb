@@ -1,0 +1,44 @@
+{
+  final short W_ID=3;
+  final byte D_ID=7;
+  final int C_ID=42;
+  VoltProjectBuilder builder=new VoltProjectBuilder();
+  builder.addSchema(TPCCProjectBuilder.ddlURL);
+  for (  String pair[] : TPCCProjectBuilder.partitioning) {
+    builder.addPartitionInfo(pair[0],pair[1]);
+  }
+  builder.addStmtProcedure("InsertCustomer","INSERT INTO CUSTOMER VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);","CUSTOMER.C_W_ID: 2");
+  builder.addStmtProcedure("Fake1","SELECT C_ID, C_FIRST, C_MIDDLE, C_LAST, C_STREET_1, C_STREET_2, C_CITY, C_STATE, C_ZIP, C_PHONE, C_SINCE, C_CREDIT, C_CREDIT_LIM, C_DISCOUNT, C_BALANCE, C_YTD_PAYMENT, C_PAYMENT_CNT, C_DATA FROM CUSTOMER WHERE C_LAST = ? AND C_D_ID = ? AND C_W_ID = ? ORDER BY C_FIRST;");
+  builder.addProcedures(FakeCustomerLookup.class);
+  boolean success=builder.compile(Configuration.getPathToCatalogForTest("binarytest2.jar"),1,1,0,"localhost");
+  assert(success);
+  MiscUtils.copyFile(builder.getPathToDeployment(),Configuration.getPathToCatalogForTest("binarytest2.xml"));
+  VoltDB.Configuration config=new VoltDB.Configuration();
+  config.m_pathToCatalog=Configuration.getPathToCatalogForTest("binarytest2.jar");
+  config.m_pathToDeployment=Configuration.getPathToCatalogForTest("binarytest2.xml");
+  config.m_backend=BackendTarget.NATIVE_EE_JNI;
+  ServerThread localServer=new ServerThread(config);
+  localServer.start();
+  localServer.waitForInitialization();
+  Client client=ClientFactory.createClient();
+  client.createConnection("localhost");
+  final double initialBalance=15.75;
+  final double initialYTD=15241.45;
+  VoltTable customer1=client.callProcedure("InsertCustomer",C_ID,D_ID,W_ID,"I","Be","lastname","Place","Place2","BiggerPlace","AL","91083","(193) 099 - 9082",new TimestampType(),"BC",19298943.12,.13,initialBalance,initialYTD,0L,15L,"Some History").getResults()[0];
+  assertEquals(1L,customer1.asScalarLong());
+  VoltTable customer2=client.callProcedure("InsertCustomer",C_ID + 1,D_ID,W_ID,"We","R","Customer","Random Department","Place2","BiggerPlace","AL","13908","(913) 909 - 0928",new TimestampType(),"GC",19298943.12,.13,initialBalance,initialYTD,1L,15L,"Some History").getResults()[0];
+  assertEquals(1L,customer2.asScalarLong());
+  VoltTable customer3=client.callProcedure("InsertCustomer",C_ID + 2,D_ID,W_ID,"Who","Is","Customer","Receiving","450 Mass F.X.","BiggerPlace","CI","91083","(541) 931 - 0928",new TimestampType(),"GC",19899324.21,.13,initialBalance,initialYTD,2L,15L,"Some History").getResults()[0];
+  assertEquals(1L,customer3.asScalarLong());
+  VoltTable customer4=client.callProcedure("InsertCustomer",C_ID + 3,D_ID,W_ID,"ICanBe","","Customer","street","place","BiggerPlace","MA","91083","(913) 909 - 0928",new TimestampType(),"GC",19298943.12,.13,initialBalance,initialYTD,3L,15L,"Some History").getResults()[0];
+  assertEquals(1L,customer4.asScalarLong());
+  ClientResponse cr=client.callProcedure("Fake1","Customer".getBytes("UTF-8"),D_ID,W_ID);
+  assertTrue(cr.getStatus() == ClientResponse.SUCCESS);
+  assertEquals(3,cr.getResults()[0].getRowCount());
+  cr=client.callProcedure("Fake1","Customer",D_ID,W_ID);
+  assertTrue(cr.getStatus() == ClientResponse.SUCCESS);
+  assertEquals(3,cr.getResults()[0].getRowCount());
+  cr=client.callProcedure("FakeCustomerLookup",W_ID,W_ID,D_ID,"Customer".getBytes("UTF-8"));
+  assertTrue(cr.getStatus() == ClientResponse.SUCCESS);
+  VoltDB.instance().shutdown(localServer);
+}
