@@ -1,4 +1,12 @@
 {
+  if (!m_hasRestored && m_action == START_ACTION.RECOVER) {
+    LOG.fatal("Nothing to recover from");
+    VoltDB.crashVoltDB();
+  }
+ else   if (!m_replayAgent.hasReplayed()) {
+    m_state=State.TRUNCATE;
+  }
+  changeState();
   if (m_replayAgent.hasReplayed()) {
     CommandLog commandLogElement=m_context.cluster.getLogconfig().get("log");
     if (isLowestHost() && commandLogElement != null) {
@@ -6,7 +14,6 @@
       ByteBuffer buf=ByteBuffer.allocate(pathBytes.length + 8);
       buf.position(8);
       buf.put(pathBytes);
-      m_snapshotMonitor.addInterest(this);
       try {
         m_zk.create("/request_truncation_snapshot",buf.array(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
       }
@@ -15,16 +22,5 @@
         VoltDB.crashVoltDB();
       }
     }
- else {
-      m_state=State.TRUNCATE;
-    }
   }
- else   if (!m_hasRestored && m_action == START_ACTION.RECOVER) {
-    LOG.fatal("Nothing to recover from");
-    VoltDB.crashVoltDB();
-  }
- else {
-    m_state=State.TRUNCATE;
-  }
-  changeState();
 }
