@@ -1,0 +1,35 @@
+{
+  if (query == null)   return null;
+  String[] command=new String[]{"exec","execute","undeclare proc","undeclare procedure","declare proc","declare procedure"};
+  String[] keyword=new String[]{"select","insert","update","delete","undeclare","declare"};
+  for (int i=0; i < command.length; i++) {
+    for (int j=0; j < command.length; j++) {
+      Pattern r=Pattern.compile("\\s*(" + command[i].replace(" ","\\s+") + ")\\s+("+ keyword[j]+ ")\\s*",Pattern.MULTILINE + Pattern.CASE_INSENSITIVE);
+      query=r.matcher(query).replaceAll(" $1 #SQL_PARSER_STRING_KEYWORD#$2 ");
+    }
+  }
+  query=SingleLineComments.matcher(query).replaceAll("");
+  query=EscapedSingleQuote.matcher(query).replaceAll("#(SQL_PARSER_ESCAPE_SINGLE_QUOTE)");
+  Matcher stringFragmentMatcher=Extract.matcher(query);
+  ArrayList<String> stringFragments=new ArrayList<String>();
+  int i=0;
+  while (stringFragmentMatcher.find()) {
+    stringFragments.add(stringFragmentMatcher.group());
+    query=stringFragmentMatcher.replaceFirst("#(SQL_PARSER_STRING_FRAGMENT#" + i + ")");
+    stringFragmentMatcher=Extract.matcher(query);
+    i++;
+  }
+  query=AutoSplit.matcher(query).replaceAll(";$1 ");
+  String[] sqlFragments=query.split("\\s*;+\\s*");
+  ArrayList<String> queries=new ArrayList<String>();
+  for (int j=0; j < sqlFragments.length; j++) {
+    sqlFragments[j]=sqlFragments[j].trim();
+    if (sqlFragments[j].length() != 0) {
+      if (sqlFragments[j].indexOf("#(SQL_PARSER_STRING_FRAGMENT#") > -1)       for (int k=0; k < stringFragments.size(); k++)       sqlFragments[j]=sqlFragments[j].replace("#(SQL_PARSER_STRING_FRAGMENT#" + k + ")",stringFragments.get(k));
+      sqlFragments[j]=sqlFragments[j].replace("#(SQL_PARSER_ESCAPE_SINGLE_QUOTE)","''");
+      sqlFragments[j]=sqlFragments[j].replace("#SQL_PARSER_STRING_KEYWORD#","");
+      queries.add(sqlFragments[j]);
+    }
+  }
+  return queries;
+}
