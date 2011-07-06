@@ -1,0 +1,39 @@
+{
+  File licenseFile=new File(pathToLicense);
+  if (licenseFile.exists() == false) {
+    hostLog.fatal("Unable to open license file: " + m_config.m_pathToLicense);
+    return false;
+  }
+  LicenseApi licenseApi=null;
+  Class<?> licApiKlass=MiscUtils.loadProClass("org.voltdb.licensetool.LicenseApiImpl","License API",false);
+  if (licApiKlass != null) {
+    try {
+      licenseApi=(LicenseApi)licApiKlass.newInstance();
+    }
+ catch (    InstantiationException e) {
+      hostLog.fatal("Unable to process license file: could not create license API.");
+      return false;
+    }
+catch (    IllegalAccessException e) {
+      hostLog.fatal("Unable to process license file: could not create license API.");
+      return false;
+    }
+  }
+  if (licenseApi.initializeFromFile(licenseFile) == false) {
+    hostLog.fatal("Unable to load license file: could not parse license.");
+    return false;
+  }
+  if (licenseApi.verify() == false) {
+    hostLog.fatal("Unable to load license file: could not verify license signature.");
+    return false;
+  }
+  Calendar now=GregorianCalendar.getInstance();
+  if (now.after(licenseApi.expires())) {
+    return false;
+  }
+  if (!licenseApi.isTrial() && licenseApi.maxHostcount() > numberOfNodes) {
+    hostLog.fatal("License allows a maximum of " + licenseApi.maxHostcount() + " nodes."+ " May not start a "+ numberOfNodes+ " node cluster.");
+    return false;
+  }
+  return true;
+}
