@@ -1,0 +1,44 @@
+{
+  final SnapshotSchedule schedule=new SnapshotSchedule();
+  schedule.setFrequencyunit("s");
+  schedule.setFrequencyvalue(0);
+  schedule.setPath("/tmp");
+  schedule.setPrefix("woobie");
+  schedule.setRetain(2);
+  if (m_daemon != null) {
+    m_daemon.shutdown();
+    m_mockVoltDB.shutdown(null);
+  }
+  m_mockVoltDB=new MockVoltDB();
+  VoltDB.replaceVoltDBInstanceForTest(m_mockVoltDB);
+  m_daemon=new SnapshotDaemon();
+  m_initiator=new Initiator(m_daemon);
+  m_daemon.init(m_initiator,m_mockVoltDB.getZK());
+  m_daemon.makeActive(schedule);
+  ZooKeeper zk=m_mockVoltDB.getZK();
+  byte[] pathBytes="/tmp".getBytes();
+  ByteBuffer buf=ByteBuffer.allocate(pathBytes.length + 8);
+  buf.position(8);
+  buf.put(pathBytes);
+  try {
+    zk.create("/request_truncation_snapshot",buf.array(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+  }
+ catch (  Exception e) {
+    fail("Requesting a truncation snapshot via ZK should always succeed: " + e.getMessage());
+  }
+  m_daemon.truncationRequestExistenceCheck();
+  while (true) {
+    Stat exists=zk.exists("/request_truncation_snapshot",false);
+    if (exists == null) {
+      break;
+    }
+    Thread.sleep(200);
+  }
+  List<String> children=zk.getChildren("/completed_snapshots",false);
+  assertEquals(1,children.size());
+  byte[] data=zk.getData("/completed_snapshots/" + children.get(0),false,new Stat());
+  assertNotNull(data);
+  buf=ByteBuffer.wrap(data);
+  byte truncation=buf.get(16);
+  assertEquals(1,truncation);
+}
