@@ -1,6 +1,29 @@
 {
   parsecommandline(args);
   init_db();
+  try {
+    VoltTable[] result=db.callProcedure("GetAllSatellites").getResults();
+    VoltTable satellites=result[0];
+    satellites.resetRowPosition();
+    while (satellites.advanceRow()) {
+      Orbit o=new Orbit();
+      o.id=(int)satellites.getLong("ID");
+      o.country=satellites.getString("COUNTRY");
+      o.model=satellites.getString("MODEL_NUMBER");
+      o.speed=satellites.getDouble("SPEED");
+      o.peak=satellites.getDouble("DIRECTION");
+      o.latOffset=satellites.getDouble("LATOFFSET");
+      o.longOffset=satellites.getDouble("LONGOFFSET");
+      VoltTable[] location=db.callProcedure("GetThisLocation",o.id).getResults();
+      o.currentLong=location[0].fetchRow(0).getDouble("LONGITUDE");
+      o.currentLat=location[0].fetchRow(0).getDouble("LATITUDE");
+      System.out.println("Existing satellite ID is " + o.id);
+      sat.add(o);
+    }
+  }
+ catch (  Exception e) {
+    System.err.println(e.getMessage());
+  }
   for (int i=0; i < num_of_satellites; i++) {
     Orbit o=new Orbit(Math.toRadians(minlat),Math.toRadians(maxlat),Math.toRadians(minoffset),Math.toRadians(maxoffset));
     o.country=country;
@@ -8,16 +31,16 @@
     o.model=country;
     sat.add(o);
     try {
-      VoltTable[] result=db.callProcedure(AddSatellite.class.getSimpleName(),o.id,o.model,o.country,o.currentLat,o.currentLong).getResults();
+      VoltTable[] result=db.callProcedure(AddSatellite.class.getSimpleName(),o.id,o.model,o.country,o.speed,o.peak,o.latOffset,o.longOffset,o.currentLat,o.currentLong).getResults();
       o.id=(int)result[0].asScalarLong();
-      System.out.println("Satellite ID is " + o.id);
+      System.out.println("New satellite ID is " + o.id);
     }
  catch (    Exception e) {
       System.err.println(e.getMessage());
     }
   }
   int counter=0;
-  while (counter < 3000) {
+  while (counter < 9000) {
     counter++;
     for (    Orbit s : sat) {
       s.Move();
@@ -27,7 +50,11 @@
         long updatedRows=result[0].fetchRow(0).getLong(0);
         assert(updatedRows > 0);
       }
- catch (      Exception e) {
+ catch (      NoConnectionsException e) {
+        System.out.println("Connection Lost.");
+        System.exit(-1);
+      }
+catch (      Exception e) {
         System.err.println(e.getMessage());
       }
     }
