@@ -18,7 +18,8 @@
   long lag_latency_millis=lag_latency_seconds * 1000l;
   long thisOutstanding=0;
   long lastOutstanding=0;
-  String[] contestantNames={"Edwina Burnam","Tabatha Gehling","Kelly Clauss","Jessie Alloway","Alana Bregman","Jessie Eichman","Allie Rogalski","Nita Coster","Kurt Walser","Ericka Dieter","Loraine Nygren","Tania Mattioli"};
+  String contestantNameList="Edwina Burnam,Tabatha Gehling,Kelly Clauss,Jessie Alloway,Alana Bregman,Jessie Eichman,Allie Rogalski,Nita Coster,Kurt Walser,Ericka Dieter,Loraine NygrenTania Mattioli";
+  String[] contestantNames=contestantNameList.split(",");
   System.out.printf("Allowing %d votes per phone number\n",maxVotesPerPhoneNumber);
   System.out.printf("Submitting %,d Transactions/sec (TPS)\n",transactions_per_second);
   System.out.printf("Feedback interval = %,d second(s)\n",client_feedback_interval_secs);
@@ -45,7 +46,7 @@
     }
   }
   try {
-    VoltTable[] vtInitialize=voltclient.callProcedure("Initialize",maxContestant,contestantNames).getResults();
+    VoltTable[] vtInitialize=voltclient.callProcedure("Initialize",maxContestant,contestantNameList,areaCodes,states).getResults();
     maxContestant=(int)vtInitialize[0].fetchRow(0).getLong(0);
     System.out.printf("Running for %d contestant(s)\n",maxContestant);
   }
@@ -65,10 +66,13 @@ catch (  java.io.IOException e) {
   long lastAutoTuningTime=startTime;
   long num_sp_calls=0;
   long startRecordingLatency=startTime + lag_latency_millis;
+  int callIdx=0;
+  for (int i=0; i < votingMap.length; i++)   votingMap[i]=(short)(((rand.nextInt(maxContestant) * rand.nextInt(maxContestant) + (int)Math.floor(100 * Math.sin((double)i))) % maxContestant) + 1);
   while (endTime > currentTime) {
     num_sp_calls++;
-    phoneNumber=2000000000l + (Math.abs(rand.nextLong()) % 8000000000l);
-    contestantNumber=(byte)(((rand.nextInt(maxContestant) * rand.nextInt(maxContestant)) % maxContestant) + 1);
+    callIdx=(rand.nextInt(areaCodes.length) * rand.nextInt(areaCodes.length)) % areaCodes.length;
+    phoneNumber=areaCodes[callIdx] * 10000000l + (Math.abs(rand.nextLong()) % 9999999l);
+    contestantNumber=(byte)(rand.nextInt(100) > 40 ? votingMap[callIdx] : ((rand.nextInt(maxContestant) % maxContestant) + 1));
     if ((num_sp_calls % 100) == 0) {
       contestantNumber=(byte)((rand.nextInt(maxContestant) + 1) * 2);
     }
@@ -158,6 +162,7 @@ catch (  java.io.IOException e) {
   System.out.printf(" - Rejected votes (invalid contestant) = %,d\n",vote_result_counter[1]);
   System.out.printf(" - Rejected votes (voter over limit) = %,d\n\n",vote_result_counter[2]);
   String winnerName="<<UNKNOWN>>";
+  int winnerId=0;
   try {
     VoltTable[] vtResults=voltclient.callProcedure("Results").getResults();
     int rowCount=vtResults[0].getRowCount();
@@ -168,7 +173,8 @@ catch (  java.io.IOException e) {
       for (int ii=0; ii < rowCount; ii++) {
         VoltTableRow row=vtResults[0].fetchRow(ii);
         String resultName=row.getString(0);
-        long resultVotes=row.getLong(1);
+        winnerId=(int)row.getLong(1);
+        long resultVotes=row.getLong(2);
         System.out.printf(" - Contestant %s received %,d vote(s)\n",resultName,resultVotes);
         winnerName=resultName;
       }
