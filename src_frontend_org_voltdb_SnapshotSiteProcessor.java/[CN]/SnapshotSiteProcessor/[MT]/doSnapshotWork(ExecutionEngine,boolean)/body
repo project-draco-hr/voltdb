@@ -1,6 +1,6 @@
 {
   Future<?> retval=null;
-  if (m_snapshotTableTasks == null || m_availableSnapshotBuffers.isEmpty()) {
+  if (m_snapshotTableTasks == null || m_availableSnapshotBuffers.isEmpty() || (!ignoreQuietPeriod && inQuietPeriod())) {
     return retval;
   }
   while (!m_snapshotTableTasks.isEmpty()) {
@@ -45,6 +45,9 @@ catch (            InterruptedException e) {
     if (retval != null) {
       m_writeFutures.add(retval);
     }
+    if (!ignoreQuietPeriod) {
+      m_quietUntil=System.currentTimeMillis() + 5 + ((long)(Math.random() * 5));
+    }
     break;
   }
   if (m_snapshotTableTasks.isEmpty()) {
@@ -80,6 +83,15 @@ catch (            InterruptedException e) {
 catch (              InterruptedException e) {
                 m_lastSnapshotSucceded=false;
                 throw new RuntimeException(e);
+              }
+            }
+            Runnable r=null;
+            while ((r=m_tasksOnSnapshotCompletion.poll()) != null) {
+              try {
+                r.run();
+              }
+ catch (              Exception e) {
+                hostLog.error("Error running snapshot completion task",e);
               }
             }
             for (            Future<?> retval : m_writeFutures) {
