@@ -38,7 +38,8 @@ synchronized (m_startAndStopLock) {
       hostLog.fatal("You are running on an unsupported (probably 32 bit) JVM. Exiting.");
       System.exit(-1);
     }
-    readBuildInfo();
+    boolean isRejoin=config.m_rejoinToHostAndPort != null;
+    readBuildInfo(config.m_isEnterprise ? "Enterprise Edition" : "Community Edition");
     m_config=config;
     if (m_config.m_pathToCatalog.startsWith("http")) {
       hostLog.info("Loading application catalog jarfile from " + m_config.m_pathToCatalog);
@@ -63,9 +64,7 @@ synchronized (m_startAndStopLock) {
     }
     serializedCatalog=catalog.serialize();
     m_catalogContext=new CatalogContext(0,catalog,m_config.m_pathToCatalog,depCRC,catalogVersion,-1);
-    boolean isRejoin=config.m_rejoinToHostAndPort != null;
-    Class<?> proClass=MiscUtils.loadProClass("org.voltdb.CommandLogImpl","Command logging",true);
-    if ((proClass != null) && !isRejoin) {
+    if (config.m_isEnterprise && !isRejoin) {
       assert(m_config != null);
       assert(m_catalogContext != null);
       if (!validateLicense(m_config.m_pathToLicense,m_catalogContext.numberOfNodes)) {
@@ -73,23 +72,25 @@ synchronized (m_startAndStopLock) {
       }
     }
     if (m_catalogContext.cluster.getLogconfig().get("log").getEnabled()) {
-      try {
-        Class<?> loggerClass=MiscUtils.loadProClass("org.voltdb.CommandLogImpl","Command logging",false);
-        if (loggerClass != null) {
-          m_commandLog=(CommandLog)loggerClass.newInstance();
+      if (!config.m_isEnterprise) {
+        hostLog.warn("Command logging requested in deployment file but can't be enabled in Community Edition.");
+      }
+ else {
+        try {
+          Class<?> loggerClass=MiscUtils.loadProClass("org.voltdb.CommandLogImpl","Command logging",false);
+          if (loggerClass != null) {
+            m_commandLog=(CommandLog)loggerClass.newInstance();
+          }
+        }
+ catch (        InstantiationException e) {
+          hostLog.fatal("Unable to instantiate command log",e);
+          VoltDB.crashVoltDB();
+        }
+catch (        IllegalAccessException e) {
+          hostLog.fatal("Unable to instantiate command log",e);
+          VoltDB.crashVoltDB();
         }
       }
- catch (      InstantiationException e) {
-        hostLog.fatal("Unable to instantiate command log",e);
-        VoltDB.crashVoltDB();
-      }
-catch (      IllegalAccessException e) {
-        hostLog.fatal("Unable to instantiate command log",e);
-        VoltDB.crashVoltDB();
-      }
-    }
- else {
-      hostLog.info("Command logging is disabled");
     }
     ResponseSampler.initializeIfEnabled();
     if (m_catalogContext.cluster.getAdminstartup()) {
