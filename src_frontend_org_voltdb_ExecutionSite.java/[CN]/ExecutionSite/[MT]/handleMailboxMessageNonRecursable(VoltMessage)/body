@@ -45,8 +45,12 @@
  else {
         ts=new MultiPartitionParticipantTxnState(m_mailbox,this,info);
       }
-      m_transactionQueue.add(ts);
-      m_transactionsById.put(ts.txnId,ts);
+      if (m_transactionQueue.add(ts)) {
+        m_transactionsById.put(ts.txnId,ts);
+      }
+ else {
+        hostLog.info("Dropping txn " + ts.txnId + " data from failed initiatorSiteId: "+ ts.initiatorSiteId);
+      }
     }
     if (ts != null) {
       if (message instanceof FragmentTaskMessage) {
@@ -123,6 +127,10 @@
       hostLog.info("Executing local snapshot. Finished final snapshot. Shutting down. " + "Result: " + startSnapshotting.toString());
       VoltDB.crashVoltDB();
     }
+  }
+ else   if (message instanceof LocalObjectMessage) {
+    LocalObjectMessage lom=(LocalObjectMessage)message;
+    ((Runnable)lom.payload).run();
   }
  else {
     hostLog.l7dlog(Level.FATAL,LogKeys.org_voltdb_dtxn_SimpleDtxnConnection_UnkownMessageClass.name(),new Object[]{message.getClass().getName()},null);

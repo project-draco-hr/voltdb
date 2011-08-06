@@ -3,7 +3,6 @@
   int responses=0;
   int responsesFromSamePartition=0;
   long commitPoint=Long.MIN_VALUE;
-  long safeInitPoint=Long.MIN_VALUE;
   java.util.ArrayList<FailureSiteUpdateMessage> messages=new java.util.ArrayList<FailureSiteUpdateMessage>();
   do {
     VoltMessage m=m_mailbox.recvBlocking(new Subject[]{Subject.FAILURE,Subject.FAILURE_SITE_UPDATE},5);
@@ -60,12 +59,16 @@
     commitPoint=Math.max(commitPoint,fm.m_committedTxnId);
     final int remotePartitionId=m_context.siteTracker.getPartitionForSite(fm.m_sourceSiteId);
     if (remotePartitionId == localPartitionId) {
-      safeInitPoint=Math.max(safeInitPoint,fm.m_safeTxnId);
+      Integer initiatorId=fm.m_initiatorForSafeTxnId;
+      if (!initiatorSafeInitPoint.containsKey(initiatorId)) {
+        initiatorSafeInitPoint.put(initiatorId,Long.MIN_VALUE);
+      }
+      initiatorSafeInitPoint.put(initiatorId,Math.max(initiatorSafeInitPoint.get(initiatorId),fm.m_safeTxnId));
       responsesFromSamePartition++;
     }
   }
  while (responses < expectedResponses);
   assert(commitPoint != Long.MIN_VALUE);
-  assert(safeInitPoint != Long.MIN_VALUE);
-  return new long[]{commitPoint,safeInitPoint};
+  assert(!initiatorSafeInitPoint.containsValue(Long.MIN_VALUE));
+  return commitPoint;
 }

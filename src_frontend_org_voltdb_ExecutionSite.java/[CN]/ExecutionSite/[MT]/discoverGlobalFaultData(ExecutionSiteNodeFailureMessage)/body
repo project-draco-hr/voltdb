@@ -10,19 +10,20 @@
     failedSiteIds.addAll(m_context.siteTracker.getAllSitesForHost(fault.getHostId()));
   }
   m_knownFailedSites.addAll(failedSiteIds);
+  HashMap<Integer,Long> initiatorSafeInitPoint=new HashMap<Integer,Long>();
   int expectedResponses=discoverGlobalFaultData_send();
-  long[] commit_and_safe=discoverGlobalFaultData_rcv(expectedResponses);
-  if (commit_and_safe == null) {
+  Long multiPartitionCommitPoint=discoverGlobalFaultData_rcv(expectedResponses,initiatorSafeInitPoint);
+  if (multiPartitionCommitPoint == null) {
     return;
   }
   HashSet<Integer> newFailedSiteIds=new HashSet<Integer>(failedSiteIds);
   newFailedSiteIds.removeAll(m_handledFailedSites);
   PPDPolicyDecision makePPDPolicyDecisions=VoltDB.instance().getFaultDistributor().makePPDPolicyDecisions(newFailedSiteIds);
   if (makePPDPolicyDecisions == PPDPolicyDecision.NodeFailure) {
-    handleSiteFaults(false,newFailedSiteIds,commit_and_safe[0],commit_and_safe[1]);
+    handleSiteFaults(false,newFailedSiteIds,multiPartitionCommitPoint,initiatorSafeInitPoint);
   }
  else   if (makePPDPolicyDecisions == PPDPolicyDecision.PartitionDetection) {
-    handleSiteFaults(true,newFailedSiteIds,commit_and_safe[0],commit_and_safe[1]);
+    handleSiteFaults(true,newFailedSiteIds,multiPartitionCommitPoint,initiatorSafeInitPoint);
   }
   m_handledFailedSites.addAll(failedSiteIds);
   for (  NodeFailureFault fault : failures) {

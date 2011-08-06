@@ -1,7 +1,7 @@
 {
   int responses=0;
-  long safeInitPoint=Long.MIN_VALUE;
   java.util.ArrayList<FailureSiteUpdateMessage> messages=new java.util.ArrayList<FailureSiteUpdateMessage>();
+  HashMap<Integer,Long> initiatorSafeInitPoint=new HashMap<Integer,Long>();
   do {
     VoltMessage m=m_mailbox.recvBlocking(new Subject[]{Subject.FAILURE,Subject.FAILURE_SITE_UPDATE},5);
     if (m == null) {
@@ -55,9 +55,12 @@
     ++responses;
     m_recoveryLog.info("Agreement, Received failure message " + responses + " of "+ expectedResponses+ " from "+ fm.m_sourceSiteId+ " for failed sites "+ fm.m_failedSiteIds+ " safe txn id "+ fm.m_safeTxnId+ " failed site "+ fm.m_committedTxnId);
     m_recoveryLog.info("Agreement, expecting failures messages " + expectedResponseCount);
-    safeInitPoint=Math.max(safeInitPoint,fm.m_safeTxnId);
+    if (!initiatorSafeInitPoint.containsKey(fm.m_initiatorForSafeTxnId)) {
+      initiatorSafeInitPoint.put(fm.m_initiatorForSafeTxnId,Long.MIN_VALUE);
+    }
+    initiatorSafeInitPoint.put(fm.m_initiatorForSafeTxnId,Math.max(initiatorSafeInitPoint.get(fm.m_initiatorForSafeTxnId),fm.m_safeTxnId));
   }
  while (responses < expectedResponses);
-  assert(safeInitPoint != Long.MIN_VALUE);
-  return safeInitPoint;
+  assert(!initiatorSafeInitPoint.containsValue(Long.MIN_VALUE));
+  return initiatorSafeInitPoint;
 }

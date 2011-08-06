@@ -8,13 +8,17 @@
     sb.append(hostId).append(' ');
   }
   if (m_txnlog.isTraceEnabled()) {
-    m_txnlog.trace("FUZZTEST handleNodeFault " + sb.toString() + " with globalMultiPartCommitPoint "+ globalMultiPartCommitPoint+ " and globalInitiationPoint "+ globalInitiationPoint);
+    m_txnlog.trace("FUZZTEST handleNodeFault " + sb.toString() + " with globalMultiPartCommitPoint "+ globalMultiPartCommitPoint+ " and safeInitiationPoints "+ initiatorSafeInitiationPoint);
   }
  else {
-    m_recoveryLog.info("Handling node faults " + sb.toString() + " with globalMultiPartCommitPoint "+ globalMultiPartCommitPoint+ " and globalInitiationPoint "+ globalInitiationPoint);
+    m_recoveryLog.info("Handling node faults " + sb.toString() + " with globalMultiPartCommitPoint "+ globalMultiPartCommitPoint+ " and safeInitiationPoints "+ initiatorSafeInitiationPoint);
   }
   lastKnownGloballyCommitedMultiPartTxnId=globalMultiPartCommitPoint;
   if (partitionDetected) {
+    Long globalInitiationPoint=Long.MIN_VALUE;
+    for (    Long initiationPoint : initiatorSafeInitiationPoint.values()) {
+      globalInitiationPoint=Math.max(initiationPoint,globalInitiationPoint);
+    }
     m_recoveryLog.info("Scheduling snapshot after txnId " + globalInitiationPoint + " for cluster partition fault. Current commit point: "+ this.lastCommittedTxnId);
     SnapshotSchedule schedule=m_context.cluster.getFaultsnapshots().get("CLUSTER_PARTITION");
     m_transactionQueue.makeRoadBlock(globalInitiationPoint,QueueState.BLOCKED_CLOSED,new ExecutionSiteLocalSnapshotMessage(globalInitiationPoint,schedule.getPath(),schedule.getPrefix(),true));
@@ -30,8 +34,8 @@
     final long tid=it.next();
     TransactionState ts=m_transactionsById.get(tid);
     ts.handleSiteFaults(failedSites);
-    if (ts.txnId > globalInitiationPoint && failedSites.contains(ts.initiatorSiteId)) {
-      m_recoveryLog.info("Faulting non-globally initiated transaction " + ts.txnId);
+    if (initiatorSafeInitiationPoint.containsKey(ts.initiatorSiteId) && ts.txnId > initiatorSafeInitiationPoint.get(ts.initiatorSiteId) && failedSites.contains(ts.initiatorSiteId)) {
+      m_recoveryLog.info("Site " + m_siteId + " faulting non-globally initiated transaction "+ ts.txnId);
       it.remove();
       if (!ts.isReadOnly()) {
         faultedTxns.add(ts.txnId);

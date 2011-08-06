@@ -1,0 +1,88 @@
+{
+  System.out.println("Starting testENG1617");
+  for (int i=0; i < SITE_COUNT; ++i) {
+    m_mboxes[i].setFailureLikelihood(0);
+  }
+  createAndRunSiteThreads(true);
+  List<Integer> involvedSites1=getSiteIdsForPartitionId(0);
+  List<Integer> involvedSites2=getSiteIdsForPartitionId(1);
+  int initiatorToDie1=getInitiatorIdForSiteId(involvedSites2.get(0));
+  StoredProcedureInvocation spi=new StoredProcedureInvocation();
+  spi.setProcName("org.voltdb.TestExecutionSite$MockSPVoltProcedure");
+  spi.setParams("commit",new Integer(0));
+  InitiateTaskMessage itm=new InitiateTaskMessage(initiatorToDie1,involvedSites1.get(2),1,false,true,spi,0);
+  m_mboxes[involvedSites1.get(2)].deliver(itm);
+  int initiatorToDie2=getInitiatorIdForSiteId(involvedSites2.get(1));
+  for (int ii=0; ii < 3; ii++) {
+    spi=new StoredProcedureInvocation();
+    spi.setProcName("org.voltdb.TestExecutionSite$MockSPVoltProcedure");
+    spi.setParams("commit",new Integer(0));
+    itm=new InitiateTaskMessage(initiatorToDie2,involvedSites1.get(ii),3,false,true,spi,2);
+    m_mboxes[involvedSites1.get(ii)].deliver(itm);
+  }
+  m_mboxes[involvedSites2.get(0)].deliver(new LocalObjectMessage(new Runnable(){
+    @Override public void run(){
+      throw new Error();
+    }
+  }
+));
+  m_mboxes[involvedSites2.get(1)].deliver(new LocalObjectMessage(new Runnable(){
+    @Override public void run(){
+      throw new Error();
+    }
+  }
+));
+  m_siteThreads[involvedSites2.get(0)].join();
+  m_siteThreads[involvedSites2.get(1)].join();
+  m_sites[involvedSites2.get(0)].shutdown();
+  m_voltdb.killSite(involvedSites2.get(0));
+  m_voltdb.getFaultDistributor().reportFault(new NodeFailureFault(getHostIdForSiteId(involvedSites2.get(0)),m_voltdb.getCatalogContext().siteTracker.getNonExecSitesForHost(getHostIdForSiteId(involvedSites2.get(0))),String.valueOf(getHostIdForSiteId(involvedSites2.get(0)))));
+  postoffice.remove(involvedSites2.get(0));
+  m_sites[involvedSites2.get(1)].shutdown();
+  m_voltdb.killSite(involvedSites2.get(1));
+  m_voltdb.getFaultDistributor().reportFault(new NodeFailureFault(getHostIdForSiteId(involvedSites2.get(1)),m_voltdb.getCatalogContext().siteTracker.getNonExecSitesForHost(getHostIdForSiteId(involvedSites2.get(1))),String.valueOf(getHostIdForSiteId(involvedSites2.get(1)))));
+  postoffice.remove(involvedSites2.get(1));
+  Thread.sleep(200);
+  long start=System.currentTimeMillis();
+  while (System.currentTimeMillis() - start > 15000) {
+    boolean containsBadValue=false;
+    for (int ii=0; ii < m_sites.length; ii++) {
+      if (m_sites[ii] != null) {
+        if (m_sites[ii].m_transactionsById.containsKey(1L) || m_sites[ii].m_transactionsById.containsKey(3L)) {
+          containsBadValue=true;
+        }
+      }
+    }
+    if (!containsBadValue) {
+      break;
+    }
+ else {
+      Thread.sleep(100);
+    }
+  }
+  for (  RussianRouletteMailbox mailbox : m_mboxes) {
+    if (mailbox != null) {
+      mailbox.deliver(new LocalObjectMessage(new Runnable(){
+        @Override public void run(){
+          throw new Error();
+        }
+      }
+));
+    }
+  }
+  for (  Thread t : m_siteThreads) {
+    t.join();
+  }
+  for (int ii=0; ii < m_sites.length; ii++) {
+    if (m_sites[ii] != null) {
+      if (m_sites[ii].m_transactionsById.containsKey(1L)) {
+        System.out.println("Site " + ii + " contains txn 1");
+      }
+      assertFalse(m_sites[ii].m_transactionsById.containsKey(1L));
+      if (m_sites[ii].m_transactionsById.containsKey(3L)) {
+        System.out.println("Site " + ii + " contains txn 3");
+      }
+      assertFalse(m_sites[ii].m_transactionsById.containsKey(3L));
+    }
+  }
+}
