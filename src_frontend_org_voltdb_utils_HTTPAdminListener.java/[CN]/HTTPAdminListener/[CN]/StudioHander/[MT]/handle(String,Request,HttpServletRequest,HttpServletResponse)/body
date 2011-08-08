@@ -1,38 +1,49 @@
 {
-  if (!target.equals("/") && !target.equals("/index.htm")) {
-    super.handle(target,baseRequest,request,response);
-    if (baseRequest.isHandled() == false) {
-      String msg="404: Resource not found.\n";
-      response.setContentType("text/plain;charset=utf-8");
-      response.setStatus(HttpServletResponse.SC_NOT_FOUND);
-      baseRequest.setHandled(true);
-      response.getWriter().print(msg);
+  if (target.equals("/"))   target="/index.htm";
+  URL url=VoltDB.class.getResource("studio" + target);
+  if (url == null) {
+    String msg="404: Resource not found.\n";
+    response.setContentType("text/plain;charset=utf-8");
+    response.setStatus(HttpServletResponse.SC_NOT_FOUND);
+    baseRequest.setHandled(true);
+    response.getWriter().print(msg);
+  }
+  InputStream is=VoltDB.class.getResourceAsStream("studio" + target);
+  if (target.endsWith("/index.htm")) {
+    BufferedReader r=new BufferedReader(new InputStreamReader(is));
+    StringBuilder sb=new StringBuilder();
+    String line=null;
+    while ((line=r.readLine()) != null) {
+      sb.append(line + "\n");
     }
-    return;
+    r.close();
+    is.close();
+    String template=sb.toString();
+    Cluster cluster=VoltDB.instance().getCatalogContext().cluster;
+    template=template.replace("${hostname}","localhost");
+    template=template.replace("${portnumber}",String.valueOf(cluster.getHttpdportno()));
+    template=template.replace("${requires-authentication}",cluster.getSecurityenabled() ? "true" : "false");
+    response.setContentType("text/html;charset=utf-8");
+    response.setStatus(HttpServletResponse.SC_OK);
+    baseRequest.setHandled(true);
+    assert(template != null);
+    response.getWriter().print(template);
   }
-  baseRequest.setHandled(true);
-  URL resourceURL=VoltDB.class.getResource("studio/index.htm");
-  FileResource resource=null;
-  try {
-    resource=new FileResource(resourceURL);
+ else {
+    String mime="text/html;charset=utf-8";
+    if (target.endsWith(".js"))     mime="application/x-javascript;charset=utf-8";
+    if (target.endsWith(".css"))     mime="text/css;charset=utf-8";
+    if (target.endsWith(".gif"))     mime="image/gif";
+    if (target.endsWith(".png"))     mime="image/png";
+    if ((target.endsWith(".jpg")) || (target.endsWith(".jpeg")))     mime="image/jpeg";
+    response.setContentType(mime);
+    response.setStatus(HttpServletResponse.SC_OK);
+    baseRequest.setHandled(true);
+    BufferedInputStream bis=new BufferedInputStream(is);
+    OutputStream os=response.getOutputStream();
+    int c=-1;
+    while ((c=bis.read()) != -1) {
+      os.write(c);
+    }
   }
- catch (  URISyntaxException e1) {
-    e1.printStackTrace();
-  }
-  doResponseHeaders(response,resource,"text/html;charset=utf-8");
-  InputStream is=resource.getInputStream();
-  BufferedReader r=new BufferedReader(new InputStreamReader(is));
-  StringBuilder sb=new StringBuilder();
-  String line=null;
-  while ((line=r.readLine()) != null) {
-    sb.append(line + "\n");
-  }
-  r.close();
-  is.close();
-  String template=sb.toString();
-  Cluster cluster=VoltDB.instance().getCatalogContext().cluster;
-  template=template.replace("${hostname}","localhost");
-  template=template.replace("${portnumber}",String.valueOf(cluster.getHttpdportno()));
-  template=template.replace("${requires-authentication}",cluster.getSecurityenabled() ? "true" : "false");
-  response.getWriter().print(template);
 }
