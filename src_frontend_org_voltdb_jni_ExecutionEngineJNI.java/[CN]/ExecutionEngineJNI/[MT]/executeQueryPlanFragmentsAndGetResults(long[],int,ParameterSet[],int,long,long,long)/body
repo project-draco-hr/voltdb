@@ -18,28 +18,34 @@
   }
   deserializer.clear();
   final int errorCode=nativeExecuteQueryPlanFragmentsAndGetResults(pointer,planFragmentIds,numFragmentIds,txnId,lastCommittedTxnId,undoToken);
-  checkErrorCode(errorCode);
   try {
-    final int totalSize=deserializer.readInt();
-    final boolean dirty=deserializer.readBoolean();
-    if (dirty)     m_dirty=true;
-    final ByteBuffer fullBacking=deserializer.readBuffer(totalSize);
-    final VoltTable[] results=new VoltTable[batchSize];
-    for (int i=0; i < batchSize; ++i) {
-      final int numdeps=fullBacking.getInt();
-      assert(numdeps == 1);
-      @SuppressWarnings("unused") final int depid=fullBacking.getInt();
-      final int tableSize=fullBacking.getInt();
-      assert(tableSize < 10000000);
-      final ByteBuffer tableBacking=fullBacking.slice();
-      fullBacking.position(fullBacking.position() + tableSize);
-      tableBacking.limit(tableSize);
-      results[i]=PrivateVoltTableFactory.createVoltTableFromBuffer(tableBacking,true);
+    checkErrorCode(errorCode);
+    FastDeserializer fds=fallbackBuffer == null ? deserializer : new FastDeserializer(fallbackBuffer);
+    try {
+      final int totalSize=fds.readInt();
+      final boolean dirty=fds.readBoolean();
+      if (dirty)       m_dirty=true;
+      final ByteBuffer fullBacking=fds.readBuffer(totalSize);
+      final VoltTable[] results=new VoltTable[batchSize];
+      for (int i=0; i < batchSize; ++i) {
+        final int numdeps=fullBacking.getInt();
+        assert(numdeps == 1);
+        @SuppressWarnings("unused") final int depid=fullBacking.getInt();
+        final int tableSize=fullBacking.getInt();
+        assert(tableSize < 50000000);
+        final ByteBuffer tableBacking=fullBacking.slice();
+        fullBacking.position(fullBacking.position() + tableSize);
+        tableBacking.limit(tableSize);
+        results[i]=PrivateVoltTableFactory.createVoltTableFromBuffer(tableBacking,true);
+      }
+      return results;
     }
-    return results;
+ catch (    final IOException ex) {
+      LOG.error("Failed to deserialze result table" + ex);
+      throw new EEException(ERRORCODE_WRONG_SERIALIZED_BYTES);
+    }
   }
- catch (  final IOException ex) {
-    LOG.error("Failed to deserialze result table" + ex);
-    throw new EEException(ERRORCODE_WRONG_SERIALIZED_BYTES);
+  finally {
+    fallbackBuffer=null;
   }
 }
