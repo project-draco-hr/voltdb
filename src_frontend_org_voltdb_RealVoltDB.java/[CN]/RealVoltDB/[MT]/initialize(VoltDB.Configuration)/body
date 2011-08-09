@@ -1,31 +1,9 @@
 {
   m_mode=OperationMode.INITIALIZING;
 synchronized (m_startAndStopLock) {
-    m_snapshotCompletionMonitor=new SnapshotCompletionMonitor();
-    PlatformProperties.fetchPlatformProperties();
-    if (m_pidFile == null) {
-      String name=java.lang.management.ManagementFactory.getRuntimeMXBean().getName();
-      String pidString=name.substring(0,name.indexOf('@'));
-      m_pidFile=new java.io.File("/var/tmp/voltpid." + pidString);
-      try {
-        boolean success=m_pidFile.createNewFile();
-        if (!success) {
-          hostLog.error("Could not create PID file " + m_pidFile + " because it already exists");
-        }
-        m_pidFile.deleteOnExit();
-        FileOutputStream fos=new FileOutputStream(m_pidFile);
-        fos.write(pidString.getBytes("UTF-8"));
-        fos.close();
-      }
- catch (      IOException e) {
-        hostLog.error("Error creating PID file " + m_pidFile,e);
-      }
-    }
-    if (config.m_port != VoltDB.DEFAULT_PORT) {
-      VLog.setPortNo(config.m_port);
-    }
-    VLog.log("\n### RealVoltDB.initialize() for port %d ###",config.m_port);
     hostLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_StartupString.name(),null);
+    m_config=config;
+    boolean isRejoin=config.m_rejoinToHostAndPort != null;
     try {
       System.setOut(new PrintStream(System.out,true,"UTF-8"));
       System.setErr(new PrintStream(System.err,true,"UTF-8"));
@@ -38,199 +16,18 @@ synchronized (m_startAndStopLock) {
       hostLog.fatal("You are running on an unsupported (probably 32 bit) JVM. Exiting.");
       System.exit(-1);
     }
-    boolean isRejoin=config.m_rejoinToHostAndPort != null;
+    m_snapshotCompletionMonitor=new SnapshotCompletionMonitor();
     readBuildInfo(config.m_isEnterprise ? "Enterprise Edition" : "Community Edition");
-    m_config=config;
-    if (m_config.m_pathToCatalog.startsWith("http")) {
-      hostLog.info("Loading application catalog jarfile from " + m_config.m_pathToCatalog);
-    }
- else {
-      File f=new File(m_config.m_pathToCatalog);
-      hostLog.info("Loading application catalog jarfile from " + f.getAbsolutePath());
-    }
-    String serializedCatalog=CatalogUtil.loadCatalogFromJar(m_config.m_pathToCatalog,hostLog);
-    if ((serializedCatalog == null) || (serializedCatalog.length() == 0))     VoltDB.crashVoltDB();
-    final int catalogVersion=0;
-    Catalog catalog=new Catalog();
-    catalog.execute(serializedCatalog);
-    long depCRC=-1;
-    try {
-      depCRC=CatalogUtil.compileDeploymentAndGetCRC(catalog,m_config.m_pathToDeployment,true);
-      if (depCRC < 0)       System.exit(-1);
-    }
- catch (    Exception e) {
-      hostLog.fatal("Error parsing deployment file",e);
-      System.exit(-1);
-    }
-    serializedCatalog=catalog.serialize();
-    m_catalogContext=new CatalogContext(0,catalog,m_config.m_pathToCatalog,depCRC,catalogVersion,-1);
-    if (config.m_isEnterprise && !isRejoin) {
-      assert(m_config != null);
-      assert(m_catalogContext != null);
-      if (!validateLicense(m_config.m_pathToLicense,m_catalogContext.numberOfNodes)) {
-        VoltDB.crashVoltDB();
-      }
-    }
-    if (m_catalogContext.cluster.getLogconfig().get("log").getEnabled()) {
-      if (!config.m_isEnterprise) {
-        hostLog.warn("Command logging requested in deployment file but can't be enabled in Community Edition.");
-      }
- else {
-        try {
-          Class<?> loggerClass=MiscUtils.loadProClass("org.voltdb.CommandLogImpl","Command logging",false);
-          if (loggerClass != null) {
-            m_commandLog=(CommandLog)loggerClass.newInstance();
-          }
-        }
- catch (        InstantiationException e) {
-          hostLog.fatal("Unable to instantiate command log",e);
-          VoltDB.crashVoltDB();
-        }
-catch (        IllegalAccessException e) {
-          hostLog.fatal("Unable to instantiate command log",e);
-          VoltDB.crashVoltDB();
-        }
-      }
-    }
     ResponseSampler.initializeIfEnabled();
-    if (m_catalogContext.cluster.getAdminstartup()) {
-      m_startMode=OperationMode.PAUSED;
-    }
-    int adminPort=m_catalogContext.cluster.getAdminport();
-    if (config.m_adminPort > 0)     adminPort=config.m_adminPort;
-    config.m_adminPort=adminPort;
-    m_faultManager=new FaultDistributor(this);
-    m_faultManager.registerFaultHandler(NodeFailureFault.NODE_FAILURE_CATALOG,m_faultHandler,FaultType.NODE_FAILURE);
-    if (!m_faultManager.testPartitionDetectionDirectory(m_catalogContext.cluster.getFaultsnapshots().get("CLUSTER_PARTITION"))) {
-      VoltDB.crashVoltDB();
-    }
-    TheHashinator.initialize(catalog);
-    int httpPort=m_catalogContext.cluster.getHttpdportno();
-    boolean jsonEnabled=m_catalogContext.cluster.getJsonapi();
-    String httpPortExtraLogMessage=null;
-    if (httpPort == 0) {
-      httpPort=8080;
-      for (; true; httpPort++) {
-        try {
-          m_adminListener=new HTTPAdminListener(jsonEnabled,httpPort);
-          break;
-        }
- catch (        Exception e1) {
-        }
-      }
-      if (httpPort == 8081)       httpPortExtraLogMessage="HTTP admin console unable to bind to port 8080";
- else       if (httpPort > 8081)       httpPortExtraLogMessage="HTTP admin console unable to bind to ports 8080 through " + String.valueOf(httpPort - 1);
-    }
- else     if (httpPort != -1) {
-      try {
-        m_adminListener=new HTTPAdminListener(jsonEnabled,httpPort);
-      }
- catch (      Exception e1) {
-        hostLog.info("HTTP admin console unable to bind to port " + httpPort + ". Exiting.");
-        System.exit(-1);
-      }
-    }
-    InetAddress addr=null;
-    try {
-      addr=InetAddress.getLocalHost();
-    }
- catch (    UnknownHostException e1) {
-      hostLog.fatal("Unable to discover local IP address by invoking Java's InetAddress.getLocalHost() method. Usually this is because the hostname of this node fails to resolve (for example \"ping `hostname`\" would fail). VoltDB requires that the hostname of every node resolves correctly at that node as well as every other node.");
-      VoltDB.crashVoltDB();
-    }
-    String localMetadata=addr.getHostAddress();
-    localMetadata+=":" + Integer.valueOf(config.m_port);
-    localMetadata+=":" + Integer.valueOf(adminPort);
-    localMetadata+=":" + Integer.valueOf(httpPort);
-    m_localMetadata=localMetadata;
-    m_network=new VoltNetwork();
-    final HashSet<Integer> downHosts=new HashSet<Integer>();
-    final Set<Integer> downNonExecSites=new HashSet<Integer>();
-    final Set<Integer> downSites=new HashSet<Integer>();
-    if (!isRejoin) {
-      InetAddress leader=null;
-      try {
-        leader=InetAddress.getByName(m_catalogContext.cluster.getLeaderaddress());
-      }
- catch (      UnknownHostException ex) {
-        hostLog.l7dlog(Level.FATAL,LogKeys.host_VoltDB_CouldNotRetrieveLeaderAddress.name(),new Object[]{m_catalogContext.cluster.getLeaderaddress()},null);
-        VoltDB.crashVoltDB();
-      }
-      if (m_catalogContext.numberOfNodes <= 0) {
-        hostLog.l7dlog(Level.FATAL,LogKeys.host_VoltDB_InvalidHostCount.name(),new Object[]{m_catalogContext.numberOfNodes},null);
-        VoltDB.crashVoltDB();
-      }
-      hostLog.l7dlog(Level.TRACE,LogKeys.host_VoltDB_CreatingVoltDB.name(),new Object[]{m_catalogContext.numberOfNodes,leader},null);
-      hostLog.info(String.format("Beginning inter-node communication on port %d.",config.m_internalPort));
-      m_messenger=new HostMessenger(m_network,leader,m_catalogContext.numberOfNodes,m_catalogContext.catalogCRC,depCRC,hostLog);
-      Object retval[]=m_messenger.waitForGroupJoin();
-      m_instanceId=new Object[]{retval[0],retval[1]};
-    }
- else {
-      downHosts.addAll(initializeForRejoin(config,m_catalogContext.catalogCRC,depCRC));
-      for (      Integer downHost : downHosts) {
-        downNonExecSites.addAll(m_catalogContext.siteTracker.getNonExecSitesForHost(downHost));
-        downSites.addAll(m_catalogContext.siteTracker.getNonExecSitesForHost(downHost));
-        m_faultManager.reportFault(new NodeFailureFault(downHost,m_catalogContext.siteTracker.getNonExecSitesForHost(downHost),"UNKNOWN"));
-      }
-      try {
-        m_faultHandler.m_waitForFaultReported.acquire(downHosts.size());
-      }
- catch (      InterruptedException e) {
-        VoltDB.crashVoltDB();
-      }
-      ExecutionSite.recoveringSiteCount.set(m_catalogContext.siteTracker.getLiveExecutionSitesForHost(m_messenger.getHostId()).size());
-      downSites.addAll(m_catalogContext.siteTracker.getAllSitesForHost(m_messenger.getHostId()));
-    }
-    m_catalogContext.m_transactionId=m_messenger.getDiscoveredCatalogTxnId();
-    assert(m_messenger.getDiscoveredCatalogTxnId() != 0);
-    final int myHostId=m_messenger.getHostId();
-{
-      int myAgreementSiteId=-1;
-      HashSet<Integer> agreementSiteIds=new HashSet<Integer>();
-      int myAgreementInitiatorId=0;
-      for (      Site site : m_catalogContext.siteTracker.getAllSites()) {
-        int sitesHostId=Integer.parseInt(site.getHost().getTypeName());
-        int currSiteId=Integer.parseInt(site.getTypeName());
-        if (sitesHostId == myHostId) {
-          log.l7dlog(Level.TRACE,LogKeys.org_voltdb_VoltDB_CreatingLocalSite.name(),new Object[]{currSiteId},null);
-          m_messenger.createLocalSite(currSiteId);
-        }
-        if (site.getIsexec() == false) {
-          agreementSiteIds.add(currSiteId);
-          if (sitesHostId == myHostId) {
-            myAgreementSiteId=currSiteId;
-            myAgreementInitiatorId=site.getInitiatorid();
-          }
-        }
-      }
-      assert(m_agreementSite == null);
-      assert(myAgreementSiteId != -1);
-      Mailbox agreementMailbox=m_messenger.createMailbox(myAgreementSiteId,VoltDB.AGREEMENT_MAILBOX_ID,false);
-      try {
-        m_agreementSite=new AgreementSite(myAgreementSiteId,agreementSiteIds,myAgreementInitiatorId,downNonExecSites,agreementMailbox,new InetSocketAddress(m_config.m_zkInterface.split(":")[0],Integer.parseInt(m_config.m_zkInterface.split(":")[1])),m_faultManager,m_recovering);
-        m_agreementSite.start();
-      }
- catch (      Exception e) {
-        hostLog.fatal(null,e);
-        System.exit(-1);
-      }
-    }
-    m_clusterMetadata.put(myHostId,m_localMetadata);
-    try {
-      ExportManager.initialize(myHostId,m_catalogContext,isRejoin);
-    }
- catch (    ExportManager.SetupException e) {
-      hostLog.l7dlog(Level.FATAL,LogKeys.host_VoltDB_ExportInitFailure.name(),e);
-      System.exit(-1);
-    }
+    Inits inits=new Inits(this,4);
+    inits.doInitializationWork();
     m_localSites=Collections.synchronizedMap(new HashMap<Integer,ExecutionSite>());
     m_siteThreads=Collections.synchronizedMap(new HashMap<Integer,Thread>());
     m_runners=new ArrayList<ExecutionSiteRunner>();
     if (config.m_backend.isIPC) {
       int eeCount=0;
       for (      Site site : m_catalogContext.siteTracker.getUpSites()) {
-        if (site.getIsexec() && myHostId == Integer.parseInt(site.getHost().getTypeName())) {
+        if (site.getIsexec() && m_myHostId == Integer.parseInt(site.getHost().getTypeName())) {
           eeCount++;
         }
       }
@@ -244,13 +41,13 @@ catch (        IllegalAccessException e) {
     for (    Site site : m_catalogContext.siteTracker.getUpSites()) {
       int sitesHostId=Integer.parseInt(site.getHost().getTypeName());
       int siteId=Integer.parseInt(site.getTypeName());
-      if (sitesHostId == myHostId) {
+      if (sitesHostId == m_myHostId) {
         if (site.getIsexec()) {
           if (siteForThisThread == null) {
             siteForThisThread=site;
           }
  else {
-            ExecutionSiteRunner runner=new ExecutionSiteRunner(siteId,m_catalogContext,serializedCatalog,m_recovering,downHosts);
+            ExecutionSiteRunner runner=new ExecutionSiteRunner(siteId,m_catalogContext,m_serializedCatalog,m_recovering,m_downHosts,hostLog);
             m_runners.add(runner);
             Thread runnerThread=new Thread(runner,"Site " + siteId);
             runnerThread.start();
@@ -261,7 +58,7 @@ catch (        IllegalAccessException e) {
       }
     }
     int siteId=Integer.parseInt(siteForThisThread.getTypeName());
-    ExecutionSite siteObj=new ExecutionSite(VoltDB.instance(),VoltDB.instance().getMessenger().createMailbox(siteId,VoltDB.DTXN_MAILBOX_ID,true),siteId,serializedCatalog,null,m_recovering,downHosts,m_catalogContext.m_transactionId);
+    ExecutionSite siteObj=new ExecutionSite(VoltDB.instance(),VoltDB.instance().getMessenger().createMailbox(siteId,VoltDB.DTXN_MAILBOX_ID,true),siteId,m_serializedCatalog,null,m_recovering,m_downHosts,m_catalogContext.m_transactionId);
     m_localSites.put(Integer.parseInt(siteForThisThread.getTypeName()),siteObj);
     m_currentThreadSite=siteObj;
     for (    ExecutionSiteRunner runner : m_runners) {
@@ -281,8 +78,8 @@ synchronized (runner) {
     for (    Site site : m_catalogContext.siteTracker.getUpSites()) {
       int sitesHostId=Integer.parseInt(site.getHost().getTypeName());
       int currSiteId=Integer.parseInt(site.getTypeName());
-      if ((sitesHostId == myHostId) && (site.getIsexec() == false)) {
-        ClientInterface ci=ClientInterface.create(m_network,m_messenger,m_catalogContext,m_catalogContext.numberOfNodes,currSiteId,site.getInitiatorid(),config.m_port + portOffset,adminPort + portOffset,m_config.m_timestampTestingSalt);
+      if ((sitesHostId == m_myHostId) && (site.getIsexec() == false)) {
+        ClientInterface ci=ClientInterface.create(m_network,m_messenger,m_catalogContext,m_catalogContext.numberOfNodes,currSiteId,site.getInitiatorid(),config.m_port + portOffset,config.m_adminPort + portOffset,m_config.m_timestampTestingSalt);
         portOffset++;
         m_clientInterfaces.add(ci);
       }
@@ -322,7 +119,7 @@ synchronized (runner) {
       VoltDB.crashVoltDB();
     }
     if (m_commandLog != null && isRejoin) {
-      m_commandLog.initForRejoin(m_catalogContext,Long.MIN_VALUE,m_messenger.getDiscoveredFaultSequenceNumber(),downSites);
+      m_commandLog.initForRejoin(m_catalogContext,Long.MIN_VALUE,m_messenger.getDiscoveredFaultSequenceNumber(),m_downSites);
     }
     m_messenger.sendReadyMessage();
     if (config.m_rejoinToHostAndPort == null) {
@@ -330,7 +127,7 @@ synchronized (runner) {
     }
     fivems=new PeriodicWorkTimerThread(m_clientInterfaces,m_statsManager);
     fivems.start();
-    logDebuggingInfo(adminPort,httpPort,httpPortExtraLogMessage,jsonEnabled);
+    logDebuggingInfo(m_config.m_adminPort,m_config.m_httpPort,m_httpPortExtraLogMessage,m_jsonEnabled);
     int k=m_catalogContext.numberOfExecSites / m_catalogContext.numberOfPartitions;
     if (k == 1) {
       hostLog.warn("Running without redundancy (k=0) is not recommended for production use.");
@@ -342,7 +139,7 @@ synchronized (runner) {
     m_restoreAgent=null;
     if (!isRejoin && !m_config.m_isRejoinTest) {
       try {
-        m_restoreAgent=new RestoreAgent(m_catalogContext,initiator,m_zk,getSnapshotCompletionMonitor(),this,myHostId,config.m_startAction);
+        m_restoreAgent=new RestoreAgent(m_catalogContext,initiator,m_zk,getSnapshotCompletionMonitor(),this,m_myHostId,config.m_startAction);
       }
  catch (      IOException e) {
         hostLog.fatal("Unable to establish a ZooKeeper connection: " + e.getMessage());
