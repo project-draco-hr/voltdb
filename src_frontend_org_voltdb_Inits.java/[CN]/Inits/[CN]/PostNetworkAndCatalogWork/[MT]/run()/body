@@ -1,0 +1,21 @@
+{
+  if (m_isRejoin) {
+    long deploymentCRC=CatalogUtil.getDeploymentCRC(m_config.m_pathToDeployment);
+    m_rvdb.m_catalogContext=new CatalogContext(TransactionIdManager.makeIdFromComponents(System.currentTimeMillis(),0,0),m_rvdb.m_catalogContext.catalog,m_rvdb.m_catalogContext.pathToCatalogJar,deploymentCRC,m_rvdb.m_messenger.getDiscoveredCatalogVersion(),0);
+    for (    Integer downHost : m_rvdb.m_downHosts) {
+      m_rvdb.m_downNonExecSites.addAll(m_rvdb.m_catalogContext.siteTracker.getNonExecSitesForHost(downHost));
+      m_rvdb.m_downSites.addAll(m_rvdb.m_catalogContext.siteTracker.getNonExecSitesForHost(downHost));
+      m_rvdb.m_faultManager.reportFault(new NodeFailureFault(downHost,m_rvdb.m_catalogContext.siteTracker.getNonExecSitesForHost(downHost),"UNKNOWN"));
+    }
+    try {
+      m_rvdb.m_faultHandler.m_waitForFaultReported.acquire(m_rvdb.m_downHosts.size());
+    }
+ catch (    InterruptedException e) {
+      VoltDB.crashVoltDB();
+    }
+    ExecutionSite.recoveringSiteCount.set(m_rvdb.m_catalogContext.siteTracker.getLiveExecutionSitesForHost(m_rvdb.m_messenger.getHostId()).size());
+    m_rvdb.m_downSites.addAll(m_rvdb.m_catalogContext.siteTracker.getAllSitesForHost(m_rvdb.m_messenger.getHostId()));
+  }
+  m_rvdb.m_catalogContext.m_transactionId=m_rvdb.m_messenger.getDiscoveredCatalogTxnId();
+  assert(m_rvdb.m_messenger.getDiscoveredCatalogTxnId() != 0);
+}
