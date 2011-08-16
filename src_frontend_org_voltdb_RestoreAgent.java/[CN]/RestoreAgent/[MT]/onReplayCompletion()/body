@@ -1,18 +1,24 @@
 {
-  CommandLog commandLogElement=m_context.cluster.getLogconfig().get("log");
+  boolean clEnabled=false;
+  String clSnapshotPath=null;
+  if (VoltDB.instance().getConfig().m_isEnterprise) {
+    CommandLog commandLogElement=m_context.cluster.getLogconfig().get("log");
+    clEnabled=commandLogElement.getEnabled();
+    clSnapshotPath=commandLogElement.getInternalsnapshotpath();
+  }
   if (!m_hasRestored && !m_replayAgent.hasReplayed() && m_action == START_ACTION.RECOVER) {
     LOG.fatal("Nothing to recover from");
     VoltDB.crashVoltDB();
   }
- else   if (!commandLogElement.getEnabled() && m_replayAgent.areLogsEmpty()) {
+ else   if (!clEnabled && m_replayAgent.areLogsEmpty()) {
     m_state=State.TRUNCATE;
   }
   changeState();
-  if (commandLogElement.getEnabled() || !m_replayAgent.areLogsEmpty()) {
-    if (isLowestHost() && commandLogElement != null) {
+  if (clEnabled || !m_replayAgent.areLogsEmpty()) {
+    if (isLowestHost()) {
       try {
         try {
-          m_zk.create("/truncation_snapshot_path",commandLogElement.getInternalsnapshotpath().getBytes(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+          m_zk.create("/truncation_snapshot_path",clSnapshotPath.getBytes(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
         }
  catch (        KeeperException.NodeExistsException e) {
         }
