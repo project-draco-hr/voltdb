@@ -1,0 +1,89 @@
+{
+  TreeMap<Long,Snapshot> snapshots=new TreeMap<Long,SnapshotUtil.Snapshot>();
+  if (m_action != START_ACTION.CREATE) {
+    snapshots=getSnapshots();
+  }
+  final Long maxLastSeenTxn=m_replayAgent.getMaxLastSeenTxn();
+  Set<SnapshotInfo> snapshotInfos=new HashSet<SnapshotInfo>();
+  for (  Entry<Long,Snapshot> e : snapshots.entrySet()) {
+    if (maxLastSeenTxn != null && e.getKey() < maxLastSeenTxn) {
+      continue;
+    }
+    Snapshot s=e.getValue();
+    File digest=s.m_digests.get(0);
+    int partitionCount=-1;
+    boolean skip=false;
+    for (    TableFiles tf : s.m_tableFiles.values()) {
+      if (tf.m_isReplicated) {
+        continue;
+      }
+      if (skip) {
+        break;
+      }
+      for (      boolean completed : tf.m_completed) {
+        if (!completed) {
+          skip=true;
+          break;
+        }
+      }
+      for (      int count : tf.m_totalPartitionCounts) {
+        if (partitionCount == -1) {
+          partitionCount=count;
+        }
+ else         if (count != partitionCount) {
+          skip=true;
+          break;
+        }
+      }
+    }
+    Long catalog_crc=null;
+    try {
+      JSONObject digest_detail=SnapshotUtil.CRCCheck(digest);
+      catalog_crc=digest_detail.getLong("catalogCRC");
+    }
+ catch (    IOException ioe) {
+      LOG.info("Unable to read digest file: " + digest.getAbsolutePath() + " due to: "+ ioe.getMessage());
+      skip=true;
+    }
+catch (    JSONException je) {
+      LOG.info("Unable to extract catalog CRC from digest: " + digest.getAbsolutePath() + " due to: "+ je.getMessage());
+      skip=true;
+    }
+    if (skip) {
+      continue;
+    }
+    SnapshotInfo info=new SnapshotInfo(e.getKey(),digest.getParent(),parseDigestFilename(digest.getName()),partitionCount,catalog_crc);
+    for (    Entry<String,TableFiles> te : s.m_tableFiles.entrySet()) {
+      TableFiles tableFile=te.getValue();
+      HashSet<Integer> ids=new HashSet<Integer>();
+      for (      Set<Integer> idSet : tableFile.m_validPartitionIds) {
+        ids.addAll(idSet);
+      }
+      if (!tableFile.m_isReplicated) {
+        info.partitions.put(te.getKey(),ids);
+      }
+    }
+    snapshotInfos.add(info);
+  }
+  LOG.debug("Gathered " + snapshotInfos.size() + " snapshot information");
+  sendLocalRestoreInformation(maxLastSeenTxn,snapshotInfos);
+  SnapshotInfo last=null;
+  Set<SnapshotInfo> lastSnapshot=getRestorePlan();
+  if (lastSnapshot != null) {
+    Iterator<SnapshotInfo> i=lastSnapshot.iterator();
+    while (i.hasNext()) {
+      last=i.next();
+      break;
+    }
+    assert(last != null);
+    LOG.debug("Snapshot to restore: " + last.txnId);
+  }
+  if (m_action != START_ACTION.CREATE) {
+    long partitionCount=m_replayAgent.generateReplayPlan();
+    if (partitionCount > 0 && partitionCount != m_context.numberOfPartitions) {
+      String msg="Command logs can only be replayed on a cluster" + " with the same number of partitions. Command" + " logs recorded " + partitionCount + " partitions, but the cluster has "+ m_context.numberOfPartitions+ " partitions";
+      throw new RuntimeException(msg);
+    }
+  }
+  return last;
+}

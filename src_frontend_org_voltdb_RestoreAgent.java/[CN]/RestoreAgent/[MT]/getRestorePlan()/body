@@ -9,8 +9,7 @@
       children=m_zk.getChildren(RESTORE,false);
     }
  catch (    KeeperException e2) {
-      LOG.fatal(e2.getMessage());
-      VoltDB.crashVoltDB();
+      throw e2;
     }
 catch (    InterruptedException e2) {
       continue;
@@ -28,8 +27,7 @@ catch (    InterruptedException e2) {
     }
   }
   if (children == null) {
-    LOG.fatal("Unable to read agreement messages from other hosts for" + " restore plan");
-    VoltDB.crashVoltDB();
+    throw new RuntimeException("Unable to read agreement messages from" + " other hosts for restore plan");
   }
   TreeMap<Long,Set<SnapshotInfo>> snapshotFragments=new TreeMap<Long,Set<SnapshotInfo>>();
   Long clStartTxnId=deserializeRestoreInformation(children,snapshotFragments);
@@ -42,8 +40,7 @@ catch (    InterruptedException e2) {
     if (!crc_catalog_match) {
       LOG.fatal("No snapshot present that matches the loaded catalog.");
     }
-    LOG.fatal("No viable snapshots to restore");
-    VoltDB.crashVoltDB();
+    throw new RuntimeException("No viable snapshots to restore");
   }
   LOG.debug("There are " + snapshotFragments.size() + " snapshots available in the cluster");
   HashMap<Long,Map<String,Set<Integer>>> snapshotTablePartitions=new HashMap<Long,Map<String,Set<Integer>>>();
@@ -91,8 +88,12 @@ catch (    InterruptedException e2) {
     }
   }
   if (clStartTxnId != null && clStartTxnId != Long.MIN_VALUE && snapshotFragments.size() == 0) {
-    LOG.fatal("No viable snapshots to restore");
-    VoltDB.crashVoltDB();
+    throw new RuntimeException("No viable snapshots to restore");
   }
-  return snapshotFragments.lastEntry();
+  if (snapshotFragments.isEmpty()) {
+    return null;
+  }
+ else {
+    return snapshotFragments.lastEntry().getValue();
+  }
 }
