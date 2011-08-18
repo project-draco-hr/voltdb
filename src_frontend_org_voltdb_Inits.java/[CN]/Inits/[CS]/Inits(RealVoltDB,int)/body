@@ -3,20 +3,23 @@
   m_config=rvdb.m_config;
   m_isRejoin=m_config.m_rejoinToHostAndPort != null;
   m_threadCount=threadCount;
-  m_jobs.put(CollectPlatformInfo.class,new CollectPlatformInfo());
-  m_jobs.put(ReadDeploymentFile.class,new ReadDeploymentFile());
-  m_jobs.put(LoadCatalog.class,new LoadCatalog());
-  m_jobs.put(EnforceLicensing.class,new EnforceLicensing());
-  m_jobs.put(SetupCommandLogging.class,new SetupCommandLogging());
-  m_jobs.put(StartHTTPServer.class,new StartHTTPServer());
-  m_jobs.put(InitFaultManager.class,new InitFaultManager());
-  m_jobs.put(InitExport.class,new InitExport());
-  m_jobs.put(InitHashinator.class,new InitHashinator());
-  m_jobs.put(CollectLocalNetworkMetadata.class,new CollectLocalNetworkMetadata());
-  m_jobs.put(JoinAndInitNetwork.class,new JoinAndInitNetwork());
-  m_jobs.put(InitAgreementSite.class,new InitAgreementSite());
-  m_jobs.put(SetupAdminMode.class,new SetupAdminMode());
-  m_jobs.put(PostNetworkAndCatalogWork.class,new PostNetworkAndCatalogWork());
+  Class<?>[] declaredClasses=Inits.class.getDeclaredClasses();
+  for (  Class<?> cls : declaredClasses) {
+    if (cls == InitWork.class)     continue;
+    if (cls == COMPLETION_WORK.class)     continue;
+    if (InitWork.class.isAssignableFrom(cls)) {
+      InitWork instance=null;
+      try {
+        Constructor<?> constructor=cls.getDeclaredConstructor(Inits.class);
+        instance=(InitWork)constructor.newInstance(this);
+      }
+ catch (      Exception e) {
+        hostLog.fatal("Critical error loading class " + cls.getName(),e);
+        VoltDB.crashVoltDB();
+      }
+      m_jobs.put(instance.getClass(),instance);
+    }
+  }
   for (  InitWork iw : m_jobs.values()) {
     for (    Class<? extends InitWork> cls : iw.m_blockers) {
       InitWork blocker=m_jobs.get(cls);
