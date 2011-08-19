@@ -4,21 +4,29 @@
   MockInitiator initiator=new MockInitiator(null);
   List<RestoreAgent> agents=new ArrayList<RestoreAgent>();
   for (int i=0; i < m_hostCount; i++) {
-    agents.add(new RestoreAgent(context,initiator,getClient(0),snapshotMonitor,this,i,START_ACTION.START));
+    agents.add(getRestoreAgent(initiator,i));
   }
-  for (  RestoreAgent agent : agents) {
-    agent.restore();
-  }
-  int count=0;
-  while (!m_done && count++ < 50) {
-    try {
-      Thread.sleep(200);
+  ExecutorService ex=Executors.newFixedThreadPool(3);
+  final AtomicInteger failure=new AtomicInteger();
+  for (  final RestoreAgent agent : agents) {
+    ex.submit(new Runnable(){
+      @Override public void run(){
+        agent.createZKDirectory(RestoreAgent.RESTORE);
+        agent.createZKDirectory(RestoreAgent.RESTORE_BARRIER);
+        agent.enterRestore();
+        try {
+          if (agent.generatePlans() != null) {
+            failure.incrementAndGet();
+          }
+        }
+ catch (        Exception e) {
+          failure.incrementAndGet();
+        }
+      }
     }
- catch (    InterruptedException e) {
-    }
+);
   }
-  if (!m_done) {
-    fail("Timed out");
-  }
-  assertEquals(Long.MIN_VALUE,snapshotTxnId.longValue());
+  ex.shutdown();
+  assertTrue(ex.awaitTermination(10,TimeUnit.SECONDS));
+  assertEquals(0,failure.get());
 }
