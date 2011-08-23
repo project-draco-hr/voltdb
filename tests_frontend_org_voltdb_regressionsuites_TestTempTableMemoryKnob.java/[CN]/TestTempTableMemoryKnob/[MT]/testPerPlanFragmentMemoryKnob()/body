@@ -1,0 +1,25 @@
+{
+  if (isHSQL() || isValgrind())   return;
+  System.out.println("STARTING testPerPlanFragmentMemoryKnob");
+  Client client=getClient();
+  VoltTable[] results=null;
+  int nextId=0;
+  for (int mb=0; mb < 300; mb+=5) {
+    results=client.callProcedure("InsertLotsOfData",0,nextId).getResults();
+    assertEquals(1,results.length);
+    assertTrue(nextId < results[0].asScalarLong());
+    nextId=(int)results[0].asScalarLong();
+    System.err.println("Inserted " + (mb + 5) + "mb");
+  }
+  boolean threw=false;
+  try {
+    results=client.callProcedure("FetchTooMuch",0).getResults();
+    assertEquals(1,results.length);
+    System.out.println("Fetched the 300 megabytes");
+  }
+ catch (  ProcCallException e) {
+    e.printStackTrace();
+    threw=true;
+  }
+  assertFalse("Should have successfully completed a select with 300MB temp table but didn't",threw);
+}
