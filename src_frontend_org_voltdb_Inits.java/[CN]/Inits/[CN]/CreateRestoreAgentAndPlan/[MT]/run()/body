@@ -1,0 +1,26 @@
+{
+  if (!m_isRejoin && !m_config.m_isRejoinTest) {
+    m_rvdb.startNetworkAndCreateZKClient();
+    String snapshotPath=null;
+    if (m_rvdb.m_catalogContext.cluster.getDatabases().get("database").getSnapshotschedule().get("default") != null) {
+      snapshotPath=m_rvdb.m_catalogContext.cluster.getDatabases().get("database").getSnapshotschedule().get("default").getPath();
+    }
+    int lowestSite=m_rvdb.m_catalogContext.siteTracker.getLowestLiveNonExecSiteId();
+    int lowestHostId=m_rvdb.m_catalogContext.siteTracker.getHostForSite(lowestSite);
+    int[] allPartitions=new int[m_rvdb.m_catalogContext.numberOfPartitions];
+    int i=0;
+    for (    Partition p : m_rvdb.m_catalogContext.cluster.getPartitions()) {
+      allPartitions[i++]=Integer.parseInt(p.getTypeName());
+    }
+    org.voltdb.catalog.CommandLog cl=m_rvdb.m_catalogContext.cluster.getLogconfig().get("log");
+    try {
+      m_rvdb.m_restoreAgent=new RestoreAgent(m_rvdb.m_zk,m_rvdb.getSnapshotCompletionMonitor(),m_rvdb,m_rvdb.m_myHostId,m_config.m_startAction,m_rvdb.m_catalogContext.numberOfPartitions,cl.getEnabled(),cl.getLogpath(),cl.getInternalsnapshotpath(),snapshotPath,lowestHostId,allPartitions,m_rvdb.m_catalogContext.siteTracker.getAllLiveHosts());
+    }
+ catch (    IOException e) {
+      hostLog.fatal("Unable to establish a ZooKeeper connection: " + e.getMessage());
+      VoltDB.crashVoltDB();
+    }
+    m_rvdb.m_restoreAgent.setCatalogContext(m_rvdb.m_catalogContext);
+    Pair<Integer,String> catalog=m_rvdb.m_restoreAgent.findRestoreCatalog();
+  }
+}

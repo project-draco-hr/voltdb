@@ -19,6 +19,7 @@ synchronized (m_startAndStopLock) {
     m_ioStats=null;
     m_memoryStats=null;
     m_statsManager=null;
+    m_restoreAgent=null;
     boolean isRejoin=config.m_rejoinToHostAndPort != null;
     try {
       System.setOut(new PrintStream(System.out,true,"UTF-8"));
@@ -35,6 +36,8 @@ synchronized (m_startAndStopLock) {
     m_snapshotCompletionMonitor=new SnapshotCompletionMonitor();
     readBuildInfo(config.m_isEnterprise ? "Enterprise Edition" : "Community Edition");
     ResponseSampler.initializeIfEnabled();
+    readDeploymentAndCreateStarterCatalogContext();
+    buildClusterMesh(isRejoin);
     Inits inits=new Inits(this,1);
     inits.doInitializationWork();
     m_localSites=Collections.synchronizedMap(new HashMap<Integer,ExecutionSite>());
@@ -114,19 +117,7 @@ synchronized (runner) {
     }
  catch (    Exception e) {
     }
-    hostLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_StartingNetwork.name(),new Object[]{m_network.threadPoolSize},null);
-    m_network.start();
-    try {
-      m_agreementSite.waitForRecovery();
-      m_zk=org.voltdb.agreement.ZKUtil.getClient(m_config.m_zkInterface,60 * 1000);
-      if (m_zk == null) {
-        throw new Exception("Timed out trying to connect local ZooKeeper instance");
-      }
-    }
- catch (    Exception e) {
-      hostLog.fatal("Unable to create a ZK client",e);
-      VoltDB.crashVoltDB();
-    }
+    startNetworkAndCreateZKClient();
     try {
       m_snapshotCompletionMonitor.init(m_zk);
     }
@@ -152,32 +143,9 @@ synchronized (runner) {
     ClientInterface ci=m_clientInterfaces.get(0);
     ci.initializeSnapshotDaemon();
     TransactionInitiator initiator=ci.getInitiator();
-    m_restoreAgent=null;
-    if (!isRejoin && !m_config.m_isRejoinTest) {
-      String snapshotPath=null;
-      if (m_catalogContext.cluster.getDatabases().get("database").getSnapshotschedule().get("default") != null) {
-        snapshotPath=m_catalogContext.cluster.getDatabases().get("database").getSnapshotschedule().get("default").getPath();
-      }
-      int lowestSite=m_catalogContext.siteTracker.getLowestLiveNonExecSiteId();
-      int lowestHostId=m_catalogContext.siteTracker.getHostForSite(lowestSite);
-      int[] allPartitions=new int[m_catalogContext.numberOfPartitions];
-      int i=0;
-      for (      Partition p : m_catalogContext.cluster.getPartitions()) {
-        allPartitions[i++]=Integer.parseInt(p.getTypeName());
-      }
-      org.voltdb.catalog.CommandLog cl=m_catalogContext.cluster.getLogconfig().get("log");
-      try {
-        m_restoreAgent=new RestoreAgent(initiator,m_zk,getSnapshotCompletionMonitor(),this,m_myHostId,config.m_startAction,m_catalogContext.numberOfPartitions,cl.getEnabled(),cl.getLogpath(),cl.getInternalsnapshotpath(),snapshotPath,lowestHostId,allPartitions,m_catalogContext.siteTracker.getAllLiveHosts());
-      }
- catch (      IOException e) {
-        hostLog.fatal("Unable to establish a ZooKeeper connection: " + e.getMessage());
-        VoltDB.crashVoltDB();
-      }
+    if (m_restoreAgent != null) {
       m_restoreAgent.setCatalogContext(m_catalogContext);
-      Pair<Integer,String> catalog=m_restoreAgent.findRestoreCatalog();
-    }
- else {
-      onRestoreCompletion(Long.MIN_VALUE,!isRejoin);
+      m_restoreAgent.setInitiator(initiator);
     }
   }
 }

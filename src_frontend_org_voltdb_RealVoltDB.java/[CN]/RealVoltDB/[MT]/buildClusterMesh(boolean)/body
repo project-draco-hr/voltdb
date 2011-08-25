@@ -1,0 +1,53 @@
+{
+  m_faultManager=new FaultDistributor(this);
+  m_faultManager.registerFaultHandler(NodeFailureFault.NODE_FAILURE_CATALOG,m_faultHandler,FaultType.NODE_FAILURE);
+  if (!m_faultManager.testPartitionDetectionDirectory(m_catalogContext.cluster.getFaultsnapshots().get("CLUSTER_PARTITION"))) {
+    VoltDB.crashVoltDB();
+  }
+  m_network=new VoltNetwork();
+  collectLocalNetworkMetadata();
+  String leaderAddress=m_deployment.getCluster().getLeader();
+  int numberOfNodes=m_deployment.getCluster().getHostcount();
+  long depCRC=CatalogUtil.getDeploymentCRC(m_config.m_pathToDeployment);
+  if (!isRejoin) {
+    InetAddress leader=null;
+    try {
+      leader=InetAddress.getByName(leaderAddress);
+    }
+ catch (    UnknownHostException ex) {
+      hostLog.l7dlog(Level.FATAL,LogKeys.host_VoltDB_CouldNotRetrieveLeaderAddress.name(),new Object[]{leaderAddress},null);
+      VoltDB.crashVoltDB();
+    }
+    if (numberOfNodes <= 0) {
+      hostLog.l7dlog(Level.FATAL,LogKeys.host_VoltDB_InvalidHostCount.name(),new Object[]{numberOfNodes},null);
+      VoltDB.crashVoltDB();
+    }
+    hostLog.l7dlog(Level.TRACE,LogKeys.host_VoltDB_CreatingVoltDB.name(),new Object[]{numberOfNodes,leader},null);
+    hostLog.info(String.format("Beginning inter-node communication on port %d.",m_config.m_internalPort));
+    m_messenger=new HostMessenger(m_network,leader,numberOfNodes,0,depCRC,hostLog);
+    Object retval[]=m_messenger.waitForGroupJoin();
+    m_instanceId=new Object[]{retval[0],retval[1]};
+  }
+ else {
+    m_downHosts.addAll(rejoinExistingMesh(numberOfNodes,depCRC));
+  }
+  m_myHostId=m_messenger.getHostId();
+  m_clusterMetadata.put(m_myHostId,m_localMetadata);
+  if (isRejoin) {
+    for (    Integer downHost : m_downHosts) {
+      m_downNonExecSites.addAll(m_catalogContext.siteTracker.getNonExecSitesForHost(downHost));
+      m_downSites.addAll(m_catalogContext.siteTracker.getNonExecSitesForHost(downHost));
+      m_faultManager.reportFault(new NodeFailureFault(downHost,m_catalogContext.siteTracker.getNonExecSitesForHost(downHost),"UNKNOWN"));
+    }
+    try {
+      m_faultHandler.m_waitForFaultReported.acquire(m_downHosts.size());
+    }
+ catch (    InterruptedException e) {
+      VoltDB.crashVoltDB();
+    }
+    ExecutionSite.recoveringSiteCount.set(m_catalogContext.siteTracker.getLiveExecutionSitesForHost(m_messenger.getHostId()).size());
+    m_downSites.addAll(m_catalogContext.siteTracker.getAllSitesForHost(m_messenger.getHostId()));
+  }
+  m_catalogContext.m_transactionId=m_messenger.getDiscoveredCatalogTxnId();
+  assert(m_messenger.getDiscoveredCatalogTxnId() != 0);
+}
