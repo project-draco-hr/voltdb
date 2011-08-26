@@ -1,0 +1,29 @@
+{
+  if (m_rvdb.m_myHostId == m_rvdb.m_hostIdWithStartupCatalog) {
+    final int MAX_CATALOG_SIZE=40 * 1024 * 1024;
+    try {
+      InputStream fin=null;
+      try {
+        URL url=new URL(m_rvdb.m_pathToStartupCatalog);
+        fin=url.openStream();
+      }
+ catch (      MalformedURLException ex) {
+        fin=new FileInputStream(m_rvdb.m_pathToStartupCatalog);
+      }
+      byte[] buffer=new byte[MAX_CATALOG_SIZE];
+      int readBytes=0;
+      int totalBytes=0;
+      while (readBytes >= 0) {
+        totalBytes+=readBytes;
+        readBytes=fin.read(buffer,totalBytes,buffer.length - totalBytes - 1);
+      }
+      byte[] catalogBytes=Arrays.copyOf(buffer,totalBytes);
+      hostLog.info(String.format("Sending %d catalog bytes",catalogBytes.length));
+      m_rvdb.m_messenger.sendCatalog(catalogBytes);
+    }
+ catch (    IOException e) {
+      m_rvdb.m_messenger.sendPoisonPill("Unable to distribute catalog.");
+      VoltDB.crashVoltDB();
+    }
+  }
+}
