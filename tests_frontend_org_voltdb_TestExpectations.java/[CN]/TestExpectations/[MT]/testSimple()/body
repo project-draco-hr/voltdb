@@ -1,0 +1,29 @@
+{
+  String simpleSchema="create table blah (" + "ival bigint default 0 not null, " + "sval varchar(255) not null, "+ "PRIMARY KEY(ival));";
+  VoltProjectBuilder builder=new VoltProjectBuilder();
+  builder.addLiteralSchema(simpleSchema);
+  builder.addPartitionInfo("blah","ival");
+  builder.addStmtProcedure("Insert","insert into blah values (?, ?);",null);
+  builder.addProcedures(CrushExpectations.class);
+  boolean success=builder.compile(Configuration.getPathToCatalogForTest("expectations.jar"),1,1,0,"localhost");
+  assert(success);
+  MiscUtils.copyFile(builder.getPathToDeployment(),Configuration.getPathToCatalogForTest("expectations.xml"));
+  VoltDB.Configuration config=new VoltDB.Configuration();
+  config.m_pathToCatalog=Configuration.getPathToCatalogForTest("expectations.jar");
+  config.m_pathToDeployment=Configuration.getPathToCatalogForTest("expectations.xml");
+  ServerThread localServer=new ServerThread(config);
+  localServer.start();
+  localServer.waitForInitialization();
+  Client client=ClientFactory.createClient();
+  client.createConnection("localhost");
+  try {
+    ClientResponse r=client.callProcedure("CrushExpectations",0);
+    assertEquals(0,r.getResults()[0].asScalarLong());
+  }
+ catch (  ProcCallException e) {
+    e.printStackTrace();
+    fail();
+  }
+  client.close();
+  localServer.shutdown();
+}
