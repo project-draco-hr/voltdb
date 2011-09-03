@@ -6,11 +6,20 @@
       if (result instanceof AdHocPlannedStmt) {
         final AdHocPlannedStmt plannedStmt=(AdHocPlannedStmt)result;
         if (plannedStmt.catalogVersion != m_catalogContext.get().catalogVersion) {
-          m_asyncCompilerWorkThread.planSQL(plannedStmt.sql,plannedStmt.clientHandle,plannedStmt.connectionId,plannedStmt.hostname,plannedStmt.adminConnection,plannedStmt.clientData);
+          m_asyncCompilerWorkThread.planSQL(plannedStmt.sql,plannedStmt.partitionParam,plannedStmt.clientHandle,plannedStmt.connectionId,plannedStmt.hostname,plannedStmt.adminConnection,plannedStmt.clientData);
         }
  else {
           StoredProcedureInvocation task=new StoredProcedureInvocation();
-          task.procName="@AdHoc";
+          boolean isSinglePartition=(plannedStmt.partitionParam != null);
+          int partitions[]=null;
+          if (isSinglePartition) {
+            task.procName="@AdHocSP";
+            partitions=new int[]{TheHashinator.hashToPartition(plannedStmt.partitionParam)};
+          }
+ else {
+            task.procName="@AdHoc";
+            partitions=m_allPartitions;
+          }
           task.params=new FutureTask<ParameterSet>(new Callable<ParameterSet>(){
             @Override public ParameterSet call(){
               ParameterSet params=new ParameterSet();
@@ -35,7 +44,7 @@
             hostLog.fatal(e);
             VoltDB.crashVoltDB();
           }
-          m_initiator.createTransaction(plannedStmt.connectionId,plannedStmt.hostname,plannedStmt.adminConnection,task,false,false,false,m_allPartitions,m_allPartitions.length,plannedStmt.clientData,0,EstTime.currentTimeMillis());
+          m_initiator.createTransaction(plannedStmt.connectionId,plannedStmt.hostname,plannedStmt.adminConnection,task,false,isSinglePartition,false,partitions,partitions.length,plannedStmt.clientData,0,EstTime.currentTimeMillis());
         }
       }
  else       if (result instanceof CatalogChangeResult) {

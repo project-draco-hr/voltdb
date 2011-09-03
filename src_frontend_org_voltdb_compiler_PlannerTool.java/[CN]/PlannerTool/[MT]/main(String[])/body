@@ -56,12 +56,24 @@
       System.exit(81);
     }
     if (inputLine.length() == 0) {
-      log("got a zero-length sql statement");
+      log("got a zero-length input to the sql planner");
       continue;
     }
     inputLine=inputLine.trim();
     log("recieved sql stmt: " + inputLine);
-    if (inputLine.compareTo(POISON_SQL) == 0) {
+    String[] parts=inputLine.split("#");
+    log(String.format("Got %d parts",parts.length));
+    if (parts.length != 2) {
+      log("got a malformed input to the sql planner (bad hash splitting)");
+      continue;
+    }
+    if ((parts[0].charAt(0) != 'S') && (parts[0].charAt(0) != 'M')) {
+      log("got a malformed input to the sql planner (bad single/multi hinting)");
+      continue;
+    }
+    boolean isSinglePartition=parts[0].charAt(0) == 'S';
+    String sql=parts[1];
+    if (sql.equalsIgnoreCase("POISON_SQL")) {
       log("Dying a horrible death (on purpose).");
       System.exit(-1);
     }
@@ -69,7 +81,7 @@
     QueryPlanner planner=new QueryPlanner(cluster,db,hsql,new DatabaseEstimates(),false,true);
     CompiledPlan plan=null;
     try {
-      plan=planner.compilePlan(costModel,inputLine,null,"PlannerTool","PlannerToolProc",false,null);
+      plan=planner.compilePlan(costModel,sql,null,"PlannerTool","PlannerToolProc",isSinglePartition,null);
     }
  catch (    Exception e) {
       log("Error creating planner: " + e.getMessage());
