@@ -1,0 +1,33 @@
+import os, tempfile, sys, shutil
+from fabric.api import run, cd, local, get, settings, lcd
+builddir = (('/tmp/' + os.getenv('USER')) + '/buildtemp')
+version = 'UNKNOWN'
+if (len(sys.argv) > 3):
+    print 'usage'
+argv = sys.argv
+if (len(argv) == 1):
+    argv = ['build-kit.py', 'trunk', 'branches/rest']
+if (len(argv) == 2):
+    argv = ['build-kit.py', argv[0], argv[0]]
+eng_svn_url = getSVNURL('https://svn.voltdb.com/eng/', argv[1])
+pro_svn_url = getSVNURL('https://svn.voltdb.com/pro/', argv[2])
+version = 'unknown'
+with settings(host_string='volt5f'):
+    global version
+    version = checkoutCode(eng_svn_url, pro_svn_url)
+    print ('VERSION: ' + version)
+    buildCommunity()
+    buildPro()
+with settings(host_string='voltmini'):
+    version2 = checkoutCode(eng_svn_url, pro_svn_url)
+    assert (version == version2)
+    buildCommunity()
+    buildPro()
+releaseDir = ((os.getenv('HOME') + '/releases/') + version)
+makeReleaseDir(releaseDir)
+with settings(host_string='volt5f'):
+    copyFilesToReleaseDir(releaseDir, version, 'LINUX')
+with settings(host_string='voltmini'):
+    copyFilesToReleaseDir(releaseDir, version, 'MAC')
+computeChecksums(releaseDir)
+createCandidateSysmlink(releaseDir)
