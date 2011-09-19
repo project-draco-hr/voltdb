@@ -1,25 +1,16 @@
 {
-  boolean validVoter=false;
-  boolean validContestant=false;
-  long returnValue=0;
-  voltQueueSQL(checkContestantStmt,contestantNumber);
-  voltQueueSQL(checkVoterStmt,phoneNumber);
-  voltQueueSQL(checkStateStmt,(short)(phoneNumber / 10000000l));
+  voltQueueSQL(checkContestantStmt,EXPECT_ZERO_OR_ONE_ROW,contestantNumber);
+  voltQueueSQL(checkVoterStmt,EXPECT_ZERO_OR_ONE_ROW,phoneNumber);
+  voltQueueSQL(checkStateStmt,EXPECT_ONE_ROW,(short)(phoneNumber / 10000000l));
   VoltTable validation[]=voltExecuteSQL();
-  if (validation[0].getRowCount() > 0) {
-    validContestant=true;
-    if (validation[1].getRowCount() == 0)     validVoter=true;
- else     if (validation[1].fetchRow(0).getLong(0) < maxVotesPerPhoneNumber)     validVoter=true;
+  if (validation[0].getRowCount() == 0) {
+    return ERR_INVALID_CONTESTANT;
   }
-  if (validContestant && validVoter) {
-    final String state=(validation[2].getRowCount() > 0) ? validation[2].fetchRow(0).getString(0) : "XX";
-    voltQueueSQL(insertVoteStmt,phoneNumber,state,contestantNumber);
-    voltExecuteSQL(true);
-    returnValue=0;
+  if ((validation[1].getRowCount() == 1) && (validation[1].asScalarLong() >= maxVotesPerPhoneNumber)) {
+    return ERR_VOTER_OVER_VOTE_LIMIT;
   }
- else   if (!validContestant)   returnValue=1;
- else   returnValue=2;
-  VoltTable result=new VoltTable(new VoltTable.ColumnInfo("return_value",VoltType.INTEGER));
-  result.addRow(new Object[]{returnValue});
-  return new VoltTable[]{result};
+  final String state=(validation[2].getRowCount() > 0) ? validation[2].fetchRow(0).getString(0) : "XX";
+  voltQueueSQL(insertVoteStmt,EXPECT_SCALAR_MATCH(1),phoneNumber,state,contestantNumber);
+  voltExecuteSQL(true);
+  return VOTE_SUCCESSFUL;
 }
