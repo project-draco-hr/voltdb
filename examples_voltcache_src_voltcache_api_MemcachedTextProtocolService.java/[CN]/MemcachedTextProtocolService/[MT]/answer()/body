@@ -1,0 +1,196 @@
+{
+  final ByteArrayOutputStream lineData=new ByteArrayOutputStream();
+  boolean gotR=false;
+  int b;
+  while (true) {
+    b=this.in.read();
+    if (b == -1)     throw new IOException("Stream terminated");
+    if (b == 13) {
+      gotR=true;
+      continue;
+    }
+    if (gotR) {
+      if (b == 10)       break;
+      lineData.write(13);
+      gotR=false;
+    }
+    lineData.write(b);
+  }
+  final String[] args=lineData.toString("UTF-8").trim().split(" ");
+  final String command=args[0].toLowerCase();
+  final int argCount=args.length - 1;
+  if (command.equals(COMMAND_GET) || command.equals(COMMAND_GETS)) {
+    if (argCount == 0)     this.replyClientError(INVALID_ARGUMENT_COUNT,argCount);
+ else     if (argCount == 1) {
+      try {
+        this.replyData(args[1],this.Cache.get(args[1]));
+      }
+ catch (      Exception e) {
+        this.replyServerError(EXECUTION_EXCEPTION,e);
+      }
+    }
+ else {
+      try {
+        this.replyData(this.Cache.get(Arrays.copyOfRange(args,1,args.length - 1)));
+      }
+ catch (      Exception e) {
+        this.replyServerError(EXECUTION_EXCEPTION,e);
+      }
+    }
+  }
+ else   if (command.equals(COMMAND_SET) || command.equals(COMMAND_ADD) || command.equals(COMMAND_APPEND)|| command.equals(COMMAND_PREPEND)|| command.equals(COMMAND_REPLACE)) {
+    if ((argCount < 4) || (argCount > 5))     this.replyClientError(INVALID_ARGUMENT_COUNT,argCount);
+ else     try {
+      final String key=args[1];
+      final int flags=Integer.valueOf(args[2]);
+      final int exptime=Integer.valueOf(args[3]);
+      final int byteCount=Integer.valueOf(args[4]);
+      final byte[] data=new byte[byteCount];
+      this.in.read(data);
+      this.in.skip(2);
+      boolean noreply=false;
+      if (argCount == 5) {
+        if (args[5].equals(NOREPLY))         noreply=true;
+ else {
+          this.replyClientError(INVALID_NOREPLY_ARGUMENT,args[5]);
+          return;
+        }
+      }
+      try {
+        if (command.equals(COMMAND_SET))         this.replyStatus(this.Cache.set(key,flags,exptime,data,noreply));
+ else         if (command.equals(COMMAND_ADD))         this.replyStatus(this.Cache.add(key,flags,exptime,data,noreply));
+ else         if (command.equals(COMMAND_APPEND))         this.replyStatus(this.Cache.append(key,data,noreply));
+ else         if (command.equals(COMMAND_PREPEND))         this.replyStatus(this.Cache.prepend(key,data,noreply));
+ else         if (command.equals(COMMAND_REPLACE))         this.replyStatus(this.Cache.replace(key,flags,exptime,data,noreply));
+      }
+ catch (      Exception e) {
+        this.replyServerError(EXECUTION_EXCEPTION,e);
+      }
+    }
+ catch (    Exception x) {
+      this.replyClientError(PREPARATION_EXCEPTION,x);
+    }
+  }
+ else   if (command.equals(COMMAND_CAS)) {
+    if ((argCount < 5) || (argCount > 6))     this.replyClientError(INVALID_ARGUMENT_COUNT,argCount);
+ else     try {
+      final String key=args[1];
+      final int flags=Integer.valueOf(args[2]);
+      final int exptime=Integer.valueOf(args[3]);
+      final int byteCount=Integer.valueOf(args[4]);
+      final byte[] data=new byte[byteCount];
+      this.in.read(data,0,byteCount);
+      this.in.skip(2);
+      final long casVersion=Long.valueOf(args[5]);
+      boolean noreply=false;
+      if (argCount == 6) {
+        if (args[6].equals(NOREPLY))         noreply=true;
+ else {
+          this.replyClientError(INVALID_NOREPLY_ARGUMENT,args[6]);
+          return;
+        }
+      }
+      try {
+        this.replyStatus(this.Cache.cas(key,flags,exptime,data,casVersion,noreply));
+      }
+ catch (      Exception e) {
+        this.replyServerError(EXECUTION_EXCEPTION,e);
+      }
+    }
+ catch (    Exception x) {
+      this.replyClientError(PREPARATION_EXCEPTION,x);
+    }
+  }
+ else   if (command.equals(COMMAND_DELETE)) {
+    if (argCount == 0 || argCount > 3)     this.replyClientError(INVALID_ARGUMENT_COUNT,argCount);
+ else {
+      try {
+        final String key=args[1];
+        int exptime=0;
+        boolean noreply=false;
+        if (argCount == 2) {
+          if (args[2].equals(NOREPLY))           noreply=true;
+ else           exptime=Integer.valueOf(args[2]);
+        }
+ else         if (argCount == 3) {
+          exptime=Integer.valueOf(args[1]);
+          if (args[3].equals(NOREPLY))           noreply=true;
+ else {
+            this.replyClientError(INVALID_NOREPLY_ARGUMENT,args[3]);
+            return;
+          }
+        }
+        try {
+          this.replyStatus(this.Cache.delete(key,exptime,noreply));
+        }
+ catch (        Exception e) {
+          this.replyServerError(EXECUTION_EXCEPTION,e);
+        }
+      }
+ catch (      Exception x) {
+        this.replyClientError(PREPARATION_EXCEPTION,x);
+      }
+    }
+  }
+ else   if (command.equals(COMMAND_FLUSHALL)) {
+    if (argCount > 2)     this.replyClientError(INVALID_ARGUMENT_COUNT,argCount);
+ else {
+      try {
+        int exptime=0;
+        boolean noreply=false;
+        if (argCount == 1) {
+          if (args[1].equals(NOREPLY))           noreply=true;
+ else           exptime=Integer.valueOf(args[1]);
+        }
+ else         if (argCount == 2) {
+          exptime=Integer.valueOf(args[1]);
+          if (args[2].equals(NOREPLY))           noreply=true;
+ else {
+            this.replyClientError(INVALID_NOREPLY_ARGUMENT,args[2]);
+            return;
+          }
+        }
+        try {
+          this.replyStatus(this.Cache.flushAll(exptime,noreply));
+        }
+ catch (        Exception e) {
+          this.replyServerError(EXECUTION_EXCEPTION,e);
+        }
+      }
+ catch (      Exception x) {
+        this.replyClientError(PREPARATION_EXCEPTION,x);
+      }
+    }
+  }
+ else   if (command.equals(COMMAND_VERSION)) {
+    this.reply("VERSION 1.4.5\r\n");
+  }
+ else   if (command.equals(COMMAND_INCR) || command.equals(COMMAND_DECR)) {
+    if (argCount < 2 || argCount > 3)     this.replyClientError(INVALID_ARGUMENT_COUNT,argCount);
+ else {
+      try {
+        final String key=args[1];
+        final long by=Long.valueOf(args[2]);
+        boolean noreply=false;
+        if (argCount == 3) {
+          if (args[3].equals(NOREPLY))           noreply=true;
+ else {
+            this.replyClientError(INVALID_NOREPLY_ARGUMENT,args[3]);
+            return;
+          }
+        }
+        try {
+          this.replyIncrDecr(this.Cache.incrDecr(key,by,command.equals(COMMAND_INCR),noreply),noreply);
+        }
+ catch (        Exception e) {
+          this.replyServerError(EXECUTION_EXCEPTION,e);
+        }
+      }
+ catch (      Exception x) {
+        this.replyClientError(PREPARATION_EXCEPTION,x);
+      }
+    }
+  }
+ else   if (command.equals(COMMAND_QUIT))   this.kill();
+ else   this.replyError();
+}
