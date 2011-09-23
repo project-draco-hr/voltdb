@@ -37,6 +37,38 @@
   for (  String line : lines) {
     hostLog.info(line.trim());
   }
+  collectLocalNetworkMetadata();
+  m_clusterMetadata.put(m_messenger.getHostId(),getLocalMetadata());
+  try {
+    m_zk.create("/cluster_metadata",null,Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT,new ZKUtil.StringCallback(),null);
+    m_zk.create("/cluster_metadata/" + m_messenger.getHostId(),getLocalMetadata().getBytes("UTF-8"),Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL,new ZKUtil.StringCallback(),null);
+  }
+ catch (  Exception e) {
+    VoltDB.crashLocalVoltDB("Error creating \"/cluster_metadata\" node in ZK",true,e);
+  }
+  HashSet<Integer> metadataToRetrieve=new HashSet<Integer>(m_catalogContext.siteTracker.getAllLiveHosts());
+  metadataToRetrieve.remove(m_messenger.getHostId());
+  while (!metadataToRetrieve.isEmpty()) {
+    Map<Integer,ZKUtil.ByteArrayCallback> callbacks=new HashMap<Integer,ZKUtil.ByteArrayCallback>();
+    for (    Integer hostId : metadataToRetrieve) {
+      ZKUtil.ByteArrayCallback cb=new ZKUtil.ByteArrayCallback();
+      m_zk.getData("/cluster_metadata/" + hostId,false,cb,null);
+      callbacks.put(hostId,cb);
+    }
+    for (    Map.Entry<Integer,ZKUtil.ByteArrayCallback> entry : callbacks.entrySet()) {
+      try {
+        ZKUtil.ByteArrayCallback cb=entry.getValue();
+        Integer hostId=entry.getKey();
+        m_clusterMetadata.put(hostId,new String(cb.getData(),"UTF-8"));
+        metadataToRetrieve.remove(hostId);
+      }
+ catch (      KeeperException.NoNodeException e) {
+      }
+catch (      Exception e) {
+        VoltDB.crashLocalVoltDB("Error retrieving cluster metadata",true,e);
+      }
+    }
+  }
   hostLog.info("About to list cluster interfaces for all nodes with format ip:client-port:admin-port:http-port");
   for (  int hostId : m_catalogContext.siteTracker.getAllLiveHosts()) {
     if (hostId == m_messenger.getHostId()) {
