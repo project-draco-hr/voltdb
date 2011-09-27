@@ -40,6 +40,17 @@ synchronized (m_startAndStopLock) {
     readBuildInfo(config.m_isEnterprise ? "Enterprise Edition" : "Community Edition");
     ResponseSampler.initializeIfEnabled();
     readDeploymentAndCreateStarterCatalogContext();
+    final int availableProcessors=Runtime.getRuntime().availableProcessors();
+    int poolSize=1;
+    if (availableProcessors > 4) {
+      poolSize=2;
+    }
+    m_periodicWorkThread=new ScheduledThreadPoolExecutor(poolSize,new ThreadFactory(){
+      @Override public Thread newThread(      Runnable r){
+        return new Thread(r,"Periodic Work");
+      }
+    }
+);
     buildClusterMesh(isRejoin);
     Inits inits=new Inits(this,1);
     inits.doInitializationWork();
@@ -97,7 +108,6 @@ synchronized (runner) {
       }
     }
     int portOffset=0;
-    AsyncCompilerWorkThread compilerThread=null;
     for (    Site site : m_catalogContext.siteTracker.getUpSites()) {
       int sitesHostId=Integer.parseInt(site.getHost().getTypeName());
       int currSiteId=Integer.parseInt(site.getTypeName());
@@ -105,7 +115,7 @@ synchronized (runner) {
         ClientInterface ci=ClientInterface.create(m_network,m_messenger,m_catalogContext,m_catalogContext.numberOfNodes,currSiteId,site.getInitiatorid(),config.m_port + portOffset,config.m_adminPort + portOffset,m_config.m_timestampTestingSalt);
         portOffset++;
         m_clientInterfaces.add(ci);
-        compilerThread=ci.getCompilerThread();
+        m_compilerThread=ci.getCompilerThread();
       }
     }
     m_partitionCountStats=new PartitionCountStats("Partition Count Stats",m_catalogContext.numberOfPartitions);
@@ -137,8 +147,9 @@ synchronized (runner) {
     if (config.m_rejoinToHostAndPort == null) {
       m_messenger.waitForAllHostsToBeReady();
     }
-    fivems=new PeriodicWorkTimerThread(m_clientInterfaces,m_statsManager,compilerThread);
-    fivems.start();
+    heartbeatThread=new HeartbeatThread(m_clientInterfaces);
+    heartbeatThread.start();
+    m_periodicWorkThread.scheduleWithFixedDelay(periodicWork,0,5,TimeUnit.MILLISECONDS);
     logDebuggingInfo(m_config.m_adminPort,m_config.m_httpPort,m_httpPortExtraLogMessage,m_jsonEnabled);
     int k=m_catalogContext.numberOfExecSites / m_catalogContext.numberOfPartitions;
     if (k == 1) {
