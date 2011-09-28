@@ -1,7 +1,18 @@
 {
-  int[] outOfDateSites=VoltDB.instance().getCatalogContext().siteTracker.getUpExecutionSites();
+  final SiteTracker st=VoltDB.instance().getCatalogContext().siteTracker;
+  int remoteHeartbeatTargets[][]=st.getRemoteHeartbeatTargets();
+  int localHeartbeatTargets[]=st.getLocalHeartbeatTargets();
   try {
-    for (    int siteId : outOfDateSites) {
+    for (    int hostTargets[] : remoteHeartbeatTargets) {
+      final int initiatorSiteId=st.getFirstNonExecSiteForHost(st.getHostForSite(hostTargets[0]));
+      long safeTxnIds[]=new long[hostTargets.length];
+      for (int ii=0; ii < safeTxnIds.length; ii++) {
+        safeTxnIds[ii]=m_safetyState.getNewestSafeTxnIdForExecutorBySiteId(hostTargets[ii]);
+      }
+      CoalescedHeartbeatMessage heartbeat=new CoalescedHeartbeatMessage(m_siteId,txnId,hostTargets,safeTxnIds);
+      m_mailbox.send(initiatorSiteId,VoltDB.DTXN_MAILBOX_ID,heartbeat);
+    }
+    for (    int siteId : localHeartbeatTargets) {
       long newestSafeTxnId=m_safetyState.getNewestSafeTxnIdForExecutorBySiteId(siteId);
       HeartbeatMessage tickNotice=new HeartbeatMessage(m_siteId,txnId,newestSafeTxnId);
       m_mailbox.send(siteId,VoltDB.DTXN_MAILBOX_ID,tickNotice);
