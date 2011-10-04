@@ -1,22 +1,28 @@
 {
-  final ByteArrayOutputStream lineData=new ByteArrayOutputStream();
   boolean gotR=false;
   int b;
+  int xi=0;
+  int tr=this.in.read(msg);
+  if (tr == -1)   throw new IOException("Stream terminated");
   while (true) {
-    b=this.in.read();
-    if (b == -1)     throw new IOException("Stream terminated");
+    b=msg[xi];
+    if (xi >= tr)     throw new IOException("Stream terminated");
     if (b == 13) {
       gotR=true;
+      xi++;
       continue;
     }
     if (gotR) {
-      if (b == 10)       break;
-      lineData.write(13);
+      if (b == 10) {
+        xi++;
+        break;
+      }
+      msg[xi++]=13;
       gotR=false;
     }
-    lineData.write(b);
+    xi++;
   }
-  final String[] args=lineData.toString("UTF-8").trim().split(" ");
+  final String[] args=splitter.split(new String(msg,0,xi,USASCII).trim());
   final String command=args[0].toLowerCase();
   final int argCount=args.length - 1;
   if (command.equals(COMMAND_GET) || command.equals(COMMAND_GETS)) {
@@ -46,8 +52,16 @@
       final int exptime=Integer.valueOf(args[3]);
       final int byteCount=Integer.valueOf(args[4]);
       final byte[] data=new byte[byteCount];
-      this.in.read(data);
-      this.in.skip(2);
+      int avail=tr - xi;
+      if (avail < byteCount) {
+        System.arraycopy(msg,xi,data,0,avail);
+        this.in.read(data,avail,byteCount - avail);
+        this.in.skip(2);
+      }
+ else {
+        System.arraycopy(msg,xi,data,0,byteCount);
+        if (byteCount + 2 > avail)         this.in.skip(byteCount + 2 - avail);
+      }
       boolean noreply=false;
       if (argCount == 5) {
         if (args[5].equals(NOREPLY))         noreply=true;
@@ -79,8 +93,16 @@
       final int exptime=Integer.valueOf(args[3]);
       final int byteCount=Integer.valueOf(args[4]);
       final byte[] data=new byte[byteCount];
-      this.in.read(data,0,byteCount);
-      this.in.skip(2);
+      int avail=tr - xi;
+      if (avail < byteCount) {
+        System.arraycopy(msg,xi,data,0,avail);
+        this.in.read(data,avail,byteCount - avail);
+        this.in.skip(2);
+      }
+ else {
+        System.arraycopy(msg,xi,data,0,byteCount);
+        if (byteCount + 2 > avail)         this.in.skip(byteCount + 2 - avail);
+      }
       final long casVersion=Long.valueOf(args[5]);
       boolean noreply=false;
       if (argCount == 6) {
