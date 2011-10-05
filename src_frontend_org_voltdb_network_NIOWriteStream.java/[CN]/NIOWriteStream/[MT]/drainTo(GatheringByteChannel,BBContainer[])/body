@@ -22,12 +22,25 @@
     final BBContainer peekedBuffer=m_queuedBuffers.peek();
     if (peekedBuffer.b.remaining() > MAX_GATHERING_WRITE) {
       if (!peekedBuffer.b.isDirect()) {
-        m_queuedBuffers.push(peekedBuffer);
+        m_queuedBuffers.poll();
         final int originalPosition=peekedBuffer.b.position();
+        boolean firstSlice=true;
         do {
           final int amountToSplit=Math.min(peekedBuffer.b.remaining(),MAX_GATHERING_WRITE);
           peekedBuffer.b.position(peekedBuffer.b.limit() - amountToSplit);
-          final BBContainer splice=DBBPool.wrapBB(peekedBuffer.b.slice());
+          final BBContainer splice;
+          if (firstSlice) {
+            firstSlice=false;
+            splice=new BBContainer(peekedBuffer.b.slice(),0L){
+              @Override public void discard(){
+                peekedBuffer.discard();
+              }
+            }
+;
+          }
+ else {
+            splice=DBBPool.wrapBB(peekedBuffer.b.slice());
+          }
           m_queuedBuffers.push(splice);
           m_messagesWritten--;
           peekedBuffer.b.limit(peekedBuffer.b.position());
