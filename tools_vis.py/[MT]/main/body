@@ -1,63 +1,21 @@
 def main():
-    if (len(sys.argv) < 4):
+    if (len(sys.argv) < 3):
         usage()
         exit((-1))
-    if (not os.path.exists(sys.argv[2])):
+    if (not os.path.exists(sys.argv[1])):
         print sys.argv[2], 'does not exist'
         exit((-1))
-    credentials = parse_credentials(sys.argv[1])
-    path = os.path.join(sys.argv[2], sys.argv[3])
+    path = os.path.join(sys.argv[1], sys.argv[2])
     width = None
     height = None
+    if (len(sys.argv) >= 4):
+        width = int(sys.argv[3])
     if (len(sys.argv) >= 5):
-        width = int(sys.argv[4])
-    if (len(sys.argv) >= 6):
-        height = int(sys.argv[5])
-    latency_stat = LatencyStat(credentials['hostname'], credentials['latency']['user'], credentials['latency']['password'], credentials['latency']['database'])
-    volt_stat = ThroughputStat(credentials['hostname'], credentials['throughput']['user'], credentials['throughput']['password'], credentials['throughput']['database'])
-    timestamp = (time.mktime(starttime(30).timetuple()) * 1000.0)
-    latencies = latency_stat.get_latencies(timestamp)
-    throughput = volt_stat.get_throughputs(starttime(90))
-    latency_stat.close()
-    volt_stat.close()
-    latency_map = {}
-    latencies.sort(key=(lambda x: x['time']))
-    for v in latencies:
-        if ((v['time'] == None) or (v['latency'] == None)):
-            continue
-        if (v['hosts'] not in latency_map):
-            latency_map[v['hosts']] = {'time': [], 'latency': [], }
-        datenum = matplotlib.dates.date2num(v['time'])
-        latency_map[v['hosts']]['time'].append(datenum)
-        latency_map[v['hosts']]['latency'].append(v['latency'])
-    if (1 in latency_map):
-        pl = Plot('Average Latency on Single Node', 'Time', 'Latency (ms)', (path + '-latency-single.png'), width, height)
-        v = latency_map.pop(1)
-        pl.plot(v['time'], v['latency'], COLORS(1), 1)
-        pl.close()
-    if (len(latency_map) > 0):
-        pl = Plot('Average Latency', 'Time', 'Latency (ms)', (path + '-latency.png'), width, height)
-        for k in latency_map.iterkeys():
-            v = latency_map[k]
-            pl.plot(v['time'], v['latency'], COLORS(k), k)
-        pl.close()
-    throughput_map = {}
-    throughput.sort(key=(lambda x: x['id']))
-    for v in throughput:
-        if (v['hosts'] not in throughput_map):
-            throughput_map[v['hosts']] = {'time': [], 'tps': [], }
-        datenum = matplotlib.dates.date2num(v['time'])
-        print 'hosts', v['hosts'], 'time', v['time'], 'tps', v['tps']
-        throughput_map[v['hosts']]['time'].append(datenum)
-        throughput_map[v['hosts']]['tps'].append((v['tps'] / v['hosts']))
-    if (1 in throughput_map):
-        pl = Plot('Single Node Performance', 'Time', 'Throughput (txns/sec)', (path + '-throughput-single.png'), width, height)
-        v = throughput_map[1]
-        pl.plot(v['time'], v['tps'], COLORS(1), 1)
-        pl.close()
-    if (len(throughput_map) > 0):
-        pl = Plot('Per Node Performance', 'Time', 'Throughput (txns/sec/node)', (path + '-throughput.png'), width, height)
-        for k in throughput_map.iterkeys():
-            v = throughput_map[k]
-            pl.plot(v['time'], v['tps'], COLORS(k), k)
-        pl.close()
+        height = int(sys.argv[4])
+    stats = get_stats(STATS_SERVER, 21212, 30)
+    plot('Average Latency on Single Node', 'Time', 'Latency (ms)', (path + '-latency-single.png'), 1, width, height, stats, 'lat99')
+    plot('Single Node Performance', 'Time', 'Throughput (txns/sec)', (path + '-throughput-single.png'), 1, width, height, stats, 'tps')
+    plot('Average Latency on 3 Nodes', 'Time', 'Latency (ms)', (path + '-latency-3.png'), 3, width, height, stats, 'lat99')
+    plot('3 Node Performance', 'Time', 'Throughput (txns/sec)', (path + '-throughput-3.png'), 3, width, height, stats, 'tps')
+    plot('Average Latency on 6 Node', 'Time', 'Latency (ms)', (path + '-latency-6.png'), 6, width, height, stats, 'lat99')
+    plot('6 Node Performance', 'Time', 'Throughput (txns/sec)', (path + '-throughput-6.png'), 6, width, height, stats, 'tps')
