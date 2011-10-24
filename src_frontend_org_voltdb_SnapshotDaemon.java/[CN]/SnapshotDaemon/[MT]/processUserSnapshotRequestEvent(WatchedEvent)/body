@@ -1,0 +1,36 @@
+{
+  if (event.getType() == EventType.NodeCreated) {
+    byte data[]=m_zk.getData(event.getPath(),false,null);
+    m_zk.delete(event.getPath(),-1,null,null);
+    String jsonString=new String(data,"UTF-8");
+    JSONObject jsObj=new JSONObject(jsonString);
+    final String path=jsObj.getString("path");
+    final String nonce=jsObj.getString("nonce");
+    final long blocking=jsObj.getLong("blocking");
+    final String requestId=jsObj.getString("requestId");
+    final long handle=m_nextCallbackHandle++;
+    m_procedureCallbacks.put(handle,new ProcedureCallback(){
+      @Override public void clientCallback(      ClientResponse clientResponse) throws Exception {
+        if (clientResponse.getStatus() != ClientResponse.SUCCESS) {
+          hostLog.error(clientResponse.getStatusString());
+          FastSerializer fs=new FastSerializer();
+          fs.writeObject((ClientResponseImpl)clientResponse);
+          m_zk.create("/user_snapshot_response_" + requestId,fs.getBytes(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+          userSnapshotRequestExistenceCheck();
+        }
+        if (isSnapshotInProgressResponse(clientResponse)) {
+          scheduleSnapshotForLater(path,nonce,blocking,requestId,true);
+        }
+ else {
+          FastSerializer fs=new FastSerializer();
+          fs.writeObject((ClientResponseImpl)clientResponse);
+          m_zk.create("/user_snapshot_response_" + requestId,fs.getBytes(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+          userSnapshotRequestExistenceCheck();
+        }
+      }
+    }
+);
+    m_initiator.initiateSnapshotDaemonWork("@SnapshotSave",handle,new Object[]{path,nonce,blocking});
+    return;
+  }
+}
