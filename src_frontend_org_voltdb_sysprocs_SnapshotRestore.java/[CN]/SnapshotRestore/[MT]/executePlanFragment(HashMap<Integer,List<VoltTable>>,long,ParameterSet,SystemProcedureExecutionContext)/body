@@ -1,5 +1,4 @@
 {
-  String hostname=ConnectionUtil.getHostnameOrAddress();
   if (fragmentId == SysProcFragmentId.PF_restoreDistributeExportSequenceNumbers) {
     assert(params.toArray()[0] != null);
     assert(params.toArray().length == 2);
@@ -93,6 +92,7 @@
  else   if (fragmentId == SysProcFragmentId.PF_restoreScan) {
     assert(params.toArray()[0] != null);
     assert(params.toArray()[1] != null);
+    String hostname=ConnectionUtil.getHostnameOrAddress();
     VoltTable result=ClusterSaveFileState.constructEmptySaveFileStateVoltTable();
     int host_id=context.getExecutionSite().getCorrespondingHostId();
     Integer lowest_site_id=VoltDB.instance().getCatalogContext().siteTracker.getLowestLiveExecSiteIdForHost(host_id);
@@ -164,20 +164,34 @@ catch (        IOException e) {
       assert(savefile.getCompleted());
     }
  catch (    IOException e) {
+      String hostname=ConnectionUtil.getHostnameOrAddress();
       VoltTable result=constructResultsTable();
       result.addRow(m_hostId,hostname,m_siteId,table_name,-1,"FAILURE","Unable to load table: " + table_name + " error: "+ e.getMessage());
       return new DependencyPair(dependency_id,result);
     }
     try {
+      final Table new_catalog_table=getCatalogTable(table_name);
+      Boolean needsConversion=null;
       while (savefile.hasMoreChunks()) {
         VoltTable table=null;
         final org.voltdb.utils.DBBPool.BBContainer c=savefile.getNextChunk();
         if (c == null) {
           continue;
         }
-        VoltTable old_table=PrivateVoltTableFactory.createVoltTableFromBuffer(c.b,true);
-        Table new_catalog_table=getCatalogTable(table_name);
-        table=SavedTableConverter.convertTable(old_table,new_catalog_table);
+        if (needsConversion == null) {
+          VoltTable old_table=PrivateVoltTableFactory.createVoltTableFromBuffer(c.b.duplicate(),true);
+          needsConversion=SavedTableConverter.needsConversion(old_table,new_catalog_table);
+        }
+        if (needsConversion.booleanValue()) {
+          VoltTable old_table=PrivateVoltTableFactory.createVoltTableFromBuffer(c.b,true);
+          table=SavedTableConverter.convertTable(old_table,new_catalog_table);
+        }
+ else {
+          ByteBuffer copy=ByteBuffer.allocate(c.b.remaining());
+          copy.put(c.b);
+          copy.flip();
+          table=PrivateVoltTableFactory.createVoltTableFromBuffer(copy,true);
+        }
         c.discard();
         try {
           super.voltLoadTable(context.getCluster().getTypeName(),context.getDatabase().getTypeName(),table_name,table);
@@ -190,15 +204,18 @@ catch (        IOException e) {
       }
     }
  catch (    IOException e) {
+      String hostname=ConnectionUtil.getHostnameOrAddress();
       VoltTable result=constructResultsTable();
       result.addRow(m_hostId,hostname,m_siteId,table_name,-1,"FAILURE","Unable to load table: " + table_name + " error: "+ e.getMessage());
       return new DependencyPair(dependency_id,result);
     }
 catch (    VoltTypeException e) {
+      String hostname=ConnectionUtil.getHostnameOrAddress();
       VoltTable result=constructResultsTable();
       result.addRow(m_hostId,hostname,m_siteId,table_name,-1,"FAILURE","Unable to load table: " + table_name + " error: "+ e.getMessage());
       return new DependencyPair(dependency_id,result);
     }
+    String hostname=ConnectionUtil.getHostnameOrAddress();
     VoltTable result=constructResultsTable();
     result.addRow(m_hostId,hostname,m_siteId,table_name,-1,result_str,error_msg);
     try {
@@ -242,7 +259,7 @@ catch (    VoltTypeException e) {
       error_msg=e.getMessage();
     }
     VoltTable result=constructResultsTable();
-    result.addRow(m_hostId,hostname,m_siteId,table_name,-1,result_str,error_msg);
+    result.addRow(m_hostId,null,m_siteId,table_name,-1,result_str,error_msg);
     return new DependencyPair(dependency_id,result);
   }
  else   if (fragmentId == SysProcFragmentId.PF_restoreSendReplicatedTableResults) {
@@ -332,7 +349,7 @@ catch (    VoltTypeException e) {
       error_msg=e.getMessage();
     }
     VoltTable result=constructResultsTable();
-    result.addRow(m_hostId,hostname,m_siteId,table_name,partition_id,result_str,error_msg);
+    result.addRow(m_hostId,null,m_siteId,table_name,partition_id,result_str,error_msg);
     return new DependencyPair(dependency_id,result);
   }
  else   if (fragmentId == SysProcFragmentId.PF_restoreSendPartitionedTableResults) {
