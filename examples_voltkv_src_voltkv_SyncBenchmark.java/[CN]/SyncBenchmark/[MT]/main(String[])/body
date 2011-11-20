@@ -13,26 +13,10 @@
     int minValueSize=apph.intValue("min-value-size");
     int maxValueSize=apph.intValue("max-value-size");
     boolean useCompression=apph.booleanValue("use-compression");
-    apph.validate("threads",(threadCount > 0)).validate("pool-size",(poolSize > 0)).validate("get-put-ratio",(getPutRatio >= 0) && (getPutRatio <= 1)).validate("key-size",(keySize > 0) && (keySize < 251)).validate("min-value-size",(minValueSize > 0) && (minValueSize < 1048576)).validate("max-value-size",(maxValueSize > 0) && (maxValueSize < 1048576) && (maxValueSize >= minValueSize));
+    final String csv=apph.stringValue("stats");
+    apph.validate("duration",(duration > 0)).validate("display-interval",(displayInterval > 0)).validate("threads",(threadCount > 0)).validate("pool-size",(poolSize > 0)).validate("get-put-ratio",(getPutRatio >= 0) && (getPutRatio <= 1)).validate("key-size",(keySize > 0) && (keySize < 251)).validate("min-value-size",(minValueSize > 0) && (minValueSize < 1048576)).validate("max-value-size",(maxValueSize > 0) && (maxValueSize < 1048576) && (maxValueSize >= minValueSize));
     apph.printActualUsage();
-    System.out.printf("Connecting to servers: %s at port: %d\n",servers,port);
-    int sleep=1000;
-    while (true) {
-      try {
-        Con=ClientConnectionPool.get(servers,port);
-        break;
-      }
- catch (      Exception e) {
-        System.err.printf("Connection failed - retrying in %d second(s).\n",sleep / 1000);
-        try {
-          Thread.sleep(sleep);
-        }
- catch (        Exception tie) {
-        }
-        if (sleep < 8000)         sleep+=sleep;
-      }
-    }
-    System.out.println("Connected.  Starting benchmark.");
+    Con=ClientConnectionPool.getWithRetry(servers,port);
     final PayloadProcessor processor=new PayloadProcessor(keySize,minValueSize,maxValueSize,poolSize,useCompression);
     if (preload) {
       System.out.print("Initializing data store... ");
@@ -56,6 +40,7 @@
     System.out.print(Con.getStatistics("Get","Put").toString(false));
     System.out.println("\n\n-------------------------------------------------------------------------------------\n" + " Detailed Statistics\n" + "-------------------------------------------------------------------------------------\n\n");
     System.out.print(Con.getStatistics().toString(false));
+    Con.saveStatistics(csv);
     Con.close();
   }
  catch (  Exception x) {

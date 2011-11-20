@@ -8,26 +8,10 @@
     int port=apph.intValue("port");
     int contestantCount=apph.intValue("contestants");
     int maxVoteCount=apph.intValue("max-votes");
-    apph.validate("threads",(threadCount > 0)).validate("contestants",(contestantCount > 0)).validate("max-votes",(maxVoteCount > 0));
+    final String csv=apph.stringValue("stats");
+    apph.validate("duration",(duration > 0)).validate("display-interval",(displayInterval > 0)).validate("threads",(threadCount > 0)).validate("contestants",(contestantCount > 0)).validate("max-votes",(maxVoteCount > 0));
     apph.printActualUsage();
-    System.out.printf("Connecting to servers: %s at port: %d\n",servers,port);
-    int sleep=1000;
-    while (true) {
-      try {
-        Con=ClientConnectionPool.get(servers,port);
-        break;
-      }
- catch (      Exception e) {
-        System.err.printf("Connection failed - retrying in %d second(s).\n",sleep / 1000);
-        try {
-          Thread.sleep(sleep);
-        }
- catch (        Exception tie) {
-        }
-        if (sleep < 8000)         sleep+=sleep;
-      }
-    }
-    System.out.println("Connected.  Starting benchmark.");
+    Con=ClientConnectionPool.getWithRetry(servers,port);
     final int maxContestants=(int)Con.execute("Initialize",contestantCount,ContestantNamesCSV).getResults()[0].fetchRow(0).getLong(0);
     PhoneCallGenerator switchboard=new PhoneCallGenerator(maxContestants);
     Timer timer=new Timer();
@@ -56,6 +40,7 @@
     System.out.printf("\n\nThe Winner is: %s\n-------------------------------------------------------------------------------------\n",winner);
     System.out.println("\n\n-------------------------------------------------------------------------------------\n" + " System Statistics\n" + "-------------------------------------------------------------------------------------\n\n");
     System.out.print(Con.getStatistics("Vote").toString(false));
+    Con.saveStatistics(csv);
     Con.close();
   }
  catch (  Exception x) {
