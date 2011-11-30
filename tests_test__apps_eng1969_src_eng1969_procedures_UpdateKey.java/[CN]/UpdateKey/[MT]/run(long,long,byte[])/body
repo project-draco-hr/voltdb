@@ -1,0 +1,32 @@
+{
+  DB db=m_site.getLevelDBInstance();
+  voltQueueSQL(check,rowid_group,rowid);
+  VoltTable[] r1=voltExecuteSQL();
+  if (r1[0].asScalarLong() == 0) {
+    voltQueueSQL(residentGroups);
+    VoltTable[] r2=voltExecuteSQL();
+    if (r2[0].asScalarLong() >= MAX_GROUPS) {
+      voltQueueSQL(minAtimeGroupId);
+      VoltTable[] r3=voltExecuteSQL();
+      long groupId=r3[0].asScalarLong();
+      voltQueueSQL(evictedGroup,groupId);
+      VoltTable evictions=voltExecuteSQL()[0];
+      long evictedCount=0;
+      while (evictions.advanceRow()) {
+        ++evictedCount;
+        byte[] key=makeKey(groupId,evictions.getLong(0));
+        db.put(key,evictions.getVarbinary(1));
+      }
+      voltQueueSQL(deleteEvicted,EXPECT_SCALAR_MATCH(evictedCount),groupId);
+      VoltTable[] r4=voltExecuteSQL();
+    }
+    byte[] oldpayload=db.get(makeKey(rowid_group,rowid));
+    if (oldpayload == null) {
+      VoltDB.crashLocalVoltDB("Could not find payload from expected key: " + rowid_group + "_"+ rowid,false,null);
+    }
+    voltQueueSQL(insert,EXPECT_SCALAR_MATCH(1),rowid_group,rowid,this.getTransactionId(),oldpayload);
+    voltExecuteSQL();
+  }
+  voltQueueSQL(update,EXPECT_SCALAR_MATCH(1),this.getTransactionId(),payload,rowid_group,rowid);
+  return 0;
+}
