@@ -82,7 +82,24 @@
       c.writeStream().enqueue(errorResponse);
       return;
     }
-    if (task.procName.equals("@UpdateApplicationCatalog")) {
+    if (task.procName.equals("@LoadSinglepartitionTable")) {
+      int[] involvedPartitions=null;
+      try {
+        CatalogMap<Table> tables=m_catalogContext.get().database.getTables();
+        Object valueToHash=LoadSinglepartitionTable.partitionValueFromInvocation(tables,task);
+        involvedPartitions=new int[]{TheHashinator.hashToPartition(valueToHash)};
+      }
+ catch (      Exception e) {
+        authLog.warn(e.getMessage());
+        final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],e.getMessage(),task.clientHandle);
+        c.writeStream().enqueue(errorResponse);
+        return;
+      }
+      assert(involvedPartitions != null);
+      m_initiator.createTransaction(handler.connectionId(),handler.m_hostname,handler.isAdmin(),task,false,true,false,involvedPartitions,involvedPartitions.length,c,buf.capacity(),now);
+      return;
+    }
+ else     if (task.procName.equals("@UpdateApplicationCatalog")) {
       ParameterSet params=null;
       try {
         params=task.getParams();
