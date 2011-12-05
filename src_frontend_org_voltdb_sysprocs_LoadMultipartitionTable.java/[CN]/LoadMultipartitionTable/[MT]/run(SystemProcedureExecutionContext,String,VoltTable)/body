@@ -1,28 +1,42 @@
 {
   VoltTable[] results;
   SynthesizedPlanFragment pfs[];
-  Table catTable=m_cluster.getDatabases().get("database").getTables().getIgnoreCase(tableName);
+  Table catTable=ctx.getDatabase().getTables().getIgnoreCase(tableName);
   if (catTable == null) {
     throw new VoltAbortException("Table not present in catalog.");
   }
+  tableName=catTable.getTypeName();
+  int columnCount=table.getColumnCount();
+  String insertProcName=String.format("%s.insert",tableName);
+  Procedure proc=ctx.getDatabase().getProcedures().get(insertProcName);
+  if (proc == null) {
+    throw new VoltAbortException(String.format("Unable to locate auto-generated CRUD insert statement for table %s",tableName));
+  }
+  Statement catStmt=proc.getStatements().get("sql");
+  if (catStmt == null) {
+    throw new VoltAbortException(String.format("Unable to find SQL statement for found table %s: BAD",tableName));
+  }
+  SQLStmt stmt=new SQLStmt(catStmt.getSqltext());
+  SQLStmtInitializer.initSQLStmt(stmt,catStmt);
   if (catTable.getIsreplicated()) {
-    pfs=new SynthesizedPlanFragment[2];
-    pfs[1]=new SynthesizedPlanFragment();
-    pfs[1].fragmentId=SysProcFragmentId.PF_distribute;
-    pfs[1].outputDepId=DEP_distribute;
-    pfs[1].inputDepIds=new int[]{};
-    pfs[1].multipartition=true;
-    ParameterSet params=new ParameterSet();
-    params.setParameters(tableName,table);
-    pfs[1].parameters=params;
-    pfs[0]=new SynthesizedPlanFragment();
-    pfs[0].fragmentId=SysProcFragmentId.PF_aggregate;
-    pfs[0].outputDepId=DEP_aggregate;
-    pfs[0].inputDepIds=new int[]{DEP_distribute};
-    pfs[0].multipartition=false;
-    pfs[0].parameters=new ParameterSet();
-    results=executeSysProcPlanFragments(pfs,DEP_aggregate);
-    return results;
+    long queued=0;
+    long executed=0;
+    table.resetRowPosition();
+    for (int i=0; table.advanceRow(); ++i) {
+      Object[] params=new Object[columnCount];
+      for (int col=0; col < columnCount; ++col) {
+        params[col]=table.get(col,table.getColumnType(col));
+      }
+      voltQueueSQL(stmt,params);
+      ++queued;
+      if ((i % 100) == 0) {
+        executed+=executeSQL();
+      }
+    }
+    if (queued > executed) {
+      executed+=executeSQL();
+    }
+    return executed;
   }
  else {
     int partitionCol=catTable.getPartitioncolumn().getIndex();
@@ -71,6 +85,6 @@
     pfs[num_exec_sites].multipartition=false;
     pfs[num_exec_sites].parameters=new ParameterSet();
     results=executeSysProcPlanFragments(pfs,DEP_aggregate);
-    return results;
+    return results[0].asScalarLong();
   }
 }
