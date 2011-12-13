@@ -1,43 +1,87 @@
 {
-  String localMetadata="";
-  if (m_config.m_externalInterface.equals("")) {
-    LinkedList<NetworkInterface> interfaces=new LinkedList<NetworkInterface>();
-    try {
-      Enumeration<NetworkInterface> intfEnum=NetworkInterface.getNetworkInterfaces();
-      while (intfEnum.hasMoreElements()) {
-        NetworkInterface intf=intfEnum.nextElement();
-        if (intf.isLoopback() || !intf.isUp()) {
-          continue;
-        }
-        interfaces.offer(intf);
-      }
-    }
- catch (    SocketException e) {
-      throw new RuntimeException(e);
-    }
-    while (!interfaces.isEmpty()) {
-      NetworkInterface intf=interfaces.poll();
-      Enumeration<InetAddress> inetAddrs=intf.getInetAddresses();
-      Inet4Address addr=null;
-      while (inetAddrs.hasMoreElements()) {
-        InetAddress inetAddr=inetAddrs.nextElement();
-        if (inetAddr instanceof Inet4Address) {
-          addr=(Inet4Address)inetAddr;
-          break;
+  boolean threw=false;
+  JSONStringer stringer=new JSONStringer();
+  try {
+    stringer.object();
+    stringer.key("interfaces").array();
+    if (m_config.m_externalInterface.equals("")) {
+      LinkedList<NetworkInterface> interfaces=new LinkedList<NetworkInterface>();
+      try {
+        Enumeration<NetworkInterface> intfEnum=NetworkInterface.getNetworkInterfaces();
+        while (intfEnum.hasMoreElements()) {
+          NetworkInterface intf=intfEnum.nextElement();
+          if (intf.isLoopback() || !intf.isUp()) {
+            continue;
+          }
+          interfaces.offer(intf);
         }
       }
-      localMetadata+=addr.getHostAddress();
-      if (interfaces.peek() != null) {
-        localMetadata+=",";
+ catch (      SocketException e) {
+        throw new RuntimeException(e);
       }
-    }
-  }
+      if (interfaces.isEmpty()) {
+        stringer.value("localhost");
+      }
  else {
-    localMetadata=m_config.m_externalInterface;
+        boolean addedIp=false;
+        while (!interfaces.isEmpty()) {
+          NetworkInterface intf=interfaces.poll();
+          Enumeration<InetAddress> inetAddrs=intf.getInetAddresses();
+          Inet6Address inet6addr=null;
+          Inet4Address inet4addr=null;
+          while (inetAddrs.hasMoreElements()) {
+            InetAddress addr=inetAddrs.nextElement();
+            if (addr instanceof Inet6Address) {
+              inet6addr=(Inet6Address)addr;
+              if (inet6addr.isLinkLocalAddress()) {
+                inet6addr=null;
+              }
+            }
+ else             if (addr instanceof Inet4Address) {
+              inet4addr=(Inet4Address)addr;
+            }
+          }
+          if (inet4addr != null) {
+            stringer.value(inet4addr.getHostAddress());
+            addedIp=true;
+          }
+          if (inet6addr != null) {
+            stringer.value(inet6addr.getHostAddress());
+            addedIp=true;
+          }
+        }
+        if (!addedIp) {
+          stringer.value("localhost");
+        }
+      }
+    }
+ else {
+      stringer.value(m_config.m_externalInterface);
+    }
   }
-  localMetadata+=":" + Integer.valueOf(m_config.m_port);
-  localMetadata+=":" + Integer.valueOf(m_config.m_adminPort);
-  localMetadata+=":" + Integer.valueOf(m_config.m_httpPort);
-  localMetadata+=":" + Integer.valueOf(m_config.m_drAgentPortStart);
-  m_localMetadata=localMetadata;
+ catch (  Exception e) {
+    threw=true;
+    hostLog.warn("Error while collecting data about local network interfaces",e);
+  }
+  try {
+    if (threw) {
+      stringer=new JSONStringer();
+      stringer.object();
+      stringer.key("interfaces").array();
+      stringer.value("localhost");
+      stringer.endArray();
+    }
+ else {
+      stringer.endArray();
+    }
+    stringer.key("clientPort").value(m_config.m_port);
+    stringer.key("adminPort").value(m_config.m_adminPort);
+    stringer.key("httpPort").value(m_config.m_httpPort);
+    stringer.endObject();
+    JSONObject obj=new JSONObject(stringer.toString());
+    m_localMetadata=obj.toString(4);
+  }
+ catch (  Exception e) {
+    hostLog.warn("Failed to collect data about lcoal network interfaces",e);
+  }
 }

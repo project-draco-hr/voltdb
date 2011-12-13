@@ -2,10 +2,6 @@
   final LinkedList<ProcedureDescriptor> crudprocs=new LinkedList<ProcedureDescriptor>();
   final Database db=catalog.getClusters().get("cluster").getDatabases().get("database");
   for (  Table table : db.getTables()) {
-    if (table.getIsreplicated()) {
-      compilerLog.debug("Skipping creation of CRUD procedures for replicated table " + table.getTypeName());
-      continue;
-    }
     if (CatalogUtil.isTableExportOnly(db,table)) {
       compilerLog.debug("Skipping creation of CRUD procedures for export-only table " + table.getTypeName());
       continue;
@@ -14,6 +10,13 @@
       compilerLog.debug("Skipping creation of CRUD procedures for view " + table.getTypeName());
       continue;
     }
+    if (table.getIsreplicated()) {
+      compilerLog.debug("Creating multi-partition insert procedure for replicated table " + table.getTypeName());
+      crudprocs.add(generateCrudReplicatedInsert(table));
+      continue;
+    }
+    final Column partitioncolumn=table.getPartitioncolumn();
+    crudprocs.add(generateCrudInsert(table,partitioncolumn));
     final CatalogMap<Constraint> constraints=table.getConstraints();
     final Iterator<Constraint> it=constraints.iterator();
     Constraint pkey=null;
@@ -25,10 +28,9 @@
       }
     }
     if (pkey == null) {
-      compilerLog.debug("Skipping creation of CRUD procedures for partitioned table " + table.getTypeName() + " because no primary key is declared.");
+      compilerLog.debug("Skipping creation of CRUD select/delete/update for partitioned table " + table.getTypeName() + " because no primary key is declared.");
       continue;
     }
-    final Column partitioncolumn=table.getPartitioncolumn();
     boolean pkeyHasPartitionColumn=false;
     CatalogMap<ColumnRef> pkeycols=pkey.getIndex().getColumns();
     Iterator<ColumnRef> pkeycolsit=pkeycols.iterator();
@@ -40,11 +42,10 @@
       }
     }
     if (!pkeyHasPartitionColumn) {
-      compilerLog.debug("Skipping creation of CRUD procedures for partitioned table " + table.getTypeName() + " because primary key does not include the partitioning column.");
+      compilerLog.debug("Skipping creation of CRUD select/delete/update for partitioned table " + table.getTypeName() + " because primary key does not include the partitioning column.");
       continue;
     }
     crudprocs.add(generateCrudSelect(table,partitioncolumn,pkey));
-    crudprocs.add(generateCrudInsert(table,partitioncolumn,pkey));
     crudprocs.add(generateCrudDelete(table,partitioncolumn,pkey));
     crudprocs.add(generateCrudUpdate(table,partitioncolumn,pkey));
   }
