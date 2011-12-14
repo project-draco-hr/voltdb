@@ -1,69 +1,44 @@
 {
   Result retval=new Result();
-  retval.errors="";
-  if (m_timeOfLastPlannerCall.compareAndSet(0,System.currentTimeMillis()) == false) {
-    retval.errors="Multiple simultanious calls to out of process planner are not allowed";
-    return retval;
-  }
   if ((sql == null) || (sql.length() == 0)) {
-    m_timeOfLastPlannerCall.set(0);
-    retval.errors="Can't plan empty or null SQL.";
-    return retval;
+    throw new RuntimeException("Can't plan empty or null SQL.");
   }
   sql=sql.trim();
-synchronized (m_lastSql) {
-    m_lastSql=sql;
-  }
+  hostLog.info("recieved sql stmt: " + sql);
+  TrivialCostModel costModel=new TrivialCostModel();
+  QueryPlanner planner=new QueryPlanner(m_context.cluster,m_context.database,m_hsql,new DatabaseEstimates(),false,true);
+  CompiledPlan plan=null;
   try {
-    m_in.write((singlePartition ? "S" : "M") + "#" + sql+ "\n");
-    m_in.flush();
+    plan=planner.compilePlan(costModel,sql,null,"PlannerTool","PlannerToolProc",singlePartition,AD_HOC_JOINED_TABLE_LIMIT,null);
   }
- catch (  IOException e) {
-    m_timeOfLastPlannerCall.set(0);
-    retval.errors=e.getMessage();
-    return retval;
+ catch (  Exception e) {
+    throw new RuntimeException("Error creating planner ",e);
   }
-  BufferedReader r=new BufferedReader(new InputStreamReader(m_process.getInputStream()));
-  ArrayList<String> output=new ArrayList<String>();
-  while (true) {
-    String line=null;
-    try {
-      line=r.readLine();
-    }
- catch (    Exception e) {
-      m_timeOfLastPlannerCall.set(0);
-      retval.errors=e.getMessage();
-      return retval;
-    }
-    if (line == null)     continue;
-    line=line.trim();
-    if (line.length() == 0)     break;
-    output.add(line);
-  }
-  for (  String line : output) {
-    if (line.equals("No logging configuration supplied via -Dlog4j.configuration. Supplying default config that logs INFO or higher to STDOUT")) {
-      continue;
-    }
-    if (line.startsWith("PLAN-ONE: ")) {
-      assert(retval.onePlan == null);
-      retval.onePlan=line.substring(10);
-    }
- else     if (line.startsWith("PLAN-ALL: ")) {
-      assert(retval.allPlan == null);
-      retval.allPlan=line.substring(10);
-    }
- else     if (line.startsWith("REPLICATED-DML: ")) {
-      retval.replicatedDML=true;
+  if (plan == null) {
+    String plannerMsg=planner.getErrorMessage();
+    if (plannerMsg != null) {
+      throw new RuntimeException("ERROR: " + plannerMsg + "\n");
     }
  else {
-      retval.errors+=line.substring(7) + "\n";
+      throw new RuntimeException("ERROR: UNKNOWN PLANNING ERROR\n");
     }
   }
-  retval.errors=retval.errors.trim();
-  if (retval.errors.length() == 0)   retval.errors=null;
-  m_timeOfLastPlannerCall.set(0);
-synchronized (m_lastSql) {
-    m_lastSql="";
+  if (plan.parameters.size() > 0) {
+    throw new RuntimeException("ERROR: PARAMETERIZATION IN AD HOC QUERY");
   }
+  assert(plan.fragments.size() <= 2);
+  for (int i=0; i < plan.fragments.size(); i++) {
+    Fragment frag=plan.fragments.get(i);
+    PlanNodeList planList=new PlanNodeList(frag.planGraph);
+    String serializedPlan=planList.toJSONString();
+    String encodedPlan=serializedPlan;
+    if (frag.multiPartition) {
+      retval.allPlan=encodedPlan;
+    }
+ else {
+      retval.onePlan=encodedPlan;
+    }
+  }
+  retval.replicatedDML=plan.replicatedTableDML;
   return retval;
 }
