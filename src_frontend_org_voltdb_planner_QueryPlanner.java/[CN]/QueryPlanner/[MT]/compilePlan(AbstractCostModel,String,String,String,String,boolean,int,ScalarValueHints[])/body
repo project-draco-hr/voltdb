@@ -41,11 +41,8 @@
   }
   CompiledPlan rawplan=null;
   CompiledPlan bestPlan=null;
+  String bestFilename=null;
   double minCost=Double.MAX_VALUE;
-  HashMap<String,String> planOutputs=new HashMap<String,String>();
-  HashMap<String,String> dotPlanOutputs=new HashMap<String,String>();
-  HashMap<String,String> explainPlanOutputs=new HashMap<String,String>();
-  String winnerName="";
   int i=0;
   PlanStatistics stats=null;
   for (  AbstractParsedStmt parsedStmt : ExpressionEquivalenceProcessor.getEquivalentStmts(initialParsedStmt)) {
@@ -67,32 +64,42 @@
         AbstractPlanNode planGraph=plan.fragments.get(0).planGraph;
         boolean result=planGraph.computeEstimatesRecursively(stats,m_cluster,m_db,m_estimates,paramHints);
         assert(result);
-        PlanNodeList nodeList=new PlanNodeList(planGraph);
-        String json=null;
-        try {
-          String crunchJson=nodeList.toJSONString();
-          JSONObject jobj=new JSONObject(crunchJson);
-          json=jobj.toString(4);
-        }
- catch (        JSONException e2) {
-          m_recentErrorMsg="Plan for sql: '" + sql + "' can't be serialized to JSON";
-          return null;
-        }
         plan.cost=costModel.getPlanCost(stats);
+        String filename=String.valueOf(i++);
         if (plan.cost < minCost) {
           minCost=plan.cost;
           bestPlan=plan;
+          bestFilename=filename;
         }
-        String filename=String.valueOf(i++);
-        if (bestPlan == plan)         winnerName=filename;
-        json="PLAN:\n" + json;
-        json="COST: " + String.valueOf(plan.cost) + "\n"+ json;
-        assert(plan.sql != null);
-        json="SQL: " + plan.sql + "\n"+ json;
-        planOutputs.put(filename,json);
-        dotPlanOutputs.put(filename,nodeList.toDOTString("name"));
-        plan.explainedPlan=planGraph.toExplainPlanString();
-        explainPlanOutputs.put(filename,plan.explainedPlan);
+        PlanNodeList nodeList=new PlanNodeList(planGraph);
+        String json=null;
+        if (!m_quietPlanner) {
+          if (m_generateAllJSONPlans) {
+            try {
+              String crunchJson=nodeList.toJSONString();
+              JSONObject jobj=new JSONObject(crunchJson);
+              json=jobj.toString(4);
+            }
+ catch (            JSONException e2) {
+              m_recentErrorMsg="Plan for sql: '" + sql + "' can't be serialized to JSON";
+              return null;
+            }
+            json="PLAN:\n" + json;
+            json="COST: " + String.valueOf(plan.cost) + "\n"+ json;
+            assert(plan.sql != null);
+            json="SQL: " + plan.sql + "\n"+ json;
+            PrintStream candidatePlanOut=BuildDirectoryUtils.getDebugOutputPrintStream("statement-all-plans/" + procName + "_"+ stmtName,filename + "-json.txt");
+            candidatePlanOut.println(json);
+            candidatePlanOut.close();
+            candidatePlanOut=BuildDirectoryUtils.getDebugOutputPrintStream("statement-all-plans/" + procName + "_"+ stmtName,filename + ".dot");
+            candidatePlanOut.println(nodeList.toDOTString("name"));
+            candidatePlanOut.close();
+          }
+          plan.explainedPlan=planGraph.toExplainPlanString();
+          PrintStream candidatePlanOut=BuildDirectoryUtils.getDebugOutputPrintStream("statement-all-plans/" + procName + "_"+ stmtName,filename + ".txt");
+          candidatePlanOut.println(plan.explainedPlan);
+          candidatePlanOut.close();
+        }
       }
     }
   }
@@ -102,33 +109,26 @@
   }
   bestPlan.resetPlanNodeIds();
   if (!m_quietPlanner) {
-    for (    Entry<String,String> output : planOutputs.entrySet()) {
-      String filename=output.getKey();
-      if (winnerName.equals(filename)) {
-        filename="WINNER " + filename;
-      }
-      PrintStream candidatePlanOut=BuildDirectoryUtils.getDebugOutputPrintStream("statement-all-plans/" + procName + "_"+ stmtName,filename + "-json.txt");
-      candidatePlanOut.println(output.getValue());
-      candidatePlanOut.close();
+    String prefix=BuildDirectoryUtils.getBuildDirectoryPath() + "/" + BuildDirectoryUtils.rootPath+ "statement-all-plans/"+ procName+ "_"+ stmtName+ "/";
+    String winnerFilename, winnerFilenameRenamed;
+    File winnerFile, winnerFileRenamed;
+    if (m_generateAllJSONPlans) {
+      winnerFilename=prefix + bestFilename + "-json.txt";
+      winnerFile=new File(winnerFilename);
+      winnerFilenameRenamed=prefix + "WINNER-" + bestFilename+ "-json.txt";
+      winnerFileRenamed=new File(winnerFilenameRenamed);
+      winnerFile.renameTo(winnerFileRenamed);
+      winnerFilename=prefix + bestFilename + ".dot";
+      winnerFile=new File(winnerFilename);
+      winnerFilenameRenamed=prefix + "WINNER-" + bestFilename+ ".dot";
+      winnerFileRenamed=new File(winnerFilenameRenamed);
+      winnerFile.renameTo(winnerFileRenamed);
     }
-    for (    Entry<String,String> output : dotPlanOutputs.entrySet()) {
-      String filename=output.getKey();
-      if (winnerName.equals(filename)) {
-        filename="WINNER " + filename;
-      }
-      PrintStream candidatePlanOut=BuildDirectoryUtils.getDebugOutputPrintStream("statement-all-plans/" + procName + "_"+ stmtName,filename + ".dot");
-      candidatePlanOut.println(output.getValue());
-      candidatePlanOut.close();
-    }
-    for (    Entry<String,String> output : explainPlanOutputs.entrySet()) {
-      String filename=output.getKey();
-      if (winnerName.equals(filename)) {
-        filename="WINNER " + filename;
-      }
-      PrintStream candidatePlanOut=BuildDirectoryUtils.getDebugOutputPrintStream("statement-all-plans/" + procName + "_"+ stmtName,filename + ".txt");
-      candidatePlanOut.println(output.getValue());
-      candidatePlanOut.close();
-    }
+    winnerFilename=prefix + bestFilename + ".txt";
+    winnerFile=new File(winnerFilename);
+    winnerFilenameRenamed=prefix + "WINNER-" + bestFilename+ ".txt";
+    winnerFileRenamed=new File(winnerFilenameRenamed);
+    winnerFile.renameTo(winnerFileRenamed);
     PrintStream plansOut=BuildDirectoryUtils.getDebugOutputPrintStream("statement-stats",procName + "_" + stmtName+ ".txt");
     plansOut.println(stats.toString());
     plansOut.close();
