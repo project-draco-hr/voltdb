@@ -1,4 +1,5 @@
 {
+  boolean compilerDebug=System.getProperties().contains("compilerdebug");
   stmt=stmt.replaceAll("\n"," ");
   stmt=stmt.trim();
   compiler.addInfo("Compiling Statement: " + stmt);
@@ -84,21 +85,24 @@
     planFragment.setNontransactional(!fragmentReferencesPersistentTable(fragment.planGraph));
     planFragment.setHasdependencies(fragment.hasDependencies);
     planFragment.setMultipartition(fragment.multiPartition);
-    String json=null;
-    try {
-      JSONObject jobj=new JSONObject(node_list.toJSONString());
-      json=jobj.toString(4);
+    String json=node_list.toJSONString();
+    if (compilerDebug) {
+      String prettyJson=null;
+      try {
+        JSONObject jobj=new JSONObject(json);
+        prettyJson=jobj.toString(4);
+      }
+ catch (      JSONException e2) {
+        e2.printStackTrace();
+        throw compiler.new VoltCompilerException(e2.getMessage());
+      }
+      plansOut=BuildDirectoryUtils.getDebugOutputPrintStream("statement-winner-plan-fragments",name + "-" + String.valueOf(i)+ ".txt");
+      plansOut.println(prettyJson);
+      plansOut.close();
+      plansOut=BuildDirectoryUtils.getDebugOutputPrintStream("statement-winner-plan-fragments",name + String.valueOf(i) + ".dot");
+      plansOut.println(node_list.toDOTString(name + "-" + String.valueOf(i)));
+      plansOut.close();
     }
- catch (    JSONException e2) {
-      e2.printStackTrace();
-      throw compiler.new VoltCompilerException(e2.getMessage());
-    }
-    plansOut=BuildDirectoryUtils.getDebugOutputPrintStream("statement-winner-plan-fragments",name + "-" + String.valueOf(i++)+ ".txt");
-    plansOut.println(json);
-    plansOut.close();
-    plansOut=BuildDirectoryUtils.getDebugOutputPrintStream("statement-winner-plan-fragments",name + String.valueOf(i) + ".dot");
-    plansOut.println(node_list.toDOTString(name + "-" + String.valueOf(i)));
-    plansOut.close();
     try {
       FastSerializer fs=new FastSerializer(true,false);
       fs.write(json.getBytes());
@@ -109,5 +113,6 @@
       e.printStackTrace();
       throw compiler.new VoltCompilerException(e.getMessage());
     }
+    i++;
   }
 }
