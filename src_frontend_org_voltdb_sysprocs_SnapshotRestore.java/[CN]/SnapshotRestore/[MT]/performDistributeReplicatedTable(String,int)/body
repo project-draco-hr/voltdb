@@ -18,7 +18,6 @@
   Boolean needsConversion=null;
   try {
     while (savefile.hasMoreChunks()) {
-      VoltTable table=null;
       final org.voltdb.utils.DBBPool.BBContainer c=savefile.getNextChunk();
       if (c == null) {
         continue;
@@ -27,15 +26,14 @@
         VoltTable old_table=PrivateVoltTableFactory.createVoltTableFromBuffer(c.b.duplicate(),true);
         needsConversion=SavedTableConverter.needsConversion(old_table,new_catalog_table);
       }
+      byte compressedTable[];
       if (needsConversion.booleanValue()) {
         VoltTable old_table=PrivateVoltTableFactory.createVoltTableFromBuffer(c.b,true);
-        table=SavedTableConverter.convertTable(old_table,new_catalog_table);
+        VoltTable new_table=SavedTableConverter.convertTable(old_table,new_catalog_table);
+        compressedTable=new_table.getCompressedBytes();
       }
  else {
-        ByteBuffer copy=ByteBuffer.allocate(c.b.remaining());
-        copy.put(c.b);
-        copy.flip();
-        table=PrivateVoltTableFactory.createVoltTableFromBuffer(copy,true);
+        compressedTable=CompressionService.compressBuffer(c.b);
       }
       c.discard();
       SynthesizedPlanFragment[] pfs=new SynthesizedPlanFragment[2];
@@ -47,7 +45,7 @@
       pfs[0].inputDepIds=new int[]{};
       pfs[0].multipartition=false;
       ParameterSet params=new ParameterSet();
-      params.setParameters(tableName,result_dependency_id,table);
+      params.setParameters(tableName,result_dependency_id,compressedTable);
       pfs[0].parameters=params;
       int final_dependency_id=TableSaveFileState.getNextDependencyId();
       pfs[1]=new SynthesizedPlanFragment();

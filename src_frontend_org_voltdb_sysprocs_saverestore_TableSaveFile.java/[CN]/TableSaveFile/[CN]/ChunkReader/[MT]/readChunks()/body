@@ -1,5 +1,5 @@
 {
-  int chunksRead=0;
+  ByteBuffer fileInputBuffer=ByteBuffer.allocateDirect(CompressionService.maxCompressedLength(DEFAULT_CHUNKSIZE));
   while (m_hasMoreChunks) {
     try {
       m_chunkReads.acquire();
@@ -17,7 +17,7 @@
         }
       }
       chunkLengthB.flip();
-      final int nextChunkLength=chunkLengthB.getInt();
+      int nextChunkLength=chunkLengthB.getInt();
       expectedAnotherChunk=true;
       final CRC32 partitionIdCRC=new CRC32();
       chunkLengthB.mark();
@@ -40,30 +40,60 @@
       if (nextChunkLength < 0) {
         throw new IOException("Corrupted TableSaveFile chunk has negative chunk length");
       }
-      if (nextChunkLength > DEFAULT_CHUNKSIZE) {
-        throw new IOException("Corrupted TableSaveFile chunk has unreasonable length " + "> DEFAULT_CHUNKSIZE bytes");
+      if (isCompressed()) {
+        if (nextChunkLength > fileInputBuffer.capacity()) {
+          throw new IOException("Corrupted TableSaveFile chunk has unreasonable length " + "> DEFAULT_CHUNKSIZE bytes");
+        }
+      }
+ else {
+        if (nextChunkLength > DEFAULT_CHUNKSIZE) {
+          throw new IOException("Corrupted TableSaveFile chunk has unreasonable length " + "> DEFAULT_CHUNKSIZE bytes");
+        }
+      }
+      if (isCompressed()) {
+        fileInputBuffer.clear();
+        fileInputBuffer.limit(nextChunkLength);
+        while (fileInputBuffer.hasRemaining()) {
+          final int read=m_saveFile.read(fileInputBuffer);
+          if (read == -1) {
+            throw new EOFException();
+          }
+        }
+        fileInputBuffer.flip();
+        nextChunkLength=CompressionService.uncompressedLength(fileInputBuffer);
       }
       Container c=m_buffers.poll();
       if (c == null) {
         final BBContainer originContainer=DBBPool.allocateDirect(DEFAULT_CHUNKSIZE);
         final ByteBuffer b=originContainer.b;
         final long pointer=org.voltdb.utils.DBBPool.getBufferAddress(b);
-        c=new Container(b,pointer,originContainer);
+        c=new Container(b,pointer,originContainer,nextChunkPartitionId);
       }
       boolean completedRead=false;
       int checksumStartPosition=0;
       int rowCount=0;
       try {
         c.b.clear();
-        c.b.limit((nextChunkLength - 8) + m_tableHeader.capacity());
+        if (isCompressed()) {
+          c.b.limit(nextChunkLength + m_tableHeader.capacity() + 4);
+        }
+ else {
+          c.b.limit((nextChunkLength - 8) + m_tableHeader.capacity());
+        }
         m_tableHeader.position(0);
         c.b.put(m_tableHeader);
         c.b.position(c.b.position() + 4);
         checksumStartPosition=c.b.position();
-        while (c.b.hasRemaining()) {
-          final int read=m_saveFile.read(c.b);
-          if (read == -1) {
-            throw new EOFException();
+        if (isCompressed()) {
+          CompressionService.decompressBuffer(fileInputBuffer,c.b);
+          c.b.position(c.b.limit());
+        }
+ else {
+          while (c.b.hasRemaining()) {
+            final int read=m_saveFile.read(c.b);
+            if (read == -1) {
+              throw new EOFException();
+            }
           }
         }
         c.b.position(c.b.position() - 4);
@@ -112,7 +142,6 @@
           }
         }
       }
-      ++chunksRead;
 synchronized (TableSaveFile.this) {
         m_availableChunks.offer(c);
         TableSaveFile.this.notifyAll();

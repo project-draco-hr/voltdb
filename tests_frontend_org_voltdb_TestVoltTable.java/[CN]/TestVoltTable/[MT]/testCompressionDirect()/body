@@ -1,0 +1,23 @@
+{
+  testResizedTable();
+  ByteBuffer view=t.getBuffer();
+  int position=view.position();
+  view.position(0);
+  ByteBuffer copy=ByteBuffer.allocateDirect(view.limit());
+  copy.put(view);
+  copy.position(position);
+  VoltTable tDirect=PrivateVoltTableFactory.createVoltTableFromBuffer(copy,true);
+  byte compressedBytes[]=tDirect.getCompressedBytes();
+  FastSerializer fs=new FastSerializer();
+  fs.writeObject(tDirect);
+  byte uncompressedBytes[]=fs.getBytes();
+  assertTrue(uncompressedBytes.length > compressedBytes.length);
+  compressedBytes=tDirect.getCompressedBytesAsync().get();
+  assertTrue(uncompressedBytes.length > compressedBytes.length);
+  byte decompressedBytes[]=CompressionService.decompressBytes(compressedBytes);
+  VoltTable vt=PrivateVoltTableFactory.createVoltTableFromBuffer(ByteBuffer.wrap(decompressedBytes),true);
+  fs=new FastSerializer();
+  fs.writeObject(vt);
+  byte bytesForComparison[]=fs.getBytes();
+  assertTrue(java.util.Arrays.equals(bytesForComparison,uncompressedBytes));
+}

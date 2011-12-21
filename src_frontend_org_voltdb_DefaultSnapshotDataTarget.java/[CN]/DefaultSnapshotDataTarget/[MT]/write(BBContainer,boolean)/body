@@ -3,11 +3,13 @@
     tupleData.discard();
     return null;
   }
-  if (prependLength) {
-    tupleData.b.putInt(tupleData.b.remaining() - 4);
-    tupleData.b.position(0);
-  }
   m_outstandingWriteTasks.incrementAndGet();
+  Future<byte[]> compressionTask=null;
+  if (prependLength) {
+    tupleData.b.position(tupleData.b.position() + 16);
+    compressionTask=CompressionService.compressBufferAsync(tupleData.b);
+  }
+  final AtomicReference<Future<byte[]>> compressionTaskFinal=new AtomicReference<Future<byte[]>>(compressionTask);
   Future<?> writeTask=m_es.submit(new Callable<Object>(){
     @Override public Object call() throws Exception {
       try {
@@ -22,10 +24,33 @@
             throw new IOException("Disk full");
           }
         }
-        m_bytesAllowedBeforeSync.acquire(tupleData.b.remaining());
         int totalWritten=0;
-        while (tupleData.b.hasRemaining()) {
-          totalWritten+=m_channel.write(tupleData.b);
+        if (prependLength) {
+          ByteBuffer payloadBuffer=null;
+          try {
+            payloadBuffer=ByteBuffer.wrap(compressionTaskFinal.get().get());
+          }
+  finally {
+            compressionTaskFinal.set(null);
+          }
+          ByteBuffer lengthPrefix=ByteBuffer.allocate(16);
+          m_bytesAllowedBeforeSync.acquire(payloadBuffer.remaining() + 16);
+          lengthPrefix.putInt(payloadBuffer.remaining());
+          lengthPrefix.putInt(tupleData.b.getInt(4));
+          lengthPrefix.putInt(tupleData.b.getInt(8));
+          lengthPrefix.putInt(tupleData.b.getInt(12));
+          lengthPrefix.flip();
+          while (lengthPrefix.hasRemaining()) {
+            totalWritten+=m_channel.write(lengthPrefix);
+          }
+          while (payloadBuffer.hasRemaining()) {
+            totalWritten+=m_channel.write(payloadBuffer);
+          }
+        }
+ else {
+          while (tupleData.b.hasRemaining()) {
+            totalWritten+=m_channel.write(tupleData.b);
+          }
         }
         m_bytesWritten+=totalWritten;
         m_bytesWrittenSinceLastSync.addAndGet(totalWritten);

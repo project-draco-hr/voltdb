@@ -23,6 +23,15 @@ synchronized (m_startAndStopLock) {
     m_hasCatalog=new CountDownLatch(1);
     m_hostIdWithStartupCatalog=0;
     m_pathToStartupCatalog=m_config.m_pathToCatalog;
+    m_computationService=Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors(),new ThreadFactory(){
+      private int threadIndex=0;
+      @Override public synchronized Thread newThread(      Runnable r){
+        Thread t=new Thread(null,r,"Computation service thread - " + threadIndex++,131072);
+        t.setDaemon(true);
+        return t;
+      }
+    }
+);
     boolean isRejoin=config.m_rejoinToHostAndPort != null;
     try {
       System.setOut(new PrintStream(System.out,true,"UTF-8"));
@@ -64,6 +73,8 @@ synchronized (m_startAndStopLock) {
         System.exit(-1);
       }
     }
+    collectLocalNetworkMetadata();
+    m_clusterMetadata.put(m_messenger.getHostId(),getLocalMetadata());
     Site siteForThisThread=null;
     m_currentThreadSite=null;
     for (    Site site : m_catalogContext.siteTracker.getUpSites()) {
@@ -107,8 +118,8 @@ synchronized (runner) {
       int sitesHostId=Integer.parseInt(site.getHost().getTypeName());
       int currSiteId=Integer.parseInt(site.getTypeName());
       if ((sitesHostId == m_myHostId) && (site.getIsexec() == false)) {
-        ClientInterface ci=ClientInterface.create(m_network,m_messenger,m_catalogContext,m_catalogContext.numberOfNodes,currSiteId,site.getInitiatorid(),config.m_port + portOffset,config.m_adminPort + portOffset,m_config.m_timestampTestingSalt);
-        portOffset++;
+        ClientInterface ci=ClientInterface.create(m_network,m_messenger,m_catalogContext,m_replicationRole,m_catalogContext.numberOfNodes,currSiteId,site.getInitiatorid(),config.m_port + portOffset,config.m_adminPort + portOffset,m_config.m_timestampTestingSalt);
+        portOffset+=2;
         m_clientInterfaces.add(ci);
         m_compilerThread=ci.getCompilerThread();
       }
