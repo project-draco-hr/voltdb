@@ -62,18 +62,24 @@
   for (int i=oopStartIndex; i < m_hostCount; i++) {
     startOne(i,clearLocalDataDirectories,role.toString().toLowerCase());
   }
-  boolean allReady;
+  long startOfPipeWait=System.currentTimeMillis();
+  boolean allReady=false;
+  if (logtime)   System.out.println("********** pre witness: " + (System.currentTimeMillis() - startTime) + " ms");
   do {
-    if (logtime)     System.out.println("********** pre witness: " + (System.currentTimeMillis() - startTime) + " ms");
+    if ((System.currentTimeMillis() - startOfPipeWait) > PIPE_WAIT_MAX_TIMEOUT) {
+      break;
+    }
     allReady=true;
     for (    PipeToFile pipeToFile : m_pipes) {
       if (pipeToFile == null) {
         continue;
       }
 synchronized (pipeToFile) {
+        if (pipeToFile.m_eof.get())         continue;
+        if (isProcessDead(pipeToFile.getProcess()))         continue;
         if (pipeToFile.m_witnessedReady.get() != true) {
           try {
-            pipeToFile.wait();
+            pipeToFile.wait(1000);
           }
  catch (          InterruptedException ex) {
             Logger.getLogger(LocalCluster.class.getName()).log(Level.SEVERE,null,ex);
@@ -86,8 +92,29 @@ synchronized (pipeToFile) {
   }
  while (allReady == false);
   if (logtime)   System.out.println("********** post witness: " + (System.currentTimeMillis() - startTime) + " ms");
-  if (!allReady) {
-    throw new RuntimeException("Not all processes became ready");
+  int expectedProcesses=m_hostCount - (m_hasLocalServer ? 1 : 0);
+  int downProcesses=0;
+  for (  Process proc : m_cluster) {
+    if ((proc != null) && (isProcessDead(proc))) {
+      downProcesses++;
+    }
+  }
+  if ((downProcesses > 0) || (allReady == false)) {
+    for (    Process proc : m_cluster) {
+      if (proc != null) {
+        try {
+          proc.destroy();
+        }
+ catch (        Exception e) {
+        }
+      }
+    }
+    if (downProcesses > 0) {
+      throw new RuntimeException(String.format("%d/%d external processes failed to start",downProcesses,expectedProcesses));
+    }
+    if (!allReady) {
+      throw new RuntimeException("One or more external processes failed to complete initialization.");
+    }
   }
   if (m_hasLocalServer)   m_localServer.waitForInitialization();
   if (logtime)   System.out.println("********** DONE: " + (System.currentTimeMillis() - startTime) + " ms");
