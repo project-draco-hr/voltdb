@@ -1,0 +1,29 @@
+{
+  ArrayList<NodeConnection> connections=new ArrayList<NodeConnection>();
+synchronized (Distributer.this) {
+    connections.addAll(m_connections);
+  }
+  long now=System.currentTimeMillis();
+  for (  NodeConnection c : connections) {
+synchronized (c) {
+      for (      Entry<Long,CallbackBookeeping> e : c.m_callbacks.entrySet()) {
+        long handle=e.getKey();
+        CallbackBookeeping cb=e.getValue();
+        if ((cb.timestamp + m_procedureCallTimeoutMS) < now) {
+          ClientResponseImpl r=new ClientResponseImpl(ClientResponse.CONNECTION_TIMEOUT,(byte)0,"",new VoltTable[0],"No response recieved in the allotted time.");
+          r.setClientHandle(handle);
+          r.setClientRoundtrip((int)(now - cb.timestamp));
+          r.setClusterRoundtrip((int)(now - cb.timestamp));
+          try {
+            cb.callback.clientCallback(r);
+          }
+ catch (          Exception e1) {
+            e1.printStackTrace();
+          }
+          c.m_callbacks.remove(e.getKey());
+          c.m_callbacksToInvoke.decrementAndGet();
+        }
+      }
+    }
+  }
+}

@@ -12,23 +12,30 @@
   long callTime=0;
   int delta=0;
 synchronized (this) {
-    Object stuff[]=m_callbacks.remove(response.getClientHandle());
-    callTime=(Long)stuff[0];
-    delta=(int)(now - callTime);
-    cb=(ProcedureCallback)stuff[1];
-    m_invocationsCompleted++;
-    final byte status=response.getStatus();
-    boolean abort=false;
-    boolean error=false;
-    if (status == ClientResponse.USER_ABORT || status == ClientResponse.GRACEFUL_FAILURE) {
-      m_invocationAborts++;
-      abort=true;
+    CallbackBookeeping stuff=m_callbacks.remove(response.getClientHandle());
+    if (stuff == null) {
+      for (      ClientStatusListenerExt listener : m_listeners) {
+        listener.lateProcedureResponse(response,m_hostname,m_port);
+      }
     }
- else     if (status != ClientResponse.SUCCESS) {
-      m_invocationErrors++;
-      error=true;
+ else {
+      callTime=stuff.timestamp;
+      delta=(int)(now - callTime);
+      cb=stuff.callback;
+      m_invocationsCompleted++;
+      final byte status=response.getStatus();
+      boolean abort=false;
+      boolean error=false;
+      if (status == ClientResponse.USER_ABORT || status == ClientResponse.GRACEFUL_FAILURE) {
+        m_invocationAborts++;
+        abort=true;
+      }
+ else       if (status != ClientResponse.SUCCESS) {
+        m_invocationErrors++;
+        error=true;
+      }
+      updateStats(stuff.name,delta,response.getClusterRoundtrip(),abort,error);
     }
-    updateStats((String)stuff[2],delta,response.getClusterRoundtrip(),abort,error);
   }
   if (cb != null) {
     response.setClientRoundtrip(delta);
@@ -39,9 +46,5 @@ synchronized (this) {
       uncaughtException(cb,response,e);
     }
     m_callbacksToInvoke.decrementAndGet();
-  }
- else   if (m_isConnected) {
-    assert(false);
-    System.err.println("Invalid response: no callback");
   }
 }
