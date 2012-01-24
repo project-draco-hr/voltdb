@@ -4,29 +4,23 @@
   final StoredProcedureInvocation task=fds.readObject(StoredProcedureInvocation.class);
   VoltDBInterface instance=VoltDB.instance();
   if (instance.getMode() == OperationMode.PAUSED && !handler.isAdmin()) {
-    final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.SERVER_UNAVAILABLE,new VoltTable[0],"Server is currently unavailable; try again later",task.clientHandle);
-    c.writeStream().enqueue(errorResponse);
-    return;
+    return new ClientResponseImpl(ClientResponseImpl.SERVER_UNAVAILABLE,new VoltTable[0],"Server is currently unavailable; try again later",task.clientHandle);
   }
   final CatalogContext catalogContext=m_catalogContext.get();
   AuthSystem.AuthUser user=catalogContext.authSystem.getUser(handler.m_username);
   final Procedure catProc=catalogContext.procedures.get(task.procName);
   Config sysProc=SystemProcedureCatalog.listing.get(task.procName);
   if (user == null) {
-    final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],"User " + handler.m_username + " has been removed from the system via a catalog update",task.clientHandle);
     authLog.info("User " + handler.m_username + " has been removed from the system via a catalog update");
-    c.writeStream().enqueue(errorResponse);
-    return;
+    return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],"User " + handler.m_username + " has been removed from the system via a catalog update",task.clientHandle);
   }
   if (catProc == null && sysProc == null) {
     String errorMessage="Procedure " + task.procName + " was not found";
     authLog.l7dlog(Level.WARN,LogKeys.auth_ClientInterface_ProcedureNotFound.name(),new Object[]{task.procName},null);
-    final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],errorMessage,task.clientHandle);
-    c.writeStream().enqueue(errorResponse);
-    return;
+    return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],errorMessage,task.clientHandle);
   }
-  if (!checkPolicies(null,user,task,catProc,sysProc,c.writeStream()) || !checkPolicies(task.procName,user,task,catProc,sysProc,c.writeStream())) {
-    return;
+  if (!checkPolicies(null,user,task,catProc,sysProc,ccxn.writeStream()) || !checkPolicies(task.procName,user,task,catProc,sysProc,ccxn.writeStream())) {
+    return null;
   }
   if (sysProc != null) {
     if (task.procName.startsWith("@AdHoc")) {
@@ -41,15 +35,14 @@
           partitionParam=params.m_params[1];
         }
       }
-      LocalObjectMessage work=new LocalObjectMessage(new AdHocPlannerWork(m_siteId,VoltDB.CLIENT_INTERFACE_MAILBOX_ID,false,task.clientHandle,handler.connectionId(),handler.m_hostname,handler.isAdmin(),c,sql,partitionParam));
+      LocalObjectMessage work=new LocalObjectMessage(new AdHocPlannerWork(m_siteId,VoltDB.CLIENT_INTERFACE_MAILBOX_ID,false,task.clientHandle,handler.connectionId(),handler.m_hostname,handler.isAdmin(),ccxn,sql,partitionParam));
       try {
         m_mailbox.send(VoltDB.instance().getAgreementSite().siteId(),VoltDB.ASYNC_COMPILER_MAILBOX_ID,work);
       }
  catch (      MessagingException ex) {
-        final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.GRACEFUL_FAILURE,new VoltTable[0],"Failed to process Ad Hoc request. No data was read or written.",task.clientHandle);
-        c.writeStream().enqueue(errorResponse);
+        return new ClientResponseImpl(ClientResponseImpl.GRACEFUL_FAILURE,new VoltTable[0],"Failed to process Ad Hoc request. No data was read or written.",task.clientHandle);
       }
-      return;
+      return null;
     }
     if (task.procName.equals("@UpdateApplicationCatalog")) {
       ParameterSet params=task.getParams();
@@ -61,15 +54,14 @@
         catalogBytes=(byte[])params.m_params[0];
       }
       String deploymentString=(String)params.m_params[1];
-      LocalObjectMessage work=new LocalObjectMessage(new CatalogChangeWork(m_siteId,VoltDB.CLIENT_INTERFACE_MAILBOX_ID,task.clientHandle,handler.connectionId(),handler.m_hostname,handler.isAdmin(),c,catalogBytes,deploymentString));
+      LocalObjectMessage work=new LocalObjectMessage(new CatalogChangeWork(m_siteId,VoltDB.CLIENT_INTERFACE_MAILBOX_ID,task.clientHandle,handler.connectionId(),handler.m_hostname,handler.isAdmin(),ccxn,catalogBytes,deploymentString));
       try {
         m_mailbox.send(VoltDB.instance().getAgreementSite().siteId(),VoltDB.ASYNC_COMPILER_MAILBOX_ID,work);
       }
  catch (      MessagingException ex) {
-        final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.GRACEFUL_FAILURE,new VoltTable[0],"Failed to process UpdateApplicationCatalog request." + " No data was read or written.",task.clientHandle);
-        c.writeStream().enqueue(errorResponse);
+        return new ClientResponseImpl(ClientResponseImpl.GRACEFUL_FAILURE,new VoltTable[0],"Failed to process UpdateApplicationCatalog request." + " No data was read or written.",task.clientHandle);
       }
-      return;
+      return null;
     }
     if (task.procName.equals("@LoadSinglepartitionTable")) {
       int[] involvedPartitions=null;
@@ -80,19 +72,15 @@
       }
  catch (      Exception e) {
         authLog.warn(e.getMessage());
-        final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],e.getMessage(),task.clientHandle);
-        c.writeStream().enqueue(errorResponse);
-        return;
+        return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],e.getMessage(),task.clientHandle);
       }
       assert(involvedPartitions != null);
-      m_initiator.createTransaction(handler.connectionId(),handler.m_hostname,handler.isAdmin(),task,false,true,false,involvedPartitions,involvedPartitions.length,c,buf.capacity(),now);
-      return;
+      m_initiator.createTransaction(handler.connectionId(),handler.m_hostname,handler.isAdmin(),task,false,true,false,involvedPartitions,involvedPartitions.length,ccxn,buf.capacity(),now);
+      return null;
     }
  else     if (task.procName.equals("@Pause") || task.procName.equals("@Resume")) {
       if (!handler.isAdmin()) {
-        final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],"" + task.procName + " is not available to this client",task.clientHandle);
-        c.writeStream().enqueue(errorResponse);
-        return;
+        return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],"" + task.procName + " is not available to this client",task.clientHandle);
       }
     }
  else     if (task.procName.equals("@SystemInformation")) {
@@ -104,19 +92,19 @@
       task.unserializedParams=null;
     }
  else     if (task.procName.equals("@SnapshotSave")) {
-      m_snapshotDaemon.requestUserSnapshot(task,c);
-      return;
+      m_snapshotDaemon.requestUserSnapshot(task,ccxn);
+      return null;
     }
  else     if (task.procName.equals("@Statistics")) {
       ParameterSet params=task.getParams();
       if ((params.m_params.length != 0) && (((String)params.toArray()[0]).equals("WAN"))) {
         try {
-          VoltDB.instance().getStatsAgent().collectStats(c,task.clientHandle,"WAN");
+          VoltDB.instance().getStatsAgent().collectStats(ccxn,task.clientHandle,"WAN");
         }
  catch (        Exception e) {
-          sendErrorResponse(c,task.clientHandle,ClientResponse.UNEXPECTED_FAILURE,null,e,true);
+          sendErrorResponse(ccxn,task.clientHandle,ClientResponse.UNEXPECTED_FAILURE,null,e,true);
         }
-        return;
+        return null;
       }
     }
   }
@@ -133,20 +121,19 @@
         String errorMessage="Error sending procedure " + task.procName + " to the correct partition. Make sure parameter values are correct.";
         authLog.l7dlog(Level.WARN,LogKeys.host_ClientInterface_unableToRouteSinglePartitionInvocation.name(),new Object[]{task.procName},null);
         final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],errorMessage,task.clientHandle);
-        c.writeStream().enqueue(errorResponse);
+        ccxn.writeStream().enqueue(errorResponse);
       }
     }
     if (involvedPartitions != null) {
-      boolean success=m_initiator.createTransaction(handler.connectionId(),handler.m_hostname,handler.isAdmin(),task,catProc.getReadonly(),catProc.getSinglepartition(),catProc.getEverysite(),involvedPartitions,involvedPartitions.length,c,buf.capacity(),now);
+      boolean success=m_initiator.createTransaction(handler.connectionId(),handler.m_hostname,handler.isAdmin(),task,catProc.getReadonly(),catProc.getSinglepartition(),catProc.getEverysite(),involvedPartitions,involvedPartitions.length,ccxn,buf.capacity(),now);
       if (!success) {
-        final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],ClientResponseImpl.DUPE_TRANSACTION,task.clientHandle);
-        c.writeStream().enqueue(errorResponse);
-        return;
+        return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],ClientResponseImpl.DUPE_TRANSACTION,task.clientHandle);
       }
     }
   }
  else   if (sysProc != null) {
     int[] involvedPartitions=m_allPartitions;
-    m_initiator.createTransaction(handler.connectionId(),handler.m_hostname,handler.isAdmin(),task,sysProc.getReadonly(),sysProc.getSinglepartition(),sysProc.getEverysite(),involvedPartitions,involvedPartitions.length,c,buf.capacity(),now);
+    m_initiator.createTransaction(handler.connectionId(),handler.m_hostname,handler.isAdmin(),task,sysProc.getReadonly(),sysProc.getSinglepartition(),sysProc.getEverysite(),involvedPartitions,involvedPartitions.length,ccxn,buf.capacity(),now);
   }
+  return null;
 }
