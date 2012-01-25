@@ -1,0 +1,29 @@
+{
+  final CountDownLatch latch=new CountDownLatch(2);
+class TimeoutMonitorPCB implements ProcedureCallback {
+    @Override public void clientCallback(    ClientResponse clientResponse) throws Exception {
+      assert(clientResponse.getStatus() == ClientResponse.CONNECTION_LOST);
+      latch.countDown();
+    }
+  }
+class TimeoutMonitorCSL extends ClientStatusListenerExt {
+    @Override public void connectionLost(    String hostname,    int connectionsLeft){
+      latch.countDown();
+    }
+  }
+  MockVolt volt=new MockVolt(20000);
+  volt.start();
+  Distributer dist=new Distributer(128,null,false,null,ClientConfig.DEFAULT_PROCEDURE_TIMOUT_MS,1000);
+  dist.addClientStatusListener(new TimeoutMonitorCSL());
+  dist.createConnection("localhost","","",20000);
+  assertTrue(volt.handler != null);
+  Thread.sleep(4000);
+  assertTrue(volt.handler.gotPing);
+  volt.handler.sendResponses.set(false);
+  ProcedureInvocation invocation=new ProcedureInvocation(44,"@Ping");
+  dist.queue(invocation,new TimeoutMonitorPCB(),128,true);
+  latch.await();
+  dist.shutdown();
+  volt.shutdown.set(true);
+  volt.join();
+}
