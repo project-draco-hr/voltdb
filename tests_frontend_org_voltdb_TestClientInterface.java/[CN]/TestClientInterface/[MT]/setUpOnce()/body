@@ -1,11 +1,21 @@
 {
-  VoltDB.replaceVoltDBInstanceForTest(m_volt);
-  doReturn(m_statsAgent).when(m_volt).getStatsAgent();
-  doReturn(mock(SnapshotCompletionMonitor.class)).when(m_volt).getSnapshotCompletionMonitor();
-  doReturn(m_messenger).when(m_volt).getHostMessenger();
-  doReturn(mock(Configuration.class)).when(m_volt).getConfig();
-  AgreementSite agreementSite=mock(AgreementSite.class);
-  doReturn(AGREEMENT_SITE_ID).when(agreementSite).siteId();
-  doReturn(agreementSite).when(m_volt).getAgreementSite();
-  buildCatalog();
+  File cat=File.createTempFile("temp-log-reinitiator","catalog");
+  cat.deleteOnExit();
+  VoltProjectBuilder builder=new VoltProjectBuilder();
+  String schema="create table A (i integer not null, primary key (i));";
+  builder.addLiteralSchema(schema);
+  builder.addPartitionInfo("A","i");
+  builder.addStmtProcedure("hello","select * from A where i = ?","A.i: 0");
+  if (!builder.compile(cat.getAbsolutePath())) {
+    throw new IOException();
+  }
+  byte[] bytes=CatalogUtil.toBytes(cat);
+  String serializedCat=CatalogUtil.loadCatalogFromJar(bytes,null);
+  assertNotNull(serializedCat);
+  Catalog catalog=new Catalog();
+  catalog.execute(serializedCat);
+  String deploymentPath=builder.getPathToDeployment();
+  CatalogUtil.compileDeploymentAndGetCRC(catalog,deploymentPath,true);
+  m_context=new CatalogContext(0,catalog,bytes,0,0,0);
+  TheHashinator.initialize(3);
 }
