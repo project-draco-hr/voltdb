@@ -4,6 +4,7 @@ synchronized (m_startAndStopLock) {
     hostLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_StartupString.name(),null);
     m_config=config;
     m_clientInterfaces.clear();
+    m_dtxns.clear();
     m_agreementSite=null;
     m_adminListener=null;
     m_commandLog=new DummyCommandLog();
@@ -120,9 +121,11 @@ synchronized (runner) {
       int sitesHostId=Integer.parseInt(site.getHost().getTypeName());
       int currSiteId=Integer.parseInt(site.getTypeName());
       if ((sitesHostId == m_myHostId) && (site.getIsexec() == false)) {
-        ClientInterface ci=ClientInterface.create(m_network,m_messenger,m_catalogContext,m_replicationRole,m_catalogContext.numberOfNodes,currSiteId,site.getInitiatorid(),config.m_port + portOffset,config.m_adminPort + portOffset,m_config.m_timestampTestingSalt);
+        SimpleDtxnInitiator initiator=new SimpleDtxnInitiator(m_catalogContext,m_messenger,m_myHostId,currSiteId,site.getInitiatorid(),m_config.m_timestampTestingSalt);
+        ClientInterface ci=ClientInterface.create(m_network,m_messenger,m_catalogContext,m_replicationRole,initiator,m_catalogContext.numberOfNodes,currSiteId,site.getInitiatorid(),config.m_port + portOffset,config.m_adminPort + portOffset,m_config.m_timestampTestingSalt);
         portOffset+=2;
         m_clientInterfaces.add(ci);
+        m_dtxns.add(initiator);
       }
     }
     m_partitionCountStats=new PartitionCountStats(m_catalogContext.numberOfPartitions);
@@ -165,7 +168,7 @@ synchronized (runner) {
     assert(m_clientInterfaces.size() > 0);
     ClientInterface ci=m_clientInterfaces.get(0);
     ci.initializeSnapshotDaemon();
-    TransactionInitiator initiator=ci.getInitiator();
+    TransactionInitiator initiator=m_dtxns.get(0);
     if (m_restoreAgent != null) {
       m_restoreAgent.setCatalogContext(m_catalogContext);
       m_restoreAgent.setInitiator(initiator);
