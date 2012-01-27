@@ -1,0 +1,27 @@
+{
+  final CountDownLatch latch=new CountDownLatch(1);
+  final long CONNECTION_TIMEOUT=6000;
+class TimeoutMonitorCSL extends ClientStatusListenerExt {
+    @Override public void connectionLost(    String hostname,    int connectionsLeft){
+      latch.countDown();
+    }
+  }
+  MockVolt volt=new MockVolt(20000);
+  volt.start();
+  Distributer dist=new Distributer(128,null,false,null,ClientConfig.DEFAULT_PROCEDURE_TIMOUT_MS,CONNECTION_TIMEOUT);
+  dist.addClientStatusListener(new TimeoutMonitorCSL());
+  long start=System.currentTimeMillis();
+  dist.createConnection("localhost","","",20000);
+  volt.handler.sendResponses.set(false);
+  assertTrue(volt.handler != null);
+  Thread.sleep(1000);
+  assertFalse(volt.handler.gotPing);
+  Thread.sleep(3000);
+  assertTrue(volt.handler.gotPing);
+  latch.await();
+  long duration=System.currentTimeMillis() - start;
+  assertTrue(duration > CONNECTION_TIMEOUT);
+  dist.shutdown();
+  volt.shutdown.set(true);
+  volt.join();
+}
