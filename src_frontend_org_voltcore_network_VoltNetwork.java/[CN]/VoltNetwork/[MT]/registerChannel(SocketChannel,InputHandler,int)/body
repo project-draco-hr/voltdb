@@ -1,0 +1,37 @@
+{
+  channel.configureBlocking(false);
+  channel.socket().setKeepAlive(true);
+  final VoltPort port=new VoltPort(this,handler,handler.getExpectedOutgoingMessageSize(),channel.socket().getInetAddress().getHostAddress(),(int)(m_nextWorkerSelection.incrementAndGet() % threadPoolSize));
+  m_taskQueues[port.m_workerId].add(new Runnable(){
+    @Override public void run(){
+      port.setPool();
+    }
+  }
+);
+  port.registering();
+  if (m_es != null) {
+synchronized (m_es) {
+      m_es.schedule(new Runnable(){
+        @Override public void run(){
+          port.resolveHostname();
+        }
+      }
+,5,TimeUnit.SECONDS);
+    }
+  }
+ else {
+    port.resolveHostname();
+  }
+  acquireRegistrationLock();
+  try {
+    SelectionKey key=channel.register(m_selector,interestOps,null);
+    port.setKey(key);
+    port.registered();
+    key.attach(port);
+    return port;
+  }
+  finally {
+    m_ports.add(port);
+    releaseRegistrationLock();
+  }
+}

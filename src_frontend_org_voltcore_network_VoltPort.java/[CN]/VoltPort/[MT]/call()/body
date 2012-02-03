@@ -1,0 +1,40 @@
+{
+  try {
+    try {
+      if (readyForRead()) {
+        final int maxRead=m_handler.getMaxRead();
+        if (maxRead > 0) {
+          fillReadStream(maxRead);
+          ByteBuffer message;
+          while ((message=m_handler.retrieveNextMessage(this)) != null) {
+            m_handler.handleMessage(message,this);
+            m_messagesRead.incrementAndGet();
+          }
+        }
+      }
+      drainWriteStream();
+    }
+  finally {
+      if (m_hasQueuedRunnables) {
+        while (true) {
+          Runnable r;
+synchronized (m_lock) {
+            if (m_scheduledRunnables.isEmpty()) {
+              m_hasQueuedRunnables=false;
+              break;
+            }
+            r=m_scheduledRunnables.poll();
+          }
+          r.run();
+        }
+      }
+    }
+  }
+  finally {
+synchronized (m_lock) {
+      assert(m_running == true);
+      m_running=false;
+    }
+  }
+  return this;
+}

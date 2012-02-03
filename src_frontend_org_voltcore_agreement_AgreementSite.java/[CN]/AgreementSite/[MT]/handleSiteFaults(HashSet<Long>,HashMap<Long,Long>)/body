@@ -1,0 +1,19 @@
+{
+  m_recoveryLog.info("Agreement, handling site faults for newly failed sites " + MiscUtils.hsIdCollectionToString(newFailedSiteIds) + " initiatorSafeInitPoints "+ initiatorSafeInitPoint);
+  for (  Long siteId : newFailedSiteIds) {
+    m_txnQueue.gotFaultForInitiator(siteId);
+    m_server.closeSessions(siteId);
+  }
+  Iterator<Long> it=m_transactionsById.keySet().iterator();
+  while (it.hasNext()) {
+    final long tid=it.next();
+    OrderableTransaction ts=m_transactionsById.get(tid);
+    if (!initiatorSafeInitPoint.containsKey(ts.initiatorHSId)) {
+      continue;
+    }
+    if (ts.txnId > initiatorSafeInitPoint.get(ts.initiatorHSId) && newFailedSiteIds.contains(ts.initiatorHSId)) {
+      m_recoveryLog.info("Faulting non-globally initiated transaction " + ts.txnId);
+      m_txnQueue.faultTransaction(ts);
+    }
+  }
+}

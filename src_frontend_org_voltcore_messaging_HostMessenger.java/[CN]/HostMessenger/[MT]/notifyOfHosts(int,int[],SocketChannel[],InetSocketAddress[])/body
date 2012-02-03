@@ -1,0 +1,43 @@
+{
+  m_localHostId=yourHostId;
+  long agreementHSId=(AGREEMENT_SITE_ID << 32) + yourHostId;
+  HashSet<Long> agreementSites=new HashSet<Long>();
+  ;
+  agreementSites.add(agreementHSId);
+  for (int ii=0; ii < hosts.length; ii++) {
+    System.out.println(yourHostId + " Notified of host " + hosts[ii]);
+    agreementSites.add((AGREEMENT_SITE_ID << 32) + hosts[ii]);
+    prepSocketChannel(sockets[ii]);
+    ForeignHost fhost=null;
+    try {
+      fhost=new ForeignHost(this,hosts[ii],sockets[ii],m_config.deadHostTimeout,listeningAddresses[ii]);
+      putForeignHost(hosts[ii],fhost);
+      fhost.register(this);
+    }
+ catch (    java.io.IOException e) {
+      VoltDB.crashLocalVoltDB("",true,e);
+    }
+  }
+  SiteMailbox sm=new SiteMailbox(this,agreementHSId);
+  createMailbox(agreementHSId,sm);
+  m_agreementSite=new AgreementSite(this,agreementHSId,agreementSites,0,sm,new InetSocketAddress(m_config.zkInterface.split(":")[0],Integer.parseInt(m_config.zkInterface.split(":")[1])),m_config.backwardsTimeForgivenessWindow);
+  m_network.start();
+  m_agreementSite.start();
+  m_agreementSite.waitForRecovery();
+  m_zk=org.voltcore.agreement.ZKUtil.getClient(m_config.zkInterface,60 * 1000);
+  if (m_zk == null) {
+    throw new Exception("Timed out trying to connect local ZooKeeper instance");
+  }
+  byte hostInfoBytes[];
+  if (m_config.internalInterface.isEmpty()) {
+    InetAddress intf=InetAddress.getByName(m_joiner.m_reportedInternalInterface);
+    InetSocketAddress addr=new InetSocketAddress(intf,m_config.internalPort);
+    hostInfoBytes=addr.toString().getBytes("UTF-8");
+  }
+ else {
+    InetAddress intf=InetAddress.getByName(m_config.internalInterface);
+    InetSocketAddress addr=new InetSocketAddress(intf,m_config.internalPort);
+    hostInfoBytes=addr.toString().getBytes("UTF-8");
+  }
+  m_zk.create("/hosts/host" + getHostId(),hostInfoBytes,Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL);
+}
