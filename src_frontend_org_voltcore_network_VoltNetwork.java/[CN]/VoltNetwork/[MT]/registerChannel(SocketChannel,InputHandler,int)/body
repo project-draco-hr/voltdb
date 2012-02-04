@@ -1,37 +1,43 @@
 {
   channel.configureBlocking(false);
   channel.socket().setKeepAlive(true);
-  final VoltPort port=new VoltPort(this,handler,handler.getExpectedOutgoingMessageSize(),channel.socket().getInetAddress().getHostAddress(),(int)(m_nextWorkerSelection.incrementAndGet() % threadPoolSize));
-  m_taskQueues[port.m_workerId].add(new Runnable(){
-    @Override public void run(){
-      port.setPool();
-    }
-  }
-);
-  port.registering();
-  if (m_es != null) {
+  Callable<Connection> registerTask=new Callable<Connection>(){
+    @Override public Connection call() throws Exception {
+      final VoltPort port=new VoltPort(VoltNetwork.this,handler,channel.socket().getInetAddress().getHostAddress(),m_pool);
+      port.registering();
+      if (m_es != null) {
 synchronized (m_es) {
-      m_es.schedule(new Runnable(){
-        @Override public void run(){
-          port.resolveHostname();
+          m_es.schedule(new Runnable(){
+            @Override public void run(){
+              port.resolveHostname();
+            }
+          }
+,5,TimeUnit.SECONDS);
         }
       }
-,5,TimeUnit.SECONDS);
+ else {
+        port.resolveHostname();
+      }
+      try {
+        SelectionKey key=channel.register(m_selector,interestOps,null);
+        port.setKey(key);
+        port.registered();
+        key.attach(port);
+        return port;
+      }
+  finally {
+        m_ports.add(port);
+      }
     }
   }
- else {
-    port.resolveHostname();
-  }
-  acquireRegistrationLock();
+;
+  FutureTask<Connection> ft=new FutureTask<Connection>(registerTask);
+  m_tasks.offer(ft);
+  m_selector.wakeup();
   try {
-    SelectionKey key=channel.register(m_selector,interestOps,null);
-    port.setKey(key);
-    port.registered();
-    key.attach(port);
-    return port;
+    return ft.get();
   }
-  finally {
-    m_ports.add(port);
-    releaseRegistrationLock();
+ catch (  Exception e) {
+    throw new IOException(e);
   }
 }
