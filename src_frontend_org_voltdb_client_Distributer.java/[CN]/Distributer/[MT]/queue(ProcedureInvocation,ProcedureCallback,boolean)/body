@@ -21,21 +21,15 @@ synchronized (this) {
     }
   }
   if (cxn != null) {
-    if (m_useMultipleThreads) {
-      cxn.createWork(invocation.getHandle(),invocation.getProcName(),invocation,cb);
+    ByteBuffer buf=ByteBuffer.allocate(4 + invocation.getSerializedSize());
+    buf.putInt(buf.capacity() - 4);
+    try {
+      invocation.flattenToBuffer(buf);
     }
- else {
-      final FastSerializer fs=new FastSerializer(m_pool,expectedSerializedSize);
-      BBContainer c=null;
-      try {
-        c=fs.writeObjectForMessaging(invocation);
-      }
- catch (      IOException e) {
-        fs.getBBContainer().discard();
-        throw new RuntimeException(e);
-      }
-      cxn.createWork(invocation.getHandle(),invocation.getProcName(),c,cb);
+ catch (    Exception e) {
+      throw new RuntimeException(e);
     }
+    cxn.createWork(invocation.getHandle(),invocation.getProcName(),buf,cb);
   }
   return !backpressure;
 }
