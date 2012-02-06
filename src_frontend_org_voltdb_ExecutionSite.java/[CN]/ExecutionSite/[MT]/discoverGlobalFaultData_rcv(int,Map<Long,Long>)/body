@@ -1,7 +1,6 @@
 {
   final int localPartitionId=m_context.siteTracker.getPartitionForSite(m_siteId);
   int responses=0;
-  int responsesFromSamePartition=0;
   long commitPoint=Long.MIN_VALUE;
   java.util.ArrayList<FailureSiteUpdateMessage> messages=new java.util.ArrayList<FailureSiteUpdateMessage>();
   do {
@@ -17,7 +16,7 @@
     }
  else     if (m.getSubject() == Subject.FAILURE.getId()) {
       HashSet<NodeFailureFault> faults=((ExecutionSiteNodeFailureMessage)m).m_failedHosts;
-      HashSet<Integer> newFailedSiteIds=new HashSet<Integer>();
+      HashSet<Long> newFailedSiteIds=new HashSet<Long>();
       for (      NodeFailureFault fault : faults) {
         newFailedSiteIds.addAll(m_context.siteTracker.getAllSitesForHost(fault.getHostId()));
       }
@@ -25,12 +24,12 @@
       m_recoveryLog.info("Detected a concurrent failure from FaultDistributor, new failed sites " + newFailedSiteIds);
       return null;
     }
-    if (!m_knownFailedSites.equals(fm.m_failedSiteIds)) {
-      if (!m_knownFailedSites.containsAll(fm.m_failedSiteIds)) {
-        HashSet<Integer> difference=new HashSet<Integer>(fm.m_failedSiteIds);
+    if (!m_knownFailedSites.equals(fm.m_failedHSIds)) {
+      if (!m_knownFailedSites.containsAll(fm.m_failedHSIds)) {
+        HashSet<Long> difference=new HashSet<Long>(fm.m_failedHSIds);
         difference.removeAll(m_knownFailedSites);
         Set<Integer> differenceHosts=new HashSet<Integer>();
-        for (        Integer siteId : difference) {
+        for (        Long siteId : difference) {
           differenceHosts.add(m_context.siteTracker.getHostForSite(siteId));
         }
         for (        Integer hostId : differenceHosts) {
@@ -43,28 +42,27 @@
           }
           VoltDB.instance().getFaultDistributor().reportFault(new NodeFailureFault(hostId,m_context.siteTracker.getNonExecSitesForHost(hostId),hostname));
         }
-        m_recoveryLog.info("Detected a concurrent failure from " + fm.m_sourceSiteId + " with new failed sites "+ difference.toString());
+        m_recoveryLog.info("Detected a concurrent failure from " + fm.m_sourceHSId + " with new failed sites "+ difference.toString());
         m_mailbox.deliver(m);
         return null;
       }
  else {
-        HashSet<Integer> difference=new HashSet<Integer>(m_knownFailedSites);
-        difference.removeAll(fm.m_failedSiteIds);
-        m_recoveryLog.info("Discarding failure message from " + fm.m_sourceSiteId + " because it was missing failed sites "+ difference.toString());
+        HashSet<Long> difference=new HashSet<Long>(m_knownFailedSites);
+        difference.removeAll(fm.m_failedHSIds);
+        m_recoveryLog.info("Discarding failure message from " + fm.m_sourceHSId + " because it was missing failed sites "+ difference.toString());
         continue;
       }
     }
     ++responses;
-    m_recoveryLog.info("Received failure message " + responses + " of "+ expectedResponses+ " from "+ fm.m_sourceSiteId+ " for failed sites "+ fm.m_failedSiteIds+ " with commit point "+ fm.m_committedTxnId+ " safe txn id "+ fm.m_safeTxnId);
+    m_recoveryLog.info("Received failure message " + responses + " of "+ expectedResponses+ " from "+ fm.m_sourceHSId+ " for failed sites "+ fm.m_failedHSIds+ " with commit point "+ fm.m_committedTxnId+ " safe txn id "+ fm.m_safeTxnId);
     commitPoint=Math.max(commitPoint,fm.m_committedTxnId);
-    final int remotePartitionId=m_context.siteTracker.getPartitionForSite(fm.m_sourceSiteId);
+    final int remotePartitionId=m_context.siteTracker.getPartitionForSite(fm.m_sourceHSId);
     if (remotePartitionId == localPartitionId) {
       Long initiatorId=fm.m_initiatorForSafeTxnId;
       if (!initiatorSafeInitPoint.containsKey(initiatorId)) {
         initiatorSafeInitPoint.put(initiatorId,Long.MIN_VALUE);
       }
       initiatorSafeInitPoint.put(initiatorId,Math.max(initiatorSafeInitPoint.get(initiatorId),fm.m_safeTxnId));
-      responsesFromSamePartition++;
     }
   }
  while (responses < expectedResponses);
