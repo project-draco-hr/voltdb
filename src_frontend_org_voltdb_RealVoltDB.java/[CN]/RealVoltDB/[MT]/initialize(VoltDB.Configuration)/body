@@ -151,11 +151,21 @@ synchronized (runner) {
       VoltDB.crashVoltDB();
     }
     if (m_commandLog != null && isRejoin) {
-      m_commandLog.initForRejoin(m_catalogContext,Long.MIN_VALUE,m_messenger.getDiscoveredFaultSequenceNumber(),m_downSites);
+      m_commandLog.initForRejoin(m_catalogContext,Long.MIN_VALUE,0,m_downSites);
     }
-    m_messenger.sendReadyMessage();
-    if (config.m_rejoinToHostAndPort == null) {
-      m_messenger.waitForAllHostsToBeReady();
+    try {
+      m_messenger.getZK().create("/readyhosts/host",null,Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL_SEQUENTIAL);
+      if (config.m_rejoinToHostAndPort == null) {
+        List<String> readyhosts=null;
+        do {
+          readyhosts=m_messenger.getZK().getChildren("/readyhosts",false);
+        }
+ while (readyhosts.size() < m_deployment.getCluster().getHostcount());
+      }
+    }
+ catch (    Exception e) {
+      hostLog.fatal("Failed to announce ready state.");
+      VoltDB.crashVoltDB();
     }
     heartbeatThread=new HeartbeatThread(m_clientInterfaces);
     heartbeatThread.start();
