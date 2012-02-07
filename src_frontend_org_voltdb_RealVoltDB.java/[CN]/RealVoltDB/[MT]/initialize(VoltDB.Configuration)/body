@@ -55,6 +55,14 @@ synchronized (m_startAndStopLock) {
     m_periodicWorkThread=MiscUtils.getScheduledThreadPoolExecutor("Periodic Work",poolSize,1024 * 128);
     buildClusterMesh(isRejoin);
     m_licenseApi=MiscUtils.licenseApiFactory(m_config.m_pathToLicense);
+    ArrayDeque<Mailbox> siteMailboxes=null;
+    try {
+      siteMailboxes=createMailboxesForSites();
+      m_catalogContext.siteTracker.setMailboxTracker(new MailboxTracker(m_messenger.getZK()));
+    }
+ catch (    Exception e) {
+      VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
+    }
     Inits inits=new Inits(this,1);
     inits.doInitializationWork();
     m_localSites=Collections.synchronizedMap(new HashMap<Long,ExecutionSite>());
@@ -62,8 +70,8 @@ synchronized (m_startAndStopLock) {
     m_runners=new ArrayList<ExecutionSiteRunner>();
     if (config.m_backend.isIPC) {
       int eeCount=0;
-      for (      Site site : m_catalogContext.siteTracker.getUpSites()) {
-        if (site.getIsexec() && m_myHostId == Integer.parseInt(site.getHost().getTypeName())) {
+      for (      long site : m_catalogContext.siteTracker.getAllLiveSites()) {
+        if (m_myHostId == MailboxTracker.getHostForHSId(site)) {
           eeCount++;
         }
       }
@@ -74,31 +82,28 @@ synchronized (m_startAndStopLock) {
     }
     collectLocalNetworkMetadata();
     m_clusterMetadata.put(m_messenger.getHostId(),getLocalMetadata());
-    Site siteForThisThread=null;
+    Long siteForThisThread=null;
     m_currentThreadSite=null;
-    for (    Site site : m_catalogContext.siteTracker.getUpSites()) {
-      int sitesHostId=Integer.parseInt(site.getHost().getTypeName());
-      long siteId=Long.parseLong(site.getTypeName());
+    for (    long site : m_catalogContext.siteTracker.getAllLiveSites()) {
+      int sitesHostId=MailboxTracker.getHostForHSId(site);
       if (sitesHostId == m_myHostId) {
-        if (site.getIsexec()) {
-          if (siteForThisThread == null) {
-            siteForThisThread=site;
-          }
+        if (siteForThisThread == null) {
+          siteForThisThread=site;
+        }
  else {
-            ExecutionSiteRunner runner=new ExecutionSiteRunner(m_catalogContext,m_serializedCatalog,m_recovering,m_replicationActive,m_downHosts,hostLog);
-            m_runners.add(runner);
-            Thread runnerThread=new Thread(runner,"Site " + siteId);
-            runnerThread.start();
-            log.l7dlog(Level.TRACE,LogKeys.org_voltdb_VoltDB_CreatingThreadForSite.name(),new Object[]{siteId},null);
-            m_siteThreads.put(siteId,runnerThread);
-          }
+          ExecutionSiteRunner runner=new ExecutionSiteRunner(siteMailboxes.poll(),m_catalogContext,m_serializedCatalog,m_recovering,m_replicationActive,m_downHosts,hostLog);
+          m_runners.add(runner);
+          Thread runnerThread=new Thread(runner,"Site " + site);
+          runnerThread.start();
+          log.l7dlog(Level.TRACE,LogKeys.org_voltdb_VoltDB_CreatingThreadForSite.name(),new Object[]{site},null);
+          m_siteThreads.put(site,runnerThread);
         }
       }
     }
     try {
-      int siteId=Integer.parseInt(siteForThisThread.getTypeName());
-      ExecutionSite siteObj=new ExecutionSite(VoltDB.instance(),VoltDB.instance().getMessenger().createMailbox(),m_serializedCatalog,null,m_recovering,m_replicationActive,m_downHosts,m_catalogContext.m_transactionId);
-      m_localSites.put(Long.parseLong(siteForThisThread.getTypeName()),siteObj);
+      long siteId=siteForThisThread;
+      ExecutionSite siteObj=new ExecutionSite(VoltDB.instance(),siteMailboxes.poll(),m_serializedCatalog,null,m_recovering,m_replicationActive,m_downHosts,m_catalogContext.m_transactionId);
+      m_localSites.put(siteId,siteObj);
       m_currentThreadSite=siteObj;
     }
  catch (    Exception e) {
@@ -117,20 +122,13 @@ synchronized (runner) {
         m_localSites.put(runner.m_siteId,runner.m_siteObj);
       }
     }
-    try {
-      m_catalogContext.siteTracker.setMailboxTracker(new MailboxTracker(m_messenger.getZK()));
-    }
- catch (    Exception e) {
-      VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
-    }
     int portOffset=0;
-    for (    Site site : m_catalogContext.siteTracker.getUpSites()) {
-      int sitesHostId=Integer.parseInt(site.getHost().getTypeName());
-      int currSiteId=Integer.parseInt(site.getTypeName());
-      if ((sitesHostId == m_myHostId) && (site.getIsexec() == false)) {
-        SimpleDtxnInitiator initiator=new SimpleDtxnInitiator(m_catalogContext,m_messenger,m_myHostId,site.getInitiatorid(),m_config.m_timestampTestingSalt);
+    for (    long site : m_catalogContext.siteTracker.getMailboxTracker().getAllInitiators()) {
+      int siteHostId=MailboxTracker.getHostForHSId(site);
+      if ((siteHostId == m_myHostId)) {
+        SimpleDtxnInitiator initiator=new SimpleDtxnInitiator(m_catalogContext,m_messenger,m_myHostId,siteHostId,m_config.m_timestampTestingSalt);
         try {
-          ClientInterface ci=ClientInterface.create(m_messenger,m_catalogContext,m_replicationRole,initiator,m_catalogContext.numberOfNodes,currSiteId,site.getInitiatorid(),config.m_port + portOffset,config.m_adminPort + portOffset,m_config.m_timestampTestingSalt);
+          ClientInterface ci=ClientInterface.create(m_messenger,m_catalogContext,m_replicationRole,initiator,m_catalogContext.numberOfNodes,config.m_port + portOffset,config.m_adminPort + portOffset,m_config.m_timestampTestingSalt);
           m_clientInterfaces.add(ci);
         }
  catch (        Exception e) {
