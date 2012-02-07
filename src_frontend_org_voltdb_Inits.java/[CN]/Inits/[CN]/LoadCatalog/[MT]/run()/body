@@ -1,26 +1,17 @@
 {
-  try {
-    m_rvdb.m_hasCatalog.await();
-  }
- catch (  InterruptedException e1) {
-    hostLog.fatal("System was interrupted while waiting for a catalog.");
-    VoltDB.crashVoltDB();
-  }
-  if (m_config.m_pathToCatalog.startsWith("http")) {
-    hostLog.info("Loading application catalog jarfile from " + m_config.m_pathToCatalog);
-  }
- else {
-    File f=new File(m_config.m_pathToCatalog);
-    hostLog.info("Loading application catalog jarfile from " + f.getAbsolutePath());
-  }
   byte[] catalogBytes=null;
-  try {
-    catalogBytes=CatalogUtil.toBytes(new File(m_config.m_pathToCatalog));
+  do {
+    try {
+      catalogBytes=m_rvdb.getMessenger().getZK().getData("/catalogbytes",false,null);
+    }
+ catch (    org.apache.zookeeper_voltpatches.KeeperException.NoNodeException e) {
+    }
+catch (    Exception e) {
+      hostLog.fatal("System was interrupted while waiting for a catalog.");
+      VoltDB.crashVoltDB();
+    }
   }
- catch (  IOException e) {
-    hostLog.fatal("Failed to read catalog: " + e.getMessage());
-    VoltDB.crashVoltDB();
-  }
+ while (catalogBytes == null);
   m_rvdb.m_serializedCatalog=CatalogUtil.loadCatalogFromJar(catalogBytes,hostLog);
   if ((m_rvdb.m_serializedCatalog == null) || (m_rvdb.m_serializedCatalog.length() == 0))   VoltDB.crashVoltDB();
   Catalog catalog=new Catalog();
@@ -39,7 +30,7 @@
     newCluster.getSites().get(site.getTypeName()).setIsup(site.getIsup());
   }
   long existingCatalogTxnId=m_rvdb.m_catalogContext.m_transactionId;
-  int existingCatalogVersion=m_rvdb.m_messenger.getDiscoveredCatalogVersion();
+  int existingCatalogVersion=0;
   m_rvdb.m_serializedCatalog=catalog.serialize();
   m_rvdb.m_catalogContext=new CatalogContext(existingCatalogTxnId,catalog,catalogBytes,m_rvdb.m_depCRC,existingCatalogVersion,-1);
 }
