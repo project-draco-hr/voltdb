@@ -1,39 +1,33 @@
 {
-  VoltNetworkPool network=new VoltNetworkPool();
-  network.start();
-  HostMessenger msg1=new HostMessenger(network,ConnectionUtil.getLocalAddress(),3,0,0,null);
-  Thread.sleep(20);
-  HostMessenger msg2=new HostMessenger(network,ConnectionUtil.getLocalAddress(),3,0,0,null);
-  Thread.sleep(20);
-  HostMessenger msg3=new HostMessenger(network,ConnectionUtil.getLocalAddress(),3,0,0,null);
+  HostMessenger msg1=new HostMessenger(getConfig(0));
+  msg1.start();
+  HostMessenger msg2=new HostMessenger(getConfig(1));
+  msg2.start();
+  HostMessenger msg3=new HostMessenger(getConfig(2));
+  msg3.start();
   System.out.println("Waiting for socketjoiners...");
-  msg1.waitForGroupJoin();
+  msg1.waitForGroupJoin(3);
   System.out.println("Finished socket joiner for msg1");
-  msg2.waitForGroupJoin();
+  msg2.waitForGroupJoin(3);
   System.out.println("Finished socket joiner for msg2");
-  msg3.waitForGroupJoin();
+  msg3.waitForGroupJoin(3);
   System.out.println("Finished socket joiner for msg3");
   assertTrue(msg1.getHostId() != msg2.getHostId() && msg2.getHostId() != msg3.getHostId());
-  int siteId1=msg1.getHostId() * VoltDB.SITES_TO_HOST_DIVISOR + 1;
-  int siteId5=msg1.getHostId() * VoltDB.SITES_TO_HOST_DIVISOR + 5;
-  msg1.createLocalSite(siteId1);
-  msg1.createLocalSite(siteId5);
-  int siteId2=msg2.getHostId() * VoltDB.SITES_TO_HOST_DIVISOR + 2;
-  msg2.createLocalSite(siteId2);
-  int siteId3=msg3.getHostId() * VoltDB.SITES_TO_HOST_DIVISOR + 3;
-  int siteId4=msg3.getHostId() * VoltDB.SITES_TO_HOST_DIVISOR + 4;
-  msg3.createLocalSite(siteId3);
-  msg3.createLocalSite(siteId4);
-  Mailbox mb1=msg1.createMailbox(siteId1,1,false);
-  Mailbox mb2=msg2.createMailbox(siteId2,1,false);
-  Mailbox mb3=msg3.createMailbox(siteId3,1,false);
-  Mailbox mb4=msg3.createMailbox(siteId4,1,false);
-  Mailbox mb5=msg1.createMailbox(siteId5,1,false);
+  Mailbox mb1=msg1.createMailbox();
+  Mailbox mb2=msg2.createMailbox();
+  Mailbox mb3=msg3.createMailbox();
+  Mailbox mb4=msg3.createMailbox();
+  Mailbox mb5=msg1.createMailbox();
+  long siteId1=mb1.getHSId();
+  long siteId5=mb5.getHSId();
+  long siteId2=mb2.getHSId();
+  long siteId3=mb3.getHSId();
+  long siteId4=mb4.getHSId();
   MsgTest.initWithSize(16);
-  MsgTest mt=(MsgTest)VoltMessage.createNewMessage(MsgTest.MSG_TEST_ID);
+  MsgTest mt=new MsgTest();
   mt.setValues();
   int msgCount=0;
-  mb1.send(new int[]{siteId2,siteId3,siteId5,siteId4},1,mt);
+  mb1.send(new long[]{siteId2,siteId3,siteId5,siteId4},mt);
   long now=System.currentTimeMillis();
   MsgTest mt2=null, mt3=null, mt4=null, mt5=null;
   while (msgCount < 4) {
@@ -67,7 +61,7 @@
       }
     }
   }
-  mb3.send(new int[]{siteId5},1,mt);
+  mb3.send(new long[]{siteId5},mt);
   assertEquals(((SiteMailbox)mb2).getWaitingCount(),0);
   assertEquals(((SiteMailbox)mb3).getWaitingCount(),0);
   assertEquals(((SiteMailbox)mb4).getWaitingCount(),0);
@@ -81,5 +75,4 @@
   msg1.shutdown();
   msg2.shutdown();
   msg3.shutdown();
-  network.shutdown();
 }

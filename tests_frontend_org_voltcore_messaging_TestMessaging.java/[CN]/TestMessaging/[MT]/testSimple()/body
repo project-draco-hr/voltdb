@@ -1,41 +1,32 @@
 {
-  try {
-    Selector.open();
-  }
- catch (  IOException ex) {
-    throw new RuntimeException(ex);
-  }
-  VoltNetworkPool network=new VoltNetworkPool();
-  network.start();
-  HostMessenger msg1=new HostMessenger(network,ConnectionUtil.getLocalAddress(),2,0,0,null);
-  Thread.sleep(20);
-  HostMessenger msg2=new HostMessenger(network,ConnectionUtil.getLocalAddress(),2,0,0,null);
+  HostMessenger msg1=new HostMessenger(getConfig(0));
+  msg1.start();
+  HostMessenger msg2=new HostMessenger(getConfig(1));
+  msg2.start();
   System.out.println("Waiting for socketjoiners...");
-  msg1.waitForGroupJoin();
+  msg1.waitForGroupJoin(2);
   System.out.println("Finished socket joiner for msg1");
-  msg2.waitForGroupJoin();
+  msg2.waitForGroupJoin(2);
   System.out.println("Finished socket joiner for msg2");
   assertEquals(msg1.getHostId(),0);
   assertEquals(msg2.getHostId(),1);
-  int siteId1=msg1.getHostId() * VoltDB.SITES_TO_HOST_DIVISOR + 1;
-  int siteId2=msg2.getHostId() * VoltDB.SITES_TO_HOST_DIVISOR + 2;
-  msg1.createLocalSite(siteId1);
-  msg2.createLocalSite(siteId2);
-  Mailbox mb1=msg1.createMailbox(siteId1,1,false);
-  Mailbox mb2=msg2.createMailbox(siteId2,1,false);
+  Mailbox mb1=msg1.createMailbox();
+  Mailbox mb2=msg2.createMailbox();
+  long siteId1=mb1.getHSId();
+  long siteId2=mb2.getHSId();
   MsgTest.initWithSize(16);
-  MsgTest mt=(MsgTest)VoltMessage.createNewMessage(MsgTest.MSG_TEST_ID);
+  MsgTest mt=new MsgTest();
   mt.setValues();
-  mb1.send(siteId2,1,mt);
+  mb1.send(siteId2,mt);
   MsgTest mt2=null;
   while (mt2 == null) {
     mt2=(MsgTest)mb2.recv();
   }
   assertTrue(mt2.verify());
   MsgTest.initWithSize(32);
-  mt=(MsgTest)VoltMessage.createNewMessage(MsgTest.MSG_TEST_ID);
+  mt=new MsgTest();
   mt.setValues();
-  mb1.send(siteId2,1,mt);
+  mb1.send(siteId2,mt);
   mt2=null;
   while (mt2 == null) {
     mt2=(MsgTest)mb2.recv();
@@ -44,9 +35,9 @@
   for (int i=0; i < 3; ++i) {
     System.out.println("running iteration: " + i);
     MsgTest.initWithSize(4280034);
-    mt=(MsgTest)VoltMessage.createNewMessage(MsgTest.MSG_TEST_ID);
+    mt=new MsgTest();
     mt.setValues();
-    mb1.send(siteId2,1,mt);
+    mb1.send(siteId2,mt);
     mt2=null;
     while (mt2 == null) {
       mt2=(MsgTest)mb2.recv();
@@ -55,5 +46,4 @@
   }
   msg1.shutdown();
   msg2.shutdown();
-  network.shutdown();
 }
