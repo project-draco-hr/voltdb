@@ -60,8 +60,8 @@ synchronized (m_startAndStopLock) {
     m_faultManager=new FaultDistributor(this);
     try {
       siteMailboxes=createMailboxesForSites();
-      MailboxTracker mailboxTracker=new MailboxTracker(m_messenger.getZK(),m_messenger.getHostId());
-      m_catalogContext.siteTracker.setMailboxTracker(mailboxTracker);
+      m_mailboxTracker=new MailboxTracker(m_messenger.getZK(),this);
+      m_mailboxTracker.start();
       initiatorMailbox=createInitiatorMailbox();
     }
  catch (    Exception e) {
@@ -73,12 +73,7 @@ synchronized (m_startAndStopLock) {
     m_siteThreads=Collections.synchronizedMap(new HashMap<Long,Thread>());
     m_runners=new ArrayList<ExecutionSiteRunner>();
     if (config.m_backend.isIPC) {
-      int eeCount=0;
-      for (      long site : m_catalogContext.siteTracker.getAllLiveSites()) {
-        if (m_myHostId == MailboxTracker.getHostForHSId(site)) {
-          eeCount++;
-        }
-      }
+      int eeCount=m_siteTracker.getLocalSites().length;
       if (config.m_ipcPorts.size() != eeCount) {
         hostLog.fatal("Specified an IPC backend but only supplied " + config.m_ipcPorts.size() + " backend ports when "+ eeCount+ " are required");
         System.exit(-1);
@@ -90,7 +85,7 @@ synchronized (m_startAndStopLock) {
     m_currentThreadSite=null;
     for (    Mailbox mailbox : siteMailboxes) {
       long site=mailbox.getHSId();
-      int sitesHostId=MailboxTracker.getHostForHSId(site);
+      int sitesHostId=SiteTracker.getHostForSite(site);
       if (sitesHostId == m_myHostId) {
         ExecutionSiteRunner runner=new ExecutionSiteRunner(mailbox,m_catalogContext,m_serializedCatalog,m_recovering,m_replicationActive,m_downHosts,hostLog);
         m_runners.add(runner);

@@ -1,5 +1,6 @@
 {
-  final int localPartitionId=m_context.siteTracker.getPartitionForSite(m_siteId);
+  SiteTracker siteTracker=VoltDB.instance().getSiteTracker();
+  final int localPartitionId=siteTracker.getPartitionForSite(m_siteId);
   int responses=0;
   long commitPoint=Long.MIN_VALUE;
   java.util.ArrayList<FailureSiteUpdateMessage> messages=new java.util.ArrayList<FailureSiteUpdateMessage>();
@@ -18,7 +19,7 @@
       HashSet<NodeFailureFault> faults=((ExecutionSiteNodeFailureMessage)m).m_failedHosts;
       HashSet<Long> newFailedSiteIds=new HashSet<Long>();
       for (      NodeFailureFault fault : faults) {
-        newFailedSiteIds.addAll(m_context.siteTracker.getAllSitesForHost(fault.getHostId()));
+        newFailedSiteIds.addAll(siteTracker.getSitesForHost(fault.getHostId()));
       }
       m_mailbox.deliverFront(m);
       m_recoveryLog.info("Detected a concurrent failure from FaultDistributor, new failed sites " + newFailedSiteIds);
@@ -30,7 +31,7 @@
         difference.removeAll(m_knownFailedSites);
         Set<Integer> differenceHosts=new HashSet<Integer>();
         for (        Long siteId : difference) {
-          differenceHosts.add(m_context.siteTracker.getHostForSite(siteId));
+          differenceHosts.add(SiteTracker.getHostForSite(siteId));
         }
         for (        Integer hostId : differenceHosts) {
           String hostname=String.valueOf(hostId);
@@ -40,7 +41,7 @@
               if (hostnameTemp != null)               hostname=hostnameTemp;
             }
           }
-          VoltDB.instance().getFaultDistributor().reportFault(new NodeFailureFault(hostId,m_context.siteTracker.getNonExecSitesForHost(hostId),hostname));
+          VoltDB.instance().getFaultDistributor().reportFault(new NodeFailureFault(hostId,siteTracker.getInitiatorsForHost(hostId),hostname));
         }
         m_recoveryLog.info("Detected a concurrent failure from " + fm.m_sourceHSId + " with new failed sites "+ difference.toString());
         m_mailbox.deliver(m);
@@ -56,7 +57,7 @@
     ++responses;
     m_recoveryLog.info("Received failure message " + responses + " of "+ expectedResponses+ " from "+ fm.m_sourceHSId+ " for failed sites "+ fm.m_failedHSIds+ " with commit point "+ fm.m_committedTxnId+ " safe txn id "+ fm.m_safeTxnId);
     commitPoint=Math.max(commitPoint,fm.m_committedTxnId);
-    final int remotePartitionId=m_context.siteTracker.getPartitionForSite(fm.m_sourceHSId);
+    final int remotePartitionId=siteTracker.getPartitionForSite(fm.m_sourceHSId);
     if (remotePartitionId == localPartitionId) {
       Long initiatorId=fm.m_initiatorForSafeTxnId;
       if (!initiatorSafeInitPoint.containsKey(initiatorId)) {
