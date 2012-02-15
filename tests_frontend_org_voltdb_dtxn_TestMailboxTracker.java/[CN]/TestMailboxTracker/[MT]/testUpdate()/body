@@ -1,0 +1,22 @@
+{
+  ZooKeeper zk=getClient(0);
+  ZooKeeper zk2=getClient(0);
+  MailboxTracker tracker=new MailboxTracker(zk,handler);
+  VoltZK.createPersistentZKNodes(zk);
+  String data1="{HSId: 1, partitionId: 0}";
+  zk2.create(VoltZK.mailboxes_executionsites_site,data1.getBytes(),Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL_SEQUENTIAL);
+  String data2="{HSId: 2, partitionId: 1}";
+  zk.create(VoltZK.mailboxes_executionsites_site,data2.getBytes(),Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL_SEQUENTIAL);
+  tracker.start();
+  zk2.close();
+  Thread.sleep(50);
+  ArgumentCaptor<Map> captor=ArgumentCaptor.forClass(Map.class);
+  verify(handler,times(2)).handleMailboxUpdate(captor.capture());
+  List<Map> values=captor.getAllValues();
+  Map<MailboxType,List<MailboxNodeContent>> value=values.get(1);
+  assertTrue(value.containsKey(MailboxType.ExecutionSite));
+  List<MailboxNodeContent> list=value.get(MailboxType.ExecutionSite);
+  assertEquals(1,list.size());
+  assertEquals(2,list.get(0).HSId.longValue());
+  assertEquals(1,list.get(0).partitionId.intValue());
+}
