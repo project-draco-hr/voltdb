@@ -28,8 +28,17 @@ catch (    Exception e) {
   for (  Site site : oldCluster.getSites()) {
     newCluster.getSites().get(site.getTypeName()).setIsup(site.getIsup());
   }
-  long existingCatalogTxnId=m_rvdb.m_catalogContext.m_transactionId;
-  int existingCatalogVersion=0;
-  m_rvdb.m_serializedCatalog=catalog.serialize();
-  m_rvdb.m_catalogContext=new CatalogContext(existingCatalogTxnId,catalog,catalogBytes,m_rvdb.m_depCRC,existingCatalogVersion,-1);
+  try {
+    long catalogTxnId=org.voltdb.TransactionIdManager.makeIdFromComponents(System.currentTimeMillis(),0,0);
+    ZooKeeper zk=m_rvdb.getHostMessenger().getZK();
+    zk.create(VoltZK.initial_catalog_txnid,String.valueOf(catalogTxnId).getBytes("UTF-8"),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT,new ZKUtil.StringCallback(),null);
+    ZKUtil.ByteArrayCallback cb=new ZKUtil.ByteArrayCallback();
+    zk.getData(VoltZK.initial_catalog_txnid,false,cb,null);
+    catalogTxnId=Long.valueOf(new String(cb.getData(),"UTF-8"));
+    m_rvdb.m_serializedCatalog=catalog.serialize();
+    m_rvdb.m_catalogContext=new CatalogContext(catalogTxnId,catalog,catalogBytes,m_rvdb.m_depCRC,0,-1);
+  }
+ catch (  Exception e) {
+    VoltDB.crashLocalVoltDB("Error agreeing on starting catalog version",false,e);
+  }
 }
