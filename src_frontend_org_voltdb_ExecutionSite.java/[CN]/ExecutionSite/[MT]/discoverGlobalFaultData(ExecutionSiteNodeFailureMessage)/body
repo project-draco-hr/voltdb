@@ -1,33 +1,33 @@
 {
-  SiteTracker siteTracker=VoltDB.instance().getSiteTracker();
   if (m_recovering) {
     VoltDB.crashLocalVoltDB("Aborting recovery due to a remote node failure. Retry again.",false,null);
   }
-  HashSet<NodeFailureFault> failures=message.m_failedHosts;
+  SiteTracker st=VoltDB.instance().getSiteTracker();
+  HashSet<SiteFailureFault> failures=message.m_failedSites;
   m_context=VoltDB.instance().getCatalogContext();
   HashSet<Long> failedSiteIds=new HashSet<Long>();
-  for (  NodeFailureFault fault : failures) {
-    failedSiteIds.addAll(siteTracker.getSitesForHost(fault.getHostId()));
+  for (  SiteFailureFault fault : failures) {
+    failedSiteIds.addAll(fault.getSiteIds());
   }
   m_knownFailedSites.addAll(failedSiteIds);
   HashMap<Long,Long> initiatorSafeInitPoint=new HashMap<Long,Long>();
-  int expectedResponses=discoverGlobalFaultData_send();
-  Long multiPartitionCommitPoint=discoverGlobalFaultData_rcv(expectedResponses,initiatorSafeInitPoint);
+  int expectedResponses=discoverGlobalFaultData_send(st);
+  Long multiPartitionCommitPoint=discoverGlobalFaultData_rcv(expectedResponses,initiatorSafeInitPoint,st);
   if (multiPartitionCommitPoint == null) {
     return;
   }
   HashSet<Long> newFailedSiteIds=new HashSet<Long>(failedSiteIds);
   newFailedSiteIds.removeAll(m_handledFailedSites);
-  PPDPolicyDecision makePPDPolicyDecisions=VoltDB.instance().getFaultDistributor().makePPDPolicyDecisions(newFailedSiteIds);
+  PPDPolicyDecision makePPDPolicyDecisions=VoltDB.instance().getFaultDistributor().makePPDPolicyDecisions(newFailedSiteIds,st);
   if (makePPDPolicyDecisions == PPDPolicyDecision.NodeFailure) {
-    handleSiteFaults(false,newFailedSiteIds,multiPartitionCommitPoint,initiatorSafeInitPoint);
+    handleSiteFaults(false,newFailedSiteIds,multiPartitionCommitPoint,initiatorSafeInitPoint,st);
   }
  else   if (makePPDPolicyDecisions == PPDPolicyDecision.PartitionDetection) {
-    handleSiteFaults(true,newFailedSiteIds,multiPartitionCommitPoint,initiatorSafeInitPoint);
+    handleSiteFaults(true,newFailedSiteIds,multiPartitionCommitPoint,initiatorSafeInitPoint,st);
   }
   m_handledFailedSites.addAll(failedSiteIds);
-  for (  NodeFailureFault fault : failures) {
-    if (newFailedSiteIds.containsAll(siteTracker.getSitesForHost(fault.getHostId()))) {
+  for (  SiteFailureFault fault : failures) {
+    if (newFailedSiteIds.containsAll(fault.getSiteIds())) {
       VoltDB.instance().getFaultDistributor().reportFaultHandled(m_faultHandler,fault);
     }
   }

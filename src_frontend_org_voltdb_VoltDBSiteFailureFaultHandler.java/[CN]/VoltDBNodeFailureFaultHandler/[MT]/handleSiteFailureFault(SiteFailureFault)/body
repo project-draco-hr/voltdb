@@ -1,0 +1,26 @@
+{
+  hostLog.error("Sites failed, site ids: " + MiscUtils.hsIdCollectionToString(site_fault.getSiteIds()));
+  StringBuilder sb=new StringBuilder();
+  for (  long site_id : site_fault.getSiteIds()) {
+    sb.append("set ");
+    String site_path=VoltDB.instance().getCatalogContext().catalog.getClusters().get("cluster").getSites().get(Long.toString(site_id)).getPath();
+    sb.append(site_path).append(" ").append("isUp false");
+    sb.append("\n");
+  }
+  VoltDB.instance().clusterUpdate(sb.toString());
+  m_waitForFaultReported.release();
+  new Thread(){
+    @Override public void run(){
+      if (ExportManager.instance() != null) {
+        ExportManager.instance().notifyOfClusterTopologyChange();
+      }
+      if (VoltDB.instance().getHostMessenger().isLocalHostReady() == false) {
+        if (VoltDB.instance().getConfig().m_rejoinToHostAndPort == null) {
+          String message="Node fault detected before all nodes finished " + "initializing. Cluster will not start.";
+          VoltDB.crashGlobalVoltDB(message,false,null);
+        }
+      }
+    }
+  }
+.start();
+}

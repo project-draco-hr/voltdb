@@ -1,0 +1,59 @@
+{
+  SiteTracker siteTracker=VoltDB.instance().getSiteTracker();
+  final int localPartitionId=siteTracker.getPartitionForSite(m_siteId);
+  int responses=0;
+  long commitPoint=lastKnownGloballyCommitedMultiPartTxnId;
+  java.util.ArrayList<FailureSiteUpdateMessage> messages=new java.util.ArrayList<FailureSiteUpdateMessage>();
+  do {
+    VoltMessage m=m_mailbox.recvBlocking(new Subject[]{Subject.FAILURE,Subject.FAILURE_SITE_UPDATE},5);
+    if (m == null) {
+      tick();
+      continue;
+    }
+    FailureSiteUpdateMessage fm=null;
+    if (m.getSubject() == Subject.FAILURE_SITE_UPDATE.getId()) {
+      fm=(FailureSiteUpdateMessage)m;
+      messages.add(fm);
+    }
+ else     if (m.getSubject() == Subject.FAILURE.getId()) {
+      HashSet<SiteFailureFault> faults=((ExecutionSiteNodeFailureMessage)m).m_failedSites;
+      HashSet<Long> newFailedSiteIds=new HashSet<Long>();
+      for (      SiteFailureFault fault : faults) {
+        newFailedSiteIds.addAll((fault).getSiteIds());
+      }
+      m_mailbox.deliverFront(m);
+      m_recoveryLog.info("Detected a concurrent failure from FaultDistributor, new failed sites " + MiscUtils.hsIdCollectionToString(newFailedSiteIds));
+      return null;
+    }
+    if (!m_knownFailedSites.equals(fm.m_failedHSIds)) {
+      if (!m_knownFailedSites.containsAll(fm.m_failedHSIds)) {
+        HashSet<Long> difference=new HashSet<Long>(fm.m_failedHSIds);
+        difference.removeAll(m_knownFailedSites);
+        VoltDB.instance().getFaultDistributor().reportFault(new SiteFailureFault(new ArrayList<Long>(difference)));
+        m_recoveryLog.info("Detected a concurrent failure from " + fm.m_sourceHSId + " with new failed sites "+ MiscUtils.hsIdCollectionToString(difference));
+        m_mailbox.deliver(m);
+        return null;
+      }
+ else {
+        HashSet<Long> difference=new HashSet<Long>(m_knownFailedSites);
+        difference.removeAll(fm.m_failedHSIds);
+        m_recoveryLog.info("Discarding failure message from " + fm.m_sourceHSId + " because it was missing failed sites "+ MiscUtils.hsIdCollectionToString(difference));
+        continue;
+      }
+    }
+    ++responses;
+    m_recoveryLog.info("Received failure message " + responses + " of "+ expectedResponses+ " from "+ fm.m_sourceHSId+ " for failed sites "+ MiscUtils.hsIdCollectionToString(fm.m_failedHSIds)+ " with commit point "+ fm.m_committedTxnId+ " safe txn id "+ fm.m_safeTxnId);
+    commitPoint=Math.max(commitPoint,fm.m_committedTxnId);
+    final int remotePartitionId=siteTracker.getPartitionForSite(fm.m_sourceHSId);
+    if (remotePartitionId == localPartitionId) {
+      Long initiatorId=fm.m_initiatorForSafeTxnId;
+      if (!initiatorSafeInitPoint.containsKey(initiatorId)) {
+        initiatorSafeInitPoint.put(initiatorId,Long.MIN_VALUE);
+      }
+      initiatorSafeInitPoint.put(initiatorId,Math.max(initiatorSafeInitPoint.get(initiatorId),fm.m_safeTxnId));
+    }
+  }
+ while (responses < expectedResponses);
+  assert(!initiatorSafeInitPoint.containsValue(Long.MIN_VALUE));
+  return commitPoint;
+}

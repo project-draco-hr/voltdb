@@ -1,0 +1,32 @@
+{
+  try {
+    parseParamList(paramList);
+    ByteBuffer paramBuf=createParametersBuffer(paramList);
+    for (int i=0; i < numberOfBatches(); i++) {
+      boolean finalTask=(i == numberOfBatches() - 1);
+      int localTask_startDep=txnState.getNextDependencyId() | DtxnConstants.MULTIPARTITION_DEPENDENCY;
+      int localTask_outputDep=txnState.getNextDependencyId();
+      FragmentTaskMessage localTask=new FragmentTaskMessage(txnState.initiatorHSId,txnState.coordinatorSiteId,txnState.txnId,txnState.isReadOnly(),new long[]{1},new int[]{localTask_outputDep},new ByteBuffer[]{paramBuf},false);
+      localTask.addInputDepId(0,localTask_startDep);
+      FragmentTaskMessage distributedTask=new FragmentTaskMessage(txnState.initiatorHSId,txnState.coordinatorSiteId,txnState.txnId,txnState.isReadOnly(),new long[]{0},new int[]{localTask_startDep},new ByteBuffer[]{paramBuf},finalTask);
+      txnState.createLocalFragmentWork(localTask,nonTransactional() && finalTask);
+      txnState.createAllParticipatingFragmentWork(distributedTask);
+      txnState.setupProcedureResume(finalTask,new int[]{localTask_outputDep});
+      final Map<Integer,List<VoltTable>> resultDeps=m_site.recursableRun(txnState);
+      assertTrue(resultDeps != null);
+    }
+    ++m_called;
+    if (simulate_coordinator_dies_during_commit) {
+      simulate_coordinator_dies_during_commit=false;
+      throw new ThreadDeath();
+    }
+    VoltTable[] vta=new VoltTable[1];
+    vta[0]=new VoltTable(new VoltTable.ColumnInfo("",VoltType.INTEGER));
+    vta[0].addRow(new Integer(1));
+    return new ClientResponseImpl(ClientResponse.SUCCESS,vta,null);
+  }
+ catch (  SerializableException ex) {
+    byte status=0;
+    return new ClientResponseImpl(ClientResponse.GRACEFUL_FAILURE,status,"",new VoltTable[0],"Intentional fuzz failure.",ex);
+  }
+}
