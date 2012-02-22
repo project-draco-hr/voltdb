@@ -12,6 +12,7 @@ synchronized (m_startAndStopLock) {
     m_statsAgent=new StatsAgent();
     m_asyncCompilerAgent=new AsyncCompilerAgent();
     m_faultManager=null;
+    m_validateConfiguredNumberOfPartitionsOnMailboxUpdate=false;
     m_snapshotCompletionMonitor=null;
     m_catalogContext=null;
     m_partitionCountStats=null;
@@ -56,10 +57,13 @@ synchronized (m_startAndStopLock) {
     buildClusterMesh(isRejoin);
     m_licenseApi=MiscUtils.licenseApiFactory(m_config.m_pathToLicense);
     ArrayDeque<Mailbox> siteMailboxes=null;
+    ClusterConfig clusterConfig=null;
     DtxnInitiatorMailbox initiatorMailbox=null;
     m_faultManager=new FaultDistributor(this);
     try {
-      siteMailboxes=createMailboxesForSites();
+      Pair<ArrayDeque<Mailbox>,ClusterConfig> p=createMailboxesForSites();
+      siteMailboxes=p.getFirst();
+      clusterConfig=p.getSecond();
       m_mailboxTracker=new MailboxTracker(m_messenger.getZK(),this);
       m_mailboxTracker.start();
       initiatorMailbox=createInitiatorMailbox();
@@ -96,7 +100,7 @@ synchronized (m_startAndStopLock) {
       }
     }
     try {
-      ExecutionSite siteObj=new ExecutionSite(VoltDB.instance(),localThreadMailbox,m_serializedCatalog,null,m_recovering,m_replicationActive,m_downHosts,m_catalogContext.m_transactionId);
+      ExecutionSite siteObj=new ExecutionSite(VoltDB.instance(),localThreadMailbox,m_serializedCatalog,null,m_recovering,m_replicationActive,m_catalogContext.m_transactionId);
       m_localSites.put(localThreadMailbox.getHSId(),siteObj);
       m_currentThreadSite=siteObj;
     }
@@ -120,7 +124,7 @@ synchronized (runner) {
     for (int i=0; i < 1; i++) {
       SimpleDtxnInitiator initiator=new SimpleDtxnInitiator(initiatorMailbox,m_catalogContext,m_messenger,m_myHostId,m_myHostId,m_config.m_timestampTestingSalt);
       try {
-        ClientInterface ci=ClientInterface.create(m_messenger,m_catalogContext,m_replicationRole,initiator,m_catalogContext.numberOfNodes,config.m_port + portOffset,config.m_adminPort + portOffset,m_config.m_timestampTestingSalt);
+        ClientInterface ci=ClientInterface.create(m_messenger,m_catalogContext,m_replicationRole,initiator,clusterConfig.getPartitionCount(),config.m_port + portOffset,config.m_adminPort + portOffset,m_config.m_timestampTestingSalt);
         m_clientInterfaces.add(ci);
       }
  catch (      Exception e) {
@@ -129,7 +133,7 @@ synchronized (runner) {
       portOffset+=2;
       m_dtxns.add(initiator);
     }
-    m_partitionCountStats=new PartitionCountStats(m_catalogContext.numberOfPartitions);
+    m_partitionCountStats=new PartitionCountStats(clusterConfig.getPartitionCount());
     m_statsAgent.registerStatsSource(SysProcSelector.PARTITIONCOUNT,0,m_partitionCountStats);
     m_ioStats=new IOStats();
     m_statsAgent.registerStatsSource(SysProcSelector.IOSTATS,0,m_ioStats);
@@ -160,12 +164,15 @@ synchronized (runner) {
       hostLog.fatal("Failed to announce ready state.");
       VoltDB.crashLocalVoltDB("Failed to announce ready state.",false,null);
     }
+    m_validateConfiguredNumberOfPartitionsOnMailboxUpdate=true;
+    if (m_siteTracker.m_numberOfPartitions != m_configuredNumberOfPartitions) {
+      VoltDB.crashGlobalVoltDB("Mismatch between configured number of partitions (" + m_configuredNumberOfPartitions + ") and actual ("+ m_siteTracker.m_numberOfPartitions+ ")",true,null);
+    }
     heartbeatThread=new HeartbeatThread(m_clientInterfaces);
     heartbeatThread.start();
     schedulePeriodicWorks();
     logDebuggingInfo(m_config.m_adminPort,m_config.m_httpPort,m_httpPortExtraLogMessage,m_jsonEnabled);
-    int k=m_catalogContext.numberOfExecSites / m_catalogContext.numberOfPartitions;
-    if (k == 1) {
+    if (clusterConfig.getReplicationFactor() == 1) {
       hostLog.warn("Running without redundancy (k=0) is not recommended for production use.");
     }
     assert(m_clientInterfaces.size() > 0);
