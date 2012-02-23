@@ -7,6 +7,7 @@ synchronized (m_startAndStopLock) {
     m_dtxns.clear();
     m_adminListener=null;
     m_commandLog=new DummyCommandLog();
+    m_mailboxPublisher=new MailboxPublisher(VoltZK.mailboxes);
     m_deployment=null;
     m_messenger=null;
     m_statsAgent=new StatsAgent();
@@ -60,17 +61,41 @@ synchronized (m_startAndStopLock) {
     ClusterConfig clusterConfig=null;
     DtxnInitiatorMailbox initiatorMailbox=null;
     m_faultManager=new FaultDistributor(this);
+    long initiatorHSId=0;
     try {
       Pair<ArrayDeque<Mailbox>,ClusterConfig> p=createMailboxesForSites();
       siteMailboxes=p.getFirst();
       clusterConfig=p.getSecond();
+      initiatorHSId=registerInitiatorMailbox();
+      final long statsHSId=m_messenger.getHSIdForLocalSite(HostMessenger.STATS_SITE_ID);
+      m_messenger.generateMailboxId(m_messenger.getHSIdForLocalSite(HostMessenger.STATS_SITE_ID));
+      m_mailboxPublisher.registerMailbox(MailboxType.StatsAgent,new MailboxNodeContent(statsHSId,null));
       m_mailboxTracker=new MailboxTracker(m_messenger.getZK(),this);
       m_mailboxTracker.start();
-      initiatorMailbox=createInitiatorMailbox();
     }
  catch (    Exception e) {
       VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
     }
+    m_mailboxPublisher.publish(m_messenger.getZK());
+    boolean siteTrackerInit=false;
+    for (int ii=0; ii < 4000; ii++) {
+      if (m_siteTracker.getAllHosts().size() < m_deployment.getCluster().getHostcount()) {
+        try {
+          Thread.sleep(5);
+        }
+ catch (        InterruptedException e) {
+          e.printStackTrace();
+        }
+      }
+ else {
+        siteTrackerInit=true;
+        break;
+      }
+    }
+    if (!siteTrackerInit) {
+      VoltDB.crashLocalVoltDB("Failed to initialize site tracker with all hosts before timeout",true,null);
+    }
+    initiatorMailbox=createInitiatorMailbox(initiatorHSId);
     Inits inits=new Inits(this,1);
     inits.doInitializationWork();
     m_localSites=Collections.synchronizedMap(new HashMap<Long,ExecutionSite>());
@@ -166,6 +191,9 @@ synchronized (runner) {
     }
     m_validateConfiguredNumberOfPartitionsOnMailboxUpdate=true;
     if (m_siteTracker.m_numberOfPartitions != m_configuredNumberOfPartitions) {
+      for (      Map.Entry<Integer,List<Long>> entry : m_siteTracker.m_partitionsToSitesImmutable.entrySet()) {
+        System.out.println(entry.getKey() + " -- " + org.voltcore.utils.MiscUtils.hsIdCollectionToString(entry.getValue()));
+      }
       VoltDB.crashGlobalVoltDB("Mismatch between configured number of partitions (" + m_configuredNumberOfPartitions + ") and actual ("+ m_siteTracker.m_numberOfPartitions+ ")",true,null);
     }
     heartbeatThread=new HeartbeatThread(m_clientInterfaces);

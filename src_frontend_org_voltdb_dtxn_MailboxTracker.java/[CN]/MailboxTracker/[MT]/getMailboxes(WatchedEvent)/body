@@ -1,0 +1,41 @@
+{
+  Set<String> mailboxes;
+  if (event == null || event.getPath().equals(VoltZK.mailboxes)) {
+    mailboxes=new TreeSet<String>(m_zk.getChildren(VoltZK.mailboxes,m_watcher));
+  }
+ else {
+    if (event != null && event.getType() == EventType.NodeDeleted) {
+      return;
+    }
+    mailboxes=new TreeSet<String>(m_zk.getChildren(VoltZK.mailboxes,false));
+  }
+  List<ByteArrayCallback> callbacks=new ArrayList<ByteArrayCallback>();
+  for (  String mailboxSet : mailboxes) {
+    ByteArrayCallback cb=new ByteArrayCallback();
+    if (event == null || event.getPath().equals(VoltZK.mailboxes + "/" + mailboxSet)) {
+      m_zk.getData(ZKUtil.joinZKPath(VoltZK.mailboxes,mailboxSet),m_watcher,cb,null);
+    }
+ else {
+      m_zk.getData(ZKUtil.joinZKPath(VoltZK.mailboxes,mailboxSet),m_watcher,cb,null);
+    }
+    callbacks.add(cb);
+  }
+  MessageDigest digest=MessageDigest.getInstance("SHA-1");
+  Map<MailboxType,List<MailboxNodeContent>> mailboxMap=new HashMap<MailboxType,List<MailboxNodeContent>>();
+  for (  ByteArrayCallback callback : callbacks) {
+    try {
+      byte payload[]=callback.getData();
+      digest.update(payload);
+      JSONObject jsObj=new JSONObject(new String(payload,"UTF-8"));
+      readContents(jsObj,mailboxMap);
+    }
+ catch (    KeeperException.NoNodeException e) {
+    }
+  }
+  byte digestBytes[]=digest.digest();
+  if (m_lastChecksum != null && Arrays.equals(m_lastChecksum,digestBytes)) {
+    return;
+  }
+  m_lastChecksum=digestBytes;
+  m_handler.handleMailboxUpdate(mailboxMap);
+}
