@@ -1,0 +1,95 @@
+{
+  if (m_catProc.getHasjava() == false) {
+    try {
+      Map<String,Field> stmtMap=ProcedureCompiler.getValidSQLStmts(null,m_procedureName,m_procedure.getClass(),true);
+      Field f=stmtMap.get(VoltDB.ANON_STMT_NAME);
+      assert(f != null);
+      SQLStmt stmt=(SQLStmt)f.get(m_procedure);
+      Statement statement=m_catProc.getStatements().get(VoltDB.ANON_STMT_NAME);
+      stmt.sqlText=statement.getSqltext();
+      m_cachedSingleStmt=new SQLStmt[]{stmt};
+      m_paramTypesLength=m_catProc.getParameters().size();
+      m_paramTypes=new Class<?>[m_paramTypesLength];
+      m_paramTypeIsPrimitive=new boolean[m_paramTypesLength];
+      m_paramTypeIsArray=new boolean[m_paramTypesLength];
+      m_paramTypeComponentType=new Class<?>[m_paramTypesLength];
+      for (      ProcParameter param : m_catProc.getParameters()) {
+        VoltType type=VoltType.get((byte)param.getType());
+        if (type == VoltType.INTEGER)         type=VoltType.BIGINT;
+        if (type == VoltType.SMALLINT)         type=VoltType.BIGINT;
+        if (type == VoltType.TINYINT)         type=VoltType.BIGINT;
+        m_paramTypes[param.getIndex()]=type.classFromType();
+        m_paramTypeIsPrimitive[param.getIndex()]=m_paramTypes[param.getIndex()].isPrimitive();
+        m_paramTypeIsArray[param.getIndex()]=param.getIsarray();
+        assert(m_paramTypeIsArray[param.getIndex()] == false);
+        m_paramTypeComponentType[param.getIndex()]=null;
+      }
+    }
+ catch (    Exception e) {
+      e.printStackTrace();
+    }
+  }
+ else {
+    int tempParamTypesLength=0;
+    Method tempProcMethod=null;
+    Method[] methods=m_procedure.getClass().getDeclaredMethods();
+    Class<?> tempParamTypes[]=null;
+    boolean tempParamTypeIsPrimitive[]=null;
+    boolean tempParamTypeIsArray[]=null;
+    Class<?> tempParamTypeComponentType[]=null;
+    for (    final Method m : methods) {
+      String name=m.getName();
+      if (name.equals("run")) {
+        if (Modifier.isPublic(m.getModifiers()) == false)         continue;
+        tempProcMethod=m;
+        tempParamTypes=tempProcMethod.getParameterTypes();
+        tempParamTypesLength=tempParamTypes.length;
+        tempParamTypeIsPrimitive=new boolean[tempParamTypesLength];
+        tempParamTypeIsArray=new boolean[tempParamTypesLength];
+        tempParamTypeComponentType=new Class<?>[tempParamTypesLength];
+        for (int ii=0; ii < tempParamTypesLength; ii++) {
+          tempParamTypeIsPrimitive[ii]=tempParamTypes[ii].isPrimitive();
+          tempParamTypeIsArray[ii]=tempParamTypes[ii].isArray();
+          tempParamTypeComponentType[ii]=tempParamTypes[ii].getComponentType();
+        }
+      }
+    }
+    m_paramTypesLength=tempParamTypesLength;
+    m_procMethod=tempProcMethod;
+    m_paramTypes=tempParamTypes;
+    m_paramTypeIsPrimitive=tempParamTypeIsPrimitive;
+    m_paramTypeIsArray=tempParamTypeIsArray;
+    m_paramTypeComponentType=tempParamTypeComponentType;
+    if (m_procMethod == null) {
+      log.debug("No good method found in: " + m_procedure.getClass().getName());
+    }
+  }
+  Map<String,Field> stmtMap=null;
+  try {
+    stmtMap=ProcedureCompiler.getValidSQLStmts(null,m_procedureName,m_procedure.getClass(),true);
+  }
+ catch (  Exception e1) {
+    e1.printStackTrace();
+  }
+  Field[] fields=new Field[stmtMap.size()];
+  int index=0;
+  for (  Field f : stmtMap.values()) {
+    fields[index++]=f;
+  }
+  for (  final Field f : fields) {
+    String name=f.getName();
+    Statement s=m_catProc.getStatements().get(name);
+    if (s != null) {
+      try {
+        SQLStmt stmt=(SQLStmt)f.get(m_procedure);
+        initSQLStmt(stmt,s);
+      }
+ catch (      IllegalArgumentException e) {
+        e.printStackTrace();
+      }
+catch (      IllegalAccessException e) {
+        e.printStackTrace();
+      }
+    }
+  }
+}

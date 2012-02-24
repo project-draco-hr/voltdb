@@ -1,8 +1,8 @@
 {
   final InitiateTaskMessage itask=(InitiateTaskMessage)task;
-  final VoltProcedure wrapper=procs.get(itask.getStoredProcedureName());
+  final ProcedureRunner runner=procs.get(itask.getStoredProcedureName());
   final InitiateResponseMessage response=new InitiateResponseMessage(itask);
-  if (wrapper == null) {
+  if (runner == null) {
     response.setResults(new ClientResponseImpl(ClientResponse.GRACEFUL_FAILURE,new VoltTable[]{},"Procedure does not exist: " + itask.getStoredProcedureName()));
   }
  else {
@@ -19,17 +19,22 @@
       }
       if (callerParams != null) {
         ClientResponseImpl cr=null;
-        if (wrapper instanceof VoltSystemProcedure) {
+        long txnId=txnState.txnId;
+        StoredProcedureInvocation invocation=txnState.getInvocation();
+        if ((invocation != null) && (invocation.getType() == ProcedureInvocationType.REPLICATED)) {
+          txnId=invocation.getOriginalTxnId();
+        }
+        runner.setupTransaction(txnState);
+        if (runner.isSystemProcedure()) {
           final Object[] combinedParams=new Object[callerParams.length + 1];
           combinedParams[0]=m_systemProcedureContext;
           for (int i=0; i < callerParams.length; ++i)           combinedParams[i + 1]=callerParams[i];
-          cr=wrapper.call(txnState,combinedParams);
-          response.setResults(cr,itask);
+          cr=runner.call(txnId,combinedParams);
         }
  else {
-          cr=wrapper.call(txnState,itask.getParameters());
-          response.setResults(cr,itask);
+          cr=runner.call(txnId,itask.getParameters());
         }
+        response.setResults(cr,itask);
         if ((!itask.isReadOnly()) && itask.isSinglePartition()) {
           txnState.storeResults(cr);
         }
