@@ -57,6 +57,10 @@ synchronized (m_startAndStopLock) {
     m_periodicWorkThread=MiscUtils.getScheduledThreadPoolExecutor("Periodic Work",poolSize,1024 * 128);
     buildClusterMesh(isRejoin);
     m_licenseApi=MiscUtils.licenseApiFactory(m_config.m_pathToLicense);
+    CountDownLatch rejoinCompleted=new CountDownLatch(1);
+    if (isRejoin) {
+      createRejoinBarrierAndWatchdog(rejoinCompleted);
+    }
     ArrayDeque<Mailbox> siteMailboxes=null;
     ClusterConfig clusterConfig=null;
     DtxnInitiatorMailbox initiatorMailbox=null;
@@ -77,6 +81,7 @@ synchronized (m_startAndStopLock) {
       VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
     }
     m_mailboxPublisher.publish(m_messenger.getZK());
+    rejoinCompleted.countDown();
     boolean siteTrackerInit=false;
     for (int ii=0; ii < 4000; ii++) {
       if (m_siteTracker.getAllHosts().size() < m_deployment.getCluster().getHostcount()) {
