@@ -18,17 +18,17 @@
     startTime=System.currentTimeMillis();
     System.out.println("********** Starting cluster at: " + startTime);
   }
-  int oopStartIndex=0;
   for (int ii=0; ii < m_hostCount; ii++) {
     ArrayList<EEProcess> procs=new ArrayList<EEProcess>();
     m_eeProcs.add(procs);
     for (int zz=0; zz < m_siteCount; zz++) {
       String logfile="LocalCluster_host_" + ii + "_site"+ zz+ ".log";
-      procs.add(new EEProcess(m_target,logfile));
+      procs.add(new EEProcess(templateCmdLine.target(),logfile));
     }
   }
   m_pipes.clear();
   m_cluster.clear();
+  int oopStartIndex=0;
   if (m_hasLocalServer) {
     if (clearLocalDataDirectories) {
       try {
@@ -40,27 +40,19 @@
     }
     m_cluster.add(null);
     m_pipes.add(null);
-    Configuration config=new Configuration();
-    config.m_backend=m_target;
-    config.m_noLoadLibVOLTDB=(m_target == BackendTarget.HSQLDB_BACKEND);
-    config.m_pathToCatalog=m_jarFileName;
-    config.m_pathToDeployment=m_pathToDeployment;
-    config.m_port=VoltDB.DEFAULT_PORT;
-    config.m_adminPort=m_baseAdminPort;
-    config.m_startAction=START_ACTION.CREATE;
-    config.m_replicationRole=role;
-    ArrayList<Integer> ports=new ArrayList<Integer>();
+    CommandLine cmdln=(CommandLine)(templateCmdLine.makeCopy());
+    cmdln.port(portGenerator.next());
+    cmdln.adminPort(portGenerator.next());
     for (    EEProcess proc : m_eeProcs.get(0)) {
-      ports.add(proc.port());
+      cmdln.port(proc.port());
     }
-    config.m_ipcPorts=java.util.Collections.synchronizedList(ports);
-    config.m_isRejoinTest=m_isRejoinTest;
-    m_localServer=new ServerThread(config);
+    cmdln.rejoinTest(true);
+    m_localServer=new ServerThread(cmdln);
     m_localServer.start();
     oopStartIndex++;
   }
   for (int i=oopStartIndex; i < m_hostCount; i++) {
-    startOne(i,clearLocalDataDirectories,role.toString().toLowerCase());
+    startOne(i,clearLocalDataDirectories,role);
   }
   long startOfPipeWait=System.currentTimeMillis();
   boolean allReady=false;
