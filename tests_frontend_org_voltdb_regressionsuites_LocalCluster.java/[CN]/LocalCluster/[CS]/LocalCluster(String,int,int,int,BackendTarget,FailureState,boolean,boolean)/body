@@ -1,60 +1,32 @@
 {
   System.out.println("Instantiating LocalCluster for " + jarFileName);
-  System.out.println("Sites: " + siteCount + " hosts: "+ hostCount+ " replication factor: "+ replication);
+  System.out.println("Sites: " + siteCount + " hosts: "+ hostCount+ " replication factor: "+ kfactor);
   assert(jarFileName != null);
   assert(siteCount > 0);
   assert(hostCount > 0);
-  assert(replication >= 0);
-  m_target=target;
-  m_jarFileName=VoltDB.Configuration.getPathToCatalogForTest(jarFileName);
+  m_cluster.ensureCapacity(hostCount);
   m_siteCount=siteCount;
   m_hostCount=hostCount;
-  m_replication=replication;
-  m_cluster.ensureCapacity(m_hostCount);
+  m_kfactor=kfactor;
   m_debug=debug;
-  m_isRejoinTest=isRejoinTest;
-  String buildDir=System.getenv("VOLTDB_BUILD_DIR");
-  if (buildDir == null)   m_buildDir=System.getProperty("user.dir") + "/obj/release";
- else   m_buildDir=buildDir;
-  String jzmq_dir=System.getenv("VOLTDB_JZMQ_DIR");
-  if (jzmq_dir == null)   jzmq_dir=System.getProperty("user.dir") + "/third_party/cpp/jnilib";
-  System.out.println("Looking for jzmq native lib in: " + jzmq_dir);
-  m_failureState=failureState;
-  m_failureState=failureState;
-  if (m_replication < 1)   m_failureState=FailureState.ALL_RUNNING;
-  String classPath=System.getProperty("java.class.path") + ":" + m_buildDir+ File.separator+ m_jarFileName;
-  classPath+=":" + m_buildDir + File.separator+ "prod";
-  String log4j=System.getProperty("log4j.configuration");
-  if (log4j == null)   log4j="file://" + System.getProperty("user.dir") + "/src/frontend/junit_log4j.properties";
+  m_failureState=kfactor < 1 ? FailureState.ALL_RUNNING : failureState;
   m_pipes=new ArrayList<PipeToFile>();
-  m_procBuilder=new ProcessBuilder("java","-Djava.library.path=" + m_buildDir + "/nativelibs"+ ":"+ jzmq_dir,"-Dlog4j.configuration=" + log4j,"-DLOG_SEGMENT_SIZE=8","-ea","-XX:-ReduceInitialCardMarks","-XX:MaxDirectMemorySize=2g","-Xmx2g","-XX:+HeapDumpOnOutOfMemoryError","-classpath",classPath,"org.voltdb.VoltDB","license",ServerThread.getTestLicensePath(),"zkport","-1","timestampsalt","0","catalog",m_jarFileName,"deployment","","port","-1","adminport","-1","rejoinhost","-1","leader","localhost","");
-  List<String> command=m_procBuilder.command();
-  m_debugOffset1=command.size() - 22;
-  m_debugOffset2=command.size() - 21;
-  if (m_debug) {
-    command.add(m_debugOffset1,"");
-    command.add(m_debugOffset1,"");
+  String buildDir=System.getenv("VOLTDB_BUILD_DIR");
+  if (buildDir == null) {
+    buildDir=System.getProperty("user.dir") + "/obj/release";
   }
-  m_voltFilePrefixOffset=command.size() - 22;
-  command.add(m_voltFilePrefixOffset,"");
-  m_licensePathOffset=command.size() - 18;
-  m_zkPortOffset=command.size() - 16;
-  m_timestampSaltOffset=command.size() - 14;
-  m_pathToDeploymentOffset=command.size() - 10;
-  m_portOffset=command.size() - 8;
-  m_adminPortOffset=command.size() - 6;
-  m_voltStartCmdOffset=command.size() - 5;
-  m_rejoinOffset=command.size() - 4;
-  m_voltStartModeOffset=command.size() - 1;
-  if (m_target.isIPC) {
-    command.add("");
-    m_ipcPortOffset1=command.size() - 1;
-    command.add("");
-    m_ipcPortOffset2=command.size() - 1;
-    command.add("");
-    m_ipcPortOffset3=command.size() - 1;
+  String jzmq_dir=System.getenv("VOLTDB_JZMQ_DIR");
+  if (jzmq_dir == null) {
+    jzmq_dir=System.getProperty("user.dir") + "/third_party/cpp/jnilib";
   }
+  String classPath=System.getProperty("java.class.path") + ":" + buildDir+ File.separator+ jarFileName+ ":"+ buildDir+ File.separator+ "prod";
+  String log4j=System.getProperty("log4j.configuration");
+  if (log4j == null) {
+    log4j="file://" + System.getProperty("user.dir") + "/src/frontend/junit_log4j.properties";
+  }
+  m_procBuilder=new ProcessBuilder();
   m_procBuilder.redirectErrorStream(true);
   Thread shutdownThread=new Thread(new ShutDownHookThread());
   java.lang.Runtime.getRuntime().addShutdownHook(shutdownThread);
+  this.templateCmdLine.target(target).jarFileName(VoltDB.Configuration.getPathToCatalogForTest(jarFileName)).buildDir(buildDir).jzmqDir(jzmq_dir).classPath(classPath).log4j(log4j);
 }
