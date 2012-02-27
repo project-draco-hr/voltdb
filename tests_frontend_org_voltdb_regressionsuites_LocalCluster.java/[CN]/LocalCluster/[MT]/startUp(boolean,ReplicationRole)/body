@@ -3,6 +3,9 @@
   if (m_running) {
     return;
   }
+  boolean logtime=false;
+  long startTime=0;
+  printTiming(logtime,"Starting cluster at: " + System.currentTimeMillis());
   if (clearLocalDataDirectories) {
     try {
       m_subRoots.clear();
@@ -13,12 +16,7 @@
     }
   }
   portGenerator.reset();
-  boolean logtime=false;
-  long startTime=0;
-  if (logtime) {
-    startTime=System.currentTimeMillis();
-    System.out.println("********** Starting cluster at: " + startTime);
-  }
+  m_eeProcs.clear();
   for (int ii=0; ii < m_hostCount; ii++) {
     ArrayList<EEProcess> procs=new ArrayList<EEProcess>();
     m_eeProcs.add(procs);
@@ -29,67 +27,18 @@
   }
   m_pipes.clear();
   m_cluster.clear();
+  m_cmdLines.clear();
   int oopStartIndex=0;
   if (m_hasLocalServer) {
-    File subroot=null;
-    if (clearLocalDataDirectories) {
-      try {
-        subroot=VoltFile.initNewSubrootForThisProcess();
-        m_subRoots.add(subroot);
-      }
- catch (      IOException e) {
-        throw new RuntimeException(e);
-      }
-    }
-    m_cluster.add(null);
-    m_pipes.add(null);
-    CommandLine cmdln=(CommandLine)(templateCmdLine.makeCopy());
-    cmdln.voltFilePrefix(subroot.getPath());
-    cmdln.port(portGenerator.nextClient());
-    cmdln.adminPort(portGenerator.nextAdmin());
-    cmdln.zkport(portGenerator.next());
-    for (    EEProcess proc : m_eeProcs.get(0)) {
-      assert(proc != null);
-      cmdln.ipcPort(portGenerator.next());
-    }
-    m_localServer=new ServerThread(cmdln);
-    m_localServer.start();
-    oopStartIndex++;
+    startLocalServer(clearLocalDataDirectories);
+    ++oopStartIndex;
   }
   for (int i=oopStartIndex; i < m_hostCount; i++) {
     startOne(i,clearLocalDataDirectories,role);
   }
-  long startOfPipeWait=System.currentTimeMillis();
-  boolean allReady=false;
-  if (logtime)   System.out.println("********** pre witness: " + (System.currentTimeMillis() - startTime) + " ms");
-  do {
-    if ((System.currentTimeMillis() - startOfPipeWait) > PIPE_WAIT_MAX_TIMEOUT) {
-      break;
-    }
-    allReady=true;
-    for (    PipeToFile pipeToFile : m_pipes) {
-      if (pipeToFile == null) {
-        continue;
-      }
-synchronized (pipeToFile) {
-        if (pipeToFile.m_eof.get())         continue;
-        if (isProcessDead(pipeToFile.getProcess()))         continue;
-        if (pipeToFile.m_witnessedReady.get() != true) {
-          try {
-            pipeToFile.wait(1000);
-          }
- catch (          InterruptedException ex) {
-            Logger.getLogger(LocalCluster.class.getName()).log(Level.SEVERE,null,ex);
-          }
-          allReady=false;
-          break;
-        }
-      }
-    }
-  }
- while (allReady == false);
-  if (logtime)   System.out.println("********** post witness: " + (System.currentTimeMillis() - startTime) + " ms");
-  int expectedProcesses=m_hostCount - (m_hasLocalServer ? 1 : 0);
+  printTiming(logtime,"Pre-witness: " + (System.currentTimeMillis() - startTime) + "ms");
+  boolean allReady=waitForAllReady();
+  printTiming(logtime,"Post-witness: " + (System.currentTimeMillis() - startTime) + "ms");
   int downProcesses=0;
   for (  Process proc : m_cluster) {
     if ((proc != null) && (isProcessDead(proc))) {
@@ -107,39 +56,20 @@ synchronized (pipeToFile) {
       }
     }
     if (downProcesses > 0) {
+      int expectedProcesses=m_hostCount - (m_hasLocalServer ? 1 : 0);
       throw new RuntimeException(String.format("%d/%d external processes failed to start",downProcesses,expectedProcesses));
     }
     if (!allReady) {
       throw new RuntimeException("One or more external processes failed to complete initialization.");
     }
   }
-  if (m_hasLocalServer)   m_localServer.waitForInitialization();
-  if (logtime)   System.out.println("********** DONE: " + (System.currentTimeMillis() - startTime) + " ms");
+  if (m_hasLocalServer) {
+    m_localServer.waitForInitialization();
+  }
+  printTiming(logtime,"DONE: " + (System.currentTimeMillis() - startTime) + " ms");
   m_running=true;
   if (m_failureState != FailureState.ALL_RUNNING) {
-    System.out.println("Killing one cluster member.");
-    int procIndex=0;
-    if (m_hasLocalServer) {
-      procIndex=1;
-    }
-    Process proc=m_cluster.get(procIndex);
-    proc.destroy();
-    int retval=0;
-    try {
-      retval=proc.waitFor();
-      for (      EEProcess eeproc : m_eeProcs.get(procIndex)) {
-        eeproc.waitForShutdown();
-      }
-    }
- catch (    InterruptedException e) {
-      System.out.println("External VoltDB process is acting crazy.");
-    }
- finally {
-      m_cluster.set(procIndex,null);
-    }
-    if (retval != 0 && retval != 143) {
-      System.out.println("External VoltDB process terminated abnormally with return: " + retval);
-    }
+    killOne();
   }
   if (m_failureState == FailureState.ONE_RECOVERING) {
     int hostId=m_hasLocalServer ? 1 : 0;
