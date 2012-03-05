@@ -1,24 +1,26 @@
 {
   boolean retval=false;
   try {
-    m_listenerSocket=ServerSocketChannel.open();
-    m_listenerSocket.socket().bind(m_coordIp);
-    m_listenerSocket.socket().setPerformancePreferences(0,2,1);
-    m_internalPort=m_coordIp.getPort();
-    m_internalInterface=m_coordIp.getAddress().getHostAddress();
+    System.out.println("Attempting to bind to leader ip " + m_coordIp);
+    ServerSocketChannel listenerSocket=ServerSocketChannel.open();
+    listenerSocket.socket().bind(m_coordIp);
+    listenerSocket.socket().setPerformancePreferences(0,2,1);
+    listenerSocket.configureBlocking(false);
+    m_listenerSockets.add(listenerSocket);
+    System.out.println("bound");
   }
  catch (  IOException e) {
-    if (m_listenerSocket != null) {
+    if (!m_listenerSockets.isEmpty()) {
       try {
-        m_listenerSocket.close();
-        m_listenerSocket=null;
+        m_listenerSockets.get(0).close();
+        m_listenerSockets.clear();
       }
  catch (      IOException ex) {
         new VoltLogger(SocketJoiner.class.getName()).l7dlog(Level.FATAL,null,ex);
       }
     }
   }
-  if (m_listenerSocket != null) {
+  if (!m_listenerSockets.isEmpty()) {
     retval=true;
     if (m_hostLog != null)     m_hostLog.info("Connecting to VoltDB cluster as the leader...");
     m_es.submit(new Callable<Object>(){
@@ -31,7 +33,7 @@
   }
  else {
     if (m_hostLog != null) {
-      m_hostLog.info("Connecting to the VoltDB cluster leader " + m_coordIp + ":"+ m_internalPort);
+      m_hostLog.info("Connecting to the VoltDB cluster leader " + m_coordIp);
     }
     connectToPrimary();
   }

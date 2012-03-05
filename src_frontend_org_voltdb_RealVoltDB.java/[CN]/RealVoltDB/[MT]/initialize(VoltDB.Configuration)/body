@@ -7,9 +7,9 @@ synchronized (m_startAndStopLock) {
     m_dtxns.clear();
     m_adminListener=null;
     m_commandLog=new DummyCommandLog();
-    m_mailboxPublisher=new MailboxPublisher(VoltZK.mailboxes);
     m_deployment=null;
     m_messenger=null;
+    m_startMode=null;
     m_statsAgent=new StatsAgent();
     m_asyncCompilerAgent=new AsyncCompilerAgent();
     m_faultManager=null;
@@ -21,8 +21,14 @@ synchronized (m_startAndStopLock) {
     m_memoryStats=null;
     m_statsManager=null;
     m_restoreAgent=null;
+    m_siteTracker=null;
+    m_mailboxTracker=null;
+    m_recoveryStartTime=System.currentTimeMillis();
     m_hostIdWithStartupCatalog=0;
     m_pathToStartupCatalog=m_config.m_pathToCatalog;
+    m_localSites=new HashMap<Long,ExecutionSite>();
+    m_siteThreads=new HashMap<Long,Thread>();
+    m_runners=new ArrayList<ExecutionSiteRunner>();
     m_computationService=Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors(),new ThreadFactory(){
       private int threadIndex=0;
       @Override public synchronized Thread newThread(      Runnable r){
@@ -33,6 +39,7 @@ synchronized (m_startAndStopLock) {
     }
 );
     boolean isRejoin=config.m_rejoinToHostAndPort != null;
+    m_recovering=isRejoin;
     try {
       System.setOut(new PrintStream(System.out,true,"UTF-8"));
       System.setErr(new PrintStream(System.err,true,"UTF-8"));
@@ -49,9 +56,15 @@ synchronized (m_startAndStopLock) {
     readBuildInfo(config.m_isEnterprise ? "Enterprise Edition" : "Community Edition");
     ResponseSampler.initializeIfEnabled();
     buildClusterMesh(isRejoin);
+    m_mailboxPublisher=new MailboxPublisher(VoltZK.mailboxes + "/" + m_messenger.getHostId());
     final int numberOfNodes=readDeploymentAndCreateStarterCatalogContext();
     if (!isRejoin) {
       m_messenger.waitForGroupJoin(numberOfNodes);
+    }
+    m_faultManager=new FaultDistributor(this);
+    m_faultManager.registerFaultHandler(SiteFailureFault.SITE_FAILURE_CATALOG,m_faultHandler,FaultType.NODE_FAILURE);
+    if (!m_faultManager.testPartitionDetectionDirectory(m_catalogContext.cluster.getFaultsnapshots().get("CLUSTER_PARTITION"))) {
+      VoltDB.crashLocalVoltDB("Unalbe to create partition detection snapshot directory at" + m_catalogContext.cluster.getFaultsnapshots().get("CLUSTER_PARTITION"),false,null);
     }
     final int availableProcessors=Runtime.getRuntime().availableProcessors();
     int poolSize=1;
@@ -63,26 +76,46 @@ synchronized (m_startAndStopLock) {
     ArrayDeque<Mailbox> siteMailboxes=null;
     ClusterConfig clusterConfig=null;
     DtxnInitiatorMailbox initiatorMailbox=null;
-    m_faultManager=new FaultDistributor(this);
     long initiatorHSId=0;
     try {
-      Pair<ArrayDeque<Mailbox>,ClusterConfig> p=createMailboxesForSites();
+      m_mailboxTracker=new MailboxTracker(m_messenger.getZK(),this);
+      m_mailboxTracker.start();
+      CountDownLatch rejoinCompleteLatch=new CountDownLatch(1);
+      Pair<ArrayDeque<Mailbox>,ClusterConfig> p;
+      if (isRejoin) {
+        createRejoinBarrierAndWatchdog(rejoinCompleteLatch);
+        p=createMailboxesForSitesRejoin();
+        ExecutionSite.recoveringSiteCount.set(p.getFirst().size());
+        System.out.println("Set recovering site count to " + p.getFirst().size());
+      }
+ else {
+        p=createMailboxesForSitesStartup();
+      }
       siteMailboxes=p.getFirst();
       clusterConfig=p.getSecond();
       initiatorHSId=registerInitiatorMailbox();
       final long statsHSId=m_messenger.getHSIdForLocalSite(HostMessenger.STATS_SITE_ID);
       m_messenger.generateMailboxId(m_messenger.getHSIdForLocalSite(HostMessenger.STATS_SITE_ID));
       m_mailboxPublisher.registerMailbox(MailboxType.StatsAgent,new MailboxNodeContent(statsHSId,null));
-      m_mailboxTracker=new MailboxTracker(m_messenger.getZK(),this);
-      m_mailboxTracker.start();
+      m_mailboxPublisher.publish(m_messenger.getZK());
+      rejoinCompleteLatch.countDown();
+      if (isRejoin) {
+        m_messenger.getZK().delete(VoltZK.rejoinLock,-1,new ZKUtil.VoidCallback(),null);
+      }
     }
  catch (    Exception e) {
       VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
     }
-    m_mailboxPublisher.publish(m_messenger.getZK());
     boolean siteTrackerInit=false;
     for (int ii=0; ii < 4000; ii++) {
-      if (m_siteTracker.getAllHosts().size() < m_deployment.getCluster().getHostcount()) {
+      boolean predicate=true;
+      if (isRejoin) {
+        predicate=!m_siteTracker.getAllHosts().contains(m_messenger.getHostId());
+      }
+ else {
+        predicate=m_siteTracker.getAllHosts().size() < m_deployment.getCluster().getHostcount();
+      }
+      if (predicate) {
         try {
           Thread.sleep(5);
         }
@@ -101,9 +134,6 @@ synchronized (m_startAndStopLock) {
     initiatorMailbox=createInitiatorMailbox(initiatorHSId);
     Inits inits=new Inits(this,1);
     inits.doInitializationWork();
-    m_localSites=Collections.synchronizedMap(new HashMap<Long,ExecutionSite>());
-    m_siteThreads=Collections.synchronizedMap(new HashMap<Long,Thread>());
-    m_runners=new ArrayList<ExecutionSiteRunner>();
     if (config.m_backend.isIPC) {
       int eeCount=m_siteTracker.getLocalSites().length;
       if (config.m_ipcPorts.size() != eeCount) {
@@ -112,7 +142,6 @@ synchronized (m_startAndStopLock) {
       }
     }
     collectLocalNetworkMetadata();
-    m_clusterMetadata.put(m_messenger.getHostId(),getLocalMetadata());
     Mailbox localThreadMailbox=siteMailboxes.poll();
     m_currentThreadSite=null;
     for (    Mailbox mailbox : siteMailboxes) {
@@ -121,7 +150,7 @@ synchronized (m_startAndStopLock) {
       if (sitesHostId == m_myHostId) {
         ExecutionSiteRunner runner=new ExecutionSiteRunner(mailbox,m_catalogContext,m_serializedCatalog,m_recovering,m_replicationActive,hostLog,m_configuredNumberOfPartitions);
         m_runners.add(runner);
-        Thread runnerThread=new Thread(runner,"Site " + site);
+        Thread runnerThread=new Thread(runner,"Site " + org.voltcore.utils.MiscUtils.hsIdToString(site));
         runnerThread.start();
         log.l7dlog(Level.TRACE,LogKeys.org_voltdb_VoltDB_CreatingThreadForSite.name(),new Object[]{site},null);
         m_siteThreads.put(site,runnerThread);
@@ -185,12 +214,14 @@ synchronized (runner) {
     if (m_commandLog != null && isRejoin) {
       m_commandLog.initForRejoin(m_catalogContext,Long.MIN_VALUE,0,null);
     }
-    try {
-      m_messenger.waitForAllHostsToBeReady(m_deployment.getCluster().getHostcount());
-    }
- catch (    Exception e) {
-      hostLog.fatal("Failed to announce ready state.");
-      VoltDB.crashLocalVoltDB("Failed to announce ready state.",false,null);
+    if (!isRejoin) {
+      try {
+        m_messenger.waitForAllHostsToBeReady(m_deployment.getCluster().getHostcount());
+      }
+ catch (      Exception e) {
+        hostLog.fatal("Failed to announce ready state.");
+        VoltDB.crashLocalVoltDB("Failed to announce ready state.",false,null);
+      }
     }
     m_validateConfiguredNumberOfPartitionsOnMailboxUpdate=true;
     if (m_siteTracker.m_numberOfPartitions != m_configuredNumberOfPartitions) {

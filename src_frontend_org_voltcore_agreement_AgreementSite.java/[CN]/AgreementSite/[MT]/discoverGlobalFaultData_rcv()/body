@@ -1,0 +1,28 @@
+{
+  HashSet<Long> survivorSet=new HashSet<Long>(m_hsIds);
+  survivorSet.removeAll(m_pendingFailedSites);
+  int responses=0;
+  java.util.ArrayList<FailureSiteUpdateMessage> messages=new java.util.ArrayList<FailureSiteUpdateMessage>();
+  do {
+    VoltMessage m=m_mailbox.recvBlocking(new Subject[]{Subject.FAILURE,Subject.FAILURE_SITE_UPDATE},5);
+    if (m == null) {
+      continue;
+    }
+    if (!m_hsIds.contains(m.m_sourceHSId))     continue;
+    FailureSiteUpdateMessage fm=null;
+    if (m.getSubject() == Subject.FAILURE_SITE_UPDATE.getId()) {
+      fm=(FailureSiteUpdateMessage)m;
+      messages.add(fm);
+      m_failureSiteUpdateLedger.put(Pair.of(fm.m_sourceHSId,fm.m_initiatorForSafeTxnId),fm.m_safeTxnId);
+    }
+ else     if (m.getSubject() == Subject.FAILURE.getId()) {
+      Long newFault=((FaultMessage)m).failedSite;
+      m_mailbox.deliverFront(m);
+      m_recoveryLog.info("Agreement, Detected a concurrent failure from FaultDistributor, new failed site " + newFault);
+      return false;
+    }
+    m_recoveryLog.info("Agreement, Received failure message " + responses + " from "+ MiscUtils.hsIdToString(fm.m_sourceHSId)+ " for failed sites "+ MiscUtils.hsIdCollectionToString(fm.m_failedHSIds)+ " safe txn id "+ fm.m_safeTxnId+ " failed site "+ fm.m_initiatorForSafeTxnId);
+  }
+ while (!haveNecessaryFaultInfo(survivorSet));
+  return true;
+}

@@ -1,21 +1,20 @@
 {
   if (m_recovering) {
-    org.voltdb.VoltDB.crashLocalVoltDB("Aborting recovery due to a remote node failure. Retry again.",true,null);
+    org.voltdb.VoltDB.crashLocalVoltDB("Aborting recovery due to a remote node (" + MiscUtils.hsIdToString(faultMessage.failedSite) + ") failure. Retry again.",true,null);
   }
-  HashSet<Long> failedSiteIds=new HashSet<Long>();
-  failedSiteIds.add(faultMessage.failedSite);
-  m_pendingFailedSites.addAll(failedSiteIds);
-  m_hsIds.removeAll(m_pendingFailedSites);
-  HashMap<Long,Integer> expectedResponseCounts=new HashMap<Long,Integer>();
-  int expectedResponses=discoverGlobalFaultData_send(expectedResponseCounts);
-  HashMap<Long,Long> initiatorSafeInitPoint=discoverGlobalFaultData_rcv(expectedResponses,expectedResponseCounts);
-  if (initiatorSafeInitPoint == null) {
+  if (!m_pendingFailedSites.add(faultMessage.failedSite)) {
+    VoltDB.crashLocalVoltDB("A site id shouldn't be distributed as a fault twice",true,null);
+  }
+  discoverGlobalFaultData_send();
+  HashMap<Long,Long> initiatorSafeInitPoint=new HashMap<Long,Long>();
+  if (discoverGlobalFaultData_rcv()) {
+    extractGlobalFaultData(initiatorSafeInitPoint);
+  }
+ else {
     return;
   }
-  HashSet<Long> newFailedSiteIds=new HashSet<Long>(failedSiteIds);
-  newFailedSiteIds.removeAll(m_handledFailedSites);
-  handleSiteFaults(newFailedSiteIds,initiatorSafeInitPoint);
-  m_handledFailedSites.addAll(failedSiteIds);
-  m_pendingFailedSites.removeAll(newFailedSiteIds);
+  handleSiteFaults(initiatorSafeInitPoint);
+  m_hsIds.removeAll(m_pendingFailedSites);
+  m_pendingFailedSites.clear();
   assert(m_pendingFailedSites.isEmpty());
 }

@@ -2,8 +2,6 @@
   if (!haveNecessaryFaultInfo(newTracker,m_pendingFailedSites)) {
     VoltDB.crashLocalVoltDB("Error extracting fault data",true,null);
   }
-  Set<Long> failingInitiators=new HashSet<Long>(m_pendingFailedSites);
-  failingInitiators.retainAll(m_tracker.getAllInitiators());
   long commitPoint=Long.MIN_VALUE;
   final int localPartitionId=newTracker.getPartitionForSite(m_siteId);
   Iterator<Map.Entry<Pair<Long,Long>,Pair<Long,Long>>> iter=m_failureSiteUpdateLedger.entrySet().iterator();
@@ -14,22 +12,16 @@
     final Long safeTxnId=value.getFirst();
     final Long commitedTxnId=value.getSecond();
     if (!m_tracker.m_allExecutionSitesImmutable.contains(key.getFirst())) {
-      iter.remove();
       continue;
     }
     final int remotePartitionId=m_tracker.getPartitionForSite(key.getFirst());
     commitPoint=Math.max(commitPoint,commitedTxnId);
     if (remotePartitionId == localPartitionId) {
-      try {
-        Long initiatorId=key.getSecond();
-        if (!initiatorSafeInitPoint.containsKey(initiatorId)) {
-          initiatorSafeInitPoint.put(initiatorId,Long.MIN_VALUE);
-        }
-        initiatorSafeInitPoint.put(initiatorId,Math.max(initiatorSafeInitPoint.get(initiatorId),safeTxnId));
+      Long initiatorId=key.getSecond();
+      if (!initiatorSafeInitPoint.containsKey(initiatorId)) {
+        initiatorSafeInitPoint.put(initiatorId,Long.MIN_VALUE);
       }
-  finally {
-        iter.remove();
-      }
+      initiatorSafeInitPoint.put(initiatorId,Math.max(initiatorSafeInitPoint.get(initiatorId),safeTxnId));
     }
   }
   assert(commitPoint != Long.MIN_VALUE);

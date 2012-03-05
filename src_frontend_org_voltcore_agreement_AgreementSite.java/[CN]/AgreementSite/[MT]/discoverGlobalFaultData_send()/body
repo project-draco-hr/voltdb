@@ -1,0 +1,20 @@
+{
+  HashSet<Long> survivorSet=new HashSet<Long>(m_hsIds);
+  survivorSet.removeAll(m_pendingFailedSites);
+  long survivors[]=MiscUtils.toLongArray(survivorSet);
+  m_recoveryLog.info("Agreement, Sending fault data " + MiscUtils.hsIdCollectionToString(m_pendingFailedSites) + " to "+ MiscUtils.hsIdCollectionToString(survivorSet)+ " survivors");
+  try {
+    for (    Long site : m_pendingFailedSites) {
+      Long txnId=m_txnQueue.getNewestSafeTransactionForInitiator(site);
+      if (txnId != null) {
+        FailureSiteUpdateMessage srcmsg=new FailureSiteUpdateMessage(m_pendingFailedSites,site,txnId != null ? txnId : Long.MIN_VALUE,site);
+        m_mailbox.send(survivors,srcmsg);
+      }
+    }
+  }
+ catch (  MessagingException e) {
+    org.voltdb.VoltDB.crashLocalVoltDB(e.getMessage(),false,e);
+  }
+  m_recoveryLog.info("Agreement, Sent fault data. Expecting " + (survivors.length * m_pendingFailedSites.size()) + " responses.");
+  return (survivors.length * m_pendingFailedSites.size());
+}

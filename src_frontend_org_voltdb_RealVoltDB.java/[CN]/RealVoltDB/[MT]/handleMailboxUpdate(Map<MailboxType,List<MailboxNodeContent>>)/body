@@ -10,10 +10,34 @@
     }
   }
   if (oldTracker != null) {
-    HashSet<Long> delta=new HashSet<Long>(oldTracker.m_allSitesImmutable);
-    delta.removeAll(m_siteTracker.m_allSitesImmutable);
-    if (!delta.isEmpty()) {
-      m_faultManager.reportFault(new SiteFailureFault(new ArrayList<Long>(delta)));
+    HashSet<Long> deltaRemoved=new HashSet<Long>(oldTracker.m_allSitesImmutable);
+    deltaRemoved.removeAll(m_siteTracker.m_allSitesImmutable);
+    if (!deltaRemoved.isEmpty()) {
+      m_faultManager.reportFault(new SiteFailureFault(new ArrayList<Long>(deltaRemoved)));
+    }
+    HashSet<Long> deltaAdded=new HashSet<Long>(m_siteTracker.m_allSitesImmutable);
+    deltaAdded.removeAll(oldTracker.m_allSitesImmutable);
+    List<Future<?>> updateTasks=new ArrayList<Future<?>>();
+    if (!deltaAdded.isEmpty()) {
+      for (      ClientInterface ci : getClientInterfaces()) {
+        ci.notifySitesAdded(deltaAdded);
+      }
+      for (      ExecutionSite es : getLocalSites().values()) {
+        updateTasks.add(es.notifySitesAdded());
+      }
+    }
+    boolean hadException=false;
+    for (    Future<?> task : updateTasks) {
+      try {
+        task.get();
+      }
+ catch (      Exception e) {
+        hadException=true;
+        hostLog.fatal("Error processing topology update at execution site",e);
+      }
+    }
+    if (hadException) {
+      VoltDB.crashLocalVoltDB("Error processing topology update",false,null);
     }
   }
 }
