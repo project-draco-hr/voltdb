@@ -1,0 +1,64 @@
+{
+  CommandLine cmdln=(templateCmdLine.makeCopy());
+  try {
+    cmdln.internalPort(portGenerator.next());
+    cmdln.drAgentStartPort(portGenerator.next());
+    portGenerator.next();
+    portGenerator.next();
+    cmdln.port(portGenerator.nextClient());
+    cmdln.adminPort(portGenerator.nextAdmin());
+    cmdln.replicaMode(replicaMode);
+    cmdln.timestampSalt(getRandomTimestampSalt());
+    if (m_debug) {
+      cmdln.debugPort(portGenerator.next());
+    }
+    if (cmdln.target().isIPC) {
+      for (      EEProcess proc : m_eeProcs.get(hostId)) {
+        assert(proc != null);
+        cmdln.ipcPort(portGenerator.next());
+      }
+    }
+    cmdln.zkport(portGenerator.next());
+    File subroot=null;
+    if (clearLocalDataDirectories) {
+      subroot=VoltFile.getNewSubroot();
+      m_subRoots.add(subroot);
+    }
+ else {
+      subroot=m_subRoots.get(hostId);
+    }
+    cmdln.voltFilePrefix(subroot.getPath());
+    m_cmdLines.add(cmdln);
+    m_procBuilder.command().clear();
+    m_procBuilder.command().addAll(cmdln.createCommandLine());
+    System.out.println(cmdln);
+    Process proc=m_procBuilder.start();
+    m_cluster.add(proc);
+    String testoutputdir=cmdln.buildDir() + File.separator + "testoutput";
+    File dir=new File(testoutputdir);
+    if (dir.exists()) {
+      assert(dir.isDirectory());
+    }
+ else {
+      boolean status=dir.mkdirs();
+      assert(status);
+    }
+    File dirFile=new VoltFile(testoutputdir);
+    if (dirFile.listFiles() != null) {
+      for (      File f : dirFile.listFiles()) {
+        if (f.getName().startsWith(getName() + "-" + hostId)) {
+          f.delete();
+        }
+      }
+    }
+    PipeToFile ptf=new PipeToFile(testoutputdir + File.separator + getName()+ "-"+ hostId+ ".txt",proc.getInputStream(),PipeToFile.m_initToken,false,proc);
+    m_pipes.add(ptf);
+    ptf.setName("ClusterPipe:" + String.valueOf(hostId));
+    ptf.start();
+  }
+ catch (  IOException ex) {
+    System.out.println("Failed to start cluster process:" + ex.getMessage());
+    Logger.getLogger(LocalCluster.class.getName()).log(Level.SEVERE,null,ex);
+    assert(false);
+  }
+}

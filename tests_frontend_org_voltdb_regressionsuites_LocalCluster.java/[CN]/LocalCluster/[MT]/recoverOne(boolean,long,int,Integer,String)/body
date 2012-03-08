@@ -1,13 +1,9 @@
 {
-  int portNo=VoltDB.DEFAULT_PORT + hostId;
-  int adminPortNo=m_baseAdminPort - hostId;
-  int portNoToRejoin=VoltDB.DEFAULT_INTERNAL_PORT + ((hostId + 1) % getNodeCount());
-  if (m_hasLocalServer)   portNoToRejoin=VoltDB.DEFAULT_INTERNAL_PORT;
-  if (portOffset != null) {
-    portNoToRejoin=VoltDB.DEFAULT_INTERNAL_PORT + portOffset;
+  if (rejoinHostId == null || m_hasLocalServer) {
+    rejoinHostId=0;
   }
-  System.out.println("Rejoining " + hostId + " to hostID: "+ portOffset);
-  System.out.println("Starting recovery command " + m_procBuilder.command());
+  int portNoToRejoin=m_cmdLines.get(rejoinHostId).internalPort();
+  System.out.println("Rejoining " + hostId + " to hostID: "+ rejoinHostId);
   ArrayList<EEProcess> eeProcs=m_eeProcs.get(hostId);
   for (  EEProcess proc : eeProcs) {
     try {
@@ -20,44 +16,21 @@
   eeProcs.clear();
   for (int ii=0; ii < m_siteCount; ii++) {
     String logfile="LocalCluster_host_" + hostId + "_site"+ ii+ ".log";
-    eeProcs.add(new EEProcess(m_target,logfile));
+    eeProcs.add(new EEProcess(templateCmdLine.target(),logfile));
   }
-  if (m_target.isIPC) {
-    m_procBuilder.command().set(m_ipcPortOffset1,"ipcports");
-    String portString="";
-    for (    EEProcess proc : m_eeProcs.get(hostId)) {
-      if (portString.isEmpty()) {
-        portString+=Integer.valueOf(proc.port());
-      }
- else {
-        portString+="," + Integer.valueOf(proc.port());
-      }
-    }
-    m_procBuilder.command().set(m_ipcPortOffset2,portString);
-    m_procBuilder.command().set(m_ipcPortOffset3,"valgrind");
-  }
-  m_procBuilder.command().set(m_voltFilePrefixOffset,"-DVoltFilePrefix=" + m_subRoots.get(hostId).getPath());
   PipeToFile ptf=null;
   long start=0;
   try {
-    m_procBuilder.command().set(m_portOffset,String.valueOf(portNo));
-    m_procBuilder.command().set(m_internalPortOffset,String.valueOf(VoltDB.DEFAULT_INTERNAL_PORT + hostId));
-    m_procBuilder.command().set(m_adminPortOffset,String.valueOf(adminPortNo));
-    m_procBuilder.command().set(m_pathToDeploymentOffset,m_pathToDeployment);
-    m_procBuilder.command().set(m_voltStartCmdOffset,"rejoinhost");
-    m_procBuilder.command().set(m_rejoinOffset,rejoinHost + ":" + String.valueOf(portNoToRejoin));
-    m_procBuilder.command().set(m_licensePathOffset,"");
-    m_procBuilder.command().set(m_timestampSaltOffset,String.valueOf(getRandomTimestampSalt()));
+    CommandLine rejoinCmdLn=m_cmdLines.get(hostId);
     if (m_debug) {
-      System.out.println("Debug port is " + m_debugPortOffset);
-      m_procBuilder.command().set(m_debugOffset1,"-Xdebug");
-      m_procBuilder.command().set(m_debugOffset2,"-agentlib:jdwp=transport=dt_socket,address=" + m_debugPortOffset++ + ",server=y,suspend=n");
+      rejoinCmdLn.debugPort(portGenerator.next());
     }
-    m_procBuilder.command().set(m_zkPortOffset,Integer.toString(2181 + hostId));
-    System.out.println("Rejoin command " + m_procBuilder.command());
+    rejoinCmdLn.rejoinHostAndPort(rejoinHost + ":" + String.valueOf(portNoToRejoin));
+    m_procBuilder.command().clear();
+    m_procBuilder.command().addAll(rejoinCmdLn.createCommandLine());
     Process proc=m_procBuilder.start();
     start=System.currentTimeMillis();
-    String testoutputdir=m_buildDir + File.separator + "testoutput";
+    String testoutputdir=rejoinCmdLn.buildDir() + File.separator + "testoutput";
     File dir=new File(testoutputdir);
     if (dir.exists()) {
       assert(dir.isDirectory());

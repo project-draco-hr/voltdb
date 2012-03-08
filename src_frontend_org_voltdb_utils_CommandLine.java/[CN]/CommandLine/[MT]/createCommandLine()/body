@@ -1,0 +1,109 @@
+{
+  List<String> cmdline=new ArrayList<String>(50);
+  cmdline.add(javaExecutable);
+  cmdline.add("-XX:-ReduceInitialCardMarks");
+  cmdline.add("-XX:+HeapDumpOnOutOfMemoryError");
+  cmdline.add("-Djava.library.path=" + java_library_path);
+  cmdline.add("-Dlog4j.configuration=" + log4j);
+  cmdline.add(maxHeap);
+  cmdline.add("-classpath");
+  cmdline.add(classPath);
+  if (includeTestOpts) {
+    cmdline.add("-DLOG_SEGMENT_SIZE=8");
+    cmdline.add("-DVoltFilePrefix=" + voltFilePrefix);
+    cmdline.add("-ea");
+    cmdline.add("-XX:MaxDirectMemorySize=2g");
+  }
+ else {
+    cmdline.add("-server");
+    cmdline.add("-XX:HeapDumpPath=/tmp");
+    cmdline.add(initialHeap);
+  }
+  if (m_isEnterprise) {
+    cmdline.add("-Dvolt.rmi.agent.port=" + jmxPort);
+    cmdline.add("-Dvolt.rmi.server.hostname=" + jmxHost);
+  }
+  if (debugPort > -1) {
+    cmdline.add("-Xdebug");
+    cmdline.add("-agentlib:jdwp=transport=dt_socket,address=" + debugPort + ",server=y,suspend=n");
+  }
+  cmdline.add("org.voltdb.VoltDB");
+  if (m_isEnterprise) {
+    cmdline.add("license");
+    cmdline.add(m_pathToLicense);
+  }
+  cmdline.add("catalog");
+  cmdline.add(jarFileName());
+  cmdline.add("deployment");
+  cmdline.add(pathToDeployment());
+  if (m_rejoinToHostAndPort == null || m_rejoinToHostAndPort.isEmpty()) {
+    if (m_startAction != null) {
+      cmdline.add(m_startAction.toString().toLowerCase());
+    }
+    cmdline.add("leader");
+    cmdline.add(m_leader);
+    cmdline.add("leaderport");
+    cmdline.add(Integer.toString(m_leaderPort));
+    if (m_replicationRole == ReplicationRole.REPLICA) {
+      cmdline.add("replica");
+    }
+  }
+ else {
+    StringBuilder rejoinArg=new StringBuilder();
+    if (rejoinUser != null) {
+      rejoinArg.append(rejoinUser);
+      String password=null;
+      if (rejoinPassword != null) {
+        try {
+          password=URLEncoder.encode(rejoinPassword,"UTF-8");
+        }
+ catch (        UnsupportedEncodingException e) {
+          e.printStackTrace();
+        }
+      }
+      if (password != null) {
+        rejoinArg.append(":").append(password);
+      }
+    }
+    if (rejoinArg.length() > 0) {
+      rejoinArg.append("@");
+    }
+    rejoinArg.append(m_rejoinToHostAndPort);
+    cmdline.add("rejoinhost");
+    cmdline.add(rejoinArg.toString());
+  }
+  if (includeTestOpts) {
+    cmdline.add("timestampsalt");
+    cmdline.add(Long.toString(m_timestampTestingSalt));
+  }
+  cmdline.add("port");
+  cmdline.add(Integer.toString(m_port));
+  cmdline.add("internalport");
+  cmdline.add(Integer.toString(m_internalPort));
+  if (m_adminPort != -1) {
+    cmdline.add("adminport");
+    cmdline.add(Integer.toString(m_adminPort));
+  }
+  if (zkport != -1) {
+    cmdline.add("zkport");
+    cmdline.add(Integer.toString(zkport));
+  }
+  if (m_drAgentPortStart != -1) {
+    cmdline.add("replicationport");
+    cmdline.add(Integer.toString(m_drAgentPortStart));
+  }
+  if (target().isIPC) {
+    cmdline.add("ipcports");
+    cmdline.add(ipcPortList);
+    cmdline.add("valgrind");
+  }
+  if (m_internalInterface != null && !m_internalInterface.isEmpty()) {
+    cmdline.add("internalinterface");
+    cmdline.add(m_internalInterface);
+  }
+  if (m_internalInterface != null && !m_externalInterface.isEmpty()) {
+    cmdline.add("externalinterface");
+    cmdline.add(m_externalInterface);
+  }
+  return cmdline;
+}

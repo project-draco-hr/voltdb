@@ -26,6 +26,8 @@ synchronized (m_startAndStopLock) {
     m_recoveryStartTime=System.currentTimeMillis();
     m_hostIdWithStartupCatalog=0;
     m_pathToStartupCatalog=m_config.m_pathToCatalog;
+    m_replicationRole=m_config.m_replicationRole;
+    m_replicationActive=false;
     m_localSites=new HashMap<Long,ExecutionSite>();
     m_siteThreads=new HashMap<Long,Thread>();
     m_runners=new ArrayList<ExecutionSiteRunner>();
@@ -73,6 +75,9 @@ synchronized (m_startAndStopLock) {
     }
     m_periodicWorkThread=MiscUtils.getScheduledThreadPoolExecutor("Periodic Work",poolSize,1024 * 128);
     m_licenseApi=MiscUtils.licenseApiFactory(m_config.m_pathToLicense);
+    if (m_licenseApi == null) {
+      VoltDB.crashLocalVoltDB("Failed to initialize license verifier. " + "See previous log message for details.",false,null);
+    }
     ArrayDeque<Mailbox> siteMailboxes=null;
     ClusterConfig clusterConfig=null;
     DtxnInitiatorMailbox initiatorMailbox=null;
@@ -96,6 +101,7 @@ synchronized (m_startAndStopLock) {
       initiatorHSId=registerInitiatorMailbox();
       final long statsHSId=m_messenger.getHSIdForLocalSite(HostMessenger.STATS_SITE_ID);
       m_messenger.generateMailboxId(m_messenger.getHSIdForLocalSite(HostMessenger.STATS_SITE_ID));
+      System.out.println("Registering stats mailbox id " + m_messenger.getHSIdForLocalSite(HostMessenger.STATS_SITE_ID));
       m_mailboxPublisher.registerMailbox(MailboxType.StatsAgent,new MailboxNodeContent(statsHSId,null));
       m_mailboxPublisher.publish(m_messenger.getZK());
       rejoinCompleteLatch.countDown();

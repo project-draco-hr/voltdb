@@ -1,40 +1,11 @@
 {
-  if (joinOrder.length == 1)   return getAccessPlanForTable(joinOrder[0],accessPath[0]);
-  Table[] subJoinOrder=Arrays.copyOfRange(joinOrder,1,joinOrder.length);
-  AccessPath[] subAccessPath=Arrays.copyOfRange(accessPath,1,accessPath.length);
-  AbstractPlanNode subPlan=getSelectSubPlanForAccessPath(subJoinOrder,subAccessPath);
-  ArrayList<AbstractExpression> joinClauses=accessPath[0].joinExprs;
-  AbstractPlanNode nljAccessPlan=getAccessPlanForTable(joinOrder[0],accessPath[0]);
-  boolean accessPlanIsSendReceive=false;
-  AbstractPlanNode accessPlanTemp=nljAccessPlan;
-  if (nljAccessPlan instanceof ReceivePlanNode) {
-    accessPlanIsSendReceive=true;
-    nljAccessPlan=nljAccessPlan.getChild(0).getChild(0);
-    nljAccessPlan.clearParents();
+  boolean needDistributedScan=false;
+  for (  Table t : joinOrder) {
+    if (!needDistributedScan)     needDistributedScan=tableRequiresDistributedScan(t);
+    if (needDistributedScan)     break;
   }
-  AbstractPlanNode retval=null;
-  if (nljAccessPlan instanceof IndexScanPlanNode) {
-    NestLoopIndexPlanNode nlijNode=new NestLoopIndexPlanNode();
-    nlijNode.setJoinType(JoinType.INNER);
-    @SuppressWarnings("unused") IndexScanPlanNode innerNode=(IndexScanPlanNode)nljAccessPlan;
-    nlijNode.addInlinePlanNode(nljAccessPlan);
-    nlijNode.addAndLinkChild(subPlan);
-    nlijNode.generateOutputSchema(m_db);
-    retval=nlijNode;
-  }
- else {
-    NestLoopPlanNode nljNode=new NestLoopPlanNode();
-    if ((joinClauses != null) && (joinClauses.size() > 0))     nljNode.setPredicate(ExpressionUtil.combine(joinClauses));
-    nljNode.setJoinType(JoinType.LEFT);
-    nljNode.addAndLinkChild(nljAccessPlan);
-    nljNode.addAndLinkChild(subPlan);
-    nljNode.generateOutputSchema(m_db);
-    retval=nljNode;
-  }
-  if (accessPlanIsSendReceive) {
-    accessPlanTemp.getChild(0).clearChildren();
-    accessPlanTemp.getChild(0).addAndLinkChild(retval);
-    retval=accessPlanTemp;
-  }
-  return retval;
+  boolean joinOnPartition=(needDistributedScan) ? AccessPath.isPartitionKeyEquality(joinOrder,accessPath) : true;
+  AbstractPlanNode retv=getSelectSubPlanForAccessPathRecursive(joinOrder,accessPath,joinOnPartition);
+  if (joinOnPartition && needDistributedScan)   retv=addSendReceivePair(retv);
+  return retv;
 }
