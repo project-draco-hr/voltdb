@@ -2,46 +2,40 @@
   CompiledPlan retval=new CompiledPlan();
   CompiledPlan.Fragment fragment=new CompiledPlan.Fragment();
   retval.fragments.add(fragment);
-  if (m_parsedInsert != null) {
-    retval.fullWhereClause=m_parsedInsert.where;
-    fragment.planGraph=getNextInsertPlan();
-    retval.fullWinnerPlan=fragment.planGraph;
-    addParameters(retval,m_parsedInsert);
-    assert(m_parsedInsert.tableList.size() == 1);
-    if (m_parsedInsert.tableList.get(0).getIsreplicated())     retval.replicatedTableDML=true;
-  }
- else   if (m_parsedUpdate != null) {
-    retval.fullWhereClause=m_parsedUpdate.where;
-    fragment.planGraph=getNextUpdatePlan();
-    retval.fullWinnerPlan=fragment.planGraph;
-    addParameters(retval,m_parsedUpdate);
-    assert(m_parsedUpdate.tableList.size() == 1);
-    if (m_parsedUpdate.tableList.get(0).getIsreplicated())     retval.replicatedTableDML=true;
-  }
- else   if (m_parsedDelete != null) {
-    retval.fullWhereClause=m_parsedDelete.where;
-    fragment.planGraph=getNextDeletePlan();
-    retval.fullWinnerPlan=fragment.planGraph;
-    addParameters(retval,m_parsedDelete);
-    assert(m_parsedDelete.tableList.size() == 1);
-    if (m_parsedDelete.tableList.get(0).getIsreplicated())     retval.replicatedTableDML=true;
-  }
- else   if (m_parsedSelect != null) {
-    retval.fullWhereClause=m_parsedSelect.where;
+  AbstractParsedStmt nextStmt=null;
+  if (m_parsedSelect != null) {
+    nextStmt=m_parsedSelect;
     fragment.planGraph=getNextSelectPlan();
-    retval.fullWinnerPlan=fragment.planGraph;
-    addParameters(retval,m_parsedSelect);
     if (fragment.planGraph != null) {
       addColumns(retval,m_parsedSelect);
     }
   }
- else   throw new RuntimeException("setupForNewPlans not called or not successfull.");
-  plansGenerated++;
+ else {
+    if (m_parsedInsert != null) {
+      nextStmt=m_parsedInsert;
+      fragment.planGraph=getNextInsertPlan();
+    }
+ else     if (m_parsedUpdate != null) {
+      nextStmt=m_parsedUpdate;
+      fragment.planGraph=getNextUpdatePlan();
+    }
+ else     if (m_parsedDelete != null) {
+      nextStmt=m_parsedDelete;
+      fragment.planGraph=getNextDeletePlan();
+    }
+ else {
+      throw new RuntimeException("setupForNewPlans not called or not successfull.");
+    }
+    assert(nextStmt.tableList.size() == 1);
+    if (nextStmt.tableList.get(0).getIsreplicated())     retval.replicatedTableDML=true;
+  }
   if (fragment.planGraph == null) {
     return null;
   }
- else {
-    fragment.planGraph.generateOutputSchema(m_catalogDb);
-  }
+  assert(nextStmt != null);
+  addParameters(retval,nextStmt);
+  retval.fullWhereClause=nextStmt.where;
+  retval.fullWinnerPlan=fragment.planGraph;
+  fragment.planGraph.generateOutputSchema(m_catalogDb);
   return retval;
 }
