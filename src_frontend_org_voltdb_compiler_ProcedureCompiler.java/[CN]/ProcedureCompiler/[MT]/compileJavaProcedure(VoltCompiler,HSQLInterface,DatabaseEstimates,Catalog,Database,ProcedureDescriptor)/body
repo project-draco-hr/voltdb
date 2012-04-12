@@ -50,6 +50,7 @@ catch (  IllegalAccessException e1) {
     e1.printStackTrace();
   }
   boolean procHasWriteStmts=false;
+  boolean procHasSeqScans=false;
   Map<String,Field> stmtMap=getValidSQLStmts(compiler,procClass.getSimpleName(),procClass,true);
   Field[] fields=new Field[stmtMap.size()];
   int index=0;
@@ -70,8 +71,29 @@ catch (    IllegalAccessException e) {
     Statement catalogStmt=procedure.getStatements().add(f.getName());
     StatementCompiler.compile(compiler,hsql,catalog,db,estimates,catalogStmt,stmt.getText(),stmt.getJoinOrder(),info.singlePartition);
     if (catalogStmt.getReadonly() == false)     procHasWriteStmts=true;
+    if (catalogStmt.getSeqscancount() > 0) {
+      procHasSeqScans=true;
+    }
   }
   procedure.setReadonly(procHasWriteStmts == false);
+  procedure.setHasseqscans(procHasSeqScans);
+  for (  Statement catalogStmt : procedure.getStatements()) {
+    if (catalogStmt.getIscontentdeterministic() == false) {
+      String potentialErrMsg="Procedure " + shortName + " has a statement with a non-deterministic result - statement: \""+ catalogStmt.getSqltext()+ "\" , reason: "+ catalogStmt.getNondeterminismdetail();
+      compiler.addWarn(potentialErrMsg);
+    }
+ else     if (catalogStmt.getIsorderdeterministic() == false) {
+      String warnMsg;
+      if (procHasWriteStmts) {
+        String rwPotentialErrMsg="Procedure " + shortName + " is RW and has a statement whose result has a non-deterministic ordering - statement: \""+ catalogStmt.getSqltext()+ "\", reason: "+ catalogStmt.getNondeterminismdetail();
+        warnMsg=rwPotentialErrMsg;
+      }
+ else {
+        warnMsg="Procedure " + shortName + " has a statement with a non-deterministic result - statement: \""+ catalogStmt.getSqltext()+ "\", reason: "+ catalogStmt.getNondeterminismdetail();
+      }
+      compiler.addWarn(warnMsg);
+    }
+  }
   Method procMethod=null;
   Method[] methods=procClass.getDeclaredMethods();
   for (  final Method m : methods) {
