@@ -1,6 +1,6 @@
 {
   try {
-    for (    Field field : getClass().getFields()) {
+    for (    Field field : getClass().getDeclaredFields()) {
       if (field.isAnnotationPresent(Option.class) == false) {
         continue;
       }
@@ -11,13 +11,16 @@
     }
     CommandLineParser parser=new GnuParser();
     CommandLine cmd=parser.parse(options,args);
-    for (    Field field : getClass().getFields()) {
+    Map<String,String> kvMap=new TreeMap<String,String>();
+    for (    Field field : getClass().getDeclaredFields()) {
       if (field.isAnnotationPresent(Option.class) == false) {
         continue;
       }
       Option option=field.getAnnotation(Option.class);
       String opt=option.opt();
-      if (opt == null)       opt=field.getName();
+      if ((opt == null) || (opt.length() == 0)) {
+        opt=field.getName();
+      }
       if (cmd.hasOption(opt)) {
         if (option.hasArg()) {
           assignValueToField(field,cmd.getOptionValue(opt));
@@ -41,8 +44,14 @@
           printUsage();
         }
       }
+      kvMap.put(opt,field.get(this).toString());
     }
     validate();
+    StringBuilder sb=new StringBuilder();
+    for (    Entry<String,String> e : kvMap.entrySet()) {
+      sb.append(e.getKey()).append(" = ").append(e.getValue()).append("\n");
+    }
+    configDump=sb.toString();
   }
  catch (  Exception e) {
     System.err.println("Parsing failed. Reason: " + e.getMessage());
