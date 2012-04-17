@@ -1,16 +1,24 @@
 {
+  this.cmdName=cmdName;
   try {
+    options.addOption("help",false,"Print this message");
     for (    Field field : getClass().getDeclaredFields()) {
       if (field.isAnnotationPresent(Option.class) == false) {
         continue;
       }
       Option option=field.getAnnotation(Option.class);
       String opt=option.opt();
-      if (opt == null)       opt=field.getName();
+      if ((opt == null) || (opt.trim().length() == 0)) {
+        opt=field.getName();
+      }
       options.addOption(opt,option.hasArg(),option.desc());
     }
-    CommandLineParser parser=new GnuParser();
+    CommandLineParser parser=new PosixParser();
     CommandLine cmd=parser.parse(options,args);
+    if (cmd.hasOption("help")) {
+      printUsage();
+      System.exit(0);
+    }
     Map<String,String> kvMap=new TreeMap<String,String>();
     for (    Field field : getClass().getDeclaredFields()) {
       if (field.isAnnotationPresent(Option.class) == false) {
@@ -44,6 +52,7 @@
           printUsage();
         }
       }
+      field.setAccessible(true);
       kvMap.put(opt,field.get(this).toString());
     }
     validate();
@@ -56,5 +65,6 @@
  catch (  Exception e) {
     System.err.println("Parsing failed. Reason: " + e.getMessage());
     printUsage();
+    System.exit(-1);
   }
 }
