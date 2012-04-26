@@ -6,7 +6,6 @@
   final int partitionId=m_tracker.getPartitionForSite(m_siteId);
   String txnlog_name=ExecutionSite.class.getName() + "." + m_siteId;
   m_txnlog=new VoltLogger(txnlog_name);
-  m_runnerFactory=runnerFactory;
   m_recovering=recovering;
   VoltDB.instance().getFaultDistributor().registerFaultHandler(SiteFailureFault.SITE_FAILURE_EXECUTION_SITE,m_faultHandler,FaultType.SITE_FAILURE);
   File overflowDir=new File(VoltDB.instance().getCatalogContext().cluster.getVoltroot(),"dr_overflow");
@@ -29,7 +28,12 @@
   m_systemProcedureContext=new SystemProcedureContext();
   m_mailbox=mailbox;
   m_transactionQueue=(transactionQueue != null) ? transactionQueue : initializeTransactionQueue(m_siteId);
-  loadProcedures(voltdb.getBackendTargetType());
+  if (runnerFactory != null) {
+    runnerFactory.configure(this,hsql);
+  }
+  m_registeredSysProcPlanFragments.clear();
+  m_loadedProcedures=new LoadedProcedureSet(this,runnerFactory,getSiteId(),siteIndex,m_tracker.m_numberOfPartitions);
+  m_loadedProcedures.loadProcedures(m_context,voltdb.getBackendTargetType());
   int snapshotPriority=6;
   if (m_context.cluster.getDeployment().get("deployment") != null) {
     snapshotPriority=m_context.cluster.getDeployment().get("deployment").getSystemsettings().get("systemsettings").getSnapshotpriority();
