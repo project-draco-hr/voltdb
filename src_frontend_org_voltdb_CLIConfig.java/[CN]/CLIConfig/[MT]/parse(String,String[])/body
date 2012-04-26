@@ -1,0 +1,70 @@
+{
+  this.cmdName=cmdName;
+  try {
+    options.addOption("help",false,"Print this message");
+    for (    Field field : getClass().getDeclaredFields()) {
+      if (field.isAnnotationPresent(Option.class) == false) {
+        continue;
+      }
+      Option option=field.getAnnotation(Option.class);
+      String opt=option.opt();
+      if ((opt == null) || (opt.trim().length() == 0)) {
+        opt=field.getName();
+      }
+      options.addOption(opt,option.hasArg(),option.desc());
+    }
+    CommandLineParser parser=new PosixParser();
+    CommandLine cmd=parser.parse(options,args);
+    if (cmd.hasOption("help")) {
+      printUsage();
+      System.exit(0);
+    }
+    Map<String,String> kvMap=new TreeMap<String,String>();
+    for (    Field field : getClass().getDeclaredFields()) {
+      if (field.isAnnotationPresent(Option.class) == false) {
+        continue;
+      }
+      Option option=field.getAnnotation(Option.class);
+      String opt=option.opt();
+      if ((opt == null) || (opt.length() == 0)) {
+        opt=field.getName();
+      }
+      if (cmd.hasOption(opt)) {
+        if (option.hasArg()) {
+          assignValueToField(field,cmd.getOptionValue(opt));
+        }
+ else {
+          if (field.getClass().equals(boolean.class) || field.getClass().equals(Boolean.class)) {
+            try {
+              field.set(this,true);
+            }
+ catch (            Exception e) {
+              e.printStackTrace();
+            }
+          }
+ else {
+            printUsage();
+          }
+        }
+      }
+ else {
+        if (option.required()) {
+          printUsage();
+        }
+      }
+      field.setAccessible(true);
+      kvMap.put(opt,field.get(this).toString());
+    }
+    validate();
+    StringBuilder sb=new StringBuilder();
+    for (    Entry<String,String> e : kvMap.entrySet()) {
+      sb.append(e.getKey()).append(" = ").append(e.getValue()).append("\n");
+    }
+    configDump=sb.toString();
+  }
+ catch (  Exception e) {
+    System.err.println("Parsing failed. Reason: " + e.getMessage());
+    printUsage();
+    System.exit(-1);
+  }
+}
