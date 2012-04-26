@@ -1,0 +1,43 @@
+{
+  final CountDownLatch latch=new CountDownLatch(3);
+  final Object lock=new Object();
+  final AtomicLong txnId=new AtomicLong();
+  Runnable r=new Runnable(){
+    @Override public void run(){
+      latch.countDown();
+synchronized (lock) {
+        try {
+          lock.wait();
+        }
+ catch (        InterruptedException e) {
+        }
+        StoredProcedureInvocation procedure=new StoredProcedureInvocation();
+        procedure.setProcName("TestProc");
+        for (int i=0; i < 1000; i++) {
+          InitiateTaskMessage message;
+          if (isPrimary) {
+            message=new InitiateTaskMessage(100,100,-1,0,0,false,true,procedure);
+          }
+ else {
+            message=new InitiateTaskMessage(100,100,txnId.getAndIncrement(),0,0,false,true,procedure);
+          }
+          mb.deliver(message);
+        }
+      }
+    }
+  }
+;
+  Thread thread1=new Thread(r);
+  Thread thread2=new Thread(r);
+  Thread thread3=new Thread(r);
+  thread1.start();
+  thread2.start();
+  thread3.start();
+  latch.await();
+synchronized (lock) {
+    lock.notifyAll();
+  }
+  thread1.join();
+  thread2.join();
+  thread3.join();
+}
