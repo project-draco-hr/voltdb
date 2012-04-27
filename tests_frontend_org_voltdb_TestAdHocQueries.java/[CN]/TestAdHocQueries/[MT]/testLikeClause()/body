@@ -4,7 +4,7 @@
   final LikeTest[] tests={new LikeTest("aaa%",1),new LikeTest("abc%",2),new LikeTest("AbC%",0),new LikeTest("zzz%",0),new LikeTest("%",rowData.length),new LikeTest("a%",3),new LikeTest("??xxx%",1),new NotLikeTest("aaa%",rowData.length - 1),new EscapeLikeTest("abcccc|%",1,"|"),new EscapeLikeTest("abc%",2,"|"),new EscapeLikeTest("aaa",0,"|"),new UnsupportedLikeTest("aaaaaaa",0),new UnsupportedLikeTest("aaa",0),new UnsupportedLikeTest("abcdef_",1),new UnsupportedLikeTest("ab_d_fg",1),new UnsupportedLikeTest("%defg",1),new UnsupportedLikeTest("%de%",1),new UnsupportedLikeTest("%de% ",0),new UnsupportedEscapeLikeTest("abcd!%%",0,"!")};
   VoltProjectBuilder builder=new VoltProjectBuilder();
   builder.addLiteralSchema(schema);
-  String pathToCatalog=Configuration.getPathToCatalogForTest("adhoc.jar");
+  String pathToCatalog=Configuration.getPathToCatalogForTest("adhoc_like.jar");
   builder.addPartitionInfo("STRINGS","ID");
   builder.addStmtProcedure("Insert","insert into strings values (?, ?, ?);",null);
   boolean success=builder.compileWithDefaultDeployment(pathToCatalog);
@@ -12,45 +12,56 @@
   VoltDB.Configuration config=new VoltDB.Configuration();
   config.m_pathToCatalog=pathToCatalog;
   ServerThread localServer=new ServerThread(config);
-  localServer.start();
-  localServer.waitForInitialization();
-  Client client=ClientFactory.createClient();
-  client.createConnection("localhost");
-  int id=0;
-  for (  LikeTestData data : rowData) {
-    id++;
-    String query=String.format("insert into strings values (%d,'%s','%s');",id,data.val,data.pat);
-    VoltTable modCount=client.callProcedure("@AdHoc",query).getResults()[0];
-    assertEquals("Bad insert row count:",1,modCount.getRowCount());
-    assertEquals("Bad insert modification count:",1,modCount.asScalarLong());
-  }
-  for (  LikeTest test : tests) {
-    String clause=test.getClause();
-    String query=String.format("select * from strings where val %s",clause);
-    System.out.printf("LIKE clause \"%s\"\n",clause);
-    try {
-      VoltTable result=client.callProcedure("@AdHoc",query).getResults()[0];
-      assertEquals(String.format("\"%s\": bad row count:",clause),test.matches,result.getRowCount());
-      System.out.println(result.toString());
-      assertFalse(String.format("Expected to crash on \"%s\", but didn't",clause),test.crashes);
+  Client client=null;
+  try {
+    localServer.start();
+    localServer.waitForInitialization();
+    client=ClientFactory.createClient();
+    client.createConnection("localhost");
+    int id=0;
+    for (    LikeTestData data : rowData) {
+      id++;
+      String query=String.format("insert into strings values (%d,'%s','%s');",id,data.val,data.pat);
+      VoltTable modCount=client.callProcedure("@AdHoc",query).getResults()[0];
+      assertEquals("Bad insert row count:",1,modCount.getRowCount());
+      assertEquals("Bad insert modification count:",1,modCount.asScalarLong());
     }
- catch (    ProcCallException e) {
-      System.out.printf("LIKE clause \"%s\" failed\n",clause);
-      System.out.println(e.toString());
-      assertTrue("This failure was unexpected",test.crashes);
-      System.out.println("(This failure was expected)");
+    for (    LikeTest test : tests) {
+      String clause=test.getClause();
+      String query=String.format("select * from strings where val %s",clause);
+      System.out.printf("LIKE clause \"%s\"\n",clause);
+      try {
+        VoltTable result=client.callProcedure("@AdHoc",query).getResults()[0];
+        assertEquals(String.format("\"%s\": bad row count:",clause),test.matches,result.getRowCount());
+        System.out.println(result.toString());
+        assertFalse(String.format("Expected to crash on \"%s\", but didn't",clause),test.crashes);
+      }
+ catch (      ProcCallException e) {
+        System.out.printf("LIKE clause \"%s\" failed\n",clause);
+        System.out.println(e.toString());
+        assertTrue("This failure was unexpected",test.crashes);
+        System.out.println("(This failure was expected)");
+      }
     }
-  }
 {
-    String query="select * from strings where val like pat";
-    try {
-      VoltTable result=client.callProcedure("@AdHoc",query).getResults()[0];
-      assertEquals(String.format("LIKE column test: bad row count:"),tests.length,result.getRowCount());
-    }
- catch (    ProcCallException e) {
-      System.out.println("LIKE column test failed (expected for now)");
+      String query="select * from strings where val like pat";
+      try {
+        VoltTable result=client.callProcedure("@AdHoc",query).getResults()[0];
+        assertEquals(String.format("LIKE column test: bad row count:"),tests.length,result.getRowCount());
+      }
+ catch (      ProcCallException e) {
+        System.out.println("LIKE column test failed (expected for now)");
+      }
     }
   }
-  localServer.shutdown();
-  localServer.join();
+  finally {
+    if (client != null)     client.close();
+    client=null;
+    if (localServer != null) {
+      localServer.shutdown();
+      localServer.join();
+    }
+    localServer=null;
+    System.gc();
+  }
 }
