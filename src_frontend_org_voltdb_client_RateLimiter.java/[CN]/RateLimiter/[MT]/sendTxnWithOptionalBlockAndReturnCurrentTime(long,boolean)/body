@@ -1,0 +1,26 @@
+{
+  while (true) {
+synchronized (this) {
+      ensureCurrentBlockIsKosher(timestamp);
+      assert((timestamp - m_currentBlockTimestamp) <= BLOCK_SIZE);
+      long faketime=timestamp < m_currentBlockTimestamp ? m_currentBlockTimestamp : timestamp;
+      long targetTxnsPerBlock=m_targetTxnsPerSecond / (1000 / BLOCK_SIZE);
+      double expectedTxnsSent=targetTxnsPerBlock * (faketime - m_currentBlockTimestamp + 1.0) / BLOCK_SIZE;
+      expectedTxnsSent=Math.ceil(expectedTxnsSent);
+      assert(expectedTxnsSent <= targetTxnsPerBlock);
+      assert((expectedTxnsSent >= 1.0) || (targetTxnsPerBlock == 0));
+      if (((m_currentBlockSendCount < expectedTxnsSent) && (m_outstandingTxns < m_maxOutstandingTxns)) || (ignoreBackpressure == true)) {
+        ++m_currentBlockSendCount;
+        ++m_outstandingTxns;
+        break;
+      }
+    }
+    try {
+      Thread.sleep(1);
+    }
+ catch (    InterruptedException e) {
+    }
+    timestamp=System.currentTimeMillis();
+  }
+  return timestamp;
+}

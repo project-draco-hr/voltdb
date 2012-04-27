@@ -1,0 +1,49 @@
+{
+  while (warmupComplete.get() == false) {
+    if (rand.nextDouble() < config.getputratio) {
+      try {
+        client.callProcedure("Get",processor.generateRandomKeyForRetrieval());
+      }
+ catch (      Exception e) {
+      }
+    }
+ else {
+      final PayloadProcessor.Pair pair=processor.generateForStore();
+      try {
+        client.callProcedure("Put",pair.Key,pair.getStoreValue());
+      }
+ catch (      Exception e) {
+      }
+    }
+  }
+  while (benchmarkComplete.get() == false) {
+    if (rand.nextDouble() < config.getputratio) {
+      try {
+        ClientResponse response=client.callProcedure("Get",processor.generateRandomKeyForRetrieval());
+        final VoltTable pairData=response.getResults()[0];
+        if (pairData.getRowCount() == 0)         missedGets.incrementAndGet();
+ else {
+          final PayloadProcessor.Pair pair=processor.retrieveFromStore(pairData.fetchRow(0).getString(0),pairData.fetchRow(0).getVarbinary(1));
+          successfulGets.incrementAndGet();
+          networkGetData.addAndGet(pair.getStoreValueLength());
+          rawGetData.addAndGet(pair.getRawValueLength());
+        }
+      }
+ catch (      Exception e) {
+        failedGets.incrementAndGet();
+      }
+    }
+ else {
+      final PayloadProcessor.Pair pair=processor.generateForStore();
+      try {
+        client.callProcedure("Put",pair.Key,pair.getStoreValue());
+        successfulPuts.incrementAndGet();
+      }
+ catch (      Exception e) {
+        failedPuts.incrementAndGet();
+      }
+      networkPutData.addAndGet(pair.getStoreValueLength());
+      rawPutData.addAndGet(pair.getRawValueLength());
+    }
+  }
+}
