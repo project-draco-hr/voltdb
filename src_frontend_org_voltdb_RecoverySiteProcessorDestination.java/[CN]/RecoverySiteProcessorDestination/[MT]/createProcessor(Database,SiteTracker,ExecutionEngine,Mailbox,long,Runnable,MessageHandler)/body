@@ -1,0 +1,21 @@
+{
+  ArrayList<Pair<String,Integer>> tables=new ArrayList<Pair<String,Integer>>();
+  Iterator<Table> ti=db.getTables().iterator();
+  while (ti.hasNext()) {
+    Table t=ti.next();
+    if (!CatalogUtil.isTableExportOnly(db,t) && t.getMaterializer() == null) {
+      tables.add(Pair.of(t.getTypeName(),t.getRelativeIndex()));
+    }
+  }
+  int partitionId=tracker.getPartitionForSite(HSId);
+  ArrayList<Long> sourceSites=new ArrayList<Long>(tracker.getSitesForPartition(partitionId));
+  sourceSites.remove(new Long(HSId));
+  if (sourceSites.isEmpty()) {
+    VoltDB.crashLocalVoltDB("Could not find a source site for HSId " + CoreUtils.hsIdToString(HSId) + " partition id "+ partitionId,false,null);
+  }
+  HashMap<Pair<String,Integer>,Long> tableToSourceSite=new HashMap<Pair<String,Integer>,Long>();
+  for (  Pair<String,Integer> table : tables) {
+    tableToSourceSite.put(table,sourceSites.get(0));
+  }
+  return new RecoverySiteProcessorDestination(tableToSourceSite,engine,mailbox,HSId,partitionId,onCompletion,messageHandler);
+}

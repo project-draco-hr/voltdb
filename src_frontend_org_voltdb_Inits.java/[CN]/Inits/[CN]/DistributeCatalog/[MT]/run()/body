@@ -27,10 +27,20 @@
       }
       byte[] catalogBytes=Arrays.copyOf(buffer,totalBytes);
       hostLog.debug(String.format("Sending %d catalog bytes",catalogBytes.length));
-      m_rvdb.m_messenger.sendCatalog(catalogBytes);
+      ByteBuffer versionAndBytes=ByteBuffer.allocate(catalogBytes.length + 4);
+      versionAndBytes.putInt(0);
+      versionAndBytes.put(catalogBytes);
+      m_rvdb.getHostMessenger().getZK().create(VoltZK.catalogbytes,versionAndBytes.array(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+      versionAndBytes=null;
     }
  catch (    IOException e) {
       VoltDB.crashGlobalVoltDB("Unable to distribute catalog.",false,e);
+    }
+catch (    org.apache.zookeeper_voltpatches.KeeperException e) {
+      VoltDB.crashGlobalVoltDB("Unable to publish catalog.",false,e);
+    }
+catch (    InterruptedException e) {
+      VoltDB.crashGlobalVoltDB("Interrupted while publishing catalog.",false,e);
     }
   }
 }

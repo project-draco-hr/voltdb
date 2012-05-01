@@ -42,7 +42,7 @@
     int partitionCol=catTable.getPartitioncolumn().getIndex();
     int intType=catTable.getPartitioncolumn().getType();
     VoltType partitionType=VoltType.get((byte)intType);
-    int numPartitions=m_cluster.getPartitions().size();
+    int numPartitions=ctx.getSiteTracker().m_numberOfPartitions;
     VoltTable partitionedTables[]=new VoltTable[numPartitions];
     for (int i=0; i < partitionedTables.length; i++) {
       partitionedTables[i]=table.clone(1024 * 1024);
@@ -58,23 +58,22 @@
       }
       partitionedTables[p].add(table);
     }
-    int num_exec_sites=VoltDB.instance().getCatalogContext().siteTracker.getLiveSiteCount();
+    SiteTracker tracker=ctx.getSiteTracker();
+    Map<Long,Integer> sitesToPartitions=tracker.getSitesToPartitions();
+    int num_exec_sites=sitesToPartitions.size();
     pfs=new SynthesizedPlanFragment[num_exec_sites + 1];
     int site_index=0;
-    for (    Site site : VoltDB.instance().getCatalogContext().siteTracker.getUpSites()) {
-      if (!site.getIsexec()) {
-        continue;
-      }
+    for (    Entry<Long,Integer> e : sitesToPartitions.entrySet()) {
+      long site=e.getKey();
+      int partition=e.getValue();
       ParameterSet params=new ParameterSet();
-      int site_id=Integer.valueOf(site.getTypeName());
-      int partition=VoltDB.instance().getCatalogContext().siteTracker.getPartitionForSite(site_id);
       params.setParameters(tableName,partitionedTables[partition]);
       pfs[site_index]=new SynthesizedPlanFragment();
       pfs[site_index].fragmentId=SysProcFragmentId.PF_distribute;
       pfs[site_index].outputDepId=DEP_distribute;
       pfs[site_index].inputDepIds=new int[]{};
       pfs[site_index].multipartition=false;
-      pfs[site_index].siteId=Integer.valueOf(site.getTypeName());
+      pfs[site_index].siteId=site;
       pfs[site_index].parameters=params;
       site_index++;
     }

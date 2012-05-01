@@ -1,12 +1,12 @@
 {
   RecoveryMessageType type=RecoveryMessageType.values()[message.get(messageTypeOffset)];
   assert(type == RecoveryMessageType.ScanTuples || type == RecoveryMessageType.Complete);
-  message.getInt(siteIdOffset);
+  message.getLong(HSIdOffset);
   final int blockIndex=message.getInt(blockIndexOffset);
   final int tableId=message.getInt(tableIdOffset);
-  ByteBuffer ackMessage=ByteBuffer.allocate(12);
-  ackMessage.putInt(8);
-  ackMessage.putInt(m_siteId);
+  ByteBuffer ackMessage=ByteBuffer.allocate(16);
+  ackMessage.putInt(12);
+  ackMessage.putLong(m_HSId);
   ackMessage.putInt(blockIndex);
   ackMessage.flip();
   if (type == RecoveryMessageType.ScanTuples) {
@@ -19,12 +19,12 @@
     m_engine.processRecoveryMessage(message,pointer);
     long endTime=System.currentTimeMillis();
     m_timeSpentHandlingData+=endTime - startTime;
-    recoveryLog.trace("Received tuple data at site " + m_siteId + " for table "+ m_tables.get(tableId).m_name);
+    recoveryLog.trace("Received tuple data at site " + CoreUtils.hsIdToString(m_HSId) + " for table "+ m_tables.get(tableId).m_name);
   }
  else   if (type == RecoveryMessageType.Complete) {
     message.position(messageTypeOffset + 5);
     RecoveryTable table=m_tables.remove(tableId);
-    recoveryLog.info("Received completion message at site " + m_siteId + " for table "+ table.m_name);
+    recoveryLog.info("Received completion message at site " + CoreUtils.hsIdToString(m_HSId) + " for table "+ table.m_name);
     if (m_tables.isEmpty()) {
       while (ackMessage.hasRemaining()) {
         int written=0;
@@ -56,5 +56,5 @@
       VoltDB.crashLocalVoltDB("Unable to write ack message",false,null);
     }
   }
-  recoveryLog.trace("Writing ack for block " + blockIndex + " from "+ m_siteId);
+  recoveryLog.trace("Writing ack for block " + blockIndex + " from "+ CoreUtils.hsIdToString(m_HSId));
 }
