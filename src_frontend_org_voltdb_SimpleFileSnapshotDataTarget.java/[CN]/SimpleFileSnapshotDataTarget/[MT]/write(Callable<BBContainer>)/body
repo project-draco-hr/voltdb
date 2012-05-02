@@ -1,0 +1,37 @@
+{
+  final SettableFuture<Object> retval=SettableFuture.create();
+  final ListenableFuture<BBContainer> computedData=VoltDB.instance().getComputationService().submit(tupleData);
+  computedData.addListener(new Runnable(){
+    @Override public void run(){
+      try {
+        final BBContainer data=computedData.get();
+        if (m_writeFailed) {
+          retval.set(null);
+          data.discard();
+          return;
+        }
+        try {
+          while (data.b.hasRemaining()) {
+            int written=m_fc.write(data.b);
+            if (written > 0) {
+              m_bytesWritten+=written;
+            }
+          }
+        }
+  finally {
+          data.discard();
+        }
+      }
+ catch (      Throwable t) {
+        m_writeException=t;
+        hostLog.error("Error while attempting to write snapshot data to file " + m_file,t);
+        m_writeFailed=true;
+        retval.setException(t);
+        return;
+      }
+      retval.set(null);
+    }
+  }
+,m_es);
+  return retval;
+}
