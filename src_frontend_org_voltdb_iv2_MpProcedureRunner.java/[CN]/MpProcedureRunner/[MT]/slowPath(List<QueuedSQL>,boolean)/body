@@ -1,0 +1,104 @@
+{
+  boolean hasRead=false;
+  boolean hasWrite=false;
+  for (int i=0; i < batch.size(); ++i) {
+    final SQLStmt stmt=batch.get(i).stmt;
+    if (stmt.catStmt.getReadonly()) {
+      hasRead=true;
+    }
+ else {
+      hasWrite=true;
+    }
+  }
+  if (hasRead && hasWrite) {
+    return executeQueriesInIndividualBatches(batch,finalTask);
+  }
+  VoltTable[] results=new VoltTable[batch.size()];
+  int[] depsToResume=new int[batch.size()];
+  int[] depsForLocalTask=new int[batch.size()];
+  long[] localFragIds=new long[batch.size()];
+  ArrayList<Long> distributedFragIds=new ArrayList<Long>();
+  ArrayList<Integer> distributedOutputDepIds=new ArrayList<Integer>();
+  ByteBuffer[] localParams=new ByteBuffer[batch.size()];
+  ArrayList<ByteBuffer> distributedParams=new ArrayList<ByteBuffer>();
+  boolean localFragsAreNonTransactional=false;
+  for (int i=0; i < batch.size(); ++i) {
+    QueuedSQL queuedSQL=batch.get(i);
+    int collectorOutputDepId=m_txnState.getNextDependencyId();
+    depsToResume[i]=collectorOutputDepId;
+    FastSerializer fs=new FastSerializer();
+    try {
+      fs.writeObject(queuedSQL.params);
+    }
+ catch (    IOException e) {
+      throw new RuntimeException("Error serializing parameters for SQL statement: " + queuedSQL.stmt.getText() + " with params: "+ queuedSQL.params.toJSONString(),e);
+    }
+    ByteBuffer params=fs.getBuffer();
+    assert(params != null);
+    int numFrags=queuedSQL.stmt.catStmt.getFragments().size();
+    assert(numFrags > 0);
+    assert(numFrags <= 2);
+    if (numFrags == 1) {
+      for (      PlanFragment frag : queuedSQL.stmt.catStmt.getFragments()) {
+        assert(frag != null);
+        assert(frag.getHasdependencies() == false);
+        localFragIds[i]=CatalogUtil.getUniqueIdForFragment(frag);
+        localParams[i]=params;
+        if (frag.getNontransactional() == true)         localFragsAreNonTransactional=true;
+      }
+      depsForLocalTask[i]=-1;
+    }
+ else {
+      for (      PlanFragment frag : queuedSQL.stmt.catStmt.getFragments()) {
+        assert(frag != null);
+        if (frag.getHasdependencies() == false) {
+          distributedFragIds.add(CatalogUtil.getUniqueIdForFragment(frag));
+          distributedParams.add(params);
+        }
+ else {
+          localFragIds[i]=CatalogUtil.getUniqueIdForFragment(frag);
+          localParams[i]=params;
+          assert(frag.getHasdependencies());
+          int outputDepId=m_txnState.getNextDependencyId() | DtxnConstants.MULTIPARTITION_DEPENDENCY;
+          depsForLocalTask[i]=outputDepId;
+          distributedOutputDepIds.add(outputDepId);
+          if (frag.getNontransactional() == true)           localFragsAreNonTransactional=true;
+        }
+      }
+    }
+  }
+  long[] distributedFragIdArray=new long[distributedFragIds.size()];
+  int[] distributedOutputDepIdArray=new int[distributedFragIds.size()];
+  ByteBuffer[] distributedParamsArray=new ByteBuffer[distributedFragIds.size()];
+  assert(distributedFragIds.size() == distributedParams.size());
+  for (int i=0; i < distributedFragIds.size(); i++) {
+    distributedFragIdArray[i]=distributedFragIds.get(i);
+    distributedOutputDepIdArray[i]=distributedOutputDepIds.get(i);
+    distributedParamsArray[i]=distributedParams.get(i);
+  }
+  m_txnState.setupProcedureResume(finalTask,depsToResume);
+  FragmentTaskMessage localTask=new FragmentTaskMessage(m_txnState.initiatorHSId,m_site.getCorrespondingSiteId(),m_txnState.txnId,m_txnState.isReadOnly(),localFragIds,depsToResume,localParams,false);
+  for (int i=0; i < depsForLocalTask.length; i++) {
+    if (depsForLocalTask[i] < 0)     continue;
+    localTask.addInputDepId(i,depsForLocalTask[i]);
+  }
+  m_txnState.createLocalFragmentWork(localTask,localFragsAreNonTransactional && finalTask);
+  FragmentTaskMessage distributedTask=new FragmentTaskMessage(m_txnState.initiatorHSId,m_site.getCorrespondingSiteId(),m_txnState.txnId,m_txnState.isReadOnly(),distributedFragIdArray,distributedOutputDepIdArray,distributedParamsArray,finalTask);
+  m_txnState.createAllParticipatingFragmentWork(distributedTask);
+  Map<Integer,List<VoltTable>> mapResults=m_site.recursableRun(m_txnState);
+  assert(mapResults != null);
+  assert(depsToResume != null);
+  assert(depsToResume.length == batch.size());
+  for (int i=0; i < batch.size(); i++) {
+    List<VoltTable> matchingTablesForId=mapResults.get(depsToResume[i]);
+    assert(matchingTablesForId != null);
+    assert(matchingTablesForId.size() == 1);
+    results[i]=matchingTablesForId.get(0);
+    if (batch.get(i).stmt.catStmt.getReplicatedtabledml()) {
+      long newVal=results[i].asScalarLong() / m_site.getReplicatedDMLDivisor();
+      results[i]=new VoltTable(new VoltTable.ColumnInfo("modified_tuples",VoltType.BIGINT));
+      results[i].addRow(newVal);
+    }
+  }
+  return results;
+}
