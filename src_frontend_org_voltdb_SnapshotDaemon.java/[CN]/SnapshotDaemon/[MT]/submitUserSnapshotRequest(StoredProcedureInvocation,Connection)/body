@@ -60,20 +60,22 @@
       return;
     }
   }
-  boolean requestExists=false;
+  String path=null;
+  String nonce=null;
+  byte blocking=0;
+  SnapshotFormat format=SnapshotFormat.NATIVE;
   try {
-    String path;
-    String nonce;
-    byte blocking;
-    String format="native";
     if (params.length == 1) {
       JSONObject jsObj=new JSONObject((String)params[0]);
       path=jsObj.getString("path");
       nonce=jsObj.getString("nonce");
       blocking=(byte)(jsObj.optBoolean("block",false) ? 1 : 0);
-      format=jsObj.optString("format","native");
-      if (!(format.equals("csv") || format.equals("native"))) {
-        final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.GRACEFUL_FAILURE,new VoltTable[0],"@SnapshotSave format param is a " + format + " and should be one of [\"native\" | \"csv\"]",invocation.clientHandle);
+      String formatString=jsObj.optString("format",SnapshotFormat.NATIVE.toString());
+      try {
+        format=SnapshotFormat.getEnumIgnoreCase(formatString);
+      }
+ catch (      IllegalArgumentException argException) {
+        final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.GRACEFUL_FAILURE,new VoltTable[0],"@SnapshotSave format param is a " + formatString + " and should be one of [\"native\" | \"csv\"]",invocation.clientHandle);
         ByteBuffer buf=ByteBuffer.allocate(errorResponse.getSerializedSize() + 4);
         buf.putInt(buf.capacity() - 4);
         errorResponse.flattenToBuffer(buf).flip();
@@ -85,32 +87,9 @@
       nonce=(String)params[1];
       blocking=((Number)params[2]).byteValue();
     }
-    final JSONObject jsObj=new JSONObject();
-    jsObj.put("path",path);
-    jsObj.put("nonce",nonce);
-    jsObj.put("block",blocking == 1 ? true : false);
-    jsObj.put("format",format);
-    final String requestId=java.util.UUID.randomUUID().toString();
-    jsObj.put("requestId",requestId);
-    String zkString=jsObj.toString(4);
-    byte zkBytes[]=zkString.getBytes("UTF-8");
-    m_zk.create(VoltZK.user_snapshot_request,zkBytes,Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
-    registerUserSnapshotResponseWatch(requestId,invocation,c);
   }
- catch (  KeeperException.NodeExistsException e) {
-    requestExists=true;
-  }
-catch (  Exception e) {
+ catch (  Exception e) {
     VoltDB.crashLocalVoltDB("Exception while attempting to create user snapshot request in ZK",true,e);
   }
-  if (requestExists) {
-    VoltTable result=org.voltdb.sysprocs.SnapshotSave.constructNodeResultsTable();
-    result.addRow(-1,CoreUtils.getHostnameOrAddress(),"","FAILURE","SNAPSHOT IN PROGRESS");
-    final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.SUCCESS,new VoltTable[]{result},"A request to perform a user snapshot already exists",invocation.clientHandle);
-    ByteBuffer buf=ByteBuffer.allocate(errorResponse.getSerializedSize() + 4);
-    buf.putInt(buf.capacity() - 4);
-    errorResponse.flattenToBuffer(buf).flip();
-    c.writeStream().enqueue(buf);
-    return;
-  }
+  createAndWatchRequestNode(invocation.clientHandle,c,path,nonce,blocking,format);
 }

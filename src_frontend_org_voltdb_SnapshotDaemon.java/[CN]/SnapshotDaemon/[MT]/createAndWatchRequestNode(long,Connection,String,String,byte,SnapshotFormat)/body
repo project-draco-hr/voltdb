@@ -1,0 +1,24 @@
+{
+  boolean requestExists=false;
+  final String requestId=createRequestNode(path,nonce,blocking,format);
+  if (requestId == null) {
+    requestExists=true;
+  }
+ else {
+    try {
+      registerUserSnapshotResponseWatch(requestId,clientHandle,c);
+    }
+ catch (    Exception e) {
+      VoltDB.crashLocalVoltDB("Failed to register ZK watch on snapshot response",true,e);
+    }
+  }
+  if (requestExists) {
+    VoltTable result=org.voltdb.sysprocs.SnapshotSave.constructNodeResultsTable();
+    result.addRow(-1,CoreUtils.getHostnameOrAddress(),"","FAILURE","SNAPSHOT IN PROGRESS");
+    final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.SUCCESS,new VoltTable[]{result},"A request to perform a user snapshot already exists",clientHandle);
+    ByteBuffer buf=ByteBuffer.allocate(errorResponse.getSerializedSize() + 4);
+    buf.putInt(buf.capacity() - 4);
+    errorResponse.flattenToBuffer(buf).flip();
+    c.writeStream().enqueue(buf);
+  }
+}
