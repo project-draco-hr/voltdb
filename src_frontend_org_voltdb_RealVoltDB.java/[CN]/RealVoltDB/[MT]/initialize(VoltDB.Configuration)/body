@@ -36,7 +36,7 @@ synchronized (m_startAndStopLock) {
     m_hostIdWithStartupCatalog=0;
     m_pathToStartupCatalog=m_config.m_pathToCatalog;
     m_replicationActive=false;
-    m_localSites=new HashMap<Long,ExecutionSite>();
+    m_localSites=new COWMap<Long,ExecutionSite>();
     m_siteThreads=new HashMap<Long,Thread>();
     m_runners=new ArrayList<ExecutionSiteRunner>();
     m_computationService=Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors(),new ThreadFactory(){
@@ -189,6 +189,22 @@ synchronized (m_startAndStopLock) {
       }
       assert(runner.m_siteObj != null);
       m_localSites.put(runner.m_siteId,runner.m_siteObj);
+    }
+    try {
+      m_mailboxTracker.executeTask(new Runnable(){
+        @Override public void run(){
+          for (          ExecutionSite es : m_localSites.values()) {
+            es.notifySitesAdded(m_siteTracker);
+          }
+        }
+      }
+).get();
+    }
+ catch (    InterruptedException e) {
+      VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
+    }
+catch (    ExecutionException e) {
+      VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
     }
     int portOffset=0;
     for (int i=0; i < 1; i++) {
