@@ -37,7 +37,7 @@ synchronized (m_startAndStopLock) {
     m_hostIdWithStartupCatalog=0;
     m_pathToStartupCatalog=m_config.m_pathToCatalog;
     m_replicationActive=false;
-    m_localSites=new HashMap<Long,ExecutionSite>();
+    m_localSites=new COWMap<Long,ExecutionSite>();
     m_siteThreads=new HashMap<Long,Thread>();
     m_runners=new ArrayList<ExecutionSiteRunner>();
     m_computationService=Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors(),new ThreadFactory(){
@@ -188,18 +188,30 @@ synchronized (m_startAndStopLock) {
       VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
     }
     for (    ExecutionSiteRunner runner : m_runners) {
-synchronized (runner) {
-        if (!runner.m_isSiteCreated) {
-          try {
-            runner.wait();
-          }
- catch (          InterruptedException e) {
-            throw new RuntimeException(e);
+      try {
+        runner.m_siteIsLoaded.await();
+      }
+ catch (      InterruptedException e) {
+        VoltDB.crashLocalVoltDB("Unable to wait on starting execution site.",true,e);
+      }
+      assert(runner.m_siteObj != null);
+      m_localSites.put(runner.m_siteId,runner.m_siteObj);
+    }
+    try {
+      m_mailboxTracker.executeTask(new Runnable(){
+        @Override public void run(){
+          for (          ExecutionSite es : m_localSites.values()) {
+            es.notifySitesAdded(m_siteTracker);
           }
         }
-        assert(runner.m_siteObj != null);
-        m_localSites.put(runner.m_siteId,runner.m_siteObj);
       }
+).get();
+    }
+ catch (    InterruptedException e) {
+      VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
+    }
+catch (    ExecutionException e) {
+      VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
     }
     int portOffset=0;
     for (int i=0; i < 1; i++) {
@@ -250,7 +262,7 @@ synchronized (runner) {
     }
     m_validateConfiguredNumberOfPartitionsOnMailboxUpdate=true;
     if (m_siteTracker.m_numberOfPartitions != m_configuredNumberOfPartitions) {
-      for (      Map.Entry<Integer,List<Long>> entry : m_siteTracker.m_partitionsToSitesImmutable.entrySet()) {
+      for (      Map.Entry<Integer,ImmutableList<Long>> entry : m_siteTracker.m_partitionsToSitesImmutable.entrySet()) {
         hostLog.info(entry.getKey() + " -- " + CoreUtils.hsIdCollectionToString(entry.getValue()));
       }
       VoltDB.crashGlobalVoltDB("Mismatch between configured number of partitions (" + m_configuredNumberOfPartitions + ") and actual ("+ m_siteTracker.m_numberOfPartitions+ ")",true,null);
