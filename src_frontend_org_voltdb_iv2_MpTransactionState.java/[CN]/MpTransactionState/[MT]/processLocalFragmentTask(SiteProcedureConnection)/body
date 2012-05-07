@@ -1,0 +1,36 @@
+{
+  Map<Integer,List<VoltTable>> depResults=new HashMap<Integer,List<VoltTable>>();
+  for (int frag=0; frag < m_localWork.getFragmentCount(); frag++) {
+    final long fragmentId=m_localWork.getFragmentId(frag);
+    final int outputDepId=m_localWork.getOutputDepId(frag);
+    ParameterSet params=null;
+    final ByteBuffer paramData=m_localWork.getParameterDataForFragment(frag);
+    if (paramData != null) {
+      final FastDeserializer fds=new FastDeserializer(paramData);
+      try {
+        params=fds.readObject(ParameterSet.class);
+      }
+ catch (      final IOException e) {
+        hostLog.l7dlog(Level.FATAL,LogKeys.host_ExecutionSite_FailedDeserializingParamsForFragmentTask.name(),e);
+        VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
+      }
+    }
+ else {
+      params=new ParameterSet();
+    }
+    if (m_localWork.isSysProcTask()) {
+      throw new RuntimeException("IV2: Sysprocs not yet supported");
+    }
+ else {
+      final int inputDepId=m_localWork.getOnlyInputDepId(frag);
+      final VoltTable dependency=siteConnection.executePlanFragment(fragmentId,inputDepId,params,txnId,isReadOnly());
+      List<VoltTable> tables=depResults.get(outputDepId);
+      if (tables == null) {
+        tables=new ArrayList<VoltTable>();
+        m_remoteDepTables.put(outputDepId,tables);
+      }
+      tables.add(dependency);
+    }
+  }
+  return depResults;
+}
