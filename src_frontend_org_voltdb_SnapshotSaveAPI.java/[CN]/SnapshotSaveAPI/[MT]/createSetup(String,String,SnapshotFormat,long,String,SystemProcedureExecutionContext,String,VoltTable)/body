@@ -31,20 +31,43 @@
       }
       final AtomicInteger numTables=new AtomicInteger(tables.size());
       final SnapshotRegistry.Snapshot snapshotRecord=SnapshotRegistry.startSnapshot(txnId,context.getExecutionSite().getCorrespondingHostId(),file_path,file_nonce,format,tables.toArray(new Table[0]));
+      SnapshotDataTarget sdt=null;
+      if (!format.isTableBased()) {
+        if (format == SnapshotFormat.STREAM && data != null) {
+          JSONObject jsObj=new JSONObject(data);
+          int port=jsObj.getInt("port");
+          JSONArray jsAddresses=jsObj.getJSONArray("addresses");
+          ArrayList<byte[]> addresses=new ArrayList<byte[]>();
+          for (int i=0; i < jsAddresses.length(); i++) {
+            InetAddress addr=InetAddress.getByName(jsAddresses.getString(i));
+            addresses.add(addr.getAddress());
+          }
+          Class<?> klass=MiscUtils.loadProClass("org.voltdb.rejoin.StreamSnapshotDataTarget","Rejoin",false);
+          if (klass != null) {
+            Constructor<?> constructor=klass.getConstructor(List.class,int.class,long.class);
+            sdt=(SnapshotDataTarget)constructor.newInstance(addresses,port);
+          }
+        }
+      }
       for (      final Table table : SnapshotUtil.getTablesToSave(context.getDatabase())) {
         if (format == SnapshotFormat.CSV && table.getIsreplicated() && !tracker.isFirstHost()) {
           continue;
         }
         String canSnapshot="SUCCESS";
         String err_msg="";
-        final File saveFilePath=SnapshotUtil.constructFileForTable(table,file_path,file_nonce,format,context.getHostId());
-        SnapshotDataTarget sdt=null;
+        File saveFilePath=null;
+        if (format.isFileBased()) {
+          saveFilePath=SnapshotUtil.constructFileForTable(table,file_path,file_nonce,format,context.getHostId());
+        }
         try {
           if (format == SnapshotFormat.CSV) {
             sdt=new SimpleFileSnapshotDataTarget(saveFilePath);
           }
- else {
+ else           if (format == SnapshotFormat.NATIVE) {
             sdt=constructSnapshotDataTargetForTable(context,saveFilePath,table,context.getHostId(),context.getSiteTracker().m_numberOfPartitions,txnId);
+          }
+          if (sdt == null) {
+            throw new IOException("Unable to create snapshot target");
           }
           targets.add(sdt);
           final SnapshotDataTarget sdtFinal=sdt;
@@ -94,7 +117,7 @@
           ex.printStackTrace(pw);
           pw.flush();
           canSnapshot="FAILURE";
-          err_msg="SNAPSHOT INITIATION OF " + saveFilePath + "RESULTED IN IOException: \n"+ sw.toString();
+          err_msg="SNAPSHOT INITIATION OF " + file_nonce + "RESULTED IN IOException: \n"+ sw.toString();
         }
         result.addRow(context.getHostId(),hostname,table.getTypeName(),canSnapshot,err_msg);
       }
