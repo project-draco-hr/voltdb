@@ -9,8 +9,20 @@
         if (safeTxnId != null && m_recoveryPermit.tryAcquire()) {
           m_haveRecoveryPermit=true;
           m_recoveryStartTime=System.currentTimeMillis();
-          m_recoveryProcessor=RecoverySiteProcessorDestination.createProcessor(m_context.database,m_tracker,ee,m_mailbox,m_siteId,m_onRecoveryCompletion,m_recoveryMessageHandler);
+          if (!VoltDB.instance().getConfig().m_newRejoin) {
+            m_recoveryProcessor=RecoverySiteProcessorDestination.createProcessor(m_context.database,m_tracker,ee,m_mailbox,m_siteId,m_onRecoveryCompletion,m_recoveryMessageHandler);
+          }
         }
+      }
+      if (m_rejoinInitResponse != null) {
+        m_recoveryLog.info("Sending rejoin initiation response to " + CoreUtils.hsIdToString(m_rejoinInitResponse.getFirst()));
+        try {
+          m_mailbox.send(m_rejoinInitResponse.getFirst(),m_rejoinInitResponse.getSecond());
+        }
+ catch (        MessagingException e) {
+          throw new RuntimeException(e);
+        }
+        m_rejoinInitResponse=null;
       }
       TransactionState currentTxnState=(TransactionState)m_transactionQueue.poll();
       m_currentTransactionState=currentTxnState;
@@ -33,6 +45,7 @@
         }
  else {
           m_snapshotter.doSnapshotWork(ee,EstTime.currentTimeMillis() - lastCommittedTxnTime > 5);
+          doRejoinWork();
         }
       }
       if (currentTxnState != null) {

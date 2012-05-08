@@ -21,18 +21,25 @@
       final ArrayList<SnapshotTableTask> replicatedSnapshotTasks=new ArrayList<SnapshotTableTask>();
       assert(SnapshotSiteProcessor.ExecutionSitesCurrentlySnapshotting.get() == -1);
       final List<Table> tables=SnapshotUtil.getTablesToSave(context.getDatabase());
-      Runnable completionTask=SnapshotUtil.writeSnapshotDigest(txnId,context.getExecutionSite().m_context.getCatalogCRC(),file_path,file_nonce,tables,context.getExecutionSite().getCorrespondingHostId(),SnapshotSiteProcessor.getExportSequenceNumbers());
-      if (completionTask != null) {
-        SnapshotSiteProcessor.m_tasksOnSnapshotCompletion.offer(completionTask);
-      }
-      completionTask=SnapshotUtil.writeSnapshotCatalog(file_path,file_nonce);
-      if (completionTask != null) {
-        SnapshotSiteProcessor.m_tasksOnSnapshotCompletion.offer(completionTask);
+      if (format.isFileBased()) {
+        Runnable completionTask=SnapshotUtil.writeSnapshotDigest(txnId,context.getExecutionSite().m_context.getCatalogCRC(),file_path,file_nonce,tables,context.getExecutionSite().getCorrespondingHostId(),SnapshotSiteProcessor.getExportSequenceNumbers());
+        if (completionTask != null) {
+          SnapshotSiteProcessor.m_tasksOnSnapshotCompletion.offer(completionTask);
+        }
+        completionTask=SnapshotUtil.writeSnapshotCatalog(file_path,file_nonce);
+        if (completionTask != null) {
+          SnapshotSiteProcessor.m_tasksOnSnapshotCompletion.offer(completionTask);
+        }
       }
       final AtomicInteger numTables=new AtomicInteger(tables.size());
       final SnapshotRegistry.Snapshot snapshotRecord=SnapshotRegistry.startSnapshot(txnId,context.getExecutionSite().getCorrespondingHostId(),file_path,file_nonce,format,tables.toArray(new Table[0]));
       SnapshotDataTarget sdt=null;
       if (!format.isTableBased()) {
+        Map<Integer,byte[]> schemas=new HashMap<Integer,byte[]>();
+        for (        final Table table : SnapshotUtil.getTablesToSave(context.getDatabase())) {
+          VoltTable schemaTable=CatalogUtil.getVoltTable(table);
+          schemas.put(table.getRelativeIndex(),schemaTable.getSchemaBytes());
+        }
         if (format == SnapshotFormat.STREAM && data != null) {
           JSONObject jsObj=new JSONObject(data);
           int port=jsObj.getInt("port");
@@ -44,8 +51,8 @@
           }
           Class<?> klass=MiscUtils.loadProClass("org.voltdb.rejoin.StreamSnapshotDataTarget","Rejoin",false);
           if (klass != null) {
-            Constructor<?> constructor=klass.getConstructor(List.class,int.class,long.class);
-            sdt=(SnapshotDataTarget)constructor.newInstance(addresses,port);
+            Constructor<?> constructor=klass.getConstructor(List.class,int.class,Map.class);
+            sdt=(SnapshotDataTarget)constructor.newInstance(addresses,port,schemas);
           }
         }
       }

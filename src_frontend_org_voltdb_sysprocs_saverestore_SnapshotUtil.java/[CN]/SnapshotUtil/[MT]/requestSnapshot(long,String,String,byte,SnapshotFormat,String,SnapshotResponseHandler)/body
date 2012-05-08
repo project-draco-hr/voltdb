@@ -1,4 +1,5 @@
 {
+  final Exchanger<ClientResponse> responseExchanger=new Exchanger<ClientResponse>();
   final Connection c=new Connection(){
     @Override public WriteStream writeStream(){
       return new WriteStream(){
@@ -10,9 +11,7 @@
           try {
             b.position(4);
             resp.initFromBuffer(b);
-            if (handler != null) {
-              handler.handleResponse(resp);
-            }
+            responseExchanger.exchange(resp);
           }
  catch (          Exception e) {
             throw new RuntimeException(e);
@@ -62,10 +61,28 @@
   final SnapshotDaemon sd=VoltDB.instance().getClientInterfaces().get(0).getSnapshotDaemon();
   Runnable work=new Runnable(){
     @Override public void run(){
+      ClientResponse response=null;
       final long startTime=System.currentTimeMillis();
       while (System.currentTimeMillis() - startTime <= (120 * 60000)) {
         sd.createAndWatchRequestNode(clientHandle,c,path,nonce,blocking,format,data);
+        try {
+          response=responseExchanger.exchange(null);
+          VoltTable[] results=response.getResults();
+          if (response.getStatus() != ClientResponse.SUCCESS) {
+            break;
+          }
+ else           if (isSnapshotInProgress(results)) {
+            Thread.sleep(1000);
+            continue;
+          }
+ else {
+            break;
+          }
+        }
+ catch (        InterruptedException ignore) {
+        }
       }
+      handler.handleResponse(response);
     }
   }
 ;
