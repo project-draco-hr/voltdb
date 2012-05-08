@@ -1,0 +1,54 @@
+{
+  boolean single_frag=readOnly && replicatedTable;
+  MpTestPlan plan=new MpTestPlan();
+  List<Integer> distributedOutputDepIds=new ArrayList<Integer>();
+  List<Integer> depsToResumeList=new ArrayList<Integer>();
+  List<Integer> depsForLocalTask=new ArrayList<Integer>();
+  for (int i=0; i < batchSize; i++) {
+    depsToResumeList.add(i);
+    if (!single_frag) {
+      depsForLocalTask.add(i + 1000);
+      distributedOutputDepIds.add(i + 1000);
+    }
+ else {
+      depsForLocalTask.add(-1);
+    }
+  }
+  long[] distributedFragIdArray=new long[distributedOutputDepIds.size()];
+  int[] distributedOutputDepIdArray=new int[distributedOutputDepIds.size()];
+  ByteBuffer[] distributedParamsArray=new ByteBuffer[distributedOutputDepIds.size()];
+  for (int i=0; i < distributedOutputDepIds.size(); i++) {
+    distributedFragIdArray[i]=Long.MIN_VALUE;
+    distributedOutputDepIdArray[i]=distributedOutputDepIds.get(i);
+    distributedParamsArray[i]=createDummyParameterSet();
+  }
+  plan.remoteWork=new FragmentTaskMessage(Long.MIN_VALUE,Long.MIN_VALUE,1234l,readOnly,distributedFragIdArray,distributedOutputDepIdArray,distributedParamsArray,false);
+  System.out.println("REMOTE TASK: " + plan.remoteWork.toString());
+  if (!single_frag) {
+    for (int i=0; i < remoteHSIds.length; i++) {
+      FragmentResponseMessage resp=new FragmentResponseMessage(plan.remoteWork,remoteHSIds[i]);
+      for (int j=0; j < distributedOutputDepIdArray.length; j++) {
+        resp.addDependency(distributedOutputDepIdArray[j],new VoltTable(new VoltTable.ColumnInfo("BOGO",VoltType.BIGINT)));
+      }
+      System.out.println("RESPONSE: " + resp);
+      plan.generatedResponses.add(resp);
+    }
+  }
+  ByteBuffer[] localParams=new ByteBuffer[batchSize];
+  for (int i=0; i < batchSize; i++) {
+    localParams[i]=createDummyParameterSet();
+  }
+  int[] depsToResume=new int[depsToResumeList.size()];
+  for (int i=0; i < depsToResumeList.size(); i++) {
+    depsToResume[i]=depsToResumeList.get(i);
+  }
+  plan.depsToResume=depsToResume;
+  long[] localFragIds=new long[batchSize];
+  plan.localWork=new FragmentTaskMessage(Long.MIN_VALUE,Long.MIN_VALUE,1234l,readOnly,localFragIds,depsToResume,localParams,false);
+  for (int i=0; i < depsForLocalTask.size(); i++) {
+    if (depsForLocalTask.get(i) < 0)     continue;
+    plan.localWork.addInputDepId(i,depsForLocalTask.get(i));
+  }
+  System.out.println("LOCAL TASK: " + plan.localWork.toString());
+  return plan;
+}
