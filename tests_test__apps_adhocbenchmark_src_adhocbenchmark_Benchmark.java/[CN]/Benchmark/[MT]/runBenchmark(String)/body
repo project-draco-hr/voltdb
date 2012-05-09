@@ -1,0 +1,34 @@
+{
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println(" Setup & Initialization");
+  System.out.println(HORIZONTAL_RULE);
+  System.out.printf("Reading configuration file '%s'...\n",configPath);
+  List<QueryTestBase> tests=BenchmarkConfiguration.configureTests(configPath,this.cliConfig.test);
+  connect(this.cliConfig.servers);
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println("Starting Benchmark");
+  System.out.println(HORIZONTAL_RULE);
+  System.out.println("Warming up...");
+  for (  String query : new QueryGenerator(tests,this.cliConfig.warmup)) {
+    this.client.callProcedure(new NullCallback(),"@AdHoc",query);
+  }
+  fullStatsContext.fetchAndResetBaseline();
+  periodicStatsContext.fetchAndResetBaseline();
+  this.benchmarkStartTS=System.currentTimeMillis();
+  long queryElapsedMS=0;
+  schedulePeriodicStats();
+  System.out.printf("\nRunning '%s' benchmark...\n",this.cliConfig.test);
+  for (  String query : new QueryGenerator(tests,this.cliConfig.duration)) {
+    long startTS=System.currentTimeMillis();
+    this.client.callProcedure(new NullCallback(),"@AdHoc",query);
+    queryElapsedMS+=(System.currentTimeMillis() - startTS);
+    this.queriesProcessed++;
+  }
+  printStatistics();
+  System.out.println("");
+  long totalElapsedMS=System.currentTimeMillis() - this.benchmarkStartTS;
+  this.timer.cancel();
+  this.client.drain();
+  printResults(totalElapsedMS,queryElapsedMS);
+  this.client.close();
+}

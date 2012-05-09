@@ -6,14 +6,14 @@
   cluster.setMaxHeap(64);
   ServerThread localServer=null;
   try {
-    boolean success=cluster.compileWithAdminMode(builder,VoltDB.DEFAULT_ADMIN_PORT,false);
+    boolean success=cluster.compileWithAdminMode(builder,21211,false);
     assertTrue(success);
     MiscUtils.copyFile(builder.getPathToDeployment(),Configuration.getPathToCatalogForTest("rejoin.xml"));
     cluster.setHasLocalServer(false);
     cluster.startUp();
     Client client;
     client=ClientFactory.createClient(m_cconfig);
-    client.createConnection("localhost");
+    client.createConnection("localhost",cluster.port(0));
     deleteTestFiles();
     client.callProcedure("@SnapshotSave",TMPDIR,TESTNONCE,(byte)1).getResults();
     client.callProcedure("@SnapshotRestore",TMPDIR,TESTNONCE);
@@ -23,6 +23,11 @@
     config.m_pathToCatalog=Configuration.getPathToCatalogForTest("rejoin.jar");
     config.m_pathToDeployment=Configuration.getPathToCatalogForTest("rejoin.xml");
     config.m_rejoinToHostAndPort=":" + cluster.internalPort(1);
+    config.m_port=cluster.portGenerator.nextClient();
+    cluster.setPort(0,config.m_port);
+    config.m_adminPort=cluster.portGenerator.nextAdmin();
+    cluster.setAdminPort(0,config.m_adminPort);
+    config.m_zkInterface="127.0.0.1:" + cluster.portGenerator.next();
     config.m_isRejoinTest=true;
     localServer=new ServerThread(config);
     localServer.start();
@@ -31,7 +36,7 @@
     client.close();
     assertTrue(didRestore());
     client=ClientFactory.createClient(m_cconfig);
-    client.createConnection("localhost");
+    client.createConnection("localhost",cluster.port(0));
     File newCatalog=new File(Configuration.getPathToCatalogForTest("rejoin.jar"));
     File deployment=new File(Configuration.getPathToCatalogForTest("rejoin.xml"));
     VoltTable[] results=client.updateApplicationCatalog(newCatalog,deployment).getResults();
