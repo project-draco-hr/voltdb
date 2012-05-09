@@ -1,0 +1,25 @@
+{
+  assert(b != null);
+  for (  ByteBuffer buf : b) {
+    assert(!buf.isDirect());
+    if (buf.remaining() == 0) {
+      throw new IllegalArgumentException("Attempted to queue a zero length buffer");
+    }
+  }
+synchronized (this) {
+    if (m_isShutdown) {
+      return;
+    }
+    updateLastPendingWriteTimeAndQueueBackpressure();
+    m_queuedWrites.offer(new DeferredSerialization(){
+      @Override public ByteBuffer[] serialize(){
+        return b;
+      }
+      @Override public void cancel(){
+      }
+    }
+);
+    m_port.setInterests(SelectionKey.OP_WRITE,0);
+  }
+  return;
+}

@@ -1,25 +1,69 @@
 {
-  m_deployment=CatalogUtil.parseDeployment(m_config.m_pathToDeployment);
-  if (m_deployment == null) {
-    VoltDB.crashLocalVoltDB("Not a valid XML deployment file at URL: " + m_config.m_pathToDeployment,false,null);
-  }
-  HeartbeatType hbt=m_deployment.getHeartbeat();
-  if (hbt != null)   m_config.m_deadHostTimeoutMS=hbt.getTimeout() * 1000;
-  Catalog catalog=new Catalog();
-  Cluster cluster=catalog.getClusters().add("cluster");
-  Database db=cluster.getDatabases().add("database");
-  if (m_deployment.getUsers() != null) {
-    for (    UsersType.User user : m_deployment.getUsers().getUser()) {
-      String groupsCSV=user.getGroups();
-      String[] groups=groupsCSV.split(",");
-      for (      String group : groups) {
-        if (db.getGroups().get(group) == null) {
-          db.getGroups().add(group);
+  try {
+    ZooKeeper zk=m_messenger.getZK();
+    byte deploymentBytes[]=org.voltcore.utils.CoreUtils.urlToBytes(m_config.m_pathToDeployment);
+    try {
+      if (deploymentBytes != null) {
+        zk.create(VoltZK.deploymentBytes,deploymentBytes,Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+        hostLog.info("URL of deployment info: " + m_config.m_pathToDeployment);
+      }
+ else {
+        throw new KeeperException.NodeExistsException();
+      }
+    }
+ catch (    KeeperException.NodeExistsException e) {
+      byte deploymentBytesTemp[]=zk.getData(VoltZK.deploymentBytes,false,null);
+      if (deploymentBytesTemp == null) {
+        throw new RuntimeException("Deployment file could not be found locally or remotely at " + m_config.m_pathToDeployment);
+      }
+      CRC32 crc=new CRC32();
+      crc.update(deploymentBytes);
+      final long checksumHere=crc.getValue();
+      crc.reset();
+      crc.update(deploymentBytesTemp);
+      if (checksumHere != crc.getValue()) {
+        hostLog.info("Deployment configuration was pulled from ZK, and the checksum did not match " + "the locally supplied file");
+      }
+ else {
+        hostLog.info("Deployment configuration pulled from ZK");
+      }
+      deploymentBytes=deploymentBytesTemp;
+    }
+    m_deployment=CatalogUtil.getDeployment(new ByteArrayInputStream(deploymentBytes));
+    if (m_deployment == null) {
+      hostLog.error("Not a valid XML deployment file at URL: " + m_config.m_pathToDeployment);
+      VoltDB.crashLocalVoltDB("Not a valid XML deployment file at URL: " + m_config.m_pathToDeployment,false,null);
+    }
+    HeartbeatType hbt=m_deployment.getHeartbeat();
+    if (hbt != null)     m_config.m_deadHostTimeoutMS=hbt.getTimeout() * 1000;
+    Catalog catalog=new Catalog();
+    Cluster cluster=catalog.getClusters().add("cluster");
+    Database db=cluster.getDatabases().add("database");
+    if (m_deployment.getUsers() != null) {
+      for (      UsersType.User user : m_deployment.getUsers().getUser()) {
+        String groupsCSV=user.getGroups();
+        if (groupsCSV == null || groupsCSV.isEmpty()) {
+          continue;
+        }
+        String[] groups=groupsCSV.split(",");
+        for (        String group : groups) {
+          if (db.getGroups().get(group) == null) {
+            db.getGroups().add(group);
+          }
         }
       }
     }
+    long depCRC=CatalogUtil.compileDeploymentAndGetCRC(catalog,m_deployment,true,true);
+    assert(depCRC != -1);
+    m_catalogContext=new CatalogContext(0,catalog,null,depCRC,0,-1);
+    int numberOfNodes=m_deployment.getCluster().getHostcount();
+    if (numberOfNodes <= 0) {
+      hostLog.l7dlog(Level.FATAL,LogKeys.host_VoltDB_InvalidHostCount.name(),new Object[]{numberOfNodes},null);
+      VoltDB.crashLocalVoltDB("Invalid cluster size: " + numberOfNodes,false,null);
+    }
+    return numberOfNodes;
   }
-  long depCRC=CatalogUtil.compileDeploymentAndGetCRC(catalog,m_deployment,true,true);
-  assert(depCRC != -1);
-  m_catalogContext=new CatalogContext(0,catalog,null,depCRC,0,-1);
+ catch (  Exception e) {
+    throw new RuntimeException(e);
+  }
 }

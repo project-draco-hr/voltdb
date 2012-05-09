@@ -1,4 +1,14 @@
 {
+  long seenTxnId=m_transactionQueue.getEarliestSeenTxnIdAcrossInitiatorsWhenEmpty();
+  if (m_currentTransactionState != null) {
+    if (seenTxnId == 0 || seenTxnId > m_currentTransactionState.txnId) {
+      seenTxnId=m_currentTransactionState.txnId;
+    }
+  }
+  long seenTxnTime=TransactionIdManager.getTimestampFromTransactionId(seenTxnId);
+  if (seenTxnTime > m_startupTime) {
+    m_partitionDRGateway.tick(seenTxnId);
+  }
   final long time=EstTime.currentTimeMillis();
   final long prevLastTickTime=lastTickTime;
   if ((time - lastTickTime) >= 1000) {
@@ -8,7 +18,6 @@
     lastTickTime=time;
   }
   m_snapshotter.doSnapshotWork(ee,false);
-  m_watchdog.pet();
   if (m_tableStats != null && (time - prevLastTickTime) >= StatsManager.POLL_INTERVAL * 2) {
     CatalogMap<Table> tables=m_context.database.getTables();
     int[] tableIds=new int[tables.size()];

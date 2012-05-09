@@ -1,13 +1,12 @@
 {
 synchronized (m_startAndStopLock) {
     m_mode=OperationMode.SHUTTINGDOWN;
-    m_executionSitesRecovered=false;
-    m_agreementSiteRecovered=false;
+    m_mailboxTracker.shutdown();
+    m_faultManager.shutDown();
     m_snapshotCompletionMonitor.shutdown();
     m_periodicWorkThread.shutdown();
     heartbeatThread.interrupt();
     heartbeatThread.join();
-    m_faultManager.shutDown();
     if (m_hasStartedSampler.get()) {
       m_sampler.setShouldStop();
       m_sampler.join();
@@ -32,32 +31,15 @@ synchronized (m_startAndStopLock) {
         mainSiteThread.join();
       }
     }
+    PartitionDRGateway.shutdown();
     m_localSites=null;
     m_currentThreadSite=null;
     m_siteThreads=null;
     m_runners=null;
-    Thread t=new Thread(){
-      @Override public void run(){
-        try {
-          m_zk.close();
-        }
- catch (        InterruptedException e) {
-        }
-      }
-    }
-;
-    t.start();
-    m_agreementSite.shutdown();
-    t.join();
-    m_agreementSite=null;
     if (m_messenger != null) {
       m_messenger.shutdown();
     }
-    if (m_network != null) {
-      m_network.shutdown();
-    }
     m_messenger=null;
-    m_network=null;
     if (m_statsAgent != null) {
       m_statsAgent.shutdown();
       m_statsAgent=null;
@@ -71,6 +53,9 @@ synchronized (m_startAndStopLock) {
     m_computationService.shutdown();
     m_computationService.awaitTermination(1,TimeUnit.DAYS);
     m_computationService=null;
+    m_siteTracker=null;
+    m_catalogContext=null;
+    m_mailboxPublisher=null;
     System.gc();
     m_isRunning=false;
   }

@@ -2,7 +2,8 @@
   org.voltdb.utils.VoltFile.resetSubrootForThisProcess();
   VoltProjectBuilder builder=getBuilderForTest();
   builder.setSecurityEnabled(true);
-  LocalCluster cluster=new LocalCluster("rejoin.jar",2,3,1,BackendTarget.NATIVE_EE_JNI,true);
+  LocalCluster cluster=new LocalCluster("rejoin.jar",2,3,1,BackendTarget.NATIVE_EE_JNI,false);
+  cluster.setMaxHeap(64);
   boolean success=cluster.compile(builder);
   assertTrue(success);
   MiscUtils.copyFile(builder.getPathToDeployment(),Configuration.getPathToCatalogForTest("rejoin.xml"));
@@ -11,7 +12,7 @@
   ClientResponse response;
   Client client;
   client=ClientFactory.createClient(m_cconfig);
-  client.createConnection("localhost");
+  client.createConnection("localhost",cluster.port(0));
   response=client.callProcedure("InsertSinglePartition",0);
   assertEquals(ClientResponse.SUCCESS,response.getStatus());
   response=client.callProcedure("Insert",1);
@@ -20,7 +21,7 @@
   assertEquals(ClientResponse.SUCCESS,response.getStatus());
   client.close();
   client=ClientFactory.createClient(m_cconfig);
-  client.createConnection("localhost",21213);
+  client.createConnection("localhost",cluster.port(1));
   response=client.callProcedure("InsertSinglePartition",2);
   assertEquals(ClientResponse.SUCCESS,response.getStatus());
   response=client.callProcedure("Insert",3);
@@ -31,14 +32,19 @@
   VoltDB.Configuration config=new VoltDB.Configuration();
   config.m_pathToCatalog=Configuration.getPathToCatalogForTest("rejoin.jar");
   config.m_pathToDeployment=Configuration.getPathToCatalogForTest("rejoin.xml");
-  config.m_rejoinToHostAndPort=m_username + ":" + m_password+ "@localhost:21213";
+  config.m_rejoinToHostAndPort=":" + cluster.internalPort(1);
+  config.m_port=cluster.portGenerator.nextClient();
+  cluster.setPort(0,config.m_port);
+  config.m_adminPort=cluster.portGenerator.nextAdmin();
+  cluster.setAdminPort(0,config.m_adminPort);
+  config.m_zkInterface="127.0.0.1:" + cluster.portGenerator.next();
   config.m_isRejoinTest=true;
   ServerThread localServer=new ServerThread(config);
   localServer.start();
   localServer.waitForInitialization();
   Thread.sleep(5000);
   client=ClientFactory.createClient(m_cconfig);
-  client.createConnection("localhost");
+  client.createConnection("localhost",cluster.port(0));
   response=client.callProcedure("InsertSinglePartition",5);
   assertEquals(ClientResponse.SUCCESS,response.getStatus());
   response=client.callProcedure("Insert",6);
@@ -47,7 +53,7 @@
   assertEquals(ClientResponse.SUCCESS,response.getStatus());
   client.close();
   client=ClientFactory.createClient(m_cconfig);
-  client.createConnection("localhost",21213);
+  client.createConnection("localhost",cluster.port(1));
   response=client.callProcedure("InsertSinglePartition",8);
   assertEquals(ClientResponse.SUCCESS,response.getStatus());
   response=client.callProcedure("Insert",9);

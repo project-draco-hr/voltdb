@@ -1,0 +1,52 @@
+{
+  try {
+    AppHelper apph=new AppHelper(AdhocSmash.class.getCanonicalName()).add("displayinterval","display_interval_in_seconds","Interval for performance feedback, in seconds.",10).add("duration","run_duration_in_seconds","Benchmark duration, in seconds.",120).add("servers","comma_separated_server_list","List of VoltDB servers to connect to.","localhost").add("port","port_number","Client port to connect to on cluster nodes.",21212).add("ratelimit","rate_limit","Rate limit to start from (number of transactions per second).",100000).setArguments(args);
+    long displayInterval=apph.longValue("displayinterval");
+    long duration=apph.longValue("duration");
+    String servers=apph.stringValue("servers");
+    int port=apph.intValue("port");
+    long rateLimit=apph.longValue("ratelimit");
+    Random rand=new Random();
+    apph.validate("duration",(duration > 0)).validate("displayinterval",(displayInterval > 0)).validate("ratelimit",(rateLimit > 0));
+    apph.printActualUsage();
+    Con=ClientConnectionPool.getWithRetry(servers,port);
+    IRateLimiter limiter=null;
+    limiter=new RateLimiter(rateLimit);
+    int cycle=0;
+    final long endTime=System.currentTimeMillis() + (1000l * duration);
+    while (endTime > System.currentTimeMillis()) {
+      if (rand.nextInt(1000) < 5) {
+        String query="insert into votes (phone_number, state, contestant_number) values (" + cycle + ", 'MA', 999);";
+        ClientResponse response=Con.execute("@AdHoc",query);
+        InsertCallback blah=new InsertCallback(true,cycle);
+        blah.clientCallback(response);
+      }
+ else {
+        Con.executeAsync(new InsertCallback(false,cycle),"VOTES.insert",cycle,"MA",999);
+      }
+      if (rand.nextInt(1000) < 5) {
+        ClientResponse response=Con.execute("@AdHoc","update votes set state='RI', contestant_number=" + cycle + " where phone_number="+ cycle+ ";");
+        UpdateCallback blah=new UpdateCallback(true,cycle);
+        blah.clientCallback(response);
+      }
+ else {
+        Con.executeAsync(new UpdateCallback(false,cycle),"VOTES.update",cycle,"MA",cycle,cycle);
+      }
+      if (rand.nextInt(1000) < 5) {
+        ClientResponse response=Con.execute("@AdHoc","delete from votes where contestant_number=" + cycle + ";");
+        DeleteCallback blah=new DeleteCallback(true,cycle);
+        blah.clientCallback(response);
+      }
+ else {
+        Con.executeAsync(new DeleteCallback(false,cycle),"Delete",cycle);
+      }
+      cycle++;
+      limiter.throttle();
+    }
+    Con.close();
+  }
+ catch (  Exception x) {
+    System.out.println("Exception: " + x);
+    x.printStackTrace();
+  }
+}

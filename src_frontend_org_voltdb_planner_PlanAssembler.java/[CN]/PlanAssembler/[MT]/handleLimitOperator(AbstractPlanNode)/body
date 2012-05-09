@@ -1,19 +1,14 @@
 {
-  boolean canPushDown=true;
   Stack<AbstractPlanNode> coordGraph=new Stack<AbstractPlanNode>();
   Stack<AbstractPlanNode> distGraph=new Stack<AbstractPlanNode>();
-  LimitPlanNode coordLimit=new LimitPlanNode();
-  coordLimit.setLimit((int)m_parsedSelect.limit);
-  coordLimit.setOffset((int)m_parsedSelect.offset);
-  if (m_parsedSelect.offsetParameterId != -1) {
-    ParameterInfo parameterInfo=m_parsedSelect.paramsById.get(m_parsedSelect.offsetParameterId);
-    coordLimit.setOffsetParameterIndex(parameterInfo.index);
-  }
-  if (m_parsedSelect.limitParameterId != -1) {
-    ParameterInfo parameterInfo=m_parsedSelect.paramsById.get(m_parsedSelect.limitParameterId);
-    coordLimit.setLimitParameterIndex(parameterInfo.index);
-  }
-  coordGraph.push(coordLimit);
+  int limitParamIndex=m_parsedSelect.getLimitParameterIndex();
+  int offsetParamIndex=m_parsedSelect.getOffsetParameterIndex();
+  LimitPlanNode topLimit=new LimitPlanNode();
+  topLimit.setLimit((int)m_parsedSelect.limit);
+  topLimit.setOffset((int)m_parsedSelect.offset);
+  topLimit.setLimitParameterIndex(limitParamIndex);
+  topLimit.setOffsetParameterIndex(offsetParamIndex);
+  boolean canPushDown=true;
   if (m_parsedSelect.distinct || checkPushDownViability(root) == null) {
     canPushDown=false;
   }
@@ -26,52 +21,25 @@
       }
     }
   }
-  LimitPlanNode distLimit=new LimitPlanNode();
-  distLimit.setLimit((int)m_parsedSelect.limit);
-  distLimit.setOffset((int)m_parsedSelect.offset);
-  if (m_parsedSelect.offsetParameterId != -1) {
-    ParameterInfo parameterInfo=m_parsedSelect.paramsById.get(m_parsedSelect.offsetParameterId);
-    distLimit.setOffsetParameterIndex(parameterInfo.index);
-  }
-  if (m_parsedSelect.limitParameterId != -1) {
-    ParameterInfo parameterInfo=m_parsedSelect.paramsById.get(m_parsedSelect.limitParameterId);
-    distLimit.setLimitParameterIndex(parameterInfo.index);
-  }
-  distGraph.push(distLimit);
-  if (root.findAllNodesOfType(PlanNodeType.RECEIVE).isEmpty() || !canPushDown) {
-    coordGraph.clear();
+  if ((canPushDown == false) || (root.hasAnyNodeOfType(PlanNodeType.RECEIVE) == false)) {
+    distGraph.push(topLimit);
   }
  else {
-    distGraph.clear();
-    distLimit=new LimitPlanNode();
-    distLimit.setLimit((int)(m_parsedSelect.limit + m_parsedSelect.offset));
-    distLimit.setOffset(0);
-    AbstractExpression left=new ConstantValueExpression();
-    ((ConstantValueExpression)left).setValue(Long.toString(m_parsedSelect.offset));
-    left.setValueType(VoltType.INTEGER);
-    AbstractExpression right=new ConstantValueExpression();
-    ((ConstantValueExpression)right).setValue(Long.toString(m_parsedSelect.limit));
-    right.setValueType(VoltType.INTEGER);
-    if (m_parsedSelect.offsetParameterId != -1 || m_parsedSelect.limitParameterId != -1) {
-      if (m_parsedSelect.offsetParameterId != -1) {
-        left=new ParameterValueExpression();
-        ParameterInfo paramInfo=m_parsedSelect.paramsById.get(m_parsedSelect.offsetParameterId);
-        ((ParameterValueExpression)left).setParameterId(paramInfo.index);
-        left.setValueType(paramInfo.type);
-        left.setValueSize(paramInfo.type.getLengthInBytesForFixedTypes());
-      }
-      if (m_parsedSelect.limitParameterId != -1) {
-        right=new ParameterValueExpression();
-        ParameterInfo paramInfo=m_parsedSelect.paramsById.get(m_parsedSelect.limitParameterId);
-        ((ParameterValueExpression)right).setParameterId(paramInfo.index);
-        right.setValueType(paramInfo.type);
-        right.setValueSize(paramInfo.type.getLengthInBytesForFixedTypes());
-      }
+    coordGraph.push(topLimit);
+    LimitPlanNode distLimit=new LimitPlanNode();
+    if (m_parsedSelect.limit != -1) {
+      distLimit.setLimit((int)(m_parsedSelect.limit + m_parsedSelect.offset));
     }
-    OperatorExpression expr=new OperatorExpression(ExpressionType.OPERATOR_PLUS,left,right);
-    expr.setValueType(VoltType.INTEGER);
-    expr.setValueSize(VoltType.INTEGER.getLengthInBytesForFixedTypes());
-    distLimit.setLimitExpression(expr);
+    if (m_parsedSelect.hasLimitOrOffsetParameters()) {
+      AbstractExpression left=m_parsedSelect.getOffsetExpression();
+      assert(left != null);
+      AbstractExpression right=m_parsedSelect.getLimitExpression();
+      assert(right != null);
+      OperatorExpression expr=new OperatorExpression(ExpressionType.OPERATOR_PLUS,left,right);
+      expr.setValueType(VoltType.INTEGER);
+      expr.setValueSize(VoltType.INTEGER.getLengthInBytesForFixedTypes());
+      distLimit.setLimitExpression(expr);
+    }
     distGraph.push(distLimit);
   }
   return pushDownLimit(root,distGraph,coordGraph);

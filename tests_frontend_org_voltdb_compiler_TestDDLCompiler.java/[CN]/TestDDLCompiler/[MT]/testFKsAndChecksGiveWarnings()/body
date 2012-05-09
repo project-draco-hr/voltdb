@@ -1,0 +1,36 @@
+{
+  File jarOut=new File("checkCompilerWarnings.jar");
+  jarOut.deleteOnExit();
+  String schema1="create table t0 (id bigint not null, primary key (id));\n";
+  schema1+="create table t1 (name varchar(32), user varchar(32), " + "id bigint references t0, primary key (name, user), CHECK (id>0));";
+  String schema2="create table t0 (id bigint not null, primary key (id));\n";
+  final String simpleProject="<?xml version=\"1.0\"?>\n" + "<project><database><schemas>" + "<schema path='%s' />"+ "</schemas></database></project>";
+  File schemaFile=VoltProjectBuilder.writeStringToTempFile(schema1);
+  String schemaPath=schemaFile.getPath();
+  File projectFile=VoltProjectBuilder.writeStringToTempFile(String.format(simpleProject,schemaPath));
+  String projectPath=projectFile.getPath();
+  VoltCompiler compiler=new VoltCompiler();
+  boolean success=compiler.compile(projectPath,jarOut.getPath());
+  assertTrue(success);
+  int foundCheckWarnings=0;
+  int foundFKWarnings=0;
+  for (  VoltCompiler.Feedback f : compiler.m_warnings) {
+    if (f.message.toLowerCase().contains("check")) {
+      foundCheckWarnings++;
+    }
+    if (f.message.toLowerCase().contains("foreign")) {
+      foundFKWarnings++;
+    }
+  }
+  assertEquals(1,foundCheckWarnings);
+  assertEquals(1,foundFKWarnings);
+  jarOut.delete();
+  schemaFile=VoltProjectBuilder.writeStringToTempFile(schema2);
+  schemaPath=schemaFile.getPath();
+  projectFile=VoltProjectBuilder.writeStringToTempFile(String.format(simpleProject,schemaPath));
+  projectPath=projectFile.getPath();
+  success=compiler.compile(projectPath,jarOut.getPath());
+  assertTrue(success);
+  assertEquals(0,compiler.m_warnings.size());
+  jarOut.delete();
+}
