@@ -1,0 +1,50 @@
+{
+  List<QueryTestBase> tests=new ArrayList<QueryTestBase>();
+  try {
+    DocumentBuilderFactory docBuilderFactory=DocumentBuilderFactory.newInstance();
+    DocumentBuilder docBuilder=docBuilderFactory.newDocumentBuilder();
+    Document doc=docBuilder.parse(new File(path));
+    doc.getDocumentElement().normalize();
+    Map<String,ConfigurationTable> tables=new HashMap<String,ConfigurationTable>();
+    Element schemaElement=(Element)doc.getElementsByTagName("schema").item(0);
+    NodeList tableNodes=schemaElement.getElementsByTagName("table");
+    for (int iTable=0; iTable < tableNodes.getLength(); iTable++) {
+      ConfigurationTable table=ConfigurationTable.fromElement((Element)tableNodes.item(iTable));
+      tables.put(table.name,table);
+    }
+    Element testElement=(Element)doc.getElementsByTagName("tests").item(0);
+    NodeList testNodes=testElement.getElementsByTagName("test");
+    for (int iTest=0; iTest < testNodes.getLength(); iTest++) {
+      ConfigurationTest test=ConfigurationTest.fromElement((Element)testNodes.item(iTest));
+      if (tables.containsKey(test.table)) {
+        ConfigurationTable table=tables.get(test.table);
+        if (test.type.equalsIgnoreCase("join")) {
+          if (testName.equalsIgnoreCase("join")) {
+            tests.add(new JoinTest(test.table,table.nVariations,table.columnPrefix,table.nColumns,test.nLevels));
+          }
+        }
+ else         if (test.type.equalsIgnoreCase("projection")) {
+          if (testName.equalsIgnoreCase("projection")) {
+            tests.add(new ProjectionTest(test.table,table.columnPrefix,table.nColumns));
+          }
+        }
+ else {
+          throw new ConfigurationException(String.format("Configuration has unknown test type '%s'",test.type));
+        }
+      }
+ else {
+        throw new ConfigurationException(String.format("Configuration has test for unknown table '%s'",test.table));
+      }
+    }
+  }
+ catch (  SAXException e) {
+    throw new ConfigurationException("XML parser SAX exception",e);
+  }
+catch (  ParserConfigurationException e) {
+    throw new ConfigurationException("XML parser configuration exception",e);
+  }
+catch (  IOException e) {
+    throw new ConfigurationException("XML parser I/O exception",e);
+  }
+  return tests;
+}
