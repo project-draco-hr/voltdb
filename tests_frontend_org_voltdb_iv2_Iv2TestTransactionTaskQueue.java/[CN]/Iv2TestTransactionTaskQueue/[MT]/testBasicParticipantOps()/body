@@ -1,0 +1,47 @@
+{
+  long localTxnId=0;
+  long mpTxnId=0;
+  SiteTaskerQueue task_queue=new SiteTaskerQueue();
+  TransactionTaskQueue dut=new TransactionTaskQueue(task_queue);
+  Deque<TransactionTask> expected_order=new ArrayDeque<TransactionTask>();
+  TransactionTask next=createSpProc(localTxnId++);
+  addTask(next,dut,expected_order);
+  next=createSpProc(localTxnId++);
+  addTask(next,dut,expected_order);
+  next=createSpProc(localTxnId++);
+  addTask(next,dut,expected_order);
+  assertEquals(0,dut.size());
+  long blocking_mp_txnid=mpTxnId;
+  next=createFrag(localTxnId++,mpTxnId++);
+  TransactionTask block=next;
+  addTask(next,dut,expected_order);
+  assertEquals(1,dut.size());
+  ArrayDeque<TransactionTask> blocked=new ArrayDeque<TransactionTask>();
+  next=createSpProc(localTxnId++);
+  addTask(next,dut,blocked);
+  next=createSpProc(localTxnId++);
+  addTask(next,dut,blocked);
+  long next_blocking_local_txnid=localTxnId;
+  long next_blocking_mp_txnid=mpTxnId;
+  next=createFrag(localTxnId++,mpTxnId++);
+  TransactionTask next_block=next;
+  addTask(next,dut,blocked);
+  assertEquals(blocked.size() + 1,dut.size());
+  next=createFrag(block.getTransactionState(),blocking_mp_txnid);
+  addTask(next,dut,expected_order);
+  assertEquals(blocked.size() + 1,dut.size());
+  next=createComplete(block.getTransactionState(),blocking_mp_txnid);
+  addTask(next,dut,expected_order);
+  assertEquals(blocked.size() + 1,dut.size());
+  block.getTransactionState().setDone();
+  int offered=dut.flush();
+  assertEquals(blocked.size(),offered);
+  assertEquals(1,dut.size());
+  expected_order.addAll(blocked);
+  while (!expected_order.isEmpty()) {
+    TransactionTask next_poll=(TransactionTask)task_queue.poll();
+    TransactionTask expected=expected_order.removeFirst();
+    assertEquals(expected.getLocalTxnId(),next_poll.getLocalTxnId());
+    assertEquals(expected.getMpTxnId(),next_poll.getMpTxnId());
+  }
+}
