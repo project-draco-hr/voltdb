@@ -111,6 +111,23 @@ synchronized (m_startAndStopLock) {
       m_messenger.generateMailboxId(statsHSId);
       hostLog.info("Registering stats mailbox id " + CoreUtils.hsIdToString(statsHSId));
       m_mailboxPublisher.registerMailbox(MailboxType.StatsAgent,new MailboxNodeContent(statsHSId,null));
+      if (m_config.m_newRejoin) {
+        ArrayList<Long> sites=new ArrayList<Long>();
+        for (        Mailbox siteMailbox : siteMailboxes) {
+          sites.add(siteMailbox.getHSId());
+        }
+        Class<?> klass=MiscUtils.loadProClass("org.voltdb.rejoin.SequentialRejoinCoordinator","Rejoin",false);
+        Constructor<?> constructor;
+        try {
+          constructor=klass.getConstructor(HostMessenger.class,List.class);
+          m_rejoinCoordinator=(RejoinCoordinator)constructor.newInstance(m_messenger,sites);
+          m_messenger.registerMailbox(m_rejoinCoordinator);
+          m_mailboxPublisher.registerMailbox(MailboxType.OTHER,new MailboxNodeContent(m_rejoinCoordinator.getHSId(),null));
+        }
+ catch (        Exception e) {
+          VoltDB.crashLocalVoltDB("Unable to construct rejoin coordinator",true,e);
+        }
+      }
       m_mailboxPublisher.publish(m_messenger.getZK());
       rejoinCompleteLatch.countDown();
       if (isRejoin) {
@@ -192,17 +209,6 @@ synchronized (runner) {
         }
         assert(runner.m_siteObj != null);
         m_localSites.put(runner.m_siteId,runner.m_siteObj);
-      }
-    }
-    if (m_config.m_newRejoin) {
-      Class<?> klass=MiscUtils.loadProClass("org.voltdb.rejoin.SequentialRejoinCoordinator","Rejoin",false);
-      Constructor<?> constructor;
-      try {
-        constructor=klass.getConstructor(Map.class);
-        m_rejoinCoordinator=(RejoinCoordinator)constructor.newInstance(m_localSites);
-      }
- catch (      Exception e) {
-        VoltDB.crashLocalVoltDB("Unable to construct rejoin coordinator",true,e);
       }
     }
     int portOffset=0;

@@ -1,0 +1,59 @@
+{
+  final long sourceSite=rm.m_sourceHSId;
+  List<byte[]> addresses=rm.addresses();
+  int port=rm.port();
+  final String srcSiteStr=CoreUtils.hsIdToString(sourceSite);
+  m_recoveryLog.info(srcSiteStr + " requested to rejoin");
+  String data=null;
+  try {
+    JSONStringer jsStringer=new JSONStringer();
+    jsStringer.object();
+    jsStringer.key("addresses").array();
+    for (    byte[] addr : addresses) {
+      InetAddress inetAddress=InetAddress.getByAddress(addr);
+      jsStringer.value(inetAddress.getHostAddress());
+    }
+    jsStringer.endArray();
+    jsStringer.key("port").value(port);
+    jsStringer.endObject();
+    data=jsStringer.toString();
+  }
+ catch (  Exception e) {
+    m_recoveryLog.error("Failed to serialize to JSON: " + e.getMessage());
+    return new RejoinMessage(getSiteId(),RejoinMessage.Type.FAILURE);
+  }
+  SnapshotResponseHandler handler=new SnapshotResponseHandler(){
+    @Override public void handleResponse(    ClientResponse resp){
+      if (resp == null || resp.getStatus() != ClientResponseImpl.SUCCESS) {
+        RejoinMessage msg=new RejoinMessage(getSiteId(),RejoinMessage.Type.FAILURE);
+        m_rejoinInitResponse=Pair.of(sourceSite,msg);
+        return;
+      }
+      VoltTable[] results=resp.getResults();
+      if (SnapshotUtil.didSnapshotRequestSucceed(results)) {
+        long txnId=-1;
+        String appStatus=resp.getAppStatusString();
+        try {
+          JSONObject jsObj=new JSONObject(appStatus);
+          txnId=jsObj.getLong("txnId");
+        }
+ catch (        JSONException e) {
+          m_recoveryLog.error("Failed to get the snapshot txnId " + "for rejoining " + srcSiteStr + ": "+ e.getMessage());
+          RejoinMessage msg=new RejoinMessage(getSiteId(),RejoinMessage.Type.FAILURE);
+          m_rejoinInitResponse=Pair.of(sourceSite,msg);
+          return;
+        }
+        m_recoveryLog.info("Rejoin snapshot requested " + txnId + " for "+ srcSiteStr);
+        m_rejoinInitResponse=Pair.of(sourceSite,new RejoinMessage(getSiteId(),txnId));
+      }
+ else {
+        m_recoveryLog.error("Snapshot request for rejoining " + srcSiteStr + " didn't succeed");
+        RejoinMessage msg=new RejoinMessage(getSiteId(),RejoinMessage.Type.FAILURE);
+        m_rejoinInitResponse=Pair.of(sourceSite,msg);
+      }
+    }
+  }
+;
+  SnapshotUtil.requestSnapshot(0l,"","Rejoin snapshot",(byte)0,SnapshotFormat.STREAM,data,handler);
+  return null;
+}

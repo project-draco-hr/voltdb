@@ -1,20 +1,15 @@
 {
+  boolean doneWork=false;
   if (m_rejoinProcessor != null && m_rejoinSnapshotTxnId != -1) {
-    Pair<Integer,ByteBuffer> rejoinWork=m_rejoinProcessor.poll();
-    if (rejoinWork != null) {
-      int tableId=rejoinWork.getFirst();
-      ByteBuffer buffer=rejoinWork.getSecond();
-      m_recoveryLog.info("Got a snapshot block for table " + tableId + " "+ buffer.remaining());
-      VoltTable table=PrivateVoltTableFactory.createVoltTableFromBuffer(buffer.duplicate(),true);
-      loadTable(m_rejoinSnapshotTxnId,tableId,table);
-    }
- else     if (m_rejoinProcessor.isEOF()) {
-      m_recoveryLog.info("New rejoin snapshot transfer is finished");
-      m_rejoinProcessor.close();
-      if (m_rejoinCoordinator != null) {
-        m_rejoinCoordinator.onRejoinFinished(getSiteId());
+    doneWork=restoreSnapshotForRejoin();
+  }
+ else   if (m_rejoinProcessor == null && m_rejoinTaskLog != null) {
+    for (int i=0; i < 1000; i++) {
+      doneWork=replayTransactionForRejoin();
+      if (!doneWork) {
+        break;
       }
-      m_onRecoveryCompletion.run();
     }
   }
+  return doneWork;
 }
