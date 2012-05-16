@@ -3,12 +3,12 @@
   Set<TupleValueExpression> eqPartitionKeySet=new HashSet<TupleValueExpression>();
   int result=0;
   Object bindingObject=null;
+  Object bindingExpr=null;
   for (int i=accessPath.length - 1; i >= 0; --i) {
     Table table=joinOrder[i];
     String partitionedTable=null;
     String columnNeedingCoverage=null;
     boolean columnCovered=true;
-    boolean columnWasCovered=true;
     if (!table.getIsreplicated()) {
       if (table.getMaterializer() != null) {
         accessPath[i].requiresSendReceive=true;
@@ -36,14 +36,11 @@
       AbstractExpression leftExpr=expr.getLeft();
       AbstractExpression constExpr=null;
       boolean needsRelevanceCheck=false;
-      columnWasCovered=columnCovered;
       if (leftExpr instanceof TupleValueExpression) {
         tveExpr=(TupleValueExpression)leftExpr;
         if (partitionedTable != null && tveExpr.getTableName().equals(partitionedTable) && tveExpr.getColumnName().equals(columnNeedingCoverage)) {
-          columnCovered=true;
           if (firstPartitionKeyScanned == null) {
             firstPartitionKeyScanned=tveExpr;
-            eqPartitionKeySet.add(tveExpr);
           }
  else {
             needsRelevanceCheck=true;
@@ -53,29 +50,27 @@
         if (constExpr instanceof TupleValueExpression) {
           TupleValueExpression tve2=(TupleValueExpression)constExpr;
           if (partitionedTable != null && tve2.getTableName().equals(partitionedTable) && tve2.getColumnName().equals(columnNeedingCoverage)) {
-            columnCovered=true;
+            tve2=tveExpr;
+            tveExpr=(TupleValueExpression)constExpr;
             if (firstPartitionKeyScanned == null) {
-              firstPartitionKeyScanned=tve2;
-              eqPartitionKeySet.add(tve2);
-              eqPartitionKeySet.add(tveExpr);
-              continue;
+              firstPartitionKeyScanned=tveExpr;
             }
-            needsRelevanceCheck=true;
+ else {
+              needsRelevanceCheck=true;
+            }
           }
- else           if (firstPartitionKeyScanned == tveExpr) {
+          if (firstPartitionKeyScanned == tveExpr) {
+            eqPartitionKeySet.add(tveExpr);
             eqPartitionKeySet.add(tve2);
-            continue;
           }
  else           if (needsRelevanceCheck) {
-            if (eqPartitionKeySet.contains(tveExpr)) {
-              eqPartitionKeySet.add(tve2);
-              continue;
-            }
             if (eqPartitionKeySet.contains(tve2)) {
               eqPartitionKeySet.add(tveExpr);
+              columnCovered=true;
               continue;
             }
-            columnCovered=columnWasCovered;
+          }
+ else {
           }
           continue;
         }
@@ -85,13 +80,9 @@
         if (!(rightExpr instanceof TupleValueExpression)) {
           continue;
         }
-        constExpr=tveExpr;
+        constExpr=leftExpr;
         tveExpr=(TupleValueExpression)rightExpr;
         if (partitionedTable != null && tveExpr.getTableName().equals(partitionedTable) && tveExpr.getColumnName().equals(columnNeedingCoverage)) {
-          columnCovered=true;
-        }
-        if (partitionedTable != null && tveExpr.getTableName().equals(partitionedTable) && tveExpr.getColumnName().equals(columnNeedingCoverage)) {
-          columnCovered=true;
           if (firstPartitionKeyScanned == null) {
             firstPartitionKeyScanned=tveExpr;
             eqPartitionKeySet.add(tveExpr);
@@ -102,25 +93,31 @@
         }
       }
       if (constExpr.hasAnySubexpressionOfClass(TupleValueExpression.class)) {
-        columnCovered=columnWasCovered;
         continue;
       }
       if (eqPartitionKeySet.contains(tveExpr)) {
         if (bindingObject == null) {
+          bindingExpr=constExpr;
           bindingObject=extractPartitioningValue(tveExpr,constExpr);
         }
+        columnCovered=true;
         continue;
       }
- else       if (needsRelevanceCheck) {
-        if (bindingObject != null) {
+      if (needsRelevanceCheck) {
+        if (bindingExpr != null) {
+          if (bindingExpr == constExpr) {
+            eqPartitionKeySet.add(tveExpr);
+            columnCovered=true;
+            continue;
+          }
           Object altBinding=extractPartitioningValue(tveExpr,constExpr);
           if (altBinding.equals(bindingObject)) {
             eqPartitionKeySet.add(tveExpr);
+            columnCovered=true;
             continue;
           }
         }
       }
-      columnCovered=columnWasCovered;
     }
     if (!columnCovered) {
       accessPath[i].requiresSendReceive=true;
