@@ -2,8 +2,31 @@
   assert(joinOrder != null);
   assert(m_plans.size() == 0);
   ArrayList<AccessPath[]> listOfAccessPathCombos=generateAllAccessPathCombinationsForJoinOrder(joinOrder);
+  m_partitionParam[1]=m_partitionParam[0];
+  boolean suppressSendReceivePair=true;
+  if (isStatementMultiPartition() && m_countOfPartitionedTables > 0) {
+    suppressSendReceivePair=false;
+    int multiPartitionScanCount=AccessPath.tagForMultiPartitionAccess(joinOrder,listOfAccessPathCombos.get(0),m_partitionParam);
+    if (multiPartitionScanCount > 1) {
+      return;
+    }
+    if (m_partitionParam[1] == null) {
+      if (m_countOfPartitionedTables > 1) {
+        suppressSendReceivePair=true;
+      }
+    }
+ else {
+      if (multiPartitionScanCount == 1) {
+        return;
+      }
+ else {
+        assert(isStatementMultiPartition() == false);
+        suppressSendReceivePair=true;
+      }
+    }
+  }
   for (  AccessPath[] accessPath : listOfAccessPathCombos) {
-    AbstractPlanNode scanPlan=getSelectSubPlanForAccessPath(joinOrder,accessPath);
+    AbstractPlanNode scanPlan=getSelectSubPlanForAccessPath(joinOrder,accessPath,suppressSendReceivePair);
     m_plans.add(scanPlan);
   }
 }

@@ -4,29 +4,35 @@
       throw new RuntimeException("Illegal to read an export table.");
     }
     m_parsedSelect=(ParsedSelectStmt)parsedStmt;
-    subAssembler=new SelectSubPlanAssembler(m_catalogDb,parsedStmt,m_singlePartition);
+    subAssembler=new SelectSubPlanAssembler(m_catalogDb,parsedStmt,m_partitionParam);
   }
  else {
     if (tableListIncludesView(parsedStmt.tableList)) {
       throw new RuntimeException("Illegal to modify a materialized view.");
     }
+    assert(parsedStmt.tableList.size() == 1);
+    Table targetTable=parsedStmt.tableList.get(0);
+    if (isSinglePartitionPlan() && (targetTable.getIsreplicated())) {
+      String msg="Trying to write to replicated table '" + targetTable.getTypeName() + "' in a single-partition procedure.";
+      throw new PlanningErrorException(msg);
+    }
     if (parsedStmt instanceof ParsedInsertStmt) {
       m_parsedInsert=(ParsedInsertStmt)parsedStmt;
+      return;
     }
- else     if (parsedStmt instanceof ParsedUpdateStmt) {
+    if (parsedStmt instanceof ParsedUpdateStmt) {
       if (tableListIncludesExportOnly(parsedStmt.tableList)) {
         throw new RuntimeException("Illegal to update an export table.");
       }
       m_parsedUpdate=(ParsedUpdateStmt)parsedStmt;
-      subAssembler=new WriterSubPlanAssembler(m_catalogDb,parsedStmt,m_singlePartition);
     }
  else     if (parsedStmt instanceof ParsedDeleteStmt) {
       if (tableListIncludesExportOnly(parsedStmt.tableList)) {
         throw new RuntimeException("Illegal to delete from an export table.");
       }
       m_parsedDelete=(ParsedDeleteStmt)parsedStmt;
-      subAssembler=new WriterSubPlanAssembler(m_catalogDb,parsedStmt,m_singlePartition);
     }
  else     throw new RuntimeException("Unknown subclass of AbstractParsedStmt.");
+    subAssembler=new WriterSubPlanAssembler(m_catalogDb,parsedStmt,m_partitionParam);
   }
 }
