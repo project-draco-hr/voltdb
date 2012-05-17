@@ -11,6 +11,12 @@
     m_statsCollector.beginProcedure();
     byte status=ClientResponseImpl.SUCCESS;
     VoltTable[] results=null;
+    if (isSystemProcedure()) {
+      final Object[] combinedParams=new Object[paramList.length + 1];
+      combinedParams[0]=m_systemProcedureContext;
+      for (int i=0; i < paramList.length; ++i)       combinedParams[i + 1]=paramList[i];
+      paramList=combinedParams;
+    }
     if (paramList.length != m_paramTypes.length) {
       m_statsCollector.endProcedure(false,true);
       String msg="PROCEDURE " + m_procedureName + " EXPECTS "+ String.valueOf(m_paramTypes.length)+ " PARAMS, BUT RECEIVED "+ String.valueOf(paramList.length);
@@ -63,8 +69,8 @@
       assert(m_catProc.getStatements().size() == 1);
       try {
         m_cachedSingleStmt.params=getCleanParams(m_cachedSingleStmt.stmt,paramList);
-        if (!m_isNative) {
-          VoltTable table=m_hsql.runSQLWithSubstitutions(m_cachedSingleStmt.stmt,m_cachedSingleStmt.params);
+        if (getHsqlBackendIfExists() != null) {
+          VoltTable table=getHsqlBackendIfExists().runSQLWithSubstitutions(m_cachedSingleStmt.stmt,m_cachedSingleStmt.params);
           results=new VoltTable[]{table};
         }
  else {
@@ -89,6 +95,7 @@
     m_cachedRNG=null;
     m_cachedSingleStmt.params=null;
     m_cachedSingleStmt.expectation=null;
+    m_seenFinalBatch=false;
   }
   return retval;
 }

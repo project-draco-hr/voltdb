@@ -1,62 +1,67 @@
 {
 synchronized (m_startAndStopLock) {
-    m_mode=OperationMode.SHUTTINGDOWN;
-    m_mailboxTracker.shutdown();
-    m_faultManager.shutDown();
-    m_snapshotCompletionMonitor.shutdown();
-    m_periodicWorkThread.shutdown();
-    heartbeatThread.interrupt();
-    heartbeatThread.join();
-    if (m_hasStartedSampler.get()) {
-      m_sampler.setShouldStop();
-      m_sampler.join();
-    }
-    if (m_adminListener != null)     m_adminListener.stop();
-    for (    ClientInterface ci : m_clientInterfaces) {
-      ci.shutdown();
-    }
-    ExportManager.instance().shutdown();
-    if (m_localSites != null) {
-      for (      ExecutionSite site : m_localSites.values())       site.startShutdown();
-    }
-    if (m_siteThreads != null) {
-      for (      Thread siteThread : m_siteThreads.values()) {
-        if (Thread.currentThread().equals(siteThread) == false) {
-          siteThread.join();
+    boolean did_it=false;
+    if (m_mode != OperationMode.SHUTTINGDOWN) {
+      did_it=true;
+      m_mode=OperationMode.SHUTTINGDOWN;
+      m_mailboxTracker.shutdown();
+      m_faultManager.shutDown();
+      m_snapshotCompletionMonitor.shutdown();
+      m_periodicWorkThread.shutdown();
+      heartbeatThread.interrupt();
+      heartbeatThread.join();
+      if (m_hasStartedSampler.get()) {
+        m_sampler.setShouldStop();
+        m_sampler.join();
+      }
+      if (m_adminListener != null)       m_adminListener.stop();
+      for (      ClientInterface ci : m_clientInterfaces) {
+        ci.shutdown();
+      }
+      ExportManager.instance().shutdown();
+      if (m_localSites != null) {
+        for (        ExecutionSite site : m_localSites.values())         site.startShutdown();
+      }
+      if (m_siteThreads != null) {
+        for (        Thread siteThread : m_siteThreads.values()) {
+          if (Thread.currentThread().equals(siteThread) == false) {
+            siteThread.join();
+          }
         }
       }
-    }
-    if (mainSiteThread != null) {
-      if (Thread.currentThread().equals(mainSiteThread) == false) {
-        mainSiteThread.join();
+      if (mainSiteThread != null) {
+        if (Thread.currentThread().equals(mainSiteThread) == false) {
+          mainSiteThread.join();
+        }
       }
+      PartitionDRGateway.shutdown();
+      m_localSites=null;
+      m_currentThreadSite=null;
+      m_siteThreads=null;
+      m_runners=null;
+      if (m_messenger != null) {
+        m_messenger.shutdown();
+      }
+      m_messenger=null;
+      if (m_statsAgent != null) {
+        m_statsAgent.shutdown();
+        m_statsAgent=null;
+      }
+      if (m_asyncCompilerAgent != null) {
+        m_asyncCompilerAgent.shutdown();
+        m_asyncCompilerAgent=null;
+      }
+      m_clientInterfaces.clear();
+      ExportManager.instance().shutdown();
+      m_computationService.shutdown();
+      m_computationService.awaitTermination(1,TimeUnit.DAYS);
+      m_computationService=null;
+      m_siteTracker=null;
+      m_catalogContext=null;
+      m_mailboxPublisher=null;
+      System.gc();
+      m_isRunning=false;
     }
-    PartitionDRGateway.shutdown();
-    m_localSites=null;
-    m_currentThreadSite=null;
-    m_siteThreads=null;
-    m_runners=null;
-    if (m_messenger != null) {
-      m_messenger.shutdown();
-    }
-    m_messenger=null;
-    if (m_statsAgent != null) {
-      m_statsAgent.shutdown();
-      m_statsAgent=null;
-    }
-    if (m_asyncCompilerAgent != null) {
-      m_asyncCompilerAgent.shutdown();
-      m_asyncCompilerAgent=null;
-    }
-    m_clientInterfaces.clear();
-    ExportManager.instance().shutdown();
-    m_computationService.shutdown();
-    m_computationService.awaitTermination(1,TimeUnit.DAYS);
-    m_computationService=null;
-    m_siteTracker=null;
-    m_catalogContext=null;
-    m_mailboxPublisher=null;
-    System.gc();
-    m_isRunning=false;
+    return did_it;
   }
 }

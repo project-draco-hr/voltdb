@@ -14,9 +14,11 @@
     }
   }
   eeProcs.clear();
-  for (int ii=0; ii < m_siteCount; ii++) {
-    String logfile="LocalCluster_host_" + hostId + "_site"+ ii+ ".log";
-    eeProcs.add(new EEProcess(templateCmdLine.target(),logfile));
+  if (templateCmdLine.target().isIPC) {
+    for (int ii=0; ii < m_siteCount; ii++) {
+      String logfile="LocalCluster_host_" + hostId + "_site"+ ii+ ".log";
+      eeProcs.add(new EEProcess(templateCmdLine.target(),logfile));
+    }
   }
   PipeToFile ptf=null;
   long start=0;
@@ -26,6 +28,11 @@
       rejoinCmdLn.debugPort(portGenerator.next());
     }
     rejoinCmdLn.rejoinHostAndPort(rejoinHost + ":" + String.valueOf(portNoToRejoin));
+    rejoinCmdLn.m_port=portGenerator.nextClient();
+    rejoinCmdLn.m_adminPort=portGenerator.nextAdmin();
+    rejoinCmdLn.m_zkInterface="127.0.0.1:" + portGenerator.next();
+    rejoinCmdLn.m_internalPort=portGenerator.next();
+    setPortsFromConfig(hostId,rejoinCmdLn);
     m_procBuilder.command().clear();
     m_procBuilder.command().addAll(rejoinCmdLn.createCommandLine());
     Process proc=m_procBuilder.start();
@@ -39,7 +46,8 @@
       boolean status=dir.mkdirs();
       assert(status);
     }
-    ptf=new PipeToFile(testoutputdir + File.separator + getName()+ "-"+ hostId+ ".txt",proc.getInputStream(),PipeToFile.m_rejoinToken,true,proc);
+    String timestampStr=MiscUtils.getCompactStringTimestamp(System.currentTimeMillis());
+    ptf=new PipeToFile(testoutputdir + File.separator + "LC-"+ timestampStr+ "-"+ getFileName()+ "-"+ hostId+ ".rejoined.txt",proc.getInputStream(),PipeToFile.m_rejoinToken,true,proc);
 synchronized (this) {
       m_pipes.set(hostId,ptf);
       m_cluster.set(hostId,proc);
@@ -58,7 +66,7 @@ synchronized (ptf) {
       if (ptf.m_eof.get())       break;
       if (isProcessDead(ptf.getProcess()))       break;
       try {
-        ptf.wait();
+        ptf.wait(1000);
       }
  catch (      InterruptedException ex) {
         log.error(ex.toString(),ex);
