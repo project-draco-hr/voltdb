@@ -12,7 +12,41 @@
       }
     }
   }
-  siteConnection.stashWorkUnitDependencies(m_remoteDepTables);
-  Map<Integer,List<VoltTable>> results=processLocalFragmentTask(m_localWork,siteConnection);
+  BorrowTaskMessage borrowmsg=new BorrowTaskMessage(m_localWork);
+  borrowmsg.addInputDepMap(m_remoteDepTables);
+  try {
+    m_mbox.send(m_buddyHSId,borrowmsg);
+  }
+ catch (  MessagingException me) {
+    throw new RuntimeException(me);
+  }
+  FragmentResponseMessage msg=null;
+  try {
+    msg=m_newDeps.take();
+  }
+ catch (  InterruptedException e) {
+    hostLog.warn("Interrupted coordinating a multi-partition transaction. " + "Terminating the transaction. " + e);
+    terminateTransaction();
+  }
+  if (msg.getStatusCode() != FragmentResponseMessage.SUCCESS) {
+    m_needsRollback=true;
+    if (msg.getException() != null) {
+      throw msg.getException();
+    }
+ else {
+      throw new FragmentFailureException();
+    }
+  }
+  Map<Integer,List<VoltTable>> results=new HashMap<Integer,List<VoltTable>>();
+  for (int i=0; i < msg.getTableCount(); i++) {
+    int this_depId=msg.getTableDependencyIdAtIndex(i);
+    VoltTable this_dep=msg.getTableAtIndex(i);
+    List<VoltTable> tables=results.get(this_depId);
+    if (tables == null) {
+      tables=new ArrayList<VoltTable>();
+      results.put(this_depId,tables);
+    }
+    tables.add(this_dep);
+  }
   return results;
 }
