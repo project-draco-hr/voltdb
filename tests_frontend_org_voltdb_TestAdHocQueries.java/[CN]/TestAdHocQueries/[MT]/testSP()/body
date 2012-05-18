@@ -1,0 +1,68 @@
+{
+  String spSchema="create table PARTED1 (" + "PARTVAL bigint not null, " + "NONPART bigint not null,"+ "PRIMARY KEY(PARTVAL));"+ "create table PARTED2 ("+ "PARTVAL bigint not null, "+ "NONPART bigint not null,"+ "PRIMARY KEY(PARTVAL));"+ "create table PARTED3 ("+ "PARTVAL bigint not null, "+ "NONPART bigint not null,"+ "PRIMARY KEY(NONPART));"+ "create table REPPED1 ("+ "REPPEDVAL bigint not null, "+ "NONPART bigint not null,"+ "PRIMARY KEY(REPPEDVAL));"+ "create table REPPED2 ("+ "REPPEDVAL bigint not null, "+ "NONPART bigint not null,"+ "PRIMARY KEY(REPPEDVAL));";
+  String pathToCatalog=Configuration.getPathToCatalogForTest("adhocsp.jar");
+  String pathToDeployment=Configuration.getPathToCatalogForTest("adhocsp.xml");
+  VoltProjectBuilder builder=new VoltProjectBuilder();
+  builder.addLiteralSchema(spSchema);
+  builder.addPartitionInfo("PARTED1","PARTVAL");
+  builder.addPartitionInfo("PARTED2","PARTVAL");
+  builder.addPartitionInfo("PARTED3","PARTVAL");
+  boolean success=builder.compile(pathToCatalog,2,1,0);
+  assertTrue(success);
+  MiscUtils.copyFile(builder.getPathToDeployment(),pathToDeployment);
+  VoltDB.Configuration config=new VoltDB.Configuration();
+  config.m_pathToCatalog=pathToCatalog;
+  config.m_pathToDeployment=pathToDeployment;
+  ServerThread localServer=new ServerThread(config);
+  Client client=null;
+  try {
+    localServer.start();
+    localServer.waitForInitialization();
+    client=ClientFactory.createClient();
+    client.createConnection("localhost");
+    VoltTable modCount;
+    modCount=client.callProcedure("@AdHoc","INSERT INTO PARTED1 VALUES (0, 0);").getResults()[0];
+    assertTrue(modCount.getRowCount() == 1);
+    assertTrue(modCount.asScalarLong() == 1);
+    modCount=client.callProcedure("@AdHoc","INSERT INTO PARTED1 VALUES (1, 1);").getResults()[0];
+    assertTrue(modCount.getRowCount() == 1);
+    assertTrue(modCount.asScalarLong() == 1);
+    modCount=client.callProcedure("@AdHoc","INSERT INTO PARTED2 VALUES (0, 0);").getResults()[0];
+    assertTrue(modCount.getRowCount() == 1);
+    assertTrue(modCount.asScalarLong() == 1);
+    modCount=client.callProcedure("@AdHoc","INSERT INTO PARTED2 VALUES (2, 2);").getResults()[0];
+    assertTrue(modCount.getRowCount() == 1);
+    assertTrue(modCount.asScalarLong() == 1);
+    modCount=client.callProcedure("@AdHoc","INSERT INTO PARTED3 VALUES (0, 0);").getResults()[0];
+    assertTrue(modCount.getRowCount() == 1);
+    assertTrue(modCount.asScalarLong() == 1);
+    modCount=client.callProcedure("@AdHoc","INSERT INTO PARTED3 VALUES (3, 3);").getResults()[0];
+    assertTrue(modCount.getRowCount() == 1);
+    assertTrue(modCount.asScalarLong() == 1);
+    modCount=client.callProcedure("@AdHoc","INSERT INTO REPPED1 VALUES (0, 0);").getResults()[0];
+    assertTrue(modCount.getRowCount() == 1);
+    assertTrue(modCount.asScalarLong() == 1);
+    modCount=client.callProcedure("@AdHoc","INSERT INTO REPPED1 VALUES (1, 1);").getResults()[0];
+    assertTrue(modCount.getRowCount() == 1);
+    assertTrue(modCount.asScalarLong() == 1);
+    modCount=client.callProcedure("@AdHoc","INSERT INTO REPPED2 VALUES (0, 0);").getResults()[0];
+    assertTrue(modCount.getRowCount() == 1);
+    assertTrue(modCount.asScalarLong() == 1);
+    modCount=client.callProcedure("@AdHoc","INSERT INTO REPPED2 VALUES (2, 2);").getResults()[0];
+    assertTrue(modCount.getRowCount() == 1);
+    assertTrue(modCount.asScalarLong() == 1);
+    callAdHoc(client);
+    callSPAdHoc(client,"@AdHocSP");
+    callSPAdHoc(client,"@AdHoc");
+  }
+  finally {
+    if (client != null)     client.close();
+    client=null;
+    if (localServer != null) {
+      localServer.shutdown();
+      localServer.join();
+    }
+    localServer=null;
+    System.gc();
+  }
+}
