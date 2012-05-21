@@ -10,21 +10,21 @@
       partitionParam=params.toArray()[1];
     }
   }
-  AdHocPlannedStmt plan=m_adhocCache.get(sql,partitionParam != null);
-  if (plan != null) {
-    if (plan.catalogVersion == m_catalogContext.get().catalogVersion) {
-      plan=(AdHocPlannedStmt)plan.clone();
-      plan.adminConnection=handler.isAdmin();
-      plan.clientData=ccxn;
-      plan.partitionParam=partitionParam;
-      plan.clientHandle=task.clientHandle;
-      plan.hostname=handler.m_hostname;
-      plan.connectionId=handler.connectionId();
-      createAdHocTransaction(plan);
-      return null;
+  List<AdHocPlannedStatement> statements=new ArrayList<AdHocPlannedStatement>();
+  List<String> sqlStatements=MiscUtils.splitSQLStatements(sql);
+  AdHocPlannedStmtBatch planBatch=new AdHocPlannedStmtBatch(sql,partitionParam,m_catalogContext.get().catalogVersion,task.clientHandle,handler.connectionId(),handler.m_hostname,handler.isAdmin(),ccxn);
+  for (  String sqlStatement : sqlStatements) {
+    AdHocPlannedStatement plannedStatement=m_adhocCache.get(sql,partitionParam != null);
+    if (plannedStatement == null || plannedStatement.catalogVersion != m_catalogContext.get().catalogVersion) {
+      break;
     }
+    planBatch.addStatement(sqlStatement,plannedStatement.aggregatorFragment,plannedStatement.collectorFragment,plannedStatement.isReplicatedTableDML);
   }
-  LocalObjectMessage work=new LocalObjectMessage(new AdHocPlannerWork(m_siteId,false,task.clientHandle,handler.connectionId(),handler.m_hostname,handler.isAdmin(),ccxn,sql,partitionParam));
+  if (planBatch.plannedStatements.size() == sqlStatements.size()) {
+    createAdHocTransaction(planBatch);
+    return null;
+  }
+  LocalObjectMessage work=new LocalObjectMessage(new AdHocPlannerWork(m_siteId,false,task.clientHandle,handler.connectionId(),handler.m_hostname,handler.isAdmin(),ccxn,sql,sqlStatements,partitionParam));
   try {
     m_mailbox.send(m_plannerSiteId,work);
   }

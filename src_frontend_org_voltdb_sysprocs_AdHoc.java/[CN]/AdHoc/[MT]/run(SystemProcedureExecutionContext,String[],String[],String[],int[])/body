@@ -1,0 +1,60 @@
+{
+  assert(sqlStatements != null);
+  assert(aggregatorFragments != null && aggregatorFragments.length == sqlStatements.length);
+  assert(collectorFragments != null && collectorFragments.length == sqlStatements.length);
+  assert(replicatedTableDMLFlags != null && replicatedTableDMLFlags.length == sqlStatements.length);
+  List<VoltTable> results=new ArrayList<VoltTable>();
+  for (int i=0; i < sqlStatements.length; i++) {
+    boolean replicatedTableDML=replicatedTableDMLFlags[i] == 1;
+    SynthesizedPlanFragment[] pfs=null;
+    ParameterSet params=null;
+    if (VoltDB.getEEBackendType() == BackendTarget.HSQLDB_BACKEND) {
+      pfs=new SynthesizedPlanFragment[1];
+      pfs[0]=new SynthesizedPlanFragment();
+      pfs[0].fragmentId=SysProcFragmentId.PF_runAdHocFragment;
+      pfs[0].outputDepId=AGG_DEPID;
+      pfs[0].multipartition=false;
+      params=new ParameterSet();
+      params.setParameters(AGG_DEPID,"",sqlStatements[i]);
+      pfs[0].parameters=params;
+    }
+ else {
+      if (collectorFragments[i] != null) {
+        pfs=new SynthesizedPlanFragment[2];
+        pfs[1]=new SynthesizedPlanFragment();
+        pfs[1].fragmentId=SysProcFragmentId.PF_runAdHocFragment;
+        pfs[1].outputDepId=COLLECT_DEPID;
+        pfs[1].multipartition=true;
+        params=new ParameterSet();
+        params.setParameters(COLLECT_DEPID,collectorFragments[i],sqlStatements[i]);
+        pfs[1].parameters=params;
+      }
+ else {
+        pfs=new SynthesizedPlanFragment[1];
+      }
+      pfs[0]=new SynthesizedPlanFragment();
+      pfs[0].fragmentId=SysProcFragmentId.PF_runAdHocFragment;
+      pfs[0].outputDepId=AGG_DEPID;
+      if (collectorFragments[i] != null)       pfs[0].inputDepIds=new int[]{COLLECT_DEPID};
+      pfs[0].multipartition=false;
+      pfs[0].suppressDuplicates=true;
+      params=new ParameterSet();
+      params.setParameters(AGG_DEPID,aggregatorFragments[i],sqlStatements[i]);
+      pfs[0].parameters=params;
+    }
+    VoltTable[] partialResults=executeSysProcPlanFragments(pfs,AGG_DEPID);
+    if (replicatedTableDML) {
+      assert(partialResults.length == 1);
+      long changedTuples=partialResults[0].asScalarLong();
+      assert((changedTuples % ctx.getNumberOfPartitions()) == 0);
+      VoltTable retval=new VoltTable(new VoltTable.ColumnInfo("",VoltType.BIGINT));
+      retval.addRow(changedTuples / ctx.getNumberOfPartitions());
+      partialResults[0]=retval;
+    }
+    results.addAll(Arrays.asList(partialResults));
+  }
+  if (results.isEmpty()) {
+    return null;
+  }
+  return results.toArray(new VoltTable[]{});
+}

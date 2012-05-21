@@ -1,10 +1,4 @@
 {
-  AdHocPlannedStmt plannedStmt=new AdHocPlannedStmt();
-  plannedStmt.clientHandle=work.clientHandle;
-  plannedStmt.connectionId=work.connectionId;
-  plannedStmt.hostname=work.hostname;
-  plannedStmt.adminConnection=work.adminConnection;
-  plannedStmt.clientData=work.clientData;
   CatalogContext context=VoltDB.instance().getCatalogContext();
   if (m_ptool == null || m_ptool.m_context.catalogVersion != context.catalogVersion) {
     if (m_ptool != null) {
@@ -12,17 +6,21 @@
     }
     m_ptool=new PlannerTool(context);
   }
-  plannedStmt.catalogVersion=context.catalogVersion;
-  try {
-    PlannerTool.Result result=m_ptool.planSql(work.sql,work.partitionParam != null);
-    plannedStmt.aggregatorFragment=result.onePlan;
-    plannedStmt.collectorFragment=result.allPlan;
-    plannedStmt.isReplicatedTableDML=result.replicatedDML;
-    plannedStmt.sql=work.sql;
-    plannedStmt.partitionParam=work.partitionParam;
+  AdHocPlannedStmtBatch plannedStmtBatch=new AdHocPlannedStmtBatch(work.sqlBatchText,work.partitionParam,context.catalogVersion,work.clientHandle,work.connectionId,work.hostname,work.adminConnection,work.clientData);
+  List<String> errorMsgs=new ArrayList<String>();
+  if (work.sqlStatements != null) {
+    for (    final String sqlStatement : work.sqlStatements) {
+      try {
+        PlannerTool.Result result=m_ptool.planSql(sqlStatement,work.partitionParam != null);
+        plannedStmtBatch.addStatement(sqlStatement,result.onePlan,result.allPlan,result.replicatedDML);
+      }
+ catch (      Exception e) {
+        errorMsgs.add("Unexpected Ad Hoc Planning Error: " + e.getMessage());
+      }
+    }
   }
- catch (  Exception e) {
-    plannedStmt.errorMsg="Unexpected Ad Hoc Planning Error: " + e.getMessage();
+  if (!errorMsgs.isEmpty()) {
+    plannedStmtBatch.errorMsg=StringUtils.join(errorMsgs,"\n");
   }
-  return plannedStmt;
+  return plannedStmtBatch;
 }

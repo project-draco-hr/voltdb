@@ -1,0 +1,42 @@
+{
+  StoredProcedureInvocation task=new StoredProcedureInvocation();
+  boolean isSinglePartition=(plannedStmtBatch.partitionParam != null);
+  int partitions[]=null;
+  if (isSinglePartition) {
+    task.procName="@AdHocSP";
+    partitions=new int[]{TheHashinator.hashToPartition(plannedStmtBatch.partitionParam)};
+  }
+ else {
+    task.procName="@AdHoc";
+    partitions=m_allPartitions;
+  }
+  List<String> aggregatorFragmentList=plannedStmtBatch.getAggregatorFragments();
+  String[] aggregatorFragments=aggregatorFragmentList.toArray(new String[aggregatorFragmentList.size()]);
+  List<String> collectorFragmentList=plannedStmtBatch.getCollectorFragments();
+  String[] collectorFragments=collectorFragmentList.toArray(new String[collectorFragmentList.size()]);
+  List<String> sqlStatementList=plannedStmtBatch.getSQLStatements();
+  String[] sqlStatements=sqlStatementList.toArray(new String[sqlStatementList.size()]);
+  List<Integer> replicatedTableDMLFlagList=plannedStmtBatch.getReplicatedTableDMLFlags();
+  int[] replicatedTableDMLFlags=ArrayUtils.toPrimitive(replicatedTableDMLFlagList.toArray(new Integer[replicatedTableDMLFlagList.size()]));
+  task.setParams(aggregatorFragments,collectorFragments,sqlStatements,replicatedTableDMLFlags);
+  task.clientHandle=plannedStmtBatch.clientHandle;
+  FastSerializer fs=new FastSerializer();
+  try {
+    fs.writeObject(task);
+    ByteBuffer source=fs.getBuffer();
+    ByteBuffer copy=ByteBuffer.allocate(source.remaining());
+    copy.put(source);
+    copy.flip();
+    FastDeserializer fds=new FastDeserializer(copy);
+    task=new StoredProcedureInvocation();
+    task.readExternal(fds);
+  }
+ catch (  Exception e) {
+    VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
+  }
+  createTransaction(plannedStmtBatch.connectionId,plannedStmtBatch.hostname,plannedStmtBatch.adminConnection,task,false,isSinglePartition,false,partitions,partitions.length,plannedStmtBatch.clientData,0,EstTime.currentTimeMillis());
+  plannedStmtBatch.clientData=null;
+  for (  AdHocPlannedStatement plannedStatement : plannedStmtBatch.plannedStatements) {
+    m_adhocCache.put(plannedStatement);
+  }
+}
