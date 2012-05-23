@@ -1,0 +1,67 @@
+{
+  int partition=getCorrespondingPartitionId();
+  long sourceSite=0;
+  List<Long> sourceSites=new ArrayList<Long>(m_tracker.getSitesForPartition(partition));
+  sourceSites.remove(getSiteId());
+  try {
+    sourceSite=sourceSites.get(0);
+  }
+ catch (  ArrayIndexOutOfBoundsException e) {
+    VoltDB.crashLocalVoltDB("No source for partition " + partition,false,null);
+  }
+  String data=null;
+  try {
+    JSONStringer jsStringer=new JSONStringer();
+    jsStringer.object();
+    jsStringer.key("addresses").array();
+    for (    byte[] addr : addresses) {
+      InetAddress inetAddress=InetAddress.getByAddress(addr);
+      jsStringer.value(inetAddress.getHostAddress());
+    }
+    jsStringer.endArray();
+    jsStringer.key("port").value(port);
+    jsStringer.key("target_hsid").value(sourceSite);
+    jsStringer.endObject();
+    data=jsStringer.toString();
+  }
+ catch (  Exception e) {
+    VoltDB.crashLocalVoltDB("Failed to serialize to JSON",true,e);
+  }
+  SnapshotResponseHandler handler=new SnapshotResponseHandler(){
+    @Override public void handleResponse(    ClientResponse resp){
+      if (resp == null) {
+        VoltDB.crashLocalVoltDB("Failed to initiate rejoin snapshot",false,null);
+      }
+ else       if (resp.getStatus() != ClientResponseImpl.SUCCESS) {
+        VoltDB.crashLocalVoltDB("Failed to initiate rejoin snapshot: " + resp.getStatusString(),false,null);
+      }
+      VoltTable[] results=resp.getResults();
+      if (SnapshotUtil.didSnapshotRequestSucceed(results)) {
+        long txnId=-1;
+        String appStatus=resp.getAppStatusString();
+        try {
+          JSONObject jsObj=new JSONObject(appStatus);
+          txnId=jsObj.getLong("txnId");
+        }
+ catch (        JSONException e) {
+          VoltDB.crashLocalVoltDB("Failed to get the rejoin snapshot txnId",true,e);
+          return;
+        }
+        m_recoveryLog.info("Rejoin snapshot requested " + txnId);
+        RejoinMessage msg=new RejoinMessage(txnId);
+        try {
+          m_mailbox.send(getSiteId(),msg);
+        }
+ catch (        MessagingException e) {
+          VoltDB.crashLocalVoltDB("Fail to send rejoin snapshot txnId",true,e);
+        }
+      }
+ else {
+        VoltDB.crashLocalVoltDB("Snapshot request for rejoin failed",false,null);
+      }
+    }
+  }
+;
+  SnapshotUtil.requestSnapshot(0l,"","Rejoin snapshot",false,SnapshotFormat.STREAM,data,handler);
+  return null;
+}

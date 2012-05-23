@@ -4,24 +4,15 @@
   Constructor<?> constructor;
   try {
     constructor=klass.getConstructor(long.class);
-    m_rejoinProcessor=(RejoinSiteProcessor)constructor.newInstance(getSiteId());
+    m_rejoinSnapshotProcessor=(RejoinSiteProcessor)constructor.newInstance(getSiteId());
   }
  catch (  Exception e) {
     VoltDB.crashLocalVoltDB("Unable to construct stream snapshot receiver",true,e);
   }
-  Pair<List<byte[]>,Integer> endPoints=m_rejoinProcessor.initialize();
+  Pair<List<byte[]>,Integer> endPoints=m_rejoinSnapshotProcessor.initialize();
   List<byte[]> addresses=endPoints.getFirst();
   int port=endPoints.getSecond();
-  int partition=m_tracker.getPartitionForSite(getSiteId());
-  long sourceSite=0;
-  List<Long> sourceSites=new ArrayList<Long>(m_tracker.getSitesForPartition(partition));
-  sourceSites.remove(getSiteId());
-  try {
-    sourceSite=sourceSites.get(0);
-  }
- catch (  ArrayIndexOutOfBoundsException e) {
-    VoltDB.crashLocalVoltDB("No source for partition " + partition,false,null);
-  }
+  int partition=getCorrespondingPartitionId();
   File overflowDir=new File(VoltDB.instance().getCatalogContext().cluster.getVoltroot(),"rejoin_overflow");
   Class<?> taskLogKlass=MiscUtils.loadProClass("org.voltdb.rejoin.TaskLogImpl","Rejoin",false);
   Constructor<?> taskLogConstructor;
@@ -33,11 +24,5 @@
     VoltDB.crashLocalVoltDB("Unable to construct rejoin task log",true,e);
   }
   m_recoveryLog.info("Initiating new rejoin from " + CoreUtils.hsIdToString(getSiteId()));
-  RejoinMessage message=new RejoinMessage(getSiteId(),addresses,port);
-  try {
-    m_mailbox.send(sourceSite,message);
-  }
- catch (  MessagingException e) {
-    VoltDB.crashLocalVoltDB("Unable to send recovery message to " + CoreUtils.hsIdToString(sourceSite),true,e);
-  }
+  initiateRejoinSnapshot(addresses,port);
 }
