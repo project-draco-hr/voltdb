@@ -2,6 +2,7 @@
 {
     final int numLocalSites=VoltDB.instance().getLocalSites().values().size();
     SiteTracker tracker=context.getSiteTracker();
+    Long targetHSid=null;
     MessageDigest digest;
     try {
       digest=MessageDigest.getInstance("SHA-1");
@@ -58,10 +59,23 @@
             InetAddress addr=InetAddress.getByName(jsAddresses.getString(i));
             addresses.add(addr.getAddress());
           }
-          Class<?> klass=MiscUtils.loadProClass("org.voltdb.rejoin.StreamSnapshotDataTarget","Rejoin",false);
-          if (klass != null) {
-            Constructor<?> constructor=klass.getConstructor(List.class,int.class,Map.class);
-            sdt=(SnapshotDataTarget)constructor.newInstance(addresses,port,schemas);
+          try {
+            targetHSid=jsObj.getLong("target_hsid");
+          }
+ catch (          JSONException e) {
+          }
+          if (targetHSid != null) {
+            List<Long> localHSids=tracker.getSitesForHost(context.getHostId());
+            if (localHSids.contains(targetHSid)) {
+              Class<?> klass=MiscUtils.loadProClass("org.voltdb.rejoin.StreamSnapshotDataTarget","Rejoin",false);
+              if (klass != null) {
+                Constructor<?> constructor=klass.getConstructor(List.class,int.class,Map.class);
+                sdt=(SnapshotDataTarget)constructor.newInstance(addresses,port,schemas);
+              }
+            }
+ else {
+              sdt=new DevNullSnapshotTarget();
+            }
           }
         }
       }
@@ -111,6 +125,16 @@
               filters.add(new PartitionProjectionSnapshotFilter(Ints.toArray(partitionsToInclude),0));
             }
             filters.add(new CSVSnapshotFilter(CatalogUtil.getVoltTable(table),',',null));
+          }
+          if (targetHSid != null) {
+            List<Long> localHSids=tracker.getSitesForHost(context.getHostId());
+            if (localHSids.contains(targetHSid)) {
+              int partitionId=tracker.getPartitionForSite(targetHSid);
+              filters.add(new PartitionProjectionSnapshotFilter(new int[]{partitionId},sdt.getHeaderSize()));
+            }
+ else {
+              filters.add(new PartitionProjectionSnapshotFilter(new int[0],sdt.getHeaderSize()));
+            }
           }
           final SnapshotTableTask task=new SnapshotTableTask(table.getRelativeIndex(),sdt,filters.toArray(new SnapshotDataFilter[filters.size()]),table.getIsreplicated(),table.getTypeName());
           if (table.getIsreplicated()) {
