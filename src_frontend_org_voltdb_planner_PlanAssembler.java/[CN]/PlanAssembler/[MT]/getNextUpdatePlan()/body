@@ -26,29 +26,13 @@
     }
   }
   projectionNode.setOutputSchema(proj_schema);
-  if (m_partitioning.wasSpecifiedAsSingle()) {
-    assert(subSelectRoot instanceof AbstractScanPlanNode);
-    subSelectRoot.addInlinePlanNode(projectionNode);
-    updateNode.addAndLinkChild(subSelectRoot);
+  assert(subSelectRoot instanceof AbstractScanPlanNode);
+  subSelectRoot.addInlinePlanNode(projectionNode);
+  updateNode.addAndLinkChild(subSelectRoot);
+  if (m_partitioning.wasSpecifiedAsSingle() || m_partitioning.hasPartitioningConstantLockedIn()) {
     updateNode.generateOutputSchema(m_catalogDb);
     return updateNode;
   }
- else {
-    subSelectRoot=subAssembler.addSendReceivePair(subSelectRoot);
-    assert(subSelectRoot instanceof ReceivePlanNode);
-    ReceivePlanNode recvNode=(ReceivePlanNode)subSelectRoot;
-    assert(recvNode.getChildCount() == 1);
-    AbstractPlanNode sendNode=recvNode.getChild(0);
-    assert(sendNode.getChildCount() == 1);
-    AbstractPlanNode scanNode=sendNode.getChild(0);
-    sendNode.unlinkChild(scanNode);
-    assert(scanNode instanceof AbstractScanPlanNode);
-    scanNode.addInlinePlanNode(projectionNode);
-    updateNode.addAndLinkChild(scanNode);
-    updateNode.generateOutputSchema(m_catalogDb);
-    sendNode.addAndLinkChild(updateNode);
-    sendNode.generateOutputSchema(m_catalogDb);
-    recvNode.generateOutputSchema(m_catalogDb);
-    return addSumAndSendToDMLNode(subSelectRoot);
-  }
+  AbstractPlanNode recvNode=subAssembler.addSendReceivePair(updateNode);
+  return addSumAndSendToDMLNode(recvNode);
 }
