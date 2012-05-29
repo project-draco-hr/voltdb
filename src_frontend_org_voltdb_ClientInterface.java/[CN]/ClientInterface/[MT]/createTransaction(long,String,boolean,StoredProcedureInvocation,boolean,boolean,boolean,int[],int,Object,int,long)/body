@@ -3,12 +3,29 @@
     long handle=m_sequence.incrementAndGet();
     Iv2InFlight inFlight=new Iv2InFlight(invocation.getClientHandle(),(Connection)clientData,adminConnection);
     m_sequenceToConnection.put(handle,inFlight);
-    long initiatorHSId=isSinglePartition ? VoltDB.instance().getSiteTracker().m_partitionToInitiatorsImmutable.get(partitions[0]).get(0) : VoltDB.instance().getSiteTracker().getHSIdForMultiPartitionInitiator();
-    Iv2InitiateTaskMessage workRequest=new Iv2InitiateTaskMessage(m_siteId,initiatorHSId,Iv2InitiateTaskMessage.UNUSED_MP_TXNID,isReadOnly,isSinglePartition,invocation,handle);
     try {
+      long initiatorHSId;
+      if (isSinglePartition) {
+        JSONObject master=m_iv2Masters.get(Integer.toString(partitions[0]));
+        if (master == null) {
+          hostLog.error("Failed to find master initiator for partition: " + Integer.toString(partitions[0]) + ". Transaction not initiated.");
+          m_sequenceToConnection.remove(handle);
+          return false;
+        }
+        initiatorHSId=master.getLong("hsid");
+      }
+ else {
+        initiatorHSId=VoltDB.instance().getSiteTracker().getHSIdForMultiPartitionInitiator();
+      }
+      Iv2InitiateTaskMessage workRequest=new Iv2InitiateTaskMessage(m_siteId,initiatorHSId,Iv2InitiateTaskMessage.UNUSED_MP_TXNID,isReadOnly,isSinglePartition,invocation,handle);
       m_mailbox.send(initiatorHSId,workRequest);
     }
  catch (    MessagingException e) {
+      m_sequenceToConnection.remove(handle);
+      throw new RuntimeException(e);
+    }
+catch (    JSONException e) {
+      m_sequenceToConnection.remove(handle);
       throw new RuntimeException(e);
     }
     return true;
