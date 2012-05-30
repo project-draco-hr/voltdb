@@ -1,0 +1,86 @@
+{
+  BBContainer tupleDataTemp;
+  try {
+    tupleDataTemp=tupleDataC.call();
+    if (tupleDataTemp == null) {
+      return Futures.immediateFuture(null);
+    }
+  }
+ catch (  Throwable t) {
+    return Futures.immediateFailedFuture(t);
+  }
+  final BBContainer tupleData=tupleDataTemp;
+  if (m_writeFailed) {
+    tupleData.discard();
+    return null;
+  }
+  m_outstandingWriteTasks.incrementAndGet();
+  Future<byte[]> compressionTask=null;
+  if (prependLength) {
+    tupleData.b.position(tupleData.b.position() + 12);
+    compressionTask=CompressionService.compressBufferAsync(tupleData.b);
+  }
+  final Future<byte[]> compressionTaskFinal=compressionTask;
+  ListenableFuture<?> writeTask=m_es.submit(new Callable<Object>(){
+    @Override public Object call() throws Exception {
+      try {
+        if (m_acceptOneWrite) {
+          m_acceptOneWrite=false;
+        }
+ else {
+          if (m_simulateBlockedWrite != null) {
+            m_simulateBlockedWrite.await();
+          }
+          if (m_simulateFullDiskWritingChunk) {
+            throw new IOException("Disk full");
+          }
+        }
+        int totalWritten=0;
+        if (prependLength) {
+          final ByteBuffer payloadBuffer=ByteBuffer.wrap(compressionTaskFinal.get());
+          ByteBuffer lengthPrefix=ByteBuffer.allocate(16);
+          m_bytesAllowedBeforeSync.acquire(payloadBuffer.remaining() + 16);
+          lengthPrefix.putInt(payloadBuffer.remaining());
+          lengthPrefix.putInt(tupleData.b.getInt(0));
+          lengthPrefix.putInt(tupleData.b.getInt(4));
+          lengthPrefix.putInt(tupleData.b.getInt(8));
+          lengthPrefix.flip();
+          while (lengthPrefix.hasRemaining()) {
+            totalWritten+=m_channel.write(lengthPrefix);
+          }
+          while (payloadBuffer.hasRemaining()) {
+            totalWritten+=m_channel.write(payloadBuffer);
+          }
+        }
+ else {
+          while (tupleData.b.hasRemaining()) {
+            totalWritten+=m_channel.write(tupleData.b);
+          }
+        }
+        m_bytesWritten+=totalWritten;
+        m_bytesWrittenSinceLastSync.addAndGet(totalWritten);
+      }
+ catch (      IOException e) {
+        m_writeException=e;
+        hostLog.error("Error while attempting to write snapshot data to file " + m_file,e);
+        m_writeFailed=true;
+        throw e;
+      }
+ finally {
+        tupleData.discard();
+        m_outstandingWriteTasksLock.lock();
+        try {
+          if (m_outstandingWriteTasks.decrementAndGet() == 0) {
+            m_noMoreOutstandingWriteTasksCondition.signalAll();
+          }
+        }
+  finally {
+          m_outstandingWriteTasksLock.unlock();
+        }
+      }
+      return null;
+    }
+  }
+);
+  return writeTask;
+}

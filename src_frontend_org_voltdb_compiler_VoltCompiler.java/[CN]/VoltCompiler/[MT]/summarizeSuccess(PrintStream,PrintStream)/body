@@ -1,0 +1,50 @@
+{
+  if (outputStream != null) {
+    Database database=m_catalog.getClusters().get("cluster").getDatabases().get("database");
+    outputStream.println("------------------------------------------");
+    outputStream.println("Successfully created " + m_jarOutputPath);
+    for (    String ddl : m_ddlFilePaths.keySet()) {
+      outputStream.println("Includes schema: " + m_ddlFilePaths.get(ddl));
+    }
+    outputStream.println();
+    for (    Procedure p : database.getProcedures()) {
+      if (p.getSystemproc()) {
+        continue;
+      }
+      outputStream.printf("[%s][%s]%s %s\n",p.getSinglepartition() ? "SP" : "MP",p.getReadonly() ? "RO" : "RW",p.getHasseqscans() ? "[Seq]" : "",p.getTypeName());
+      for (      Statement s : p.getStatements()) {
+        String seqScanTag="";
+        if (s.getSeqscancount() > 0) {
+          seqScanTag="[Seq] ";
+        }
+        String determinismTag="";
+        if (s.getIscontentdeterministic() == false) {
+          determinismTag="[NDC] ";
+        }
+ else         if (s.getIsorderdeterministic() == false) {
+          determinismTag="[NDO] ";
+        }
+        String statementLine;
+        String sqlText=s.getSqltext();
+        sqlText=squeezeWhitespace(sqlText);
+        if (seqScanTag.length() + determinismTag.length() + sqlText.length() > 80) {
+          statementLine="  " + (seqScanTag + determinismTag + sqlText).substring(0,80) + "...";
+        }
+ else {
+          statementLine="  " + seqScanTag + determinismTag+ sqlText;
+        }
+        outputStream.println(statementLine);
+      }
+      outputStream.println();
+    }
+    outputStream.println("------------------------------------------");
+  }
+  if (feedbackStream != null) {
+    for (    Feedback fb : m_warnings) {
+      feedbackStream.println(fb.getLogString());
+    }
+    for (    Feedback fb : m_infos) {
+      feedbackStream.println(fb.getLogString());
+    }
+  }
+}

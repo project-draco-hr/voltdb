@@ -11,16 +11,23 @@
   int dot=traces[i].getClassName().lastIndexOf('.');
   m_callingClassName=traces[i].getClassName().substring(dot + 1);
   m_callingMethodName=traces[i].getMethodName();
-  System.out.println("Instantiating LocalCluster for " + jarFileName + " with class.method: "+ m_callingClassName+ "."+ m_callingMethodName);
-  System.out.println("Sites: " + siteCount + " hosts: "+ hostCount+ " replication factor: "+ kfactor);
+  log.info("Instantiating LocalCluster for " + jarFileName + " with class.method: "+ m_callingClassName+ "."+ m_callingMethodName);
+  log.info("Sites: " + siteCount + " hosts: "+ hostCount+ " replication factor: "+ kfactor);
   m_cluster.ensureCapacity(hostCount);
   m_siteCount=siteCount;
   m_hostCount=hostCount;
   m_kfactor=kfactor;
   m_debug=debug;
+  m_jarFileName=jarFileName;
   m_failureState=kfactor < 1 ? FailureState.ALL_RUNNING : failureState;
   m_pipes=new ArrayList<PipeToFile>();
   m_cmdLines=new ArrayList<CommandLine>();
+  if (isMemcheckDefined() && (target == BackendTarget.NATIVE_EE_JNI)) {
+    m_target=BackendTarget.NATIVE_EE_VALGRIND_IPC;
+  }
+ else {
+    m_target=target;
+  }
   String buildDir=System.getenv("VOLTDB_BUILD_DIR");
   if (buildDir == null) {
     buildDir=System.getProperty("user.dir") + "/obj/release";
@@ -30,7 +37,8 @@
     jzmq_dir=System.getProperty("user.dir") + "/third_party/cpp/jnilib";
   }
   String java_library_path=buildDir + "/nativelibs" + ":"+ jzmq_dir;
-  String classPath=System.getProperty("java.class.path") + ":" + buildDir+ File.separator+ jarFileName+ ":"+ buildDir+ File.separator+ "prod";
+  java_library_path=System.getProperty("java.library.path",java_library_path);
+  String classPath=System.getProperty("java.class.path") + ":" + buildDir+ File.separator+ m_jarFileName+ ":"+ buildDir+ File.separator+ "prod";
   String log4j=System.getProperty("log4j.configuration");
   if (log4j == null) {
     log4j="file://" + System.getProperty("user.dir") + "/tests/log4j-allconsole.xml";
@@ -39,5 +47,6 @@
   m_procBuilder.redirectErrorStream(true);
   Thread shutdownThread=new Thread(new ShutDownHookThread());
   java.lang.Runtime.getRuntime().addShutdownHook(shutdownThread);
-  this.templateCmdLine.addTestOptions(true).leader("").target(target).startCommand("create").jarFileName(VoltDB.Configuration.getPathToCatalogForTest(jarFileName)).buildDir(buildDir).javaLibraryPath(java_library_path).classPath(classPath).pathToLicense(ServerThread.getTestLicensePath()).log4j(log4j);
+  this.templateCmdLine.addTestOptions(true).leader("").target(m_target).startCommand("create").jarFileName(VoltDB.Configuration.getPathToCatalogForTest(m_jarFileName)).buildDir(buildDir).javaLibraryPath(java_library_path).classPath(classPath).pathToLicense(ServerThread.getTestLicensePath()).log4j(log4j);
+  this.templateCmdLine.m_noLoadLibVOLTDB=m_target == BackendTarget.HSQLDB_BACKEND;
 }
