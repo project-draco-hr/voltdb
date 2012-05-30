@@ -1,42 +1,56 @@
 {
   super.initFromBuffer(buf);
   short fragCount=buf.getShort();
-  if (fragCount > 0) {
-    m_fragmentIds=new long[fragCount];
-    for (int i=0; i < fragCount; i++)     m_fragmentIds[i]=buf.getLong();
-    m_parameterSets=new ByteBuffer[fragCount];
-    for (int i=0; i < fragCount; i++) {
-      int paramsbytecount=buf.getInt();
-      m_parameterSets[i]=ByteBuffer.allocate(paramsbytecount);
-      int cachedLimit=buf.limit();
-      buf.limit(buf.position() + m_parameterSets[i].remaining());
-      m_parameterSets[i].put(buf);
-      m_parameterSets[i].flip();
-      buf.limit(cachedLimit);
+  assert(fragCount > 0);
+  short unplannedCount=buf.getShort();
+  assert(unplannedCount >= 0 && unplannedCount <= fragCount);
+  m_isFinal=buf.get() != 0;
+  m_taskType=buf.get();
+  m_shouldUndo=buf.get() != 0;
+  boolean haveOutputDependencies=buf.get() != 0;
+  boolean haveInputDependencies=buf.get() != 0;
+  m_items=new ArrayList<FragmentData>(fragCount);
+  for (int i=0; i < fragCount; i++) {
+    FragmentData item=new FragmentData();
+    item.m_fragmentId=buf.getLong();
+    m_items.add(item);
+  }
+  for (  FragmentData item : m_items) {
+    int paramsbytecount=buf.getInt();
+    item.m_parameterSet=ByteBuffer.allocate(paramsbytecount);
+    int cachedLimit=buf.limit();
+    buf.limit(buf.position() + item.m_parameterSet.remaining());
+    item.m_parameterSet.put(buf);
+    item.m_parameterSet.flip();
+    buf.limit(cachedLimit);
+  }
+  if (haveOutputDependencies) {
+    for (    FragmentData item : m_items) {
+      item.m_outputDepId=buf.getInt();
     }
   }
-  short expectedDepCount=buf.getShort();
-  if (expectedDepCount > 0) {
-    m_outputDepIds=new int[expectedDepCount];
-    for (int i=0; i < expectedDepCount; i++)     m_outputDepIds[i]=buf.getInt();
-  }
-  short inputDepCount=buf.getShort();
-  if (inputDepCount > 0) {
-    m_inputDepIds=new ArrayList<?>[inputDepCount];
-    for (int i=0; i < inputDepCount; i++) {
+  if (haveInputDependencies) {
+    for (    FragmentData item : m_items) {
       short count=buf.getShort();
       if (count > 0) {
-        ArrayList<Integer> l=new ArrayList<Integer>();
+        item.m_inputDepIds=new ArrayList<Integer>(count);
         for (int j=0; j < count; j++) {
-          l.add(buf.getInt());
+          item.m_inputDepIds.add(buf.getInt());
           m_inputDepCount++;
         }
-        m_inputDepIds[i]=l;
       }
     }
   }
-  m_isFinal=buf.get() == 1;
-  m_taskType=buf.get();
-  m_shouldUndo=buf.get() == 1;
+  for (int iUnplanned=0; iUnplanned < unplannedCount; iUnplanned++) {
+    short index=buf.getShort();
+    assert(index >= 0 && index < m_items.size());
+    FragmentData item=m_items.get(index);
+    int fragmentPlanLength=buf.getInt();
+    if (fragmentPlanLength > 0) {
+      byte[] bytes=new byte[fragmentPlanLength];
+      buf.get(bytes);
+      item.m_fragmentPlan=new String(bytes);
+    }
+  }
   assert(buf.capacity() == buf.position());
 }

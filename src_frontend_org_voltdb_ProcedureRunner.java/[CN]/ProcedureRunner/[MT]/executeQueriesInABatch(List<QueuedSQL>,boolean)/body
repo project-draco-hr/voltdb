@@ -5,7 +5,10 @@
   boolean slowPath=false;
   for (int i=0; i < batchSize; ++i) {
     final SQLStmt stmt=batch.get(i).stmt;
-    slowPath=slowPath || !(stmt.catStmt.getSinglepartition());
+    if (!stmt.isSinglePartition()) {
+      slowPath=true;
+      break;
+    }
   }
   if (getHsqlBackendIfExists() != null) {
     results=new VoltTable[batchSize];
@@ -18,16 +21,7 @@
     results=slowPath(batch,isFinalSQL);
   }
  else {
-    ParameterSet[] params=new ParameterSet[batchSize];
-    long[] fragmentIds=new long[batchSize];
-    int i=0;
-    for (    final QueuedSQL qs : batch) {
-      assert(qs.stmt.numFragGUIDs == 1);
-      fragmentIds[i]=qs.stmt.fragGUIDs[0];
-      params[i]=qs.params;
-      i++;
-    }
-    results=m_site.executeQueryPlanFragmentsAndGetResults(fragmentIds,batchSize,params,batchSize,m_txnState.txnId,m_catProc.getReadonly());
+    results=fastPath(batch);
   }
   int i=0;
   for (  QueuedSQL qs : batch) {
