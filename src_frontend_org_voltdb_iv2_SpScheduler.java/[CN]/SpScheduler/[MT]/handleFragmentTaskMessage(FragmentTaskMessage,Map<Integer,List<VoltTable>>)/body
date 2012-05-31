@@ -1,17 +1,26 @@
 {
-  if (m_replicaHSIds.length > 0 && inputDeps == null) {
-    try {
-      FragmentTaskMessage replmsg=new FragmentTaskMessage(m_mailbox.getHSId(),m_mailbox.getHSId(),message);
-      m_mailbox.send(m_replicaHSIds,replmsg);
+  long newSpHandle;
+  if (m_isLeader) {
+    newSpHandle=m_txnId.incrementAndGet();
+    message.setSpHandle(newSpHandle);
+    if (m_replicaHSIds.length > 0 && inputDeps == null) {
+      try {
+        FragmentTaskMessage replmsg=new FragmentTaskMessage(m_mailbox.getHSId(),m_mailbox.getHSId(),message);
+        m_mailbox.send(m_replicaHSIds,replmsg);
+      }
+ catch (      MessagingException e) {
+        hostLog.error("Failed to deliver response from execution site.",e);
+      }
+      DuplicateCounter counter=new DuplicateCounter(message.getCoordinatorHSId(),m_replicaHSIds.length + 1,message.getTxnId());
+      m_duplicateCounters.put(newSpHandle,counter);
     }
- catch (    MessagingException e) {
-      hostLog.error("Failed to deliver response from execution site.",e);
-    }
+  }
+ else {
+    newSpHandle=message.getSpHandle();
   }
   TransactionState txn=m_outstandingTxns.get(message.getTxnId());
   if (txn == null) {
-    long localTxnId=m_txnId.incrementAndGet();
-    txn=new ParticipantTransactionState(localTxnId,message);
+    txn=new ParticipantTransactionState(newSpHandle,message);
     m_outstandingTxns.put(message.getTxnId(),txn);
   }
   if (message.isSysProcTask()) {

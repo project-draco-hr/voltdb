@@ -1,10 +1,26 @@
 {
-  if (message.getDestinationSiteId() != m_mailbox.getHSId()) {
-    try {
-      m_mailbox.send(message.getDestinationSiteId(),message);
+  DuplicateCounter counter=m_duplicateCounters.get(message.getSpHandle());
+  if (counter != null) {
+    int result=counter.offer(message);
+    if (result == DuplicateCounter.DONE) {
+      m_duplicateCounters.remove(message.getSpHandle());
+      message.setExecutorSiteId(m_mailbox.getHSId());
+      try {
+        m_mailbox.send(counter.m_destinationId,message);
+      }
+ catch (      MessagingException e) {
+        VoltDB.crashLocalVoltDB("Failed to send every-site response.",true,e);
+      }
     }
- catch (    MessagingException e) {
-      hostLog.error("Failed to deliver response from execution site.",e);
+ else     if (result == DuplicateCounter.MISMATCH) {
+      VoltDB.crashLocalVoltDB("HASH MISMATCH running every-site system procedure.",true,null);
     }
+    return;
+  }
+  try {
+    m_mailbox.send(message.getDestinationSiteId(),message);
+  }
+ catch (  MessagingException e) {
+    hostLog.error("Failed to deliver response from execution site.",e);
   }
 }
