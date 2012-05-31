@@ -51,13 +51,12 @@ catch (  IllegalAccessException e1) {
   }
   boolean procHasWriteStmts=false;
   boolean procHasSeqScans=false;
+  boolean procHasCommonPartitioning=true;
+  AbstractExpression commonPartitionExpression=null;
+  String exampleSPstatement=null;
+  Object exampleSPvalue=null;
   Map<String,Field> stmtMap=getValidSQLStmts(compiler,procClass.getSimpleName(),procClass,true);
-  Field[] fields=new Field[stmtMap.size()];
-  int index=0;
   for (  Field f : stmtMap.values()) {
-    fields[index++]=f;
-  }
-  for (  Field f : fields) {
     SQLStmt stmt=null;
     try {
       stmt=(SQLStmt)f.get(procInstance);
@@ -69,11 +68,61 @@ catch (    IllegalAccessException e) {
       e.printStackTrace();
     }
     Statement catalogStmt=procedure.getStatements().add(f.getName());
-    StatementCompiler.compile(compiler,hsql,catalog,db,estimates,catalogStmt,stmt.getText(),stmt.getJoinOrder(),info.singlePartition);
+    Object partitionParameter=null;
+    if (info.singlePartition) {
+      partitionParameter="StatementCompiler dummied up single partitioning for QueryPlanner";
+    }
+    PartitioningForStatement partitioning=new PartitioningForStatement(partitionParameter,false);
+    StatementCompiler.compile(compiler,hsql,catalog,db,estimates,catalogStmt,stmt.getText(),stmt.getJoinOrder(),partitioning);
+    if (partitioning.wasSpecifiedAsSingle()) {
+      procHasCommonPartitioning=false;
+    }
+ else     if (procHasCommonPartitioning) {
+      if (partitioning.getCountOfPartitionedTables() == 0) {
+        if (partitioning.getIsReplicatedTableDML()) {
+          procHasCommonPartitioning=false;
+        }
+      }
+ else       if (partitioning.getCountOfIndependentlyPartitionedTables() == 0) {
+        AbstractExpression statementPartitionExpression=partitioning.singlePartitioningExpression();
+        if (statementPartitionExpression != null) {
+          if (commonPartitionExpression == null) {
+            commonPartitionExpression=statementPartitionExpression;
+            exampleSPstatement=stmt.getText();
+            exampleSPvalue=partitioning.effectivePartitioningValue();
+          }
+ else           if (commonPartitionExpression.equals(statementPartitionExpression) || (statementPartitionExpression instanceof ParameterValueExpression && commonPartitionExpression instanceof ParameterValueExpression)) {
+          }
+ else {
+            procHasCommonPartitioning=false;
+          }
+        }
+      }
+ else {
+        procHasCommonPartitioning=false;
+      }
+    }
     if (catalogStmt.getReadonly() == false)     procHasWriteStmts=true;
     if (catalogStmt.getSeqscancount() > 0) {
       procHasSeqScans=true;
     }
+  }
+  if (procHasCommonPartitioning && (commonPartitionExpression != null)) {
+    String msg=null;
+    if (commonPartitionExpression instanceof ParameterValueExpression) {
+      msg="This procedure might benefit from an @ProcInfo annotation designating parameter " + ((ParameterValueExpression)commonPartitionExpression).getParameterIndex() + " of statement '"+ exampleSPstatement+ "'";
+    }
+ else {
+      String valueDescription=null;
+      if (exampleSPvalue == null) {
+        valueDescription="of " + commonPartitionExpression.toString();
+      }
+ else {
+        valueDescription=exampleSPvalue.toString();
+      }
+      msg="This procedure might benefit from an @ProcInfo annotation referencing an added parameter passed the value " + valueDescription;
+    }
+    compiler.addInfo(msg);
   }
   procedure.setReadonly(procHasWriteStmts == false);
   procedure.setHasseqscans(procHasSeqScans);
@@ -142,9 +191,16 @@ catch (    IllegalAccessException e) {
     try {
       type=VoltType.typeFromClass(cls);
     }
- catch (    RuntimeException e) {
+ catch (    VoltTypeException e) {
       String msg="Procedure: " + shortName + " has a parameter with invalid type: ";
       msg+=cls.getSimpleName();
+      throw compiler.new VoltCompilerException(msg);
+    }
+catch (    RuntimeException e) {
+      String msg="Procedure: " + shortName + " unexpectedly failed a check on a parameter of type: ";
+      msg+=cls.getSimpleName();
+      msg+=" with error: ";
+      msg+=e.toString();
       throw compiler.new VoltCompilerException(msg);
     }
     param.setType(type.getValue());
