@@ -1,0 +1,36 @@
+{
+  String simpleSchema="create table BLAH (" + "IVAL bigint default 0 not null, " + "DVAL decimal default null,"+ "VVAL varchar(10) default null, "+ "PRIMARY KEY(IVAL));";
+  String pathToCatalog=Configuration.getPathToCatalogForTest("csv.jar");
+  String pathToDeployment=Configuration.getPathToCatalogForTest("csv.xml");
+  VoltProjectBuilder builder=new VoltProjectBuilder();
+  builder.addLiteralSchema(simpleSchema);
+  builder.addPartitionInfo("BLAH","IVAL");
+  builder.addStmtProcedure("Insert","insert into blah values (?, ?, ?);",null);
+  builder.addStmtProcedure("InsertWithDate","INSERT INTO BLAH VALUES (974599638818488300, 5, 'nullchar');");
+  boolean success=builder.compile(pathToCatalog,2,1,0);
+  assertTrue(success);
+  MiscUtils.copyFile(builder.getPathToDeployment(),pathToDeployment);
+  VoltDB.Configuration config=new VoltDB.Configuration();
+  config.m_pathToCatalog=pathToCatalog;
+  config.m_pathToDeployment=pathToDeployment;
+  ServerThread localServer=new ServerThread(config);
+  Client client=null;
+  try {
+    localServer.start();
+    localServer.waitForInitialization();
+    String[] paras={"/Users/xinjia/testdb.csv","Insert"};
+    CSVLoader.main(paras);
+    client=ClientFactory.createClient();
+    client.createConnection("localhost");
+  }
+  finally {
+    if (client != null)     client.close();
+    client=null;
+    if (localServer != null) {
+      localServer.shutdown();
+      localServer.join();
+    }
+    localServer=null;
+    System.gc();
+  }
+}
