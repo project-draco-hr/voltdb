@@ -1,34 +1,36 @@
 {
+  FragmentTaskMessage msg=message;
   long newSpHandle;
   if (m_isLeader) {
+    msg=new FragmentTaskMessage(message.getInitiatorHSId(),message.getCoordinatorHSId(),message);
     newSpHandle=m_txnId.incrementAndGet();
-    message.setSpHandle(newSpHandle);
+    msg.setSpHandle(newSpHandle);
     if (m_replicaHSIds.length > 0 && inputDeps == null) {
       try {
-        FragmentTaskMessage replmsg=new FragmentTaskMessage(m_mailbox.getHSId(),m_mailbox.getHSId(),message);
+        FragmentTaskMessage replmsg=new FragmentTaskMessage(m_mailbox.getHSId(),m_mailbox.getHSId(),msg);
         m_mailbox.send(m_replicaHSIds,replmsg);
       }
  catch (      MessagingException e) {
         hostLog.error("Failed to deliver response from execution site.",e);
       }
-      DuplicateCounter counter=new DuplicateCounter(message.getCoordinatorHSId(),m_replicaHSIds.length + 1,message.getTxnId());
+      DuplicateCounter counter=new DuplicateCounter(msg.getCoordinatorHSId(),m_replicaHSIds.length + 1,msg.getTxnId());
       m_duplicateCounters.put(newSpHandle,counter);
     }
   }
  else {
-    newSpHandle=message.getSpHandle();
+    newSpHandle=msg.getSpHandle();
   }
-  TransactionState txn=m_outstandingTxns.get(message.getTxnId());
+  TransactionState txn=m_outstandingTxns.get(msg.getTxnId());
   if (txn == null) {
-    txn=new ParticipantTransactionState(newSpHandle,message);
-    m_outstandingTxns.put(message.getTxnId(),txn);
+    txn=new ParticipantTransactionState(newSpHandle,msg);
+    m_outstandingTxns.put(msg.getTxnId(),txn);
   }
-  if (message.isSysProcTask()) {
-    final SysprocFragmentTask task=new SysprocFragmentTask(m_mailbox,(ParticipantTransactionState)txn,m_pendingTasks,message,inputDeps);
+  if (msg.isSysProcTask()) {
+    final SysprocFragmentTask task=new SysprocFragmentTask(m_mailbox,(ParticipantTransactionState)txn,m_pendingTasks,msg,inputDeps);
     m_pendingTasks.offer(task);
   }
  else {
-    final FragmentTask task=new FragmentTask(m_mailbox,(ParticipantTransactionState)txn,m_pendingTasks,message,inputDeps);
+    final FragmentTask task=new FragmentTask(m_mailbox,(ParticipantTransactionState)txn,m_pendingTasks,msg,inputDeps);
     m_pendingTasks.offer(task);
   }
 }
