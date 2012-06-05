@@ -1,91 +1,13 @@
 {
-  if (args.length < 2) {
-    System.err.println("Two arguments, csv filename and insert procedure name, required");
+  if (args.length < 1) {
+    System.err.println("csv filename required");
     System.exit(1);
   }
-  final String filename=args[0];
-  final String insertProcedure=args[1];
-  int argsUsed=2;
-  processCommandLineOptions(argsUsed,args);
-  int waits=0;
-  int shortWaits=0;
-  try {
-    final CSVReader reader=new CSVReader(new FileReader(filename));
-    ProcedureCallback cb=null;
-    final Client client=ClientFactory.createClient();
-    client.createConnection("localhost");
-    boolean lastOK=true;
-    String line[]=null;
-    for (int i=0; i < skipRows; ++i) {
-      reader.readNext();
-      outCount.incrementAndGet();
-      inCount.incrementAndGet();
-    }
-    while ((limitRows-- > 0) && (line=reader.readNext()) != null) {
-      long counter=outCount.incrementAndGet();
-      boolean queued=false;
-      while (queued == false) {
-        String[] correctedLine=line;
-        if (colProjection != null) {
-          System.out.println(String.format("colProject:%s | correctedLine: %s",colProjection,correctedLine));
-          correctedLine=projectColumns(colProjection,correctedLine);
-        }
-        if (stripQuotes) {
-          correctedLine=stripMatchingColumnQuotes(correctedLine);
-        }
-        if (auditRows > 0) {
-          --auditRows;
-          System.err.println(joinIntoString(", ",line));
-          System.err.println(joinIntoString(", ",correctedLine));
-          System.err.println("----------");
-          cb=new MyCallback(counter);
-        }
- else {
-          cb=new MyCallback(outCount.get());
-        }
-        String msg="<xin>params: ";
-        for (int i=0; i < correctedLine.length; i++) {
-          msg+=correctedLine[i] + ",";
-        }
-        System.out.println(msg);
-        if (!checkLineFormat(correctedLine,client)) {
-          System.err.println("Stop at line " + (outCount.get()));
-synchronized (invalidLines) {
-            if (!invalidLines.contains(outCount.get())) {
-              invalidLines.add(outCount.get());
-            }
-            if (invalidLines.size() >= abortfailurecount) {
-              System.err.println("The number of Failure row data exceeds " + abortfailurecount);
-              System.exit(1);
-            }
-          }
-          break;
-        }
-        queued=client.callProcedure(cb,insertProcedure,(Object[])correctedLine);
-        if (queued == false) {
-          ++waits;
-          if (lastOK == false) {
-            ++shortWaits;
-          }
-          Thread.sleep(waitSeconds);
-        }
-        lastOK=queued;
-      }
-    }
-    reader.close();
-    client.drain();
-    client.close();
-    produceInvalidRowsFile(filename);
-  }
- catch (  Exception e) {
-    e.printStackTrace();
-  }
-  System.out.println("Inserted " + (outCount.get() - skipRows) + " and acknowledged "+ (inCount.get() - skipRows)+ " rows (final)");
-  if (waits > 0) {
-    System.out.println("Waited " + waits + " times");
-    if (shortWaits > 0) {
-      System.out.println("Waited too briefly? " + shortWaits + " times");
-    }
-  }
-  return inCount.get() - skipRows;
+  CSVConfig cfg=new CSVConfig();
+  cfg.inputfile=args[0];
+  cfg.parse(CSVLoader.class.getName(),args);
+  CSVLoader loader=new CSVLoader(cfg);
+  long result=loader.run();
+  loader.produceInvalidRowsFile();
+  return result;
 }
