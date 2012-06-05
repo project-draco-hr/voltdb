@@ -1,3 +1,23 @@
 {
   m_replicaHSIds=replicas;
+  Iterator<DuplicateCounter> iter=m_duplicateCounters.values().iterator();
+  while (iter.hasNext()) {
+    DuplicateCounter counter=iter.next();
+    int result=counter.updateReplicas(m_replicaHSIds);
+    if (result == DuplicateCounter.DONE) {
+      m_duplicateCounters.remove(counter);
+      VoltMessage resp=counter.getLastResponse();
+      if (resp != null) {
+        try {
+          m_mailbox.send(counter.m_destinationId,resp);
+        }
+ catch (        MessagingException e) {
+          hostLog.error("Failed to send response while updating replicas",e);
+        }
+      }
+ else {
+        hostLog.warn("TXN " + counter.getTxnId() + " lost all replicas and "+ "had no responses.  This should be impossible?");
+      }
+    }
+  }
 }
