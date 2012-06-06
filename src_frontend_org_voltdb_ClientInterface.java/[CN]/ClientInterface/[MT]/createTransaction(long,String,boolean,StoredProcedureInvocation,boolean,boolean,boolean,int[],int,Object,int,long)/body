@@ -1,15 +1,13 @@
 {
   if (VoltDB.instance().isIV2Enabled()) {
-    long handle=m_sequence.incrementAndGet();
-    Iv2InFlight inFlight=new Iv2InFlight(invocation.getClientHandle(),(Connection)clientData,adminConnection);
-    m_sequenceToConnection.put(handle,inFlight);
+    long handle=m_ciHandles.getHandle(isSinglePartition,partitions[0],invocation.getClientHandle(),(Connection)clientData,adminConnection);
     try {
       long initiatorHSId;
       if (isSinglePartition) {
         JSONObject master=m_iv2Masters.get(Integer.toString(partitions[0]));
         if (master == null) {
           hostLog.error("Failed to find master initiator for partition: " + Integer.toString(partitions[0]) + ". Transaction not initiated.");
-          m_sequenceToConnection.remove(handle);
+          m_ciHandles.removeHandle(handle);
           return false;
         }
         initiatorHSId=master.getLong("hsid");
@@ -21,11 +19,10 @@
       m_mailbox.send(initiatorHSId,workRequest);
     }
  catch (    MessagingException e) {
-      m_sequenceToConnection.remove(handle);
       throw new RuntimeException(e);
     }
 catch (    JSONException e) {
-      m_sequenceToConnection.remove(handle);
+      m_ciHandles.removeHandle(handle);
       throw new RuntimeException(e);
     }
     return true;
