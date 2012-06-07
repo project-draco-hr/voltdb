@@ -55,6 +55,12 @@ likeObject.isBinary=true;
  else {
 throw Error.error(ErrorCode.X_42565);
 }
+if (nodes[ESCAPE] == null) {
+Expression oldNodes[]=nodes;
+nodes=new Expression[BINARY];
+nodes[LEFT]=oldNodes[LEFT];
+nodes[RIGHT]=oldNodes[RIGHT];
+}
 likeObject.dataType=nodes[LEFT].dataType;
 boolean isRightArgFixedConstant=nodes[RIGHT].opType == OpTypes.VALUE;
 if (isRightArgFixedConstant && isEscapeFixedConstant && nodes[LEFT].opType == OpTypes.VALUE) {
@@ -66,12 +72,15 @@ if (isRightArgFixedConstant && isEscapeFixedConstant) {
 likeObject.isVariable=false;
 }
  else {
+if (nodes.length > 2) {
+throw new RuntimeException("Like with an escape is not supported in parameterized queries");
+}
 return;
 }
 Object pattern=isRightArgFixedConstant ? nodes[RIGHT].getConstantValue(session) : null;
-boolean constantEscape=isEscapeFixedConstant && nodes[ESCAPE] != null;
+boolean constantEscape=isEscapeFixedConstant && (nodes.length > 2);
 Object escape=constantEscape ? nodes[ESCAPE].getConstantValue(session) : null;
-likeObject.setPattern(session,pattern,escape,nodes[ESCAPE] != null);
+likeObject.setPattern(session,pattern,escape,(nodes.length > 2));
 if (noOptimisation) {
 return;
 }
@@ -112,6 +121,9 @@ between=!larger;
 like=true;
 }
 if (!between && !larger) {
+if (nodes.length > 2) {
+throw new RuntimeException("Like with an escape is not supported unless it is prefix like");
+}
 return;
 }
 Expression leftBound=new ExpressionValue(likeObject.getRangeLow(),Type.SQL_VARCHAR);
@@ -128,6 +140,9 @@ likeObject=null;
 Expression gte=new ExpressionLogical(OpTypes.GREATER_EQUAL,nodes[LEFT],leftBound);
 Expression lte=new ExpressionLogical(OpTypes.SMALLER_EQUAL,nodes[LEFT],rightBound);
 ExpressionLike newLike=new ExpressionLike(this);
+if (nodes.length > 2) {
+throw new RuntimeException("Like with an escape is not supported unless it is prefix like");
+}
 nodes=new Expression[BINARY];
 likeObject=null;
 nodes[LEFT]=new ExpressionLogical(OpTypes.AND,gte,lte);
@@ -142,6 +157,11 @@ likeObject=null;
 nodes[LEFT]=gte;
 nodes[RIGHT]=newLike;
 opType=OpTypes.AND;
+}
+ else {
+if (nodes.length > 2) {
+throw new RuntimeException("Like with an escape is not supported unless it is prefix like");
+}
 }
 }
 }
