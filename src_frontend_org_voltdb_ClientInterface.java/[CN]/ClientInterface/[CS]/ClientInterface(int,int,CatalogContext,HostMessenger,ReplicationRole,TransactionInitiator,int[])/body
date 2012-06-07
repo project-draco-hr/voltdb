@@ -14,11 +14,15 @@
           InitiateResponseMessage response=(InitiateResponseMessage)message;
           ClientInterfaceHandleManager.Iv2InFlight clientData=m_ciHandles.findHandle(response.getClientInterfaceHandle());
           response.getClientResponseData().setClientHandle(clientData.m_clientHandle);
+          final long now=System.currentTimeMillis();
+          final int delta=(int)(now - clientData.m_creationTime);
+          response.getClientResponseData().setClusterRoundtrip(delta);
           ByteBuffer results=ByteBuffer.allocate(response.getClientResponseData().getSerializedSize() + 4);
           results.putInt(results.capacity() - 4);
           response.getClientResponseData().flattenToBuffer(results);
           results.flip();
           clientData.m_connection.writeStream().enqueue(results);
+          m_backpressure.reduceBackpressure(clientData.m_messageSize);
         }
  else {
           m_d.offer(message);
