@@ -2,23 +2,13 @@
   m_mailbox.addPendingTxn(txn);
   increaseBackpressure(txn.messageSize);
   MultiPartitionParticipantMessage notice=new MultiPartitionParticipantMessage(m_siteId,txn.firstCoordinatorId,txn.txnId,txn.isReadOnly);
-  try {
-    m_mailbox.send(txn.otherSiteIds,notice);
-  }
- catch (  MessagingException e) {
-    throw new RuntimeException(e);
-  }
+  m_mailbox.send(txn.otherSiteIds,notice);
   long newestSafeTxnId=m_safetyState.getNewestSafeTxnIdForExecutorBySiteId(txn.firstCoordinatorId);
   InitiateTaskMessage workRequest=new InitiateTaskMessage(m_siteId,txn.firstCoordinatorId,txn.txnId,txn.isReadOnly,txn.isSinglePartition,txn.invocation,newestSafeTxnId);
-  try {
-    m_mailbox.send(txn.firstCoordinatorId,workRequest);
-    for (    Long replica : txn.coordinatorReplicas) {
-      newestSafeTxnId=m_safetyState.getNewestSafeTxnIdForExecutorBySiteId(replica);
-      workRequest=new InitiateTaskMessage(m_siteId,txn.firstCoordinatorId,txn.txnId,txn.isReadOnly,txn.isSinglePartition,txn.invocation,newestSafeTxnId);
-      m_mailbox.send(replica,workRequest);
-    }
-  }
- catch (  MessagingException e) {
-    throw new RuntimeException(e);
+  m_mailbox.send(txn.firstCoordinatorId,workRequest);
+  for (  Long replica : txn.coordinatorReplicas) {
+    newestSafeTxnId=m_safetyState.getNewestSafeTxnIdForExecutorBySiteId(replica);
+    workRequest=new InitiateTaskMessage(m_siteId,txn.firstCoordinatorId,txn.txnId,txn.isReadOnly,txn.isSinglePartition,txn.invocation,newestSafeTxnId);
+    m_mailbox.send(replica,workRequest);
   }
 }
