@@ -9,11 +9,23 @@
     System.err.print(e.getMessage());
   }
   try {
+    pathToCatalog=Configuration.getPathToCatalogForTest("csv.jar");
+    pathToDeployment=Configuration.getPathToCatalogForTest("csv.xml");
+    builder=new VoltProjectBuilder();
     builder.addLiteralSchema(my_schema);
     builder.addPartitionInfo("BLAH","clm_integer");
     boolean success=builder.compile(pathToCatalog,2,1,0);
     assertTrue(success);
     MiscUtils.copyFile(builder.getPathToDeployment(),pathToDeployment);
+    config=new VoltDB.Configuration();
+    config.m_pathToCatalog=pathToCatalog;
+    config.m_pathToDeployment=pathToDeployment;
+    localServer=new ServerThread(config);
+    client=null;
+    localServer.start();
+    localServer.waitForInitialization();
+    client=ClientFactory.createClient();
+    client.createConnection("localhost");
     CSVLoader.main(my_options);
     VoltTable modCount;
     modCount=client.callProcedure("@AdHoc","SELECT * FROM BLAH;").getResults()[0];
@@ -36,9 +48,9 @@
       }
     }
     System.out.println(String.format("The rows infected: (%d,%s)",lineCount,rowct));
+    CSVLoader.flush();
     assertEquals(lineCount,rowct);
     assertEquals(invalidlinecnt,invalidLineCnt);
-    CSVLoader.flush();
   }
   finally {
     if (client != null)     client.close();
