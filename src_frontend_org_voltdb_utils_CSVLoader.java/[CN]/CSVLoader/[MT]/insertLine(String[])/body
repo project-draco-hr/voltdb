@@ -1,0 +1,45 @@
+{
+  int waits=0;
+  int shortWaits=0;
+  boolean lastOK=true;
+  outCount.incrementAndGet();
+  boolean queued=false;
+  while (queued == false) {
+    StringBuilder linedata=new StringBuilder();
+    csvLine=ArrayUtils.addAll(csvLine,additionalStr);
+    for (    String s : csvLine)     linedata.append(s);
+    String[] correctedLine=csvLine;
+    MyCallback cb=new MyCallback(outCount.get(),config,linedata.toString());
+    String lineCheckResult;
+    if ((lineCheckResult=checkLineFormat(correctedLine,csvClient)) != null) {
+      System.err.println("<zheng>Stop at line " + (outCount.get()) + lineCheckResult);
+synchronized (errorInfo) {
+        if (!errorInfo.containsKey(outCount.get())) {
+          String[] info={linedata.toString(),lineCheckResult};
+          errorInfo.put(outCount.get(),info);
+        }
+        if (errorInfo.size() >= config.abortfailurecount) {
+          System.err.println("The number of Failure row data exceeds " + config.abortfailurecount);
+          System.exit(1);
+        }
+      }
+      break;
+    }
+    queued=csvClient.callProcedure(cb,insertProcedure,(Object[])correctedLine);
+    if (queued == false) {
+      ++waits;
+      if (lastOK == false) {
+        ++shortWaits;
+      }
+      Thread.sleep(waitSeconds);
+    }
+    lastOK=queued;
+  }
+  System.out.println("Inserted " + outCount.get() + " and acknowledged "+ inCount.get()+ " rows (final)");
+  if (waits > 0) {
+    System.out.println("Waited " + waits + " times");
+    if (shortWaits > 0) {
+      System.out.println("Waited too briefly? " + shortWaits + " times");
+    }
+  }
+}
