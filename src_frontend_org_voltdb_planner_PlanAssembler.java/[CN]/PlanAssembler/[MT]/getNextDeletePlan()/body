@@ -2,11 +2,6 @@
   assert(subAssembler != null);
   assert(m_parsedDelete.tableList.size() == 1);
   Table targetTable=m_parsedDelete.tableList.get(0);
-  if (m_singlePartition && (targetTable.getIsreplicated())) {
-    String msg="Trying to delete from replicated table '" + targetTable.getTypeName() + "'";
-    msg+=" in a single-partition procedure.";
-    throw new PlanningErrorException(msg);
-  }
   AbstractPlanNode subSelectRoot=subAssembler.nextPlan();
   if (subSelectRoot == null)   return null;
   DeletePlanNode deleteNode=new DeletePlanNode();
@@ -16,32 +11,17 @@
   NodeSchema proj_schema=new NodeSchema();
   proj_schema.addColumn(new SchemaColumn("VOLT_TEMP_TABLE","tuple_address","tuple_address",addressExpr));
   projectionNode.setOutputSchema(proj_schema);
-  if (m_singlePartition == true) {
-    assert(subSelectRoot instanceof AbstractScanPlanNode);
-    if ((subSelectRoot instanceof SeqScanPlanNode) && (((AbstractScanPlanNode)subSelectRoot).getPredicate() == null)) {
-      deleteNode.setTruncate(true);
-      return deleteNode;
-    }
-    subSelectRoot.addInlinePlanNode(projectionNode);
-    deleteNode.addAndLinkChild(subSelectRoot);
+  assert(subSelectRoot instanceof AbstractScanPlanNode);
+  if (m_partitioning.wasSpecifiedAsSingle() && (((AbstractScanPlanNode)subSelectRoot).getPredicate() == null)) {
+    deleteNode.setTruncate(true);
+    return deleteNode;
+  }
+  subSelectRoot.addInlinePlanNode(projectionNode);
+  deleteNode.addAndLinkChild(subSelectRoot);
+  if (m_partitioning.wasSpecifiedAsSingle() || m_partitioning.hasPartitioningConstantLockedIn()) {
     deleteNode.generateOutputSchema(m_catalogDb);
     return deleteNode;
   }
- else {
-    assert(subSelectRoot instanceof ReceivePlanNode);
-    ReceivePlanNode recvNode=(ReceivePlanNode)subSelectRoot;
-    assert(recvNode.getChildCount() == 1);
-    AbstractPlanNode sendNode=recvNode.getChild(0);
-    assert(sendNode.getChildCount() == 1);
-    AbstractPlanNode scanNode=sendNode.getChild(0);
-    sendNode.unlinkChild(scanNode);
-    assert(scanNode instanceof AbstractScanPlanNode);
-    scanNode.addInlinePlanNode(projectionNode);
-    deleteNode.addAndLinkChild(scanNode);
-    deleteNode.generateOutputSchema(m_catalogDb);
-    sendNode.addAndLinkChild(deleteNode);
-    sendNode.generateOutputSchema(m_catalogDb);
-    recvNode.generateOutputSchema(m_catalogDb);
-    return addSumAndSendToDMLNode(subSelectRoot);
-  }
+  AbstractPlanNode recvNode=subAssembler.addSendReceivePair(deleteNode);
+  return addSumAndSendToDMLNode(recvNode);
 }
