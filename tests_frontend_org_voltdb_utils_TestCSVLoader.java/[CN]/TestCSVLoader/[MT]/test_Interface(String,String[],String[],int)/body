@@ -9,7 +9,24 @@
     System.err.print(e.getMessage());
   }
   try {
-    CSVLoader.main(my_params);
+    pathToCatalog=Configuration.getPathToCatalogForTest("csv.jar");
+    pathToDeployment=Configuration.getPathToCatalogForTest("csv.xml");
+    builder=new VoltProjectBuilder();
+    builder.addLiteralSchema(my_schema);
+    builder.addPartitionInfo("BLAH","clm_integer");
+    boolean success=builder.compile(pathToCatalog,2,1,0);
+    assertTrue(success);
+    MiscUtils.copyFile(builder.getPathToDeployment(),pathToDeployment);
+    config=new VoltDB.Configuration();
+    config.m_pathToCatalog=pathToCatalog;
+    config.m_pathToDeployment=pathToDeployment;
+    localServer=new ServerThread(config);
+    client=null;
+    localServer.start();
+    localServer.waitForInitialization();
+    client=ClientFactory.createClient();
+    client.createConnection("localhost");
+    CSVLoader.main(my_options);
     VoltTable modCount;
     modCount=client.callProcedure("@AdHoc","SELECT * FROM BLAH;").getResults()[0];
     System.out.println("data inserted to table BLAH:\n" + modCount);
@@ -18,16 +35,22 @@
     int lineCount=0;
     String line="";
     String promptMsg="Number of acknowledged tuples:";
+    String promptFailMsg="Number of failed tuples:";
+    int invalidlinecnt=0;
     while ((line=csvreport.readLine()) != null) {
       if (line.startsWith(promptMsg)) {
         String num=line.substring(promptMsg.length());
         lineCount=Integer.parseInt(num.replaceAll("\\s",""));
-        break;
+      }
+      if (line.startsWith(promptFailMsg)) {
+        String num=line.substring(promptFailMsg.length());
+        invalidlinecnt=Integer.parseInt(num.replaceAll("\\s",""));
       }
     }
     System.out.println(String.format("The rows infected: (%d,%s)",lineCount,rowct));
-    assertEquals(lineCount,rowct);
     CSVLoader.flush();
+    assertEquals(lineCount,rowct);
+    assertEquals(invalidlinecnt,invalidLineCnt);
   }
   finally {
     if (client != null)     client.close();
