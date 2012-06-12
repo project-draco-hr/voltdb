@@ -4,30 +4,21 @@
   int shortWaits=0;
   new CSVLoader(args);
   try {
-    final CSVReader reader;
-    if (CSVLoader.standin)     reader=new CSVReader(new BufferedReader(new InputStreamReader(System.in)),config.separator,config.quotechar,config.escape,config.skip,config.strictquotes,config.nowhitespace);
- else     reader=new CSVReader(new FileReader(config.file),config.separator,config.quotechar,config.escape,config.skip,config.strictquotes,config.nowhitespace);
     ProcedureCallback cb=null;
-    String[] serverlist=config.servers.split(",");
-    ClientConfig c_config=new ClientConfig(config.user,config.password);
-    c_config.setProcedureCallTimeout(0);
-    final Client client=CSVLoader.getClient(c_config,serverlist,config.port);
     boolean lastOK=true;
     String line[]=null;
     int columnCnt=0;
     VoltTable procInfo=null;
     try {
-      procInfo=client.callProcedure("@SystemCatalog","PROCEDURECOLUMNS").getResults()[0];
+      procInfo=csvClient.callProcedure("@SystemCatalog","PROCEDURECOLUMNS").getResults()[0];
       while (procInfo.advanceRow()) {
-        if (insertProcedure.matches((String)procInfo.get("PROCEDURE_NAME",VoltType.STRING))) {
-          columnCnt++;
-        }
+        if (insertProcedure.matches((String)procInfo.get("PROCEDURE_NAME",VoltType.STRING)))         columnCnt++;
       }
     }
  catch (    Exception e) {
       e.printStackTrace();
     }
-    while ((config.limitrows-- > 0) && (line=reader.readNext()) != null) {
+    while ((config.limitrows-- > 0) && (line=csvReader.readNext()) != null) {
       outCount.incrementAndGet();
       boolean queued=false;
       while (queued == false) {
@@ -39,8 +30,7 @@
         String[] correctedLine=line;
         cb=new MyCallback(outCount.get(),config,linedata.toString());
         String lineCheckResult;
-        if ((lineCheckResult=checkLineFormat(correctedLine,columnCnt)) != null) {
-          System.err.println("<zheng>Stop at line " + (outCount.get()) + lineCheckResult);
+        if ((lineCheckResult=checkparams_trimspace(correctedLine,columnCnt)) != null) {
 synchronized (errorInfo) {
             if (!errorInfo.containsKey(outCount.get())) {
               String[] info={linedata.toString(),lineCheckResult};
@@ -54,7 +44,7 @@ synchronized (errorInfo) {
           }
           break;
         }
-        queued=client.callProcedure(cb,insertProcedure,(Object[])correctedLine);
+        queued=csvClient.callProcedure(cb,insertProcedure,(Object[])correctedLine);
         if (queued == false) {
           ++waits;
           if (lastOK == false) {
@@ -65,7 +55,7 @@ synchronized (errorInfo) {
         lastOK=queued;
       }
     }
-    client.drain();
+    csvClient.drain();
   }
  catch (  Exception e) {
     e.printStackTrace();
