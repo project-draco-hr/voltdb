@@ -1,37 +1,44 @@
 {
-  ArrayList<NodeConnection> connections=new ArrayList<NodeConnection>();
+  try {
+    ArrayList<NodeConnection> connections=new ArrayList<NodeConnection>();
 synchronized (Distributer.this) {
-    connections.addAll(m_connections);
-  }
-  long now=System.currentTimeMillis();
-  for (  NodeConnection c : connections) {
+      connections.addAll(m_connections);
+    }
+    long now=System.currentTimeMillis();
+    for (    NodeConnection c : connections) {
 synchronized (c) {
-      long sinceLastResponse=now - c.m_lastResponseTime;
-      if (c.m_outstandingPing && (sinceLastResponse > m_connectionResponseTimeoutMS)) {
-        c.m_closeCause=DisconnectCause.TIMEOUT;
-        c.m_connection.unregister();
-      }
-      if ((!c.m_outstandingPing) && (sinceLastResponse > (m_connectionResponseTimeoutMS / 3))) {
-        c.sendPing();
-      }
-      for (      Entry<Long,CallbackBookeeping> e : c.m_callbacks.entrySet()) {
-        long handle=e.getKey();
-        CallbackBookeeping cb=e.getValue();
-        if ((now - cb.timestamp) > m_procedureCallTimeoutMS) {
-          ClientResponseImpl r=new ClientResponseImpl(ClientResponse.CONNECTION_TIMEOUT,(byte)0,"",new VoltTable[0],String.format("No response received in the allotted time (set to %d ms).",m_procedureCallTimeoutMS));
-          r.setClientHandle(handle);
-          r.setClientRoundtrip((int)(now - cb.timestamp));
-          r.setClusterRoundtrip((int)(now - cb.timestamp));
-          try {
-            cb.callback.clientCallback(r);
+        long sinceLastResponse=now - c.m_lastResponseTime;
+        if (c.m_outstandingPing && (sinceLastResponse > m_connectionResponseTimeoutMS)) {
+          c.m_closeCause=DisconnectCause.TIMEOUT;
+          c.m_connection.unregister();
+        }
+        if ((!c.m_outstandingPing) && (sinceLastResponse > (m_connectionResponseTimeoutMS / 3))) {
+          c.sendPing();
+        }
+        Iterator<Entry<Long,CallbackBookeeping>> iter=c.m_callbacks.entrySet().iterator();
+        while (iter.hasNext()) {
+          Entry<Long,CallbackBookeeping> e=iter.next();
+          long handle=e.getKey();
+          CallbackBookeeping cb=e.getValue();
+          if ((now - cb.timestamp) > m_procedureCallTimeoutMS) {
+            ClientResponseImpl r=new ClientResponseImpl(ClientResponse.CONNECTION_TIMEOUT,(byte)0,"",new VoltTable[0],String.format("No response received in the allotted time (set to %d ms).",m_procedureCallTimeoutMS));
+            r.setClientHandle(handle);
+            r.setClientRoundtrip((int)(now - cb.timestamp));
+            r.setClusterRoundtrip((int)(now - cb.timestamp));
+            try {
+              cb.callback.clientCallback(r);
+            }
+ catch (            Exception e1) {
+              e1.printStackTrace();
+            }
+            iter.remove();
+            c.m_callbacksToInvoke.decrementAndGet();
           }
- catch (          Exception e1) {
-            e1.printStackTrace();
-          }
-          c.m_callbacks.remove(e.getKey());
-          c.m_callbacksToInvoke.decrementAndGet();
         }
       }
     }
+  }
+ catch (  Throwable t) {
+    t.printStackTrace();
   }
 }
