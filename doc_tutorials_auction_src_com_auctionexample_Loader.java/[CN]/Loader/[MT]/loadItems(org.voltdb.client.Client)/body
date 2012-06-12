@@ -1,0 +1,26 @@
+{
+  ArrayList<Integer> itemIds=new ArrayList<Integer>();
+  String userHome=System.getProperty("user.home");
+  String[] myOptions={"--file=" + userHome + "/workspace/voltdb/doc/tutorials/auction/src/com/auctionexample/datafiles/items.txt","--procedure=InsertIntoItem","--maxerrors=50","--user=program","--password=pass","--port="};
+  new CSVLoader(myOptions);
+  while (CSVLoader.readNext()) {
+    final int oneMinuteOfMillis=1000 * 1000 * 60;
+    TimestampType startTime=new TimestampType();
+    int duration=oneMinuteOfMillis + random.nextInt(oneMinuteOfMillis);
+    TimestampType endTime=new TimestampType(startTime.getTime() + duration);
+    String[] addStr={startTime.toString(),endTime.toString()};
+    String[] str=CSVLoader.insertLine(addStr,9).clone();
+    if (!str[0].isEmpty()) {
+      int itemId=Integer.parseInt(str[0]);
+      itemIds.add(itemId);
+      double startPrice=Double.parseDouble(str[6]);
+      VoltTable[] table=client.callProcedure("InsertIntoBid",itemId,itemId,-1,0L,startPrice).getResults();
+      if (table.length != 2)       throw new Exception("InsertIntoBid returned the wrong number of tables.");
+      if (table[0].asScalarLong() != 1)       throw new Exception("InsertIntoBid modified the wrong number of tuples.");
+    }
+  }
+  CSVLoader.drain();
+  CSVLoader.produceFiles();
+  CSVLoader.flush();
+  return itemIds;
+}
