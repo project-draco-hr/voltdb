@@ -1,4 +1,8 @@
 {
+  QueryTestBase.Factory factory=factoryByName(testName);
+  if (factory == null) {
+    throw new ConfigurationException(String.format("Specified test type '%s' has no implementation installed in BenchmarkConfiguration.java",testName));
+  }
   List<QueryTestBase> tests=new ArrayList<QueryTestBase>();
   try {
     DocumentBuilderFactory docBuilderFactory=DocumentBuilderFactory.newInstance();
@@ -16,24 +20,13 @@
     NodeList testNodes=testElement.getElementsByTagName("test");
     for (int iTest=0; iTest < testNodes.getLength(); iTest++) {
       ConfigurationTest test=ConfigurationTest.fromElement((Element)testNodes.item(iTest));
-      if (tables.containsKey(test.table)) {
-        ConfigurationTable table=tables.get(test.table);
-        if (test.type.equalsIgnoreCase("join")) {
-          if (testName.equalsIgnoreCase("join")) {
-            tests.add(new JoinTest(test.table,table.nVariations,table.columnPrefix,table.nColumns,test.nLevels));
-          }
-        }
- else         if (test.type.equalsIgnoreCase("projection")) {
-          if (testName.equalsIgnoreCase("projection")) {
-            tests.add(new ProjectionTest(test.table,table.columnPrefix,table.nColumns));
-          }
-        }
- else {
-          throw new ConfigurationException(String.format("Configuration has unknown test type '%s'",test.type));
-        }
+      ConfigurationTable table=tables.get(test.table);
+      if (table == null) {
+        System.out.println("Configuration warning: test type '" + testName + "' references unknown table '"+ test.table+ "'");
+        continue;
       }
- else {
-        throw new ConfigurationException(String.format("Configuration has test for unknown table '%s'",test.table));
+      if (testName.equalsIgnoreCase(test.type)) {
+        tests.add(factory.make(test.table,table.nVariations,table.columnPrefix,table.nColumns,test.nLevels));
       }
     }
   }
@@ -45,6 +38,9 @@ catch (  ParserConfigurationException e) {
   }
 catch (  IOException e) {
     throw new ConfigurationException("XML parser I/O exception",e);
+  }
+  if (tests.isEmpty()) {
+    throw new ConfigurationException(String.format("Specified test type '%s' or its table is not defined in configuration file '%s'.",testName,path));
   }
   return tests;
 }

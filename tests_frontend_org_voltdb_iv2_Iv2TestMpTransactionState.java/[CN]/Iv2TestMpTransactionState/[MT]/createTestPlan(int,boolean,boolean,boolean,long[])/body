@@ -14,15 +14,11 @@
       depsForLocalTask.add(-1);
     }
   }
-  long[] distributedFragIdArray=new long[distributedOutputDepIds.size()];
-  int[] distributedOutputDepIdArray=new int[distributedOutputDepIds.size()];
-  ByteBuffer[] distributedParamsArray=new ByteBuffer[distributedOutputDepIds.size()];
+  plan.depsToResume=depsToResumeList;
+  plan.remoteWork=new FragmentTaskMessage(Long.MIN_VALUE,Long.MIN_VALUE,1234l,readOnly,false);
   for (int i=0; i < distributedOutputDepIds.size(); i++) {
-    distributedFragIdArray[i]=Long.MIN_VALUE;
-    distributedOutputDepIdArray[i]=distributedOutputDepIds.get(i);
-    distributedParamsArray[i]=createDummyParameterSet();
+    plan.remoteWork.addFragment(Long.MIN_VALUE,distributedOutputDepIds.get(i),createDummyParameterSet());
   }
-  plan.remoteWork=new FragmentTaskMessage(Long.MIN_VALUE,Long.MIN_VALUE,1234l,readOnly,distributedFragIdArray,distributedOutputDepIdArray,distributedParamsArray,false);
   System.out.println("REMOTE TASK: " + plan.remoteWork.toString());
   if (!single_frag) {
     for (int i=0; i < remoteHSIds.length; i++) {
@@ -32,33 +28,26 @@
       }
  else {
         resp.setStatus(FragmentResponseMessage.SUCCESS,null);
-        for (int j=0; j < distributedOutputDepIdArray.length; j++) {
-          resp.addDependency(distributedOutputDepIdArray[j],new VoltTable(new VoltTable.ColumnInfo("BOGO",VoltType.BIGINT)));
+        for (int j=0; j < distributedOutputDepIds.size(); j++) {
+          resp.addDependency(distributedOutputDepIds.get(j),new VoltTable(new VoltTable.ColumnInfo("BOGO",VoltType.BIGINT)));
         }
       }
       System.out.println("RESPONSE: " + resp);
       plan.generatedResponses.add(resp);
     }
   }
-  ByteBuffer[] localParams=new ByteBuffer[batchSize];
+  plan.localWork=new FragmentTaskMessage(Long.MIN_VALUE,Long.MIN_VALUE,1234l,readOnly,false);
   for (int i=0; i < batchSize; i++) {
-    localParams[i]=createDummyParameterSet();
+    plan.localWork.addFragment(0L,depsToResumeList.get(i),createDummyParameterSet());
   }
-  int[] depsToResume=new int[depsToResumeList.size()];
-  for (int i=0; i < depsToResumeList.size(); i++) {
-    depsToResume[i]=depsToResumeList.get(i);
-  }
-  plan.depsToResume=depsToResume;
-  long[] localFragIds=new long[batchSize];
-  plan.localWork=new FragmentTaskMessage(Long.MIN_VALUE,Long.MIN_VALUE,1234l,readOnly,localFragIds,depsToResume,localParams,false);
   for (int i=0; i < depsForLocalTask.size(); i++) {
     if (depsForLocalTask.get(i) < 0)     continue;
     plan.localWork.addInputDepId(i,depsForLocalTask.get(i));
   }
   FragmentResponseMessage resp=new FragmentResponseMessage(plan.remoteWork,remoteHSIds[0]);
   resp.setStatus(FragmentResponseMessage.SUCCESS,null);
-  for (int j=0; j < depsToResume.length; j++) {
-    resp.addDependency(depsToResume[j],new VoltTable(new VoltTable.ColumnInfo("BOGO",VoltType.BIGINT)));
+  for (int j=0; j < batchSize; j++) {
+    resp.addDependency(depsToResumeList.get(j),new VoltTable(new VoltTable.ColumnInfo("BOGO",VoltType.BIGINT)));
   }
   System.out.println("BORROW RESPONSE: " + resp);
   plan.generatedResponses.add(resp);
