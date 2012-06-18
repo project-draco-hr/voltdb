@@ -1,0 +1,50 @@
+{
+  boolean doneWork=false;
+  if (m_rejoinTaskLog == null) {
+    return doneWork;
+  }
+  TransactionState ts=null;
+  try {
+    TransactionInfoBaseMessage msg=m_rejoinTaskLog.getNextMessage();
+    if (msg != null) {
+      if (msg.isSinglePartition()) {
+        ts=new SinglePartitionTxnState(m_mailbox,this,msg);
+        ts.setSendResponse(false);
+      }
+ else {
+        VoltDB.crashLocalVoltDB("Cannot replay multi-part transactions yet",false,null);
+      }
+    }
+  }
+ catch (  IOException e) {
+    m_recoveryLog.error("Failed to replay logged transactions: " + e.getMessage());
+  }
+  if (ts != null) {
+    recursableRun(ts);
+    doneWork=true;
+    m_recoveryLog.trace("Replayed " + ts.getNotice().getTxnId());
+    m_executedTaskCount++;
+  }
+ else {
+    boolean rejoinCompleted=false;
+    try {
+      if (m_rejoinTaskLog.isEmpty() && m_rejoinSnapshotFinished) {
+        rejoinCompleted=true;
+      }
+    }
+ catch (    IOException e) {
+      m_recoveryLog.error("Failed to determine if the task log is empty: " + e.getMessage());
+    }
+    if (rejoinCompleted) {
+      m_recoveryLog.info("Replay of task messages are done");
+      try {
+        m_rejoinTaskLog.close();
+      }
+ catch (      IOException e) {
+        m_recoveryLog.error("Failed to close the task log:" + e.getMessage());
+      }
+      m_onRejoinCompletion.run();
+    }
+  }
+  return doneWork;
+}

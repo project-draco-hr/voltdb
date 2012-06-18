@@ -1,0 +1,28 @@
+{
+  m_rejoinCoordinatorHSId=rejoinCoordinatorHSId;
+  Class<?> klass=MiscUtils.loadProClass("org.voltdb.rejoin.StreamSnapshotSink","Rejoin",false);
+  Constructor<?> constructor;
+  try {
+    constructor=klass.getConstructor(long.class);
+    m_rejoinSnapshotProcessor=(RejoinSiteProcessor)constructor.newInstance(getSiteId());
+  }
+ catch (  Exception e) {
+    VoltDB.crashLocalVoltDB("Unable to construct stream snapshot receiver",true,e);
+  }
+  Pair<List<byte[]>,Integer> endPoints=m_rejoinSnapshotProcessor.initialize();
+  List<byte[]> addresses=endPoints.getFirst();
+  int port=endPoints.getSecond();
+  int partition=getCorrespondingPartitionId();
+  File overflowDir=new File(VoltDB.instance().getCatalogContext().cluster.getVoltroot(),"rejoin_overflow");
+  Class<?> taskLogKlass=MiscUtils.loadProClass("org.voltdb.rejoin.TaskLogImpl","Rejoin",false);
+  Constructor<?> taskLogConstructor;
+  try {
+    taskLogConstructor=taskLogKlass.getConstructor(int.class,File.class);
+    m_rejoinTaskLog=(TaskLog)taskLogConstructor.newInstance(partition,overflowDir);
+  }
+ catch (  Exception e) {
+    VoltDB.crashLocalVoltDB("Unable to construct rejoin task log",true,e);
+  }
+  m_recoveryLog.info("Initiating new rejoin from " + CoreUtils.hsIdToString(getSiteId()));
+  initiateRejoinSnapshot(addresses,port);
+}
