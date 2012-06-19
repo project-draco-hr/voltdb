@@ -2,34 +2,33 @@
   if (event.getType() == EventType.NodeCreated) {
     byte data[]=m_zk.getData(event.getPath(),false,null);
     String jsonString=new String(data,"UTF-8");
-    JSONObject jsObj=new JSONObject(jsonString);
-    final String path=jsObj.getString("path");
-    final String nonce=jsObj.getString("nonce");
-    final long blocking=jsObj.getLong("blocking");
+    final JSONObject jsObj=new JSONObject(jsonString);
     final String requestId=jsObj.getString("requestId");
+    jsObj.remove("requestId");
     final long handle=m_nextCallbackHandle++;
     m_procedureCallbacks.put(handle,new ProcedureCallback(){
       @Override public void clientCallback(      ClientResponse clientResponse) throws Exception {
         if (clientResponse.getStatus() != ClientResponse.SUCCESS) {
-          hostLog.error(clientResponse.getStatusString());
-          FastSerializer fs=new FastSerializer();
-          fs.writeObject((ClientResponseImpl)clientResponse);
-          m_zk.create("/user_snapshot_response_" + requestId,fs.getBytes(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+          ClientResponseImpl rimpl=(ClientResponseImpl)clientResponse;
+          ByteBuffer buf=ByteBuffer.allocate(rimpl.getSerializedSize());
+          m_zk.create(VoltZK.user_snapshot_response + requestId,rimpl.flattenToBuffer(buf).array(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
           userSnapshotRequestExistenceCheck();
+          return;
         }
         if (isSnapshotInProgressResponse(clientResponse)) {
-          scheduleSnapshotForLater(path,nonce,blocking,requestId,true);
+          scheduleSnapshotForLater(jsObj.toString(4),requestId,true);
         }
  else {
-          FastSerializer fs=new FastSerializer();
-          fs.writeObject((ClientResponseImpl)clientResponse);
-          m_zk.create("/user_snapshot_response_" + requestId,fs.getBytes(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+          ClientResponseImpl rimpl=(ClientResponseImpl)clientResponse;
+          ByteBuffer buf=ByteBuffer.allocate(rimpl.getSerializedSize());
+          m_zk.create(VoltZK.user_snapshot_response + requestId,rimpl.flattenToBuffer(buf).array(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
           userSnapshotRequestExistenceCheck();
+          return;
         }
       }
     }
 );
-    m_initiator.initiateSnapshotDaemonWork("@SnapshotSave",handle,new Object[]{path,nonce,blocking});
+    m_initiator.initiateSnapshotDaemonWork("@SnapshotSave",handle,new Object[]{jsObj.toString(4)});
     return;
   }
 }

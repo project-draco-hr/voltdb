@@ -2,7 +2,7 @@
   m_sentSkipPastMultipartMsg=false;
   if (!m_sentInitiateResponse) {
     m_stopBeforeTxnId=Math.max(nextTxnId,m_destinationStoppedBeforeTxnId);
-    recoveryLog.info("Sending recovery initiate response from " + m_siteId + " before txnId "+ nextTxnId+ " to site "+ m_destinationSiteId+ " choosing to stop before txnId "+ m_stopBeforeTxnId);
+    recoveryLog.info("Sending recovery initiate response from " + CoreUtils.hsIdToString(m_siteId) + " before txnId "+ nextTxnId+ " to site "+ CoreUtils.hsIdToString(m_destinationSiteId)+ " choosing to stop before txnId "+ m_stopBeforeTxnId);
     m_sentInitiateResponse=true;
     StringBuilder sb=new StringBuilder();
     if (m_site != null) {
@@ -21,21 +21,22 @@
     }
  catch (    UnsupportedEncodingException e) {
     }
-    ByteBuffer buf=ByteBuffer.allocate(21 + exportUSOBytes.length);
+    ByteBuffer buf=ByteBuffer.allocate(25 + exportUSOBytes.length);
     BBContainer cont=DBBPool.wrapBB(buf);
-    buf.putInt(17 + exportUSOBytes.length);
-    buf.putInt(m_siteId);
+    buf.putInt(25 + exportUSOBytes.length);
+    buf.putLong(m_siteId);
     buf.put(kSTOP_AT_TXN);
     buf.putLong(m_stopBeforeTxnId);
     buf.putInt(exportUSOBytes.length);
     buf.put(exportUSOBytes);
     buf.flip();
+    System.out.println("Offering initiate response");
     m_outgoing.offer(cont);
   }
   if (nextTxnId < m_stopBeforeTxnId) {
     return;
   }
-  recoveryLog.info("Starting recovery of " + m_destinationSiteId + " work before txnId "+ nextTxnId);
+  recoveryLog.info("Starting recovery of " + CoreUtils.hsIdToString(m_destinationSiteId) + " work before txnId "+ nextTxnId);
   while (true) {
     while (m_allowedBuffers.get() > 0 && !m_tablesToStream.isEmpty() && !m_buffers.isEmpty()) {
       m_allowedBuffers.decrementAndGet();
@@ -43,7 +44,7 @@
       ByteBuffer buffer=container.b;
       buffer.clear();
       buffer.position(4);
-      buffer.putInt(m_siteId);
+      buffer.putLong(m_siteId);
       buffer.putInt(m_blockIndex++);
       RecoveryTable table=m_tablesToStream.peek();
       long startSerializing=System.currentTimeMillis();

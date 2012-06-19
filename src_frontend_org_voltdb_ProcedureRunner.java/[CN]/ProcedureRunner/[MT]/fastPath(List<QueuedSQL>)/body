@@ -1,0 +1,27 @@
+{
+  return executeQueuedSQL(batch,new FragmentExecutor(){
+    @Override public VoltTable[] onExecutePrePlanned(    final List<QueuedSQL> batch,    final boolean last){
+      final int batchSize=batch.size();
+      ParameterSet[] params=new ParameterSet[batchSize];
+      long[] fragmentIds=new long[batchSize];
+      int i=0;
+      for (      final QueuedSQL qs : batch) {
+        assert(qs.stmt.numFragGUIDs == 1);
+        fragmentIds[i]=qs.stmt.fragGUIDs[0];
+        params[i]=qs.params;
+        i++;
+      }
+      return m_site.executeQueryPlanFragmentsAndGetResults(fragmentIds,batchSize,params,batchSize,m_txnState.txnId,m_catProc.getReadonly());
+    }
+    @Override public VoltTable[] onExecuteUnplanned(    final List<QueuedSQL> batch,    final boolean last){
+      VoltTable[] results=new VoltTable[batch.size()];
+      for (int i=0; i < batch.size(); i++) {
+        String aggregatorFragment=batch.get(i).stmt.getPlan().getAggregatorFragment();
+        assert(aggregatorFragment != null);
+        results[i]=m_site.executeCustomPlanFragment(aggregatorFragment,AGG_DEPID,m_txnState.txnId);
+      }
+      return results;
+    }
+  }
+);
+}

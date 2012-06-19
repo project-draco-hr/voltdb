@@ -1,0 +1,51 @@
+{
+  int bytesWritten=0;
+  long rc=0;
+  do {
+    if (m_currentWriteBuffer == null && m_queuedBuffers.isEmpty()) {
+      if (m_hadBackPressure && m_queuedWrites.size() <= m_maxQueuedWritesBeforeBackpressure) {
+        backpressureEnded();
+      }
+      m_lastPendingWriteTime=-1;
+      updateQueued(-bytesWritten,false);
+      m_bytesWritten+=bytesWritten;
+      return bytesWritten;
+    }
+    ByteBuffer buffer=null;
+    if (m_currentWriteBuffer == null) {
+      m_currentWriteBuffer=m_queuedBuffers.poll();
+      buffer=(ByteBuffer)m_currentWriteBuffer.b.flip();
+    }
+ else {
+      buffer=m_currentWriteBuffer.b;
+    }
+    rc=0;
+    rc=channel.write(buffer);
+    if (buffer.hasRemaining()) {
+      if (!m_hadBackPressure) {
+        backpressureStarted();
+      }
+    }
+ else {
+      m_currentWriteBuffer.discard();
+      m_currentWriteBuffer=null;
+      m_messagesWritten++;
+    }
+    bytesWritten+=rc;
+  }
+ while (rc > 0);
+  if (m_queuedBuffers.isEmpty() && m_hadBackPressure && m_queuedWrites.size() <= m_maxQueuedWritesBeforeBackpressure) {
+    backpressureEnded();
+  }
+  if (!isEmpty()) {
+    if (bytesWritten > 0) {
+      m_lastPendingWriteTime=EstTime.currentTimeMillis();
+    }
+  }
+ else {
+    m_lastPendingWriteTime=-1;
+  }
+  updateQueued(-bytesWritten,false);
+  m_bytesWritten+=bytesWritten;
+  return bytesWritten;
+}

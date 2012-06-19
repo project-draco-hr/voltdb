@@ -1,17 +1,15 @@
 {
   errorString=null;
-  String hostname=ConnectionUtil.getHostnameOrAddress();
+  String hostname=CoreUtils.getHostnameOrAddress();
   if (fragmentId == SysProcFragmentId.PF_snapshotScan) {
     final VoltTable results=constructFragmentResultsTable();
-    int host_id=context.getExecutionSite().getCorrespondingHostId();
-    Integer lowest_site_id=VoltDB.instance().getCatalogContext().siteTracker.getLowestLiveExecSiteIdForHost(host_id);
-    if (context.getExecutionSite().getSiteId() == lowest_site_id) {
+    if (context.isLowestSiteId()) {
       assert(params.toArray()[0] != null);
       assert(params.toArray()[0] instanceof String);
       final String path=(String)params.toArray()[0];
       List<File> relevantFiles=retrieveRelevantFiles(path);
       if (relevantFiles == null) {
-        results.addRow(Integer.parseInt(context.getSite().getHost().getTypeName()),hostname,"","",0,0,"","FALSE",0,"","",0,"","FAILURE",errorString);
+        results.addRow(context.getHostId(),hostname,"","",0,0,"","FALSE",0,"","",0,"","FAILURE",errorString);
       }
  else {
         for (        final File f : relevantFiles) {
@@ -30,7 +28,7 @@
                 if (partitions.startsWith(",")) {
                   partitions=partitions.substring(1);
                 }
-                results.addRow(Integer.parseInt(context.getSite().getHost().getTypeName()),hostname,f.getParent(),f.getName(),savefile.getTxnId(),org.voltdb.TransactionIdManager.getTimestampFromTransactionId(savefile.getTxnId()),savefile.getTableName(),savefile.getCompleted() ? "TRUE" : "FALSE",f.length(),savefile.isReplicated() ? "TRUE" : "FALSE",partitions,savefile.getTotalPartitions(),f.canRead() ? "TRUE" : "FALSE","SUCCESS","");
+                results.addRow(context.getHostId(),hostname,f.getParent(),f.getName(),savefile.getTxnId(),org.voltdb.TransactionIdManager.getTimestampFromTransactionId(savefile.getTxnId()),savefile.getTableName(),savefile.getCompleted() ? "TRUE" : "FALSE",f.length(),savefile.isReplicated() ? "TRUE" : "FALSE",partitions,savefile.getTotalPartitions(),f.canRead() ? "TRUE" : "FALSE","SUCCESS","");
               }
  catch (              IOException e) {
                 HOST_LOG.warn(e);
@@ -44,7 +42,7 @@
             }
           }
  else {
-            results.addRow(Integer.parseInt(context.getSite().getHost().getTypeName()),hostname,f.getParent(),f.getName(),0L,f.lastModified(),"","FALSE",f.length(),"FALSE","",-1,f.canRead() ? "TRUE" : "FALSE","SUCCESS","");
+            results.addRow(context.getHostId(),hostname,f.getParent(),f.getName(),0L,f.lastModified(),"","FALSE",f.length(),"FALSE","",-1,f.canRead() ? "TRUE" : "FALSE","SUCCESS","");
           }
         }
       }
@@ -65,15 +63,13 @@
   }
  else   if (fragmentId == SysProcFragmentId.PF_snapshotDigestScan) {
     final VoltTable results=constructDigestResultsTable();
-    int host_id=context.getExecutionSite().getCorrespondingHostId();
-    Integer lowest_site_id=VoltDB.instance().getCatalogContext().siteTracker.getLowestLiveExecSiteIdForHost(host_id);
-    if (context.getExecutionSite().getSiteId() == lowest_site_id) {
+    if (context.isLowestSiteId()) {
       assert(params.toArray()[0] != null);
       assert(params.toArray()[0] instanceof String);
       final String path=(String)params.toArray()[0];
       List<File> relevantFiles=retrieveRelevantFiles(path);
       if (relevantFiles == null) {
-        results.addRow(Integer.parseInt(context.getSite().getHost().getTypeName()),"","","","FAILURE",errorString);
+        results.addRow(context.getHostId(),"","","","FAILURE",errorString);
       }
  else {
         for (        final File f : relevantFiles) {
@@ -96,7 +92,7 @@
                 }
                 ii++;
               }
-              results.addRow(Integer.parseInt(context.getSite().getHost().getTypeName()),path,f.getName(),sw.toString(),"SUCCESS","");
+              results.addRow(context.getHostId(),path,f.getName(),sw.toString(),"SUCCESS","");
             }
  catch (            Exception e) {
               HOST_LOG.warn(e);
@@ -121,9 +117,7 @@
   }
  else   if (fragmentId == SysProcFragmentId.PF_hostDiskFreeScan) {
     final VoltTable results=constructDiskFreeResultsTable();
-    int host_id=context.getExecutionSite().getCorrespondingHostId();
-    Integer lowest_site_id=VoltDB.instance().getCatalogContext().siteTracker.getLowestLiveExecSiteIdForHost(host_id);
-    if (context.getExecutionSite().getSiteId() == lowest_site_id) {
+    if (context.isLowestSiteId()) {
       assert(params.toArray()[0] != null);
       assert(params.toArray()[0] instanceof String);
       final String path=(String)params.toArray()[0];
@@ -132,10 +126,10 @@
         final long free=dir.getUsableSpace();
         final long total=dir.getTotalSpace();
         final long used=total - free;
-        results.addRow(Integer.parseInt(context.getSite().getHost().getTypeName()),hostname,path,total,free,used,"SUCCESS","");
+        results.addRow(context.getHostId(),hostname,path,total,free,used,"SUCCESS","");
       }
  else {
-        results.addRow(Integer.parseInt(context.getSite().getHost().getTypeName()),hostname,path,0,0,0,"FAILURE","Path is not a directory");
+        results.addRow(context.getHostId(),hostname,path,0,0,0,"FAILURE","Path is not a directory");
       }
     }
     return new DependencyPair(DEP_hostDiskFreeScan,results);

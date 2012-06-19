@@ -1,0 +1,33 @@
+{
+  if (destinations.isEmpty()) {
+    return;
+  }
+  m_connection.writeStream().enqueue(new DeferredSerialization(){
+    @Override public final ByteBuffer[] serialize() throws IOException {
+      int len=4 + 8 + 4+ 8 * destinations.size() + message.getSerializedSize();
+      ByteBuffer buf=ByteBuffer.allocate(len);
+      buf.putInt(len - 4);
+      buf.putLong(message.m_sourceHSId);
+      buf.putInt(destinations.size());
+      for (int ii=0; ii < destinations.size(); ii++) {
+        buf.putLong(destinations.get(ii));
+      }
+      message.flattenToBuffer(buf);
+      buf.flip();
+      return new ByteBuffer[]{buf};
+    }
+    @Override public final void cancel(){
+    }
+  }
+);
+  long current_time=EstTime.currentTimeMillis();
+  long current_delta=current_time - m_lastMessageMillis;
+  if ((!m_closing && m_isUp) && (current_delta > m_deadHostTimeout)) {
+    hostLog.error("DEAD HOST DETECTED, hostname: " + m_remoteHostname);
+    hostLog.info("\tcurrent time: " + current_time);
+    hostLog.info("\tlast message: " + m_lastMessageMillis);
+    hostLog.info("\tdelta (millis): " + current_delta);
+    hostLog.info("\ttimeout value (millis): " + m_deadHostTimeout);
+    m_hostMessenger.reportForeignHostFailed(m_hostId);
+  }
+}

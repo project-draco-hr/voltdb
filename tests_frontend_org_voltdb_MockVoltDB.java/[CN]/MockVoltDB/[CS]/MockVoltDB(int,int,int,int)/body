@@ -9,26 +9,28 @@
     obj.put("httpPort",httpPort);
     obj.put("drPort",drPort);
     m_localMetadata=obj.toString(4);
-  }
- catch (  Exception e) {
-    throw new RuntimeException(e);
-  }
-  m_catalog=new Catalog();
-  m_catalog.execute("add / clusters " + m_clusterName);
-  m_catalog.execute("add " + m_catalog.getClusters().get(m_clusterName).getPath() + " databases "+ m_databaseName);
-  Cluster cluster=m_catalog.getClusters().get(m_clusterName);
-  cluster.setHeartbeattimeout(10000);
-  assert(cluster != null);
-  m_statsAgent=new StatsAgent();
-  Mailbox mbox=m_statsAgent.getMailbox(m_hostMessenger,1);
-  MockMailbox.postoffice.get(VoltDB.STATS_MAILBOX_ID).put(1,mbox);
-  MockMailbox mailbox=new MockMailbox();
-  MockMailbox.registerMailbox(1,VoltDB.AGREEMENT_MAILBOX_ID,mailbox);
-  try {
-    m_agreementSite=new AgreementSite(1,new HashSet<Integer>(Arrays.asList(1)),1,new HashSet<Integer>(),mailbox,new InetSocketAddress(2181),null,false);
-    m_agreementSite.start();
-    m_zk=org.voltdb.agreement.ZKUtil.getClient("localhost:2181",60 * 1000);
-    m_snapshotCompletionMonitor.init(m_zk);
+    m_catalog=new Catalog();
+    m_catalog.execute("add / clusters " + m_clusterName);
+    m_catalog.execute("add " + m_catalog.getClusters().get(m_clusterName).getPath() + " databases "+ m_databaseName);
+    Cluster cluster=m_catalog.getClusters().get(m_clusterName);
+    cluster.setHeartbeattimeout(10000);
+    assert(cluster != null);
+    try {
+      m_hostMessenger.start();
+    }
+ catch (    Exception e) {
+      throw new RuntimeException(e);
+    }
+    VoltZK.createPersistentZKNodes(m_hostMessenger.getZK());
+    m_hostMessenger.getZK().create(VoltZK.cluster_metadata + "/" + m_hostMessenger.getHostId(),getLocalMetadata().getBytes("UTF-8"),Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL);
+    m_hostMessenger.generateMailboxId(m_hostMessenger.getHSIdForLocalSite(HostMessenger.STATS_SITE_ID));
+    m_statsAgent=new StatsAgent();
+    m_statsAgent.getMailbox(m_hostMessenger,m_hostMessenger.getHSIdForLocalSite(HostMessenger.STATS_SITE_ID));
+    for (    MailboxType type : MailboxType.values()) {
+      m_mailboxMap.put(type,new LinkedList<MailboxNodeContent>());
+    }
+    m_mailboxMap.get(MailboxType.StatsAgent).add(new MailboxNodeContent(m_hostMessenger.getHSIdForLocalSite(HostMessenger.STATS_SITE_ID),null));
+    m_siteTracker=new SiteTracker(m_hostId,m_mailboxMap);
   }
  catch (  Exception e) {
     throw new RuntimeException(e);

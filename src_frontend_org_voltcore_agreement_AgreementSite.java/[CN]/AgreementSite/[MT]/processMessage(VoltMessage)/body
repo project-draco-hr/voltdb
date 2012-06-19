@@ -1,0 +1,128 @@
+{
+  if (!m_hsIds.contains(message.m_sourceHSId)) {
+    m_recoveryLog.info("Dropping message " + message + " because it is not from a known up site");
+    return;
+  }
+  if (message instanceof TransactionInfoBaseMessage) {
+    TransactionInfoBaseMessage info=(TransactionInfoBaseMessage)message;
+    if (info instanceof HeartbeatMessage) {
+      long lastSeenTxnFromInitiator=m_txnQueue.noteTransactionRecievedAndReturnLastSeen(info.getInitiatorHSId(),info.getTxnId(),true,((HeartbeatMessage)info).getLastSafeTxnId());
+      HeartbeatResponseMessage response=new HeartbeatResponseMessage(m_hsId,lastSeenTxnFromInitiator,m_txnQueue.getQueueState() == RestrictedPriorityQueue.QueueState.BLOCKED_SAFETY);
+      m_mailbox.send(info.getInitiatorHSId(),response);
+      return;
+    }
+    assert(false);
+  }
+ else   if (message instanceof HeartbeatResponseMessage) {
+    HeartbeatResponseMessage hrm=(HeartbeatResponseMessage)message;
+    m_safetyState.updateLastSeenTxnIdFromExecutorBySiteId(hrm.getExecHSId(),hrm.getLastReceivedTxnId(),hrm.isBlocked());
+  }
+ else   if (message instanceof LocalObjectMessage) {
+    LocalObjectMessage lom=(LocalObjectMessage)message;
+    if (lom.payload instanceof Runnable) {
+      ((Runnable)lom.payload).run();
+    }
+ else     if (lom.payload instanceof Request) {
+      Request r=(Request)lom.payload;
+      long txnId=0;
+      if (r.type == OpCode.createSession) {
+        txnId=r.sessionId;
+      }
+ else {
+        txnId=m_idManager.getNextUniqueTransactionId();
+      }
+      for (      long initiatorHSId : m_hsIds) {
+        if (initiatorHSId == m_hsId)         continue;
+        AgreementTaskMessage atm=new AgreementTaskMessage(r,txnId,m_hsId,m_safetyState.getNewestSafeTxnIdForExecutorBySiteId(initiatorHSId));
+        m_mailbox.send(initiatorHSId,atm);
+      }
+      AgreementTaskMessage atm=new AgreementTaskMessage(r,txnId,m_hsId,m_safetyState.getNewestSafeTxnIdForExecutorBySiteId(m_hsId));
+      atm.m_sourceHSId=m_hsId;
+      processMessage(atm);
+    }
+  }
+ else   if (message instanceof AgreementTaskMessage) {
+    AgreementTaskMessage atm=(AgreementTaskMessage)message;
+    if (!m_transactionsById.containsKey(atm.m_txnId) && atm.m_txnId >= m_minTxnIdAfterRecovery) {
+      m_txnQueue.noteTransactionRecievedAndReturnLastSeen(atm.m_initiatorHSId,atm.m_txnId,false,atm.m_lastSafeTxnId);
+      AgreementTransactionState transactionState=new AgreementTransactionState(atm.m_txnId,atm.m_initiatorHSId,atm.m_request);
+      if (m_txnQueue.add(transactionState)) {
+        m_transactionsById.put(transactionState.txnId,transactionState);
+      }
+ else {
+        m_agreementLog.info("Dropping txn " + transactionState.txnId + " data from failed initiatorSiteId: "+ transactionState.initiatorHSId);
+      }
+    }
+ else {
+      m_recoveryLog.info("Agreement, discarding duplicate txn during recovery, txnid is " + atm.m_txnId + " this should only occur during recovery. minTxnIdAfterRecovery "+ m_minTxnIdAfterRecovery+ " and  dup is "+ m_transactionsById.containsKey(atm.m_txnId));
+    }
+  }
+ else   if (message instanceof BinaryPayloadMessage) {
+    BinaryPayloadMessage bpm=(BinaryPayloadMessage)message;
+    ByteBuffer metadata=ByteBuffer.wrap(bpm.m_metadata);
+    final byte type=metadata.get();
+    if (type == BINARY_PAYLOAD_SNAPSHOT) {
+      assert(m_recovering);
+      assert(m_recoveryStage == RecoveryStage.SENT_PROPOSAL);
+      if (m_recoveryStage != RecoveryStage.SENT_PROPOSAL) {
+        org.voltdb.VoltDB.crashLocalVoltDB("Received a recovery snapshot in stage " + m_recoveryStage.toString(),true,null);
+      }
+      long selectedRecoverBeforeTxn=metadata.getLong();
+      if (selectedRecoverBeforeTxn < m_recoverBeforeTxn) {
+        org.voltdb.VoltDB.crashLocalVoltDB("Selected recover before txn was earlier than the  proposed recover before txn",true,null);
+      }
+      m_recoverBeforeTxn=selectedRecoverBeforeTxn;
+      m_minTxnIdAfterRecovery=m_recoverBeforeTxn;
+      try {
+        m_recoverySnapshot=org.xerial.snappy.Snappy.uncompress(bpm.m_payload);
+      }
+ catch (      IOException e) {
+        org.voltdb.VoltDB.crashLocalVoltDB("Unable to decompress ZK snapshot",true,e);
+      }
+      m_recoveryStage=RecoveryStage.RECEIVED_SNAPSHOT;
+      Iterator<Map.Entry<Long,OrderableTransaction>> iter=m_transactionsById.entrySet().iterator();
+      while (iter.hasNext()) {
+        final Map.Entry<Long,OrderableTransaction> entry=iter.next();
+        if (entry.getKey() < m_minTxnIdAfterRecovery) {
+          m_txnQueue.faultTransaction(entry.getValue());
+          iter.remove();
+        }
+      }
+    }
+ else     if (type == BINARY_PAYLOAD_JOIN_REQUEST) {
+      JSONObject jsObj=new JSONObject(new String(bpm.m_payload,"UTF-8"));
+      final long initiatorHSId=jsObj.getLong("initiatorHSId");
+      final long txnId=jsObj.getLong("txnId");
+      final long lastSafeTxnId=jsObj.getLong("lastSafeTxnId");
+      final long joiningHSId=jsObj.getLong("joiningHSId");
+      if (m_recovering) {
+        org.voltdb.VoltDB.crashLocalVoltDB("Received a join request during recovery for " + CoreUtils.hsIdToString(joiningHSId) + " from "+ CoreUtils.hsIdToString(initiatorHSId),true,null);
+      }
+      m_txnQueue.noteTransactionRecievedAndReturnLastSeen(initiatorHSId,txnId,false,lastSafeTxnId);
+      AgreementRejoinTransactionState transactionState=new AgreementRejoinTransactionState(txnId,initiatorHSId,joiningHSId,null);
+      if (m_txnQueue.add(transactionState)) {
+        m_transactionsById.put(transactionState.txnId,transactionState);
+      }
+ else {
+        m_agreementLog.info("Dropping txn " + transactionState.txnId + " data from failed initiatorSiteId: "+ transactionState.initiatorHSId);
+      }
+    }
+  }
+ else   if (message instanceof FaultMessage) {
+    FaultMessage fm=(FaultMessage)message;
+    if (m_pendingFailedSites.contains(fm.failedSite)) {
+      m_recoveryLog.info("Received fault message for failed site " + CoreUtils.hsIdToString(fm.failedSite) + " ignoring");
+      return;
+    }
+    discoverGlobalFaultData(fm);
+  }
+ else   if (message instanceof RecoveryMessage) {
+    RecoveryMessage rm=(RecoveryMessage)message;
+    assert(m_recoverBeforeTxn == null);
+    assert(m_siteRequestingRecovery == null);
+    assert(m_recovering == false);
+    assert(m_recoveryStage == RecoveryStage.RECOVERED);
+    m_recoverBeforeTxn=rm.txnId();
+    m_siteRequestingRecovery=rm.sourceSite();
+  }
+}

@@ -1,0 +1,33 @@
+{
+  final Semaphore sem=new Semaphore(0);
+  final Runnable r=new Runnable(){
+    @Override public void run(){
+      try {
+        long sessionId=m_idManager.getNextUniqueTransactionId();
+        Random r=new Random(sessionId ^ ZooKeeperServer.superSecret);
+        r.nextBytes(passwd);
+        ByteBuffer to=ByteBuffer.allocate(4);
+        to.putInt(timeout);
+        to.flip();
+        cnxn.setSessionId(sessionId);
+        Request si=new Request(cnxn,sessionId,0,OpCode.createSession,to,null);
+        try {
+          LocalObjectMessage lom=new LocalObjectMessage(si);
+          lom.m_sourceHSId=m_hsId;
+          processMessage(lom);
+        }
+ catch (        Exception e) {
+          org.voltdb.VoltDB.crashLocalVoltDB("Unexpected exception processing AgreementSite message",false,e);
+        }
+      }
+  finally {
+        sem.release();
+      }
+    }
+  }
+;
+  LocalObjectMessage lom=new LocalObjectMessage(r);
+  lom.m_sourceHSId=m_hsId;
+  m_mailbox.deliverFront(lom);
+  return sem;
+}

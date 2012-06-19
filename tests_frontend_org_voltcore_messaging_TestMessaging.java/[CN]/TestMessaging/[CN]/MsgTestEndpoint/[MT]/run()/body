@@ -1,0 +1,69 @@
+{
+  int hostId=mySiteId % hostCount;
+  HostMessenger currentMessenger=null;
+  Mailbox[] mbox=new Mailbox[(int)mailboxCount];
+  System.out.printf("Starting up host: %d, site: %d\n",hostId,mySiteId);
+  hostMessengerLock.lock();
+{
+    currentMessenger=messengers[hostId];
+    if (currentMessenger == null) {
+      boolean isPrimary=hostId == 0;
+      if (isPrimary) {
+        System.out.printf("Host/Site %d/%d is initializing the HostMessenger class.\n",hostId,mySiteId);
+      }
+      System.out.printf("Host/Site %d/%d is creating a new HostMessenger.\n",hostId,mySiteId);
+      HostMessenger.Config config=new HostMessenger.Config(m_portGenerator);
+      final HostMessenger messenger=new HostMessenger(config);
+      currentMessenger=messenger;
+      messengers[hostId]=currentMessenger;
+      new Thread(){
+        @Override public void run(){
+          try {
+            messenger.start();
+          }
+ catch (          Exception e) {
+            e.printStackTrace();
+          }
+        }
+      }
+;
+    }
+ else     System.out.printf("Host/Site %d/%d found existing HostMessenger.\n",hostId,mySiteId);
+  }
+  hostMessengerLock.unlock();
+  HostMessenger messenger=currentMessenger;
+  messenger.waitForGroupJoin(hostCount);
+  for (int i=0; i < mailboxCount; i++) {
+    mbox[i]=currentMessenger.createMailbox();
+  }
+  sitesDone.incrementAndGet();
+  System.out.printf("Host/Site %d/%d has joined and created sites.\n",hostId,mySiteId);
+  while (sitesDone.get() < siteCount.get()) {
+  }
+  System.out.printf("Host/Site %d/%d thinks all threads are ready.\n",hostId,mySiteId);
+  while (recvCount.get() < msgCount) {
+    int msgIndex=sentCount.getAndIncrement();
+    if (msgIndex < msgCount) {
+      int siteId=rand.nextInt(siteCount.get());
+      long mailboxId=rand.nextLong() % mailboxCount;
+      System.out.printf("Host/Site %d/%d is sending message %d/%d to site/mailbox %d/%d.\n",hostId,mySiteId,msgIndex,msgCount,siteId,mailboxId);
+      MsgTest mt=new MsgTest();
+      mt.setValues();
+      (currentMessenger).send((mailboxCount << 32) + siteId,mt);
+    }
+    for (int i=0; i < mailboxCount; i++) {
+      MsgTest mt=(MsgTest)mbox[i].recv();
+      if (mt != null) {
+        int recvCountTemp=recvCount.incrementAndGet();
+        System.out.printf("Host/Site %d/%d is receiving message %d/%d.\n",hostId,mySiteId,recvCountTemp,msgCount);
+        assertTrue(mt.verify());
+      }
+    }
+  }
+  try {
+    messenger.shutdown();
+  }
+ catch (  InterruptedException e1) {
+    e1.printStackTrace();
+  }
+}
