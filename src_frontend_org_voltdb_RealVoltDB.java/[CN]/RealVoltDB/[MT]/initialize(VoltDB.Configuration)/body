@@ -89,20 +89,20 @@ synchronized (m_startAndStopLock) {
     try {
       m_mailboxTracker=new MailboxTracker(m_messenger.getZK(),this);
       m_mailboxTracker.start();
+      JSONObject topo=getTopology(isRejoin);
       m_cartographer=new Cartographer(m_messenger.getZK());
       CountDownLatch rejoinCompleteLatch=new CountDownLatch(1);
       Pair<ArrayDeque<Mailbox>,ClusterConfig> p;
       if (isRejoin) {
         createRejoinBarrierAndWatchdog(rejoinCompleteLatch);
-        p=createMailboxesForSitesRejoin();
+        p=createMailboxesForSitesRejoin(topo);
         ExecutionSite.recoveringSiteCount.set(p.getFirst().size());
         hostLog.info("Set recovering site count to " + p.getFirst().size());
-        List<Integer> partitionsToReplace=getIv2PartitionsToReplace(p.getSecond());
+        List<Integer> partitionsToReplace=getIv2PartitionsToReplace(topo);
         m_iv2Initiators=createIv2Initiators(partitionsToReplace);
       }
  else {
-        p=createMailboxesForSitesStartup();
-        JSONObject topo=registerClusterConfig(p.getSecond());
+        p=createMailboxesForSitesStartup(topo);
         List<Integer> partitions=ClusterConfig.partitionsForHost(topo,m_messenger.getHostId());
         m_iv2Initiators=createIv2Initiators(partitions);
         if (topo.getInt("MPI") == m_messenger.getHostId()) {
