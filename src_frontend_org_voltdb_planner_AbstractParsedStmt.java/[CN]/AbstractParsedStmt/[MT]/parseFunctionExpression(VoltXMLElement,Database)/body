@@ -3,9 +3,16 @@
   String value_type_name=exprNode.attributes.get("type");
   VoltType value_type=VoltType.typeFromString(value_type_name);
   AbstractExpression expr=null;
-  SQLFunction[] overloads=SQLFunction.functionsByName(name);
+  ArrayList<AbstractExpression> args=new ArrayList<AbstractExpression>();
+  for (  VoltXMLElement argNode : exprNode.children) {
+    assert(argNode != null);
+    AbstractExpression argExpr=parseExpressionTree(argNode,db);
+    assert(argExpr != null);
+    args.add(argExpr);
+  }
+  List<SQLFunction> overloads=SQLFunction.functionsByNameAndArgumentCount(name,args.size());
   if (overloads == null) {
-    throw new PlanningErrorException("Function '" + name + "' is not supported");
+    throw new PlanningErrorException("Function '" + name + "' with "+ args.size()+ " arguments is not supported");
   }
   SQLFunction resolved=null;
   for (  SQLFunction supportedFunction : overloads) {
@@ -38,13 +45,6 @@
   if (vt != null) {
     expr.setValueType(vt);
     expr.setValueSize(vt.getMaxLengthInBytes());
-  }
-  ArrayList<AbstractExpression> args=new ArrayList<AbstractExpression>();
-  for (  VoltXMLElement argNode : exprNode.children) {
-    assert(argNode != null);
-    AbstractExpression argExpr=parseExpressionTree(argNode,db);
-    assert(argExpr != null);
-    args.add(argExpr);
   }
   expr.setArgs(args);
   return expr;
