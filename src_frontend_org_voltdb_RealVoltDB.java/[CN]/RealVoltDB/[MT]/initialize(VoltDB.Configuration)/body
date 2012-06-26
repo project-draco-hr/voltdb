@@ -174,37 +174,39 @@ synchronized (m_startAndStopLock) {
     }
     Mailbox localThreadMailbox=siteMailboxes.poll();
     ((org.voltcore.messaging.SiteMailbox)localThreadMailbox).setCommandLog(m_commandLog);
-    m_currentThreadSite=null;
-    for (    Mailbox mailbox : siteMailboxes) {
-      long site=mailbox.getHSId();
-      int sitesHostId=SiteTracker.getHostForSite(site);
-      if (sitesHostId == m_myHostId) {
-        ((org.voltcore.messaging.SiteMailbox)mailbox).setCommandLog(m_commandLog);
-        ExecutionSiteRunner runner=new ExecutionSiteRunner(mailbox,m_catalogContext,m_serializedCatalog,m_recovering,m_replicationActive,hostLog,m_configuredNumberOfPartitions);
-        m_runners.add(runner);
-        Thread runnerThread=new Thread(runner,"Site " + org.voltcore.utils.CoreUtils.hsIdToString(site));
-        runnerThread.start();
-        log.l7dlog(Level.TRACE,LogKeys.org_voltdb_VoltDB_CreatingThreadForSite.name(),new Object[]{site},null);
-        m_siteThreads.put(site,runnerThread);
+    if (!isIV2Enabled()) {
+      m_currentThreadSite=null;
+      for (      Mailbox mailbox : siteMailboxes) {
+        long site=mailbox.getHSId();
+        int sitesHostId=SiteTracker.getHostForSite(site);
+        if (sitesHostId == m_myHostId) {
+          ((org.voltcore.messaging.SiteMailbox)mailbox).setCommandLog(m_commandLog);
+          ExecutionSiteRunner runner=new ExecutionSiteRunner(mailbox,m_catalogContext,m_serializedCatalog,m_recovering,m_replicationActive,hostLog,m_configuredNumberOfPartitions);
+          m_runners.add(runner);
+          Thread runnerThread=new Thread(runner,"Site " + org.voltcore.utils.CoreUtils.hsIdToString(site));
+          runnerThread.start();
+          log.l7dlog(Level.TRACE,LogKeys.org_voltdb_VoltDB_CreatingThreadForSite.name(),new Object[]{site},null);
+          m_siteThreads.put(site,runnerThread);
+        }
       }
-    }
-    try {
-      ExecutionSite siteObj=new ExecutionSite(VoltDB.instance(),localThreadMailbox,m_serializedCatalog,null,m_recovering,m_replicationActive,m_catalogContext.m_transactionId,m_configuredNumberOfPartitions);
-      m_localSites.put(localThreadMailbox.getHSId(),siteObj);
-      m_currentThreadSite=siteObj;
-    }
- catch (    Exception e) {
-      VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
-    }
-    for (    ExecutionSiteRunner runner : m_runners) {
       try {
-        runner.m_siteIsLoaded.await();
+        ExecutionSite siteObj=new ExecutionSite(VoltDB.instance(),localThreadMailbox,m_serializedCatalog,null,m_recovering,m_replicationActive,m_catalogContext.m_transactionId,m_configuredNumberOfPartitions);
+        m_localSites.put(localThreadMailbox.getHSId(),siteObj);
+        m_currentThreadSite=siteObj;
       }
- catch (      InterruptedException e) {
-        VoltDB.crashLocalVoltDB("Unable to wait on starting execution site.",true,e);
+ catch (      Exception e) {
+        VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
       }
-      assert(runner.m_siteObj != null);
-      m_localSites.put(runner.m_siteId,runner.m_siteObj);
+      for (      ExecutionSiteRunner runner : m_runners) {
+        try {
+          runner.m_siteIsLoaded.await();
+        }
+ catch (        InterruptedException e) {
+          VoltDB.crashLocalVoltDB("Unable to wait on starting execution site.",true,e);
+        }
+        assert(runner.m_siteObj != null);
+        m_localSites.put(runner.m_siteId,runner.m_siteObj);
+      }
     }
     try {
       m_mailboxTracker.executeTask(new Runnable(){
