@@ -1,4 +1,28 @@
 {
+  Mailbox m=VoltDB.instance().getHostMessenger().createMailbox();
+  Future<VoltTable[]> completionFragment=distributeAsyncMailboxFragment(m.getHSId());
+  SiteTracker st=VoltDB.instance().getSiteTrackerForSnapshot();
+  int discoveredMailboxes=0;
+  int totalMailboxes=st.m_numberOfExecutionSites;
+  Map<Long,Long> generatedToActual=new HashMap<Long,Long>();
+  while (discoveredMailboxes < totalMailboxes) {
+    BinaryPayloadMessage bpm=(BinaryPayloadMessage)m.recvBlocking();
+    if (bpm == null)     continue;
+    discoveredMailboxes++;
+    ByteBuffer payload=ByteBuffer.wrap(bpm.m_payload);
+    long actualHSId=payload.getLong();
+    long asyncMailboxHSId=payload.getLong();
+    generatedToActual.put(asyncMailboxHSId,actualHSId);
+  }
+  ByteBuffer generatedToActualBuf=ByteBuffer.allocate(generatedToActual.size() * 16);
+  for (  Map.Entry<Long,Long> e : generatedToActual.entrySet()) {
+    generatedToActualBuf.putLong(e.getKey());
+    generatedToActualBuf.putLong(e.getValue());
+  }
+  for (  Long generatedHSId : generatedToActual.values()) {
+    BinaryPayloadMessage bpm=new BinaryPayloadMessage(new byte[0],Arrays.copyOf(generatedToActualBuf.array(),generatedToActualBuf.capacity()));
+    m.send(generatedHSId,bpm);
+  }
   Set<Table> tables_to_restore=getTablesToRestore(savefileState.getSavedTableNames());
   VoltTable[] restore_results=new VoltTable[1];
   restore_results[0]=constructResultsTable();
@@ -15,13 +39,17 @@
   Iterator<Table> tableIterator=tables_to_restore.iterator();
   for (  SynthesizedPlanFragment[] restore_plan : restorePlans) {
     Table table=tableIterator.next();
-    TableSaveFileState table_state=savefileState.getTableState(table.getTypeName());
     TRACE_LOG.trace("Performing restore for table: " + table.getTypeName());
     TRACE_LOG.trace("Plan has fragments: " + restore_plan.length);
-    VoltTable[] results=executeSysProcPlanFragments(restore_plan,table_state.getRootDependencyId());
+    VoltTable[] results=executeSysProcPlanFragments(restore_plan,m);
     while (results[0].advanceRow()) {
       restore_results[0].add(results[0]);
     }
   }
+  for (  long hsid : generatedToActual.keySet()) {
+    BinaryPayloadMessage bpm=new BinaryPayloadMessage(new byte[0],new byte[0]);
+    m.send(hsid,bpm);
+  }
+  completionFragment.get();
   return restore_results;
 }
