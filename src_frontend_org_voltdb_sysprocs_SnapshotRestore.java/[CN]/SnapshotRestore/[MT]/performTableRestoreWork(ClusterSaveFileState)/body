@@ -1,13 +1,11 @@
 {
   final Mailbox m=VoltDB.instance().getHostMessenger().createMailbox();
-  System.out.println("Generated coord mailbox id " + CoreUtils.hsIdToString(m.getHSId()));
   ExecutorService es=Executors.newSingleThreadExecutor();
   Future<VoltTable[]> ft=es.submit(new Callable<VoltTable[]>(){
     @Override public VoltTable[] call() throws Exception {
       SiteTracker st=VoltDB.instance().getSiteTrackerForSnapshot();
       int discoveredMailboxes=0;
       int totalMailboxes=st.m_numberOfExecutionSites;
-      System.out.println("Waiting for " + totalMailboxes + " execution sites");
       Map<Long,Long> actualToGenerated=new HashMap<Long,Long>();
       while (discoveredMailboxes < totalMailboxes) {
         BinaryPayloadMessage bpm=(BinaryPayloadMessage)m.recvBlocking();
@@ -16,17 +14,14 @@
         ByteBuffer payload=ByteBuffer.wrap(bpm.m_payload);
         long actualHSId=payload.getLong();
         long asyncMailboxHSId=payload.getLong();
-        System.out.println("Received notification of execution site actual " + CoreUtils.hsIdToString(actualHSId) + " generated "+ CoreUtils.hsIdToString(asyncMailboxHSId));
         actualToGenerated.put(actualHSId,asyncMailboxHSId);
       }
       ByteBuffer generatedToActualBuf=ByteBuffer.allocate(actualToGenerated.size() * 16);
       for (      Map.Entry<Long,Long> e : actualToGenerated.entrySet()) {
-        System.out.println("Adding to map key " + CoreUtils.hsIdToString(e.getKey()) + " value "+ CoreUtils.hsIdToString(e.getValue()));
         generatedToActualBuf.putLong(e.getKey());
         generatedToActualBuf.putLong(e.getValue());
       }
       for (      Long generatedHSId : actualToGenerated.values()) {
-        System.out.println("Distributing map to hsid " + CoreUtils.hsIdToString(generatedHSId));
         BinaryPayloadMessage bpm=new BinaryPayloadMessage(new byte[0],Arrays.copyOf(generatedToActualBuf.array(),generatedToActualBuf.capacity()));
         m.send(generatedHSId,bpm);
       }
@@ -50,7 +45,6 @@
         TRACE_LOG.trace("Plan has fragments: " + restore_plan.length);
         for (int ii=0; ii < restore_plan.length - 1; ii++) {
           restore_plan[ii].siteId=actualToGenerated.get(restore_plan[ii].siteId);
-          System.out.println("Distributing fragment " + restore_plan[ii].fragmentId + " to "+ CoreUtils.hsIdToString(restore_plan[ii].siteId));
         }
         VoltTable[] results=executeSysProcPlanFragments(restore_plan,m);
         while (results[0].advanceRow()) {
