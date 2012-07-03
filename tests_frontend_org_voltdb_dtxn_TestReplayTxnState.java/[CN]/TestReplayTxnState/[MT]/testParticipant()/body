@@ -1,0 +1,33 @@
+{
+  ExecutionSite site=mock(ExecutionSite.class);
+  when(site.getSiteId()).thenReturn(1L);
+  doNothing().when(site).beginNewTxn(Mockito.any(TransactionState.class));
+  when(site.getSiteTracker()).thenReturn(tracker);
+  when(site.processFragmentTask(Mockito.any(TransactionState.class),any(HashMap.class),any(VoltMessage.class))).thenReturn(frmR);
+  MultiPartitionParticipantTxnState mpTxn=new MultiPartitionParticipantTxnState(mbox,site,participantNotice);
+  assertFalse(mpTxn.isCoordinator());
+  mpTxn.createLocalFragmentWork(ftmR,false);
+  while (!mpTxn.doWork(true))   ;
+  try {
+    mpTxn.getTransactionInfoBaseMessageForRejoinLog();
+    fail();
+  }
+ catch (  AssertionError e) {
+  }
+  when(site.processFragmentTask(Mockito.any(TransactionState.class),any(HashMap.class),any(VoltMessage.class))).thenReturn(frmW);
+  participantNotice=new MultiPartitionParticipantMessage(0,2,1,false);
+  mpTxn=new MultiPartitionParticipantTxnState(mbox,site,participantNotice);
+  assertFalse(mpTxn.isCoordinator());
+  mpTxn.createLocalFragmentWork(ftmW,false);
+  mpTxn.createLocalFragmentWork(ftmW,false);
+  assertFalse(mpTxn.doWork(true));
+  CompleteTransactionMessage ctm=new CompleteTransactionMessage(0,2,1,false,false,true);
+  mpTxn.processCompleteTransaction(ctm);
+  while (!mpTxn.doWork(true))   ;
+  FragmentTaskLogMessage ftlm=(FragmentTaskLogMessage)mpTxn.getTransactionInfoBaseMessageForRejoinLog();
+  assertNotNull(ftlm);
+  assertEquals(2,ftlm.getFragmentTasks().size());
+  ReplayedTxnState rTxn=new ReplayedTxnState(site,ftlm);
+  while (!rTxn.doWork(true))   ;
+  verify(site,times(2)).processFragmentTask(Mockito.any(TransactionState.class),any(HashMap.class),any(VoltMessage.class));
+}
