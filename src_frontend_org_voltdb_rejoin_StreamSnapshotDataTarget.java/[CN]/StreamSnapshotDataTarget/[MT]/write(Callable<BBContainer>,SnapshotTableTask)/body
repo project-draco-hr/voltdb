@@ -1,0 +1,38 @@
+{
+  assert(context != null);
+  BBContainer chunk=null;
+  try {
+    chunk=tupleData.call();
+  }
+ catch (  Exception e) {
+    return Futures.immediateFailedFuture(e);
+  }
+  if (m_writeFailed) {
+    if (chunk != null) {
+      chunk.discard();
+    }
+    return null;
+  }
+  if (!m_outThread.isAlive()) {
+    if (chunk != null) {
+      chunk.discard();
+    }
+    m_writeFailed=true;
+    IOException e=new IOException("Trying to write snapshot data " + "after the stream is closed");
+    return Futures.immediateFailedFuture(e);
+  }
+  if (chunk != null) {
+    if (m_schemas.containsKey(context.getTableId())) {
+      byte[] schema=m_schemas.remove(context.getTableId());
+      rejoinLog.debug("Sending schema for table " + context.getTableId());
+      sendSchema(schema);
+    }
+    chunk.b.put((byte)StreamSnapshotMessageType.DATA.ordinal());
+    chunk.b.putInt(m_blockIndex++);
+    chunk.b.putInt(context.getTableId());
+    chunk.b.position(0);
+    m_ackTracker.waitForAcks(m_blockIndex - 1,1);
+    m_out.offer(chunk);
+  }
+  return null;
+}
