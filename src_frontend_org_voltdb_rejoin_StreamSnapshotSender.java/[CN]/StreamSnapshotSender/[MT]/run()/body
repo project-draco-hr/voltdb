@@ -1,0 +1,45 @@
+{
+  try {
+    final ByteBuffer compressionBuffer=ByteBuffer.allocateDirect(CompressionService.maxCompressedLength(1024 * 1024 * 2 + (1024 * 256)));
+    while (true) {
+      BBContainer message=m_queue.take();
+      if (message.b == null) {
+        rejoinLog.debug("Got terminator, terminating the snapshot sender");
+        return;
+      }
+      try {
+        if (message.b.isDirect()) {
+          compressionBuffer.clear().position(4);
+          final int compressedSize=CompressionService.compressBuffer(message.b,compressionBuffer);
+          compressionBuffer.putInt(0,compressedSize);
+          compressionBuffer.limit(4 + compressedSize);
+          compressionBuffer.position(0);
+          while (compressionBuffer.hasRemaining()) {
+            m_bytesSent.addAndGet(m_sock.write(compressionBuffer));
+          }
+        }
+ else {
+          ByteBuffer lengthPrefix=ByteBuffer.allocate(4);
+          byte compressedBytes[]=CompressionService.compressBytes(message.b.array(),message.b.position(),message.b.remaining());
+          ByteBuffer contents=ByteBuffer.wrap(compressedBytes);
+          lengthPrefix.putInt(compressedBytes.length).flip();
+          while (lengthPrefix.hasRemaining()) {
+            m_bytesSent.addAndGet(m_sock.write(lengthPrefix));
+          }
+          while (contents.hasRemaining()) {
+            m_bytesSent.addAndGet(m_sock.write(contents));
+          }
+        }
+      }
+ catch (      IOException e) {
+        rejoinLog.error("Error writing rejoin snapshot block",e);
+        return;
+      }
+ finally {
+        message.discard();
+      }
+    }
+  }
+ catch (  InterruptedException e) {
+  }
+}
