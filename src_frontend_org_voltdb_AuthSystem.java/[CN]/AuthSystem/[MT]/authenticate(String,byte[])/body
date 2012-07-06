@@ -7,15 +7,26 @@
     authLogger.l7dlog(Level.INFO,LogKeys.auth_AuthSystem_NoSuchUser.name(),new String[]{username},null);
     return false;
   }
-  MessageDigest md=null;
-  try {
-    md=MessageDigest.getInstance("SHA-1");
+  boolean matched=true;
+  if (user.m_sha1ShadowPassword != null) {
+    MessageDigest md=null;
+    try {
+      md=MessageDigest.getInstance("SHA-1");
+    }
+ catch (    NoSuchAlgorithmException e) {
+      VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
+    }
+    byte passwordHash[]=md.digest(password);
+    for (int ii=0; ii < passwordHash.length; ii++) {
+      if (passwordHash[ii] != user.m_sha1ShadowPassword[ii]) {
+        matched=false;
+      }
+    }
   }
- catch (  NoSuchAlgorithmException e) {
-    VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
+ else {
+    matched=BCrypt.checkpw(Encoder.hexEncode(password),user.m_bcryptShadowPassword);
   }
-  byte passwordHash[]=md.digest(password);
-  if (java.util.Arrays.equals(passwordHash,user.m_shadowPassword)) {
+  if (matched) {
     authLogger.l7dlog(Level.INFO,LogKeys.auth_AuthSystem_AuthenticatedUser.name(),new Object[]{username},null);
     return true;
   }
