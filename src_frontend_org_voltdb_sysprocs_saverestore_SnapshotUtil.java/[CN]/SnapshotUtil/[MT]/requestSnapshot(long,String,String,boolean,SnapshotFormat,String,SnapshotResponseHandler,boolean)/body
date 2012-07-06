@@ -63,15 +63,24 @@
     @Override public void run(){
       ClientResponse response=null;
       final long startTime=System.currentTimeMillis();
+      boolean hasRequested=false;
       while (System.currentTimeMillis() - startTime <= (120 * 60000)) {
         try {
-          sd.createAndWatchRequestNode(clientHandle,c,path,nonce,blocking,format,data,notifyChanges);
+          if (!hasRequested) {
+            sd.createAndWatchRequestNode(clientHandle,c,path,nonce,blocking,format,data,notifyChanges);
+            hasRequested=true;
+          }
           response=responseExchanger.exchange(null);
           VoltTable[] results=response.getResults();
           if (response.getStatus() != ClientResponse.SUCCESS) {
             break;
           }
  else           if (isSnapshotInProgress(results)) {
+            Thread.sleep(1000);
+            hasRequested=false;
+            continue;
+          }
+ else           if (isSnapshotQueued(results) && notifyChanges) {
             Thread.sleep(1000);
             continue;
           }
