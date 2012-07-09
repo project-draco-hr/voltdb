@@ -49,7 +49,7 @@ synchronized (m_startAndStopLock) {
     }
 ));
     boolean isRejoin=config.m_rejoinToHostAndPort != null;
-    m_recovering=isRejoin;
+    m_rejoining=isRejoin;
     try {
       System.setOut(new PrintStream(System.out,true,"UTF-8"));
       System.setErr(new PrintStream(System.err,true,"UTF-8"));
@@ -106,6 +106,15 @@ synchronized (m_startAndStopLock) {
       m_messenger.generateMailboxId(statsHSId);
       hostLog.info("Registering stats mailbox id " + CoreUtils.hsIdToString(statsHSId));
       m_mailboxPublisher.registerMailbox(MailboxType.StatsAgent,new MailboxNodeContent(statsHSId,null));
+      if (isRejoin && m_config.m_newRejoin) {
+        ArrayList<Long> sites=new ArrayList<Long>();
+        for (        Mailbox siteMailbox : siteMailboxes) {
+          sites.add(siteMailbox.getHSId());
+        }
+        m_rejoinCoordinator=new SequentialRejoinCoordinator(m_messenger,sites);
+        m_messenger.registerMailbox(m_rejoinCoordinator);
+        m_mailboxPublisher.registerMailbox(MailboxType.OTHER,new MailboxNodeContent(m_rejoinCoordinator.getHSId(),null));
+      }
       m_mailboxPublisher.publish(m_messenger.getZK());
       rejoinCompleteLatch.countDown();
       if (isRejoin) {
@@ -160,7 +169,7 @@ synchronized (m_startAndStopLock) {
       int sitesHostId=SiteTracker.getHostForSite(site);
       if (sitesHostId == m_myHostId) {
         ((org.voltcore.messaging.SiteMailbox)mailbox).setCommandLog(m_commandLog);
-        ExecutionSiteRunner runner=new ExecutionSiteRunner(mailbox,m_catalogContext,m_serializedCatalog,m_recovering,m_replicationActive,hostLog,m_configuredNumberOfPartitions,csp);
+        ExecutionSiteRunner runner=new ExecutionSiteRunner(mailbox,m_catalogContext,m_serializedCatalog,m_rejoining,m_replicationActive,hostLog,m_configuredNumberOfPartitions,csp);
         m_runners.add(runner);
         Thread runnerThread=new Thread(runner,"Site " + org.voltcore.utils.CoreUtils.hsIdToString(site));
         runnerThread.start();
@@ -169,7 +178,7 @@ synchronized (m_startAndStopLock) {
       }
     }
     try {
-      ExecutionSite siteObj=new ExecutionSite(VoltDB.instance(),localThreadMailbox,m_serializedCatalog,null,m_recovering,m_replicationActive,m_catalogContext.m_transactionId,m_configuredNumberOfPartitions,csp);
+      ExecutionSite siteObj=new ExecutionSite(VoltDB.instance(),localThreadMailbox,m_serializedCatalog,null,m_rejoining,m_replicationActive,m_catalogContext.m_transactionId,m_configuredNumberOfPartitions,csp);
       m_localSites.put(localThreadMailbox.getHSId(),siteObj);
       m_currentThreadSite=siteObj;
     }
