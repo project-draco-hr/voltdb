@@ -8,7 +8,7 @@
     }
   }
   for (int frag=0; frag < ftask.getFragmentCount(); frag++) {
-    final long fragmentId=ftask.getFragmentId(frag);
+    long fragmentId=ftask.getFragmentId(frag);
     final int outputDepId=ftask.getOutputDepId(frag);
     ParameterSet params=null;
     final ByteBuffer paramData=ftask.getParameterDataForFragment(frag);
@@ -26,16 +26,17 @@
       params=new ParameterSet();
     }
     String fragmentPlan=ftask.getFragmentPlan(frag);
-    if (fragmentPlan != null) {
-      return processCustomFragmentTask(txnState,dependencies,currentFragResponse,params,fragmentPlan,outputDepId);
-    }
- else     if (ftask.isSysProcTask()) {
+    if (ftask.isSysProcTask()) {
       return processSysprocFragmentTask(txnState,dependencies,fragmentId,currentFragResponse,params);
     }
  else {
       final int inputDepId=ftask.getOnlyInputDepId(frag);
       try {
-        final VoltTable dependency=ee.executePlanFragment(fragmentId,inputDepId,params,txnState.txnId,lastCommittedTxnId,txnState.isReadOnly() ? Long.MAX_VALUE : getNextUndoToken());
+        if (fragmentPlan != null) {
+          fragmentId=-1;
+          ee.loadPlanFragment(-1,fragmentPlan);
+        }
+        final VoltTable dependency=ee.executePlanFragments(1,new long[]{fragmentId},new long[]{inputDepId},new ParameterSet[]{params},txnState.txnId,lastCommittedTxnId,txnState.isReadOnly() ? Long.MAX_VALUE : getNextUndoToken())[0];
         sendDependency(currentFragResponse,outputDepId,dependency);
       }
  catch (      final EEException e) {
@@ -47,6 +48,11 @@ catch (      final SQLException e) {
         hostLog.l7dlog(Level.TRACE,LogKeys.host_ExecutionSite_ExceptionExecutingPF.name(),new Object[]{fragmentId},e);
         currentFragResponse.setStatus(FragmentResponseMessage.UNEXPECTED_ERROR,e);
         break;
+      }
+ finally {
+        if (fragmentPlan != null) {
+          ee.unloadPlanFragment(-1);
+        }
       }
     }
   }
