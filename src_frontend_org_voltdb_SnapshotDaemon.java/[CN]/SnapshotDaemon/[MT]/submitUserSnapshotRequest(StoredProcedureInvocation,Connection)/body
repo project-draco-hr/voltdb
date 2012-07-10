@@ -1,5 +1,9 @@
 {
   Object params[]=invocation.getParams().toArray();
+  String path=null;
+  String nonce=null;
+  boolean blocking=false;
+  SnapshotFormat format=SnapshotFormat.NATIVE;
   try {
     if (params.length != 3 && params.length != 1) {
       throw new Exception("@SnapshotSave requires 3 parameters or alternatively a single JSON blob. " + "Path, nonce, and blocking");
@@ -26,11 +30,6 @@
         throw new Exception("@SnapshotSave blocking param is a " + params[0].getClass().getSimpleName() + " and should be a java.lang.[Byte|Short|Integer|Long]");
       }
     }
-    boolean requestExists=false;
-    String path;
-    String nonce;
-    boolean blocking;
-    String format=null;
     if (params.length == 1) {
       final JSONObject jsObj=new JSONObject((String)params[0]);
       path=jsObj.getString("uripath");
@@ -66,11 +65,12 @@
  else {
         throw new Exception(blockingObj.getClass().getName() + " is not supported as " + " type for the block parameter");
       }
-      if (jsObj.has("format")) {
-        format=jsObj.getString("format");
-        if (!(format.equals("csv") || format.equals("native"))) {
-          throw new Exception("@SnapshotSave format param is a " + format + " and should be one of [\"native\" | \"csv\"]");
-        }
+      String formatString=jsObj.optString("format",SnapshotFormat.NATIVE.toString());
+      try {
+        format=SnapshotFormat.getEnumIgnoreCase(formatString);
+      }
+ catch (      IllegalArgumentException argException) {
+        throw new Exception("@SnapshotSave format param is a " + format + " and should be one of [\"native\" | \"csv\"]");
       }
     }
  else {
@@ -81,32 +81,7 @@
     if (nonce.contains("-") || nonce.contains(",")) {
       throw new Exception("Provided nonce " + nonce + " contains a prohibited character (- or ,)");
     }
-    final JSONObject jsObj=new JSONObject();
-    jsObj.put("path",path);
-    jsObj.put("nonce",nonce);
-    jsObj.put("block",blocking);
-    if (format != null) {
-      jsObj.put("format",format);
-    }
-    final String requestId=java.util.UUID.randomUUID().toString();
-    jsObj.put("requestId",requestId);
-    String zkString=jsObj.toString(4);
-    byte zkBytes[]=zkString.getBytes("UTF-8");
-    try {
-      m_zk.create(VoltZK.user_snapshot_request,zkBytes,Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
-      registerUserSnapshotResponseWatch(requestId,invocation,c);
-    }
- catch (    KeeperException.NodeExistsException e) {
-      requestExists=true;
-    }
-catch (    Exception e) {
-      VoltDB.crashLocalVoltDB("Exception while attempting to create user snapshot request in ZK",true,e);
-    }
-    if (requestExists) {
-      VoltTable result=org.voltdb.sysprocs.SnapshotSave.constructNodeResultsTable();
-      result.addRow(-1,CoreUtils.getHostnameOrAddress(),"","FAILURE","SNAPSHOT IN PROGRESS");
-      throw new ForwardClientException("A request to perform a user snapshot already exists",result);
-    }
+    createAndWatchRequestNode(invocation.clientHandle,c,path,nonce,blocking,format,null,false);
   }
  catch (  Exception e) {
     VoltTable tables[]=new VoltTable[0];
