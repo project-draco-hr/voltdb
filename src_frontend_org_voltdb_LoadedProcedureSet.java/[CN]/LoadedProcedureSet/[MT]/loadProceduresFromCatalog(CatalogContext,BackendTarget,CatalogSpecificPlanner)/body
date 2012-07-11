@@ -1,0 +1,40 @@
+{
+  final CatalogMap<Procedure> catalogProcedures=catalogContext.database.getProcedures();
+  for (  final Procedure proc : catalogProcedures) {
+    if (proc.getTypeName().startsWith("@")) {
+      continue;
+    }
+    ProcedureRunner runner=null;
+    VoltProcedure procedure=null;
+    if (proc.getHasjava()) {
+      final String className=proc.getClassname();
+      Class<?> procClass=null;
+      try {
+        procClass=catalogContext.classForProcedure(className);
+      }
+ catch (      final ClassNotFoundException e) {
+        if (className.startsWith("org.voltdb.")) {
+          VoltDB.crashLocalVoltDB("VoltDB does not support procedures with package names " + "that are prefixed with \"org.voltdb\". Please use a different " + "package name and retry.",false,null);
+        }
+ else {
+          VoltDB.crashLocalVoltDB("VoltDB was unable to load a procedure it expected to be in the " + "catalog jarfile and will now exit.",false,null);
+        }
+      }
+      try {
+        procedure=(VoltProcedure)procClass.newInstance();
+      }
+ catch (      final InstantiationException e) {
+        hostLog.l7dlog(Level.WARN,LogKeys.host_ExecutionSite_GenericException.name(),new Object[]{m_siteId,m_siteIndex},e);
+      }
+catch (      final IllegalAccessException e) {
+        hostLog.l7dlog(Level.WARN,LogKeys.host_ExecutionSite_GenericException.name(),new Object[]{m_siteId,m_siteIndex},e);
+      }
+    }
+ else {
+      procedure=new ProcedureRunner.StmtProcedure();
+    }
+    assert(procedure != null);
+    runner=m_runnerFactory.create(procedure,proc,csp);
+    procs.put(proc.getTypeName(),runner);
+  }
+}

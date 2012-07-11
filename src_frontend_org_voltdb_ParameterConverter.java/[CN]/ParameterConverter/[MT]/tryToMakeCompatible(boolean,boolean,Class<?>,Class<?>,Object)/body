@@ -1,5 +1,5 @@
 {
-  if (param == null || param == VoltType.NULL_STRING_OR_VARBINARY || param == VoltType.NULL_DECIMAL) {
+  if (param == null || param == VoltType.NULL_STRING_OR_VARBINARY || param == VoltType.NULL_DECIMAL || (param instanceof String && ((String)param).equals("\\N"))) {
     if (isPrimitive) {
       VoltType type=VoltType.typeFromClass(paramType);
 switch (type) {
@@ -31,11 +31,26 @@ if (isArray != pclass.isArray()) {
 if (isArray) {
   Class<?> pSubCls=pclass.getComponentType();
   Class<?> sSubCls=paramTypeComponentType;
+  int inputLength=Array.getLength(param);
   if (pSubCls == sSubCls) {
     return param;
   }
- else   if (Array.getLength(param) == 0) {
+ else   if (inputLength == 0) {
     return Array.newInstance(sSubCls,0);
+  }
+ else   if ((pSubCls == byte[].class) && (sSubCls == String.class)) {
+    String[] values=new String[inputLength];
+    for (int i=0; i < inputLength; i++) {
+      values[i]=new String((byte[])Array.get(param,i),"UTF-8");
+    }
+    return values;
+  }
+ else   if ((pSubCls == String.class) && (sSubCls == byte[].class)) {
+    byte[][] values=new byte[inputLength][];
+    for (int i=0; i < inputLength; i++) {
+      values[i]=Encoder.hexDecode((String)Array.get(param,i));
+    }
+    return values;
   }
  else {
     throw new Exception("tryScalarMakeCompatible: Unable to match parameter array:" + sSubCls.getName() + " to provided "+ pSubCls.getName());
@@ -53,8 +68,14 @@ if (slot == TimestampType.class) {
   if (pclass == TimestampType.class)   return param;
   if (pclass == Date.class)   return new TimestampType((Date)param);
   if (pclass == String.class) {
+    String longtime=((String)param).trim();
     try {
-      return new TimestampType((String)param);
+      return new TimestampType(Long.parseLong(longtime));
+    }
+ catch (    IllegalArgumentException e) {
+    }
+    try {
+      return new TimestampType(longtime);
     }
  catch (    IllegalArgumentException e) {
     }
@@ -65,8 +86,14 @@ if (slot == TimestampType.class) {
   if (param instanceof java.util.Date)   return new java.sql.Timestamp(((java.util.Date)param).getTime());
   if (param instanceof TimestampType)   return ((TimestampType)param).asJavaTimestamp();
   if (pclass == String.class) {
+    String longtime=((String)param).trim();
     try {
-      return java.sql.Timestamp.valueOf((String)param);
+      return new java.sql.Timestamp(Long.parseLong(longtime));
+    }
+ catch (    IllegalArgumentException e) {
+    }
+    try {
+      return java.sql.Timestamp.valueOf(longtime);
     }
  catch (    IllegalArgumentException e) {
     }
@@ -129,22 +156,27 @@ if (slot == TimestampType.class) {
 }
  else if (pclass == String.class) {
   try {
+    String value=((String)param).trim();
+    value=value.replaceAll("\\,","");
     if (slot == byte.class) {
-      return Byte.parseByte((String)param);
+      return Byte.parseByte(value);
     }
     if (slot == short.class) {
-      return Short.parseShort((String)param);
+      return Short.parseShort(value);
     }
     if (slot == int.class) {
-      return Integer.parseInt((String)param);
+      return Integer.parseInt(value);
     }
     if (slot == long.class) {
-      return Long.parseLong((String)param);
+      return Long.parseLong(value);
+    }
+    if (slot == double.class) {
+      return Double.parseDouble(value);
     }
   }
  catch (  NumberFormatException nfe) {
     throw new Exception("tryToMakeCompatible: Unable to convert string " + (String)param + " to "+ slot.getName()+ " value for target parameter "+ slot.getName());
   }
 }
-throw new Exception("tryToMakeCompatible: The provided value: (" + param.toString() + ") of type: "+ pclass.getName()+ "is not a match or is out of range for the target parameter type: "+ slot.getName());
+throw new Exception("tryToMakeCompatible: The provided value: (" + param.toString() + ") of type: "+ pclass.getName()+ " is not a match or is out of range for the target parameter type: "+ slot.getName());
 }

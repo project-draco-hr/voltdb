@@ -1,49 +1,81 @@
 {
-  if (args.length < 2) {
-    System.err.println("Two arguments, csv filename and insert procedure name, required");
-    System.exit(1);
-  }
-  final String filename=args[0];
-  final String insertProcedure=args[1];
-  int argsUsed=2;
-  processCommandLineOptions(argsUsed,args);
+  long start=System.currentTimeMillis();
   int waits=0;
   int shortWaits=0;
+  CSVConfig cfg=new CSVConfig();
+  cfg.parse(CSVLoader.class.getName(),args);
+  config=cfg;
+  configuration();
   try {
-    final CSVReader reader=new CSVReader(new FileReader(filename));
-    final ProcedureCallback oneCallbackFitsAll=new MyCallback(0);
-    ProcedureCallback cb=oneCallbackFitsAll;
-    final Client client=ClientFactory.createClient();
-    client.createConnection("localhost");
+    if (CSVLoader.standin)     csvReader=new CSVReader(new BufferedReader(new InputStreamReader(System.in)),config.separator,config.quotechar,config.escape,config.skip,config.strictquotes,config.nowhitespace);
+ else     csvReader=new CSVReader(new FileReader(config.file),config.separator,config.quotechar,config.escape,config.skip,config.strictquotes,config.nowhitespace);
+  }
+ catch (  FileNotFoundException e) {
+    m_log.error("CSV file '" + config.file + "' could not be found.");
+    System.exit(-1);
+  }
+  String[] serverlist=config.servers.split(",");
+  ClientConfig c_config=new ClientConfig(config.user,config.password);
+  c_config.setProcedureCallTimeout(0);
+  try {
+    csvClient=CSVLoader.getClient(c_config,serverlist,config.port);
+  }
+ catch (  Exception e) {
+    m_log.error("Error to connect to the servers:" + config.servers);
+    System.exit(-1);
+  }
+  try {
+    ProcedureCallback cb=null;
     boolean lastOK=true;
     String line[]=null;
-    for (int i=0; i < skipRows; ++i) {
-      reader.readNext();
-      outCount.incrementAndGet();
-      inCount.incrementAndGet();
+    int columnCnt=0;
+    VoltTable procInfo=null;
+    boolean isProcExist=false;
+    try {
+      procInfo=csvClient.callProcedure("@SystemCatalog","PROCEDURECOLUMNS").getResults()[0];
+      while (procInfo.advanceRow()) {
+        if (insertProcedure.matches((String)procInfo.get("PROCEDURE_NAME",VoltType.STRING))) {
+          columnCnt++;
+          isProcExist=true;
+        }
+      }
     }
-    while ((limitRows-- > 0) && (line=reader.readNext()) != null) {
-      long counter=outCount.incrementAndGet();
+ catch (    Exception e) {
+      m_log.error(e.getMessage(),e);
+      System.exit(-1);
+    }
+    if (isProcExist == false) {
+      m_log.error("No matching insert procedure available");
+      close_cleanup();
+      System.exit(-1);
+    }
+    while ((config.limitrows-- > 0) && (line=csvReader.readNext()) != null) {
+      outCount.incrementAndGet();
       boolean queued=false;
       while (queued == false) {
+        StringBuilder linedata=new StringBuilder();
+        for (int i=0; i < line.length; i++) {
+          linedata.append("\"" + line[i] + "\"");
+          if (i != line.length - 1)           linedata.append(",");
+        }
         String[] correctedLine=line;
-        if (colProjection != null) {
-          correctedLine=projectColumns(colProjection,correctedLine);
+        cb=new MyCallback(outCount.get(),config,linedata.toString());
+        String lineCheckResult;
+        if ((lineCheckResult=checkparams_trimspace(correctedLine,columnCnt)) != null) {
+synchronized (errorInfo) {
+            if (!errorInfo.containsKey(outCount.get())) {
+              String[] info={linedata.toString(),lineCheckResult};
+              errorInfo.put(outCount.get(),info);
+            }
+            if (errorInfo.size() >= config.maxerrors) {
+              m_log.error("The number of Failure row data exceeds " + config.maxerrors);
+              close_cleanup();
+              System.exit(-1);
+            }
+          }
+          break;
         }
-        if (stripQuotes) {
-          correctedLine=stripMatchingColumnQuotes(correctedLine);
-        }
-        if (auditRows > 0) {
-          --auditRows;
-          System.err.println(joinIntoString(", ",line));
-          System.err.println(joinIntoString(", ",correctedLine));
-          System.err.println("----------");
-          cb=new MyCallback(counter);
-        }
- else {
-          cb=oneCallbackFitsAll;
-        }
-        queued=client.callProcedure(cb,insertProcedure,(Object[])correctedLine);
+        queued=csvClient.callProcedure(cb,insertProcedure,(Object[])correctedLine);
         if (queued == false) {
           ++waits;
           if (lastOK == false) {
@@ -54,18 +86,20 @@
         lastOK=queued;
       }
     }
-    reader.close();
-    client.drain();
-    client.close();
+    csvClient.drain();
   }
  catch (  Exception e) {
     e.printStackTrace();
   }
-  System.out.println("Inserted " + (outCount.get() - skipRows) + " and acknowledged "+ (inCount.get() - skipRows)+ " rows (final)");
+  m_log.info("Inserted " + outCount.get() + " and acknowledged "+ inCount.get()+ " rows (final)");
   if (waits > 0) {
-    System.out.println("Waited " + waits + " times");
+    m_log.info("Waited " + waits + " times");
     if (shortWaits > 0) {
-      System.out.println("Waited too briefly? " + shortWaits + " times");
+      m_log.info("Waited too briefly? " + shortWaits + " times");
     }
   }
+  latency=System.currentTimeMillis() - start;
+  m_log.info("CSVLoader elaspsed: " + latency / 1000F + " seconds");
+  produceFiles();
+  close_cleanup();
 }
