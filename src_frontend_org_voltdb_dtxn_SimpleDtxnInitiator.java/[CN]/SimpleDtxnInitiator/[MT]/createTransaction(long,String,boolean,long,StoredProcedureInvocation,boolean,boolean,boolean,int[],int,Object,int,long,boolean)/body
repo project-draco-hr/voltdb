@@ -1,0 +1,48 @@
+{
+  assert(invocation != null);
+  assert(partitions != null);
+  assert(numPartitions >= 1);
+  if (invocation.getType() == ProcedureInvocationType.REPLICATED) {
+    if (!(invocation.getProcName().equalsIgnoreCase("@LoadSinglepartitionTable") || invocation.getProcName().equalsIgnoreCase("@LoadMultipartitionTable")) && invocation.getOriginalTxnId() <= m_lastSeenOriginalTxnId) {
+      hostLog.debug("Dropping duplicate replicated transaction, txnid: " + invocation.getOriginalTxnId() + ", last seen: "+ m_lastSeenOriginalTxnId);
+      return false;
+    }
+ else {
+      m_lastSeenOriginalTxnId=invocation.getOriginalTxnId();
+    }
+  }
+  if (isSinglePartition || isEveryPartition) {
+    createSinglePartitionTxn(connectionId,connectionHostname,adminConnection,txnId,invocation,isReadOnly,partitions,clientData,messageSize,now);
+    return true;
+  }
+ else {
+    SiteTracker tracker=VoltDB.instance().getSiteTracker();
+    List<Long> sitesOnThisHost=tracker.getSitesForHost(m_hostId);
+    if (m_roundRobinSiteIndex >= sitesOnThisHost.size()) {
+      m_roundRobinSiteIndex=0;
+    }
+    long coordinatorId=sitesOnThisHost.get(m_roundRobinSiteIndex);
+    m_roundRobinSiteIndex++;
+    ArrayList<Long> replicaIds=new ArrayList<Long>();
+    for (    Long replica : tracker.getSitesForPartition(tracker.getPartitionForSite(coordinatorId))) {
+      if (replica != coordinatorId) {
+        replicaIds.add(replica);
+      }
+    }
+    ArrayList<Long> otherSiteIds=new ArrayList<Long>();
+    long[] allSiteIds=tracker.getSitesForPartitionsAsArray(partitions);
+    for (int i=0; i < allSiteIds.length; i++) {
+      if (allSiteIds[i] != coordinatorId && !replicaIds.contains(allSiteIds[i])) {
+        otherSiteIds.add(allSiteIds[i]);
+      }
+    }
+    long otherSiteIdsArr[]=new long[otherSiteIds.size()];
+    int ii=0;
+    for (    Long otherSiteId : otherSiteIds) {
+      otherSiteIdsArr[ii++]=otherSiteId;
+    }
+    InFlightTxnState txn=new InFlightTxnState(txnId,coordinatorId,replicaIds,otherSiteIdsArr,isReadOnly,false,invocation,clientData,messageSize,now,connectionId,connectionHostname,adminConnection,allowMismatchedResults);
+    dispatchMultiPartitionTxn(txn);
+    return true;
+  }
+}

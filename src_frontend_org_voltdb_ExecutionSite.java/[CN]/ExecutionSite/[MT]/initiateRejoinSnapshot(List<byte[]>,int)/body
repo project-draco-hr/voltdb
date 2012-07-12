@@ -2,11 +2,15 @@
   int partition=getCorrespondingPartitionId();
   long sourceSite=0;
   List<Long> sourceSites=new ArrayList<Long>(m_tracker.getSitesForPartition(partition));
-  sourceSites.remove(getSiteId());
-  try {
-    sourceSite=sourceSites.get(0);
+  TreeMap<Integer,Long> orderedSourceSites=new TreeMap<Integer,Long>();
+  for (  long HSId : sourceSites) {
+    orderedSourceSites.put(CoreUtils.getHostIdFromHSId(HSId),HSId);
   }
- catch (  ArrayIndexOutOfBoundsException e) {
+  orderedSourceSites.remove(CoreUtils.getHostIdFromHSId(getSiteId()));
+  if (!orderedSourceSites.isEmpty()) {
+    sourceSite=orderedSourceSites.pollFirstEntry().getValue();
+  }
+ else {
     VoltDB.crashLocalVoltDB("No source for partition " + partition,false,null);
   }
   String data=null;
@@ -38,6 +42,10 @@
       }
       VoltTable[] results=resp.getResults();
       if (SnapshotUtil.didSnapshotRequestSucceed(results)) {
+        if (SnapshotUtil.isSnapshotQueued(results)) {
+          m_recoveryLog.debug("Rejoin snapshot queued, waiting...");
+          return;
+        }
         long txnId=-1;
         String appStatus=resp.getAppStatusString();
         if (appStatus == null) {
@@ -51,6 +59,7 @@
           VoltDB.crashLocalVoltDB("Failed to get the rejoin snapshot txnId",true,e);
           return;
         }
+        m_recoveryLog.debug("Received rejoin snapshot txnId " + txnId);
         RejoinMessage msg=new RejoinMessage(txnId);
         m_mailbox.send(getSiteId(),msg);
       }
@@ -61,6 +70,6 @@
   }
 ;
   String nonce="Rejoin_" + getSiteId() + "_"+ System.currentTimeMillis();
-  SnapshotUtil.requestSnapshot(0l,"",nonce,false,SnapshotFormat.STREAM,data,handler);
+  SnapshotUtil.requestSnapshot(0l,"",nonce,false,SnapshotFormat.STREAM,data,handler,true);
   return null;
 }

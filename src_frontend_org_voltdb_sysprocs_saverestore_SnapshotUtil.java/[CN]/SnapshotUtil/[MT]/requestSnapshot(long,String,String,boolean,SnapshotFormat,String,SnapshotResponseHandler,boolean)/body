@@ -1,0 +1,107 @@
+{
+  final Exchanger<ClientResponse> responseExchanger=new Exchanger<ClientResponse>();
+  final Connection c=new Connection(){
+    @Override public WriteStream writeStream(){
+      return new WriteStream(){
+        @Override public void enqueue(        DeferredSerialization ds){
+          throw new UnsupportedOperationException();
+        }
+        @Override public void enqueue(        ByteBuffer b){
+          ClientResponseImpl resp=new ClientResponseImpl();
+          try {
+            b.position(4);
+            resp.initFromBuffer(b);
+            responseExchanger.exchange(resp);
+          }
+ catch (          Exception e) {
+            throw new RuntimeException(e);
+          }
+        }
+        @Override public void enqueue(        ByteBuffer[] b){
+          if (b.length != 1) {
+            throw new RuntimeException("Cannot use ByteBuffer chaining in enqueue");
+          }
+          enqueue(b[0]);
+        }
+        @Override public int calculatePendingWriteDelta(        long now){
+          throw new UnsupportedOperationException();
+        }
+        @Override public boolean isEmpty(){
+          throw new UnsupportedOperationException();
+        }
+        @Override public int getOutstandingMessageCount(){
+          throw new UnsupportedOperationException();
+        }
+        @Override public boolean hadBackPressure(){
+          throw new UnsupportedOperationException();
+        }
+      }
+;
+    }
+    @Override public NIOReadStream readStream(){
+      throw new UnsupportedOperationException();
+    }
+    @Override public void disableReadSelection(){
+      throw new UnsupportedOperationException();
+    }
+    @Override public void enableReadSelection(){
+      throw new UnsupportedOperationException();
+    }
+    @Override public String getHostnameOrIP(){
+      throw new UnsupportedOperationException();
+    }
+    @Override public long connectionId(){
+      return Long.MIN_VALUE + 2;
+    }
+    @Override public Future<?> unregister(){
+      throw new UnsupportedOperationException();
+    }
+    @Override public void queueTask(    Runnable r){
+      throw new UnsupportedOperationException();
+    }
+  }
+;
+  final SnapshotDaemon sd=VoltDB.instance().getClientInterfaces().get(0).getSnapshotDaemon();
+  Runnable work=new Runnable(){
+    @Override public void run(){
+      ClientResponse response=null;
+      final long startTime=System.currentTimeMillis();
+      boolean hasRequested=false;
+      while (System.currentTimeMillis() - startTime <= (120 * 60000)) {
+        try {
+          if (!hasRequested) {
+            sd.createAndWatchRequestNode(clientHandle,c,path,nonce,blocking,format,data,notifyChanges);
+            hasRequested=true;
+          }
+          response=responseExchanger.exchange(null);
+          VoltTable[] results=response.getResults();
+          if (response.getStatus() != ClientResponse.SUCCESS) {
+            break;
+          }
+ else           if (isSnapshotInProgress(results)) {
+            Thread.sleep(1000);
+            hasRequested=false;
+            continue;
+          }
+ else           if (isSnapshotQueued(results) && notifyChanges) {
+            Thread.sleep(1000);
+            continue;
+          }
+ else {
+            break;
+          }
+        }
+ catch (        ForwardClientException e) {
+          break;
+        }
+catch (        InterruptedException ignore) {
+        }
+      }
+      handler.handleResponse(response);
+    }
+  }
+;
+  ThreadFactory factory=CoreUtils.getThreadFactory("Snapshot Request - " + nonce);
+  Thread workThread=factory.newThread(work);
+  workThread.start();
+}
