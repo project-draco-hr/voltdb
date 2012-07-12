@@ -1,12 +1,19 @@
 {
+  m_changedSQL=false;
   ArrayList<AbstractPlanNode> list1=oldpn1.getLeafLists();
   ArrayList<AbstractPlanNode> list2=newpn2.getLeafLists();
   int size1=list1.size();
   int size2=list2.size();
   int max=Math.max(size1,size2);
   int min=Math.min(size1,size2);
+  Pair intPair=new Pair(0,0);
+  Pair stringPair=new Pair("","");
   if (size1 != size2) {
-    System.out.println("Different size, used to be: " + size1 + ", now is: "+ size2);
+    intPair.set(size1,size2);
+    System.out.println("Leaf size diff : ");
+    System.out.println(intPair);
+    System.out.println("SQLSTMT might be changed");
+    m_changedSQL=true;
     try {
       for (int i=0; i < min; i++) {
         JSONObject j1=new JSONObject(list1.get(i).toJSONString());
@@ -15,14 +22,24 @@
         String table2=j2.getString("TARGET_TABLE_NAME");
         String nodeType1=j1.getString("PLAN_NODE_TYPE");
         String nodeType2=j2.getString("PLAN_NODE_TYPE");
-        if (!table1.equalsIgnoreCase(table2))         System.out.println("Different table at leaf " + i + " used to be: "+ nodeType1+ " at "+ table1+ ", now is: "+ nodeType2+ " at "+ table2);
+        if (!table1.equalsIgnoreCase(table2)) {
+          stringPair.set(nodeType1 + " at " + table1,nodeType2 + " at " + table2);
+          System.out.println("Table diff at leaf " + i + ":");
+          System.out.println(stringPair);
+        }
  else         if (!nodeType1.equalsIgnoreCase(nodeType2)) {
-          System.out.println("Different scan at leaf " + i + " used to be: "+ nodeType1+ " at "+ table1+ ", now is: "+ nodeType2+ " at "+ table2);
+          stringPair.set(nodeType1 + " at " + table1,nodeType2 + " at " + table2);
+          System.out.println("Scan diff at leaf " + i + " :");
+          System.out.println(stringPair);
         }
  else         if (nodeType1.equalsIgnoreCase("INDEXSCAN")) {
           String index1=j1.getString("TARGET_INDEX_NAME");
           String index2=j2.getString("TARGET_INDEX_NAME");
-          if (!index1.equalsIgnoreCase(index2))           System.out.println("Different index at leaf " + i + " used to be: "+ index1+ ", now is: "+ index2);
+          stringPair.set(index1,index2);
+          if (!index1.equalsIgnoreCase(index2)) {
+            System.out.println("Index diff at leaf " + i + " :");
+            System.out.println(stringPair);
+          }
         }
  else         System.out.println("Same at leaf " + i);
       }
@@ -32,8 +49,19 @@
           String table=j.getString("TARGET_TABLE_NAME");
           String nodeType=j.getString("PLAN_NODE_TYPE");
           String index=null;
-          if (nodeType.equalsIgnoreCase("INDEXSCAN"))           index=j.getString("TARGET_INDEX_NAME");
-          System.out.println("Different at leaf " + i + " used to be table: "+ table+ " type :"+ nodeType+ " "+ " index: "+ index+ " now is empty");
+          if (nodeType.equalsIgnoreCase("INDEXSCAN")) {
+            index=j.getString("TARGET_INDEX_NAME");
+          }
+          if (index != null) {
+            stringPair.set(nodeType + " on " + table+ " using "+ index,"Empty");
+            System.out.println("Diff at leaf " + i + " :");
+            System.out.println(stringPair.toString());
+          }
+ else {
+            stringPair.set(nodeType + " on " + table,"Empty");
+            System.out.println("Diff at leaf " + i + ": ");
+            System.out.println(stringPair.toString());
+          }
         }
       }
  else       if (size1 < max) {
@@ -44,9 +72,17 @@
           String index=null;
           if (nodeType.equalsIgnoreCase("INDEXSCAN")) {
             index=j.getString("TARGET_INDEX_NAME");
-            System.out.println("Different at leaf " + i + " used to be empty, now is :"+ nodeType+ " "+ " at "+ table+ " on index "+ index);
+            if (index != null) {
+              stringPair.set(nodeType + " on " + table+ " using "+ index,"Empty");
+              System.out.println("Diff at leaf " + i + " :");
+              System.out.println(stringPair.toString());
+            }
+ else {
+              stringPair.set(nodeType + " on " + table,"Empty");
+              System.out.println("Diff at leaf " + i + ": ");
+              System.out.println(stringPair.toString());
+            }
           }
- else           System.out.println("Different at leaf " + i + " used to be empty, now is :"+ nodeType+ " at "+ table);
         }
       }
     }
@@ -58,26 +94,36 @@
     System.out.println("same leaf size");
     try {
       if (max == 1) {
-        System.out.println("single table query");
+        System.out.println("Single table query");
         JSONObject j1=new JSONObject(list1.get(0).toJSONString());
         JSONObject j2=new JSONObject(list2.get(0).toJSONString());
         String table1=j1.getString("TARGET_TABLE_NAME");
         String table2=j2.getString("TARGET_TABLE_NAME");
         String nodeType1=j1.getString("PLAN_NODE_TYPE");
         String nodeType2=j2.getString("PLAN_NODE_TYPE");
-        if (!table1.equalsIgnoreCase(table2))         System.out.println("Different table at " + 0 + " used to be: "+ nodeType1+ " at "+ table1+ ", now is: "+ nodeType2+ " at "+ table2);
+        if (!table1.equalsIgnoreCase(table2)) {
+          stringPair.set(nodeType1 + " on " + table1,nodeType2 + " on " + table2);
+          System.out.println("Diff table at leaf" + 0 + " :");
+          System.out.println(stringPair);
+        }
  else         if (!nodeType1.equalsIgnoreCase(nodeType2)) {
-          System.out.println("Different scan at " + 0 + " used to be: "+ nodeType1+ ", now is: "+ nodeType2);
+          stringPair.set(nodeType1 + " on " + table1,nodeType2 + " on " + table2);
+          System.out.println("Diff scan at leaf" + 0 + " :");
+          System.out.println(stringPair);
         }
  else         if (nodeType1.equalsIgnoreCase("INDEXSCAN")) {
           String index1=j1.getString("TARGET_INDEX_NAME");
           String index2=j2.getString("TARGET_INDEX_NAME");
-          if (!index1.equalsIgnoreCase(index2))           System.out.println("Different index at " + 0 + " used to be: "+ index1+ ", now is: "+ index2);
+          if (!index1.equalsIgnoreCase(index2)) {
+            stringPair.set(nodeType1 + " on " + table1+ " using "+ index1,nodeType2 + " on " + table2+ " using "+ index2);
+            System.out.println("Diff index at leaf" + 0 + ": ");
+            System.out.println(stringPair);
+          }
         }
  else         System.out.println("Same at " + 0);
       }
  else {
-        System.out.println("Join Query:");
+        System.out.println("Join query");
         for (int i=0; i < max; i++) {
           JSONObject j1=new JSONObject(list1.get(i).toJSONString());
           JSONObject j2=new JSONObject(list2.get(i).toJSONString());
@@ -85,14 +131,24 @@
           String table2=j2.getString("TARGET_TABLE_NAME");
           String nodeType1=j1.getString("PLAN_NODE_TYPE");
           String nodeType2=j2.getString("PLAN_NODE_TYPE");
-          if (!table1.equalsIgnoreCase(table2))           System.out.println("Different table at " + i + " used to be: "+ nodeType1+ " at "+ table1+ ", now is: "+ nodeType2+ " at "+ table2);
+          if (!table1.equalsIgnoreCase(table2)) {
+            stringPair.set(nodeType1 + " on " + table1,nodeType2 + " on " + table2);
+            System.out.println("Diff table at leaf" + i + " :");
+            System.out.println(stringPair);
+          }
  else           if (!nodeType1.equalsIgnoreCase(nodeType2)) {
-            System.out.println("Different scan at " + i + " used to be: "+ nodeType1+ ", now is: "+ nodeType2);
+            stringPair.set(nodeType1 + " on " + table1,nodeType2 + " on " + table2);
+            System.out.println("Diff scan at leaf" + 0 + " :");
+            System.out.println(stringPair);
           }
  else           if (nodeType1.equalsIgnoreCase("INDEXSCAN")) {
             String index1=j1.getString("TARGET_INDEX_NAME");
             String index2=j2.getString("TARGET_INDEX_NAME");
-            if (!index1.equalsIgnoreCase(index2))             System.out.println("Different index at " + i + " used to be: "+ index1+ ", now is: "+ index2);
+            if (!index1.equalsIgnoreCase(index2)) {
+              stringPair.set(nodeType1 + " on " + table1+ " using "+ index1,nodeType2 + " on " + table2+ " using "+ index2);
+              System.out.println("Diff index at leaf" + 0 + ": ");
+              System.out.println(stringPair);
+            }
           }
  else           System.out.println("Same at leaf" + i);
         }
