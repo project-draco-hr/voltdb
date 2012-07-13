@@ -1,25 +1,41 @@
 {
   AbstractExpression endExpr=child.getEndExpression();
-  AbstractExpression postExpr=child.getPredicate();
+  AbstractExpression predicateExpr=child.getPredicate();
   ArrayList<AbstractExpression> subEndExpr=null;
   if (endExpr != null) {
     System.err.println("End Expression:\n" + endExpr);
     subEndExpr=endExpr.findAllSubexpressionsOfClass(TupleValueExpression.class);
   }
-  assert(postExpr != null);
-  System.err.println("Post Expression:\n" + postExpr);
-  ArrayList<AbstractExpression> subExpr=postExpr.findAllSubexpressionsOfClass(TupleValueExpression.class);
-  ;
-  Index idx=child.getCatalogIndex();
-  CatalogMap<ColumnRef> clms=idx.getColumns();
-  List<AbstractExpression> searchKeyExpre=child.getSearchKeyExpressions();
-  ArrayList<AbstractExpression> hasLeft=new ArrayList<AbstractExpression>(subExpr.size());
-  hasLeft.addAll(subExpr);
-  for (  AbstractExpression ae : subExpr) {
-    if (endExpr != null && subEndExpr != null && subEndExpr.contains(ae)) {
-      hasLeft.remove(ae);
+  assert(predicateExpr != null);
+  System.err.println("Post Expression:\n" + predicateExpr);
+  ArrayList<AbstractExpression> hasLeft=predicateExpr.findAllSubexpressionsOfClass(TupleValueExpression.class);
+  Set<String> columnsLeft=new HashSet<String>();
+  for (  AbstractExpression ae : hasLeft) {
+    TupleValueExpression tve=(TupleValueExpression)ae;
+    columnsLeft.add(tve.getColumnName());
+    System.err.println("predicate columns:" + tve.getColumnName());
+  }
+  if (endExpr != null && subEndExpr != null) {
+    for (    AbstractExpression ae : subEndExpr) {
+      TupleValueExpression tve=(TupleValueExpression)ae;
+      String columnName=tve.getColumnName();
+      if (columnsLeft.contains(columnName)) {
+        columnsLeft.remove(columnName);
+      }
     }
   }
-  if (hasLeft.size() != 0)   return false;
+  Index idx=child.getCatalogIndex();
+  List<ColumnRef> sortedColumns=CatalogUtil.getSortedCatalogItems(idx.getColumns(),"index");
+  int searchKeySize=child.getSearchKeyExpressions().size();
+  if (columnsLeft.size() > searchKeySize)   return false;
+  for (int i=0; i < searchKeySize; i++) {
+    ColumnRef cr=sortedColumns.get(i);
+    String colName=cr.getColumn().getName();
+    if (columnsLeft.contains(colName)) {
+      columnsLeft.remove(colName);
+      System.err.println("SearchKey Column removed:" + colName);
+    }
+  }
+  if (columnsLeft.size() != 0)   return false;
   return true;
 }
