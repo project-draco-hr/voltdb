@@ -1,0 +1,23 @@
+{
+  LocalCluster config=(LocalCluster)this.getServerConfig();
+  int sites=config.m_siteCount;
+  int nodes=config.m_hostCount;
+  int k=config.m_kfactor;
+  int parts=(nodes * sites) / (k + 1);
+  if (parts == 1) {
+    return;
+  }
+  final Client client=this.getClient();
+  loadData(client);
+  try {
+    client.callProcedure("PartitionViolationUpdate");
+    assertFalse("Failed to produce violation",true);
+  }
+ catch (  ProcCallException e) {
+    assertEquals("Client response is error.",ClientResponse.UNEXPECTED_FAILURE,e.getClientResponse().getStatus());
+  }
+  ClientResponse resp=client.callProcedure("SumKey");
+  assertTrue("Verified updates",resp.getStatus() == ClientResponse.SUCCESS);
+  assertEquals("Updated sum=45",45L,resp.getResults()[0].asScalarLong());
+  assertTrue(resp.getStatusString() == null);
+}
