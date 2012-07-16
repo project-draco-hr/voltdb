@@ -1,18 +1,4 @@
 {
-  int batchSize=batch.size();
-  assert(batchSize > 0);
-  int numReplReads=0;
-  for (  final QueuedSQL qs : batch) {
-    if (qs.stmt.fragGUIDs.length == 1) {
-      numReplReads++;
-    }
-  }
-  if (numReplReads == batchSize) {
-    return singlePartitionBatchPath(batch);
-  }
-  if (numReplReads > 0) {
-    return executeQueriesInIndividualBatches(batch,finalTask);
-  }
   BatchState state=new BatchState(batch.size(),m_txnState,m_site.getCorrespondingSiteId(),finalTask);
   for (int i=0; i < batch.size(); ++i) {
     QueuedSQL queuedSQL=batch.get(i);
@@ -28,18 +14,26 @@
     }
     ByteBuffer params=fs.getBuffer();
     assert(params != null);
-    assert(queuedSQL.stmt.fragGUIDs.length == 2);
     if (queuedSQL.stmt.catStmt != null) {
+      int numFrags=queuedSQL.stmt.catStmt.getFragments().size();
+      assert(numFrags > 0);
+      assert(numFrags <= 2);
       Iterator<PlanFragment> fragmentIter=queuedSQL.stmt.catStmt.getFragments().iterator();
-      PlanFragment frag1=fragmentIter.next();
-      assert(frag1 != null);
-      PlanFragment frag2=fragmentIter.next();
-      assert(frag2 != null);
-      if (frag1.getHasdependencies() == false) {
-        state.addFragmentPair(i,frag1,frag2,params);
+      if (numFrags == 1) {
+        PlanFragment frag=fragmentIter.next();
+        state.addFragment(i,frag,params);
       }
  else {
-        state.addFragmentPair(i,frag2,frag1,params);
+        PlanFragment frag1=fragmentIter.next();
+        assert(frag1 != null);
+        PlanFragment frag2=fragmentIter.next();
+        assert(frag2 != null);
+        if (frag1.getHasdependencies() == false) {
+          state.addFragmentPair(i,frag1,frag2,params);
+        }
+ else {
+          state.addFragmentPair(i,frag2,frag1,params);
+        }
       }
     }
  else {
@@ -48,7 +42,12 @@
       byte[] collectorFragment=plan.getCollectorFragment();
       byte[] aggregatorFragment=plan.getAggregatorFragment();
       assert(aggregatorFragment != null);
-      state.addCustomFragmentPair(i,collectorFragment,aggregatorFragment,params);
+      if (collectorFragment == null) {
+        state.addCustomFragment(i,aggregatorFragment,params);
+      }
+ else {
+        state.addCustomFragmentPair(i,collectorFragment,aggregatorFragment,params);
+      }
     }
   }
   m_txnState.setupProcedureResume(finalTask,state.m_depsToResume);
