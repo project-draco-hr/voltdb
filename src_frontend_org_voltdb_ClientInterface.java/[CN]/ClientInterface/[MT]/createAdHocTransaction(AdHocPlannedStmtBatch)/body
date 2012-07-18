@@ -1,6 +1,6 @@
 {
   StoredProcedureInvocation task=new StoredProcedureInvocation();
-  boolean isSinglePartition=(plannedStmtBatch.partitionParam != null) && !m_isConfiguredForHSQL;
+  boolean isSinglePartition=plannedStmtBatch.isSinglePartitionCompatible() || m_isConfiguredForHSQL;
   int partitions[]=null;
   if (isSinglePartition) {
     if (plannedStmtBatch.isReadOnly()) {
@@ -9,7 +9,6 @@
  else {
       task.procName="@AdHoc_RW_SP";
     }
-    assert(plannedStmtBatch.isSinglePartitionCompatible());
     partitions=new int[]{TheHashinator.hashToPartition(plannedStmtBatch.partitionParam)};
   }
  else {
@@ -21,10 +20,10 @@
     }
     partitions=m_allPartitions;
   }
-  List<String> aggregatorFragmentList=plannedStmtBatch.getAggregatorFragments();
-  String[] aggregatorFragments=aggregatorFragmentList.toArray(new String[aggregatorFragmentList.size()]);
-  List<String> collectorFragmentList=plannedStmtBatch.getCollectorFragments();
-  String[] collectorFragments=collectorFragmentList.toArray(new String[collectorFragmentList.size()]);
+  List<byte[]> aggregatorFragmentList=plannedStmtBatch.getAggregatorFragments();
+  byte[][] aggregatorFragments=aggregatorFragmentList.toArray(new byte[aggregatorFragmentList.size()][]);
+  List<byte[]> collectorFragmentList=plannedStmtBatch.getCollectorFragments();
+  byte[][] collectorFragments=collectorFragmentList.toArray(new byte[collectorFragmentList.size()][]);
   List<String> sqlStatementList=plannedStmtBatch.getSQLStatements();
   String[] sqlStatements=sqlStatementList.toArray(new String[sqlStatementList.size()]);
   List<Integer> replicatedTableDMLFlagList=plannedStmtBatch.getReplicatedTableDMLFlags();
@@ -45,7 +44,16 @@
  catch (  Exception e) {
     VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
   }
-  createTransaction(plannedStmtBatch.connectionId,plannedStmtBatch.hostname,plannedStmtBatch.adminConnection,task,plannedStmtBatch.isReadOnly(),isSinglePartition,false,partitions,partitions.length,plannedStmtBatch.clientData,0,EstTime.currentTimeMillis());
+  boolean allowMismatchedResults=false;
+  if (plannedStmtBatch.isReadOnly()) {
+    for (    AdHocPlannedStatement stmt : plannedStmtBatch.plannedStatements) {
+      if (stmt.isNonDeterministic) {
+        allowMismatchedResults=true;
+        break;
+      }
+    }
+  }
+  createTransaction(plannedStmtBatch.connectionId,plannedStmtBatch.hostname,plannedStmtBatch.adminConnection,task,plannedStmtBatch.isReadOnly(),isSinglePartition,false,partitions,partitions.length,plannedStmtBatch.clientData,0,EstTime.currentTimeMillis(),allowMismatchedResults);
   plannedStmtBatch.clientData=null;
   for (int index=0; index < plannedStmtBatch.getPlannedStatementCount(); index++) {
     m_adhocCache.put(plannedStmtBatch.getPlannedStatement(index));
