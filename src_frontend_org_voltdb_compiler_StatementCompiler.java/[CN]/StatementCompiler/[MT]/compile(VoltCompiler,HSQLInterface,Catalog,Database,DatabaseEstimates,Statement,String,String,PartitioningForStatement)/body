@@ -3,26 +3,27 @@
   stmt=stmt.replaceAll("\n"," ");
   stmt=stmt.trim();
   compiler.addInfo("Compiling Statement: " + stmt);
-  QueryType qtype;
+  QueryType qtype=QueryType.INVALID;
+  boolean statementRO=true;
   if (stmt.toLowerCase().startsWith("insert")) {
     qtype=QueryType.INSERT;
-    catalogStmt.setReadonly(false);
+    statementRO=false;
   }
  else   if (stmt.toLowerCase().startsWith("update")) {
     qtype=QueryType.UPDATE;
-    catalogStmt.setReadonly(false);
+    statementRO=false;
   }
  else   if (stmt.toLowerCase().startsWith("delete")) {
     qtype=QueryType.DELETE;
-    catalogStmt.setReadonly(false);
+    statementRO=false;
   }
  else   if (stmt.toLowerCase().startsWith("select")) {
     qtype=QueryType.SELECT;
-    catalogStmt.setReadonly(true);
   }
- else {
-    throw compiler.new VoltCompilerException("Unparsable SQL statement: " + stmt);
+ else   if (stmt.toLowerCase().startsWith("(")) {
+    qtype=QueryType.SELECT;
   }
+  catalogStmt.setReadonly(statementRO);
   catalogStmt.setQuerytype(qtype.getValue());
   catalogStmt.setSqltext(stmt);
   catalogStmt.setSinglepartition(partitioning.wasSpecifiedAsSingle());
@@ -36,7 +37,10 @@
   try {
     plan=planner.compilePlan(costModel,catalogStmt.getSqltext(),joinOrder,catalogStmt.getTypeName(),catalogStmt.getParent().getTypeName(),DEFAULT_MAX_JOIN_TABLES,null);
   }
- catch (  Exception e) {
+ catch (  PlanningErrorException e) {
+    throw compiler.new VoltCompilerException("Failed to plan for stmt: " + catalogStmt.getTypeName());
+  }
+catch (  Exception e) {
     e.printStackTrace();
     throw compiler.new VoltCompilerException("Failed to plan for stmt: " + catalogStmt.getTypeName());
   }
@@ -77,12 +81,14 @@
   }
   catalogStmt.setReplicatedtabledml(plan.replicatedTableDML);
   partitioning.setIsReplicatedTableDML(plan.replicatedTableDML);
-  PrintStream plansOut=BuildDirectoryUtils.getDebugOutputPrintStream("statement-winner-plans",name + ".txt");
-  plansOut.println("SQL: " + plan.sql);
-  plansOut.println("COST: " + Double.toString(plan.cost));
-  plansOut.println("PLAN:\n");
-  plansOut.println(plan.explainedPlan);
-  plansOut.close();
+  StringBuilder planDescription=new StringBuilder(1000);
+  planDescription.append("SQL: ").append(plan.sql);
+  planDescription.append("\nCOST: ").append(plan.cost);
+  planDescription.append("\nPLAN:\n");
+  planDescription.append(plan.explainedPlan);
+  String planString=planDescription.toString();
+  BuildDirectoryUtils.writeFile("statement-winner-plans",name + ".txt",planString);
+  compiler.captureDiagnosticContext(planString);
   catalogStmt.setExplainplan(Encoder.hexEncode(plan.explainedPlan));
   int i=0;
   Collections.sort(plan.fragments);
@@ -94,6 +100,7 @@
     planFragment.setHasdependencies(fragment.hasDependencies);
     planFragment.setMultipartition(fragment.multiPartition);
     String json=node_list.toJSONString();
+    compiler.captureDiagnosticJsonFragment(json);
     if (compilerDebug) {
       String prettyJson=null;
       try {
@@ -104,12 +111,8 @@
         e2.printStackTrace();
         throw compiler.new VoltCompilerException(e2.getMessage());
       }
-      plansOut=BuildDirectoryUtils.getDebugOutputPrintStream("statement-winner-plan-fragments",name + "-" + String.valueOf(i)+ ".txt");
-      plansOut.println(prettyJson);
-      plansOut.close();
-      plansOut=BuildDirectoryUtils.getDebugOutputPrintStream("statement-winner-plan-fragments",name + String.valueOf(i) + ".dot");
-      plansOut.println(node_list.toDOTString(name + "-" + String.valueOf(i)));
-      plansOut.close();
+      BuildDirectoryUtils.writeFile("statement-winner-plan-fragments",name + "-" + String.valueOf(i)+ ".txt",prettyJson);
+      BuildDirectoryUtils.writeFile("statement-winner-plan-fragments",name + String.valueOf(i) + ".dot",node_list.toDOTString(name + "-" + String.valueOf(i)));
     }
     try {
       FastSerializer fs=new FastSerializer(true,false);
@@ -123,4 +126,6 @@
     }
     i++;
   }
+  int validType=catalogStmt.getQuerytype();
+  assert(validType != QueryType.INVALID.getValue());
 }
