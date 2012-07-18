@@ -2,24 +2,36 @@
   m_catalogContext.set(context);
   m_initiator=initiator;
   m_cartographer=cartographer;
-  m_ciHandles.put(m_snapshotDaemonAdapter.connectionId(),new ClientInterfaceHandleManager(true,m_snapshotDaemonAdapter));
+  m_connectionSpecificStuff.put(m_snapshotDaemonAdapter.connectionId(),Pair.of(new ClientInterfaceHandleManager(true,m_snapshotDaemonAdapter),new AdmissionControlGroup(Integer.MAX_VALUE,Integer.MAX_VALUE){
+    @Override public void increaseBackpressure(    int messageSize){
+    }
+    @Override public void reduceBackpressure(    int messageSize){
+    }
+    @Override public boolean queue(    int bytes){
+      return false;
+    }
+  }
+));
   m_allPartitions=allPartitions;
   m_acceptor=new ClientAcceptor(port,messenger.getNetwork(),false);
   m_adminAcceptor=null;
   m_adminAcceptor=new ClientAcceptor(adminPort,messenger.getNetwork(),true);
   registerPolicies(replicationRole);
   m_mailbox=new LocalMailbox(VoltDB.instance().getHostMessenger()){
-    LinkedBlockingDeque<VoltMessage> m_d=new LinkedBlockingDeque<VoltMessage>();
+    LinkedBlockingQueue<VoltMessage> m_d=new LinkedBlockingQueue<VoltMessage>();
     @Override public void deliver(    final VoltMessage message){
       if (VoltDB.instance().isIV2Enabled()) {
         if (message instanceof InitiateResponseMessage) {
           final InitiateResponseMessage response=(InitiateResponseMessage)message;
           Iv2Trace.logFinishTransaction(response,m_mailbox.getHSId());
-          final ClientInterfaceHandleManager cihm=m_ciHandles.get(response.getClientConnectionId());
-          if (cihm != null) {
+          Pair<ClientInterfaceHandleManager,? extends AdmissionControlGroup> p=m_connectionSpecificStuff.get(response.getClientConnectionId());
+          if (p != null) {
+            final ClientInterfaceHandleManager cihm=p.getFirst();
+            final AdmissionControlGroup acg=p.getSecond();
             cihm.connection.writeStream().enqueue(new DeferredSerialization(){
               @Override public ByteBuffer[] serialize() throws IOException {
                 ClientInterfaceHandleManager.Iv2InFlight clientData=cihm.findHandle(response.getClientInterfaceHandle());
+                acg.reduceBackpressure(clientData.m_messageSize);
                 response.getClientResponseData().setClientHandle(clientData.m_clientHandle);
                 final long now=System.currentTimeMillis();
                 final int delta=(int)(now - clientData.m_creationTime);
