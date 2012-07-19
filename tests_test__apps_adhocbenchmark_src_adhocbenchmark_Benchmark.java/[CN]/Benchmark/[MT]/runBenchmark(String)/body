@@ -3,50 +3,37 @@
   System.out.println(" Setup & Initialization");
   System.out.println(HORIZONTAL_RULE);
   System.out.printf("Reading configuration file '%s'...\n",configPath);
-  List<QueryTestBase> tests=BenchmarkConfiguration.configureTests(configPath,this.cliConfig.test);
-  connect(this.cliConfig.servers);
+  List<QueryTestBase> tests=BenchmarkConfiguration.configureTests(configPath,cliConfig.test);
+  connect(cliConfig.servers);
   System.out.print(HORIZONTAL_RULE);
   System.out.println("Starting Benchmark");
   System.out.println(HORIZONTAL_RULE);
-  QueryTracer tracer=new QueryTracer(cliConfig.querytracefile);
-  if (this.cliConfig.warmup > 0) {
+  long queryIndex=1;
+  if (cliConfig.warmup > 0) {
     System.out.println("Warming up...");
-    CallProcedureCallback cb1=new CallProcedureCallback(null);
-    for (    String query : new QueryGenerator(tests,this.cliConfig.warmup)) {
-      this.client.callProcedure(cb1,"@AdHoc",query);
-      if (cb1.errorStatus != ClientResponse.SUCCESS) {
-        tracer.traceBad(query,cb1.errorStatus,cb1.errorString);
-      }
+    for (    String query : new QueryGenerator(tests,cliConfig.warmup)) {
+      client.callProcedure(new CallProcedureCallback(queryIndex * -1,query),"@AdHoc",query);
+      queryIndex++;
     }
   }
   fullStatsContext.fetchAndResetBaseline();
   periodicStatsContext.fetchAndResetBaseline();
-  this.benchmarkStartTS=System.currentTimeMillis();
+  benchmarkStartTS=System.currentTimeMillis();
   long queryElapsedMS=0;
   schedulePeriodicStats();
-  System.out.printf("\nRunning '%s' benchmark...\n",this.cliConfig.test);
-  CallProcedureCallback cb2=new CallProcedureCallback(this.counters);
-  for (  String query : new QueryGenerator(tests,this.cliConfig.duration)) {
-    long startTS=System.currentTimeMillis();
-    this.client.callProcedure(cb2,"@AdHoc",query);
-    if (cb2.errorStatus != ClientResponse.SUCCESS) {
-      tracer.traceBad(query,cb2.errorStatus,cb2.errorString);
-      this.counters.queriesFailed++;
-    }
- else {
-      tracer.traceGood(query);
-    }
-    queryElapsedMS+=(System.currentTimeMillis() - startTS);
-    this.counters.queriesGenerated++;
+  System.out.printf("\nRunning '%s' benchmark...\n",cliConfig.test);
+  queryIndex=1;
+  for (  String query : new QueryGenerator(tests,cliConfig.duration)) {
+    client.callProcedure(new CallProcedureCallback(queryIndex,query),"@AdHoc",query);
+    tracer.logQueryInvoked(queryIndex,query);
+    queryIndex++;
   }
-  System.out.printf("\n%d queries generated\n",this.counters.queriesGenerated);
-  System.out.printf("%d queries processed\n",this.counters.queriesProcessed);
-  System.out.printf("%d queries to drain\n\n",this.counters.queriesGenerated - this.counters.queriesProcessed);
   printStatistics();
-  System.out.println("");
-  long totalElapsedMS=System.currentTimeMillis() - this.benchmarkStartTS;
-  this.timer.cancel();
-  this.client.drain();
+  System.out.println();
+  long totalElapsedMS=System.currentTimeMillis() - benchmarkStartTS;
+  timer.cancel();
+  client.drain();
+  tracer.close();
   printResults(totalElapsedMS,queryElapsedMS);
-  this.client.close();
+  client.close();
 }
