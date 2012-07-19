@@ -4,13 +4,21 @@
     return;
   }
   for (  org.voltdb.catalog.User catalogUser : db.getUsers()) {
-    final AuthUser user=new AuthUser(Encoder.hexDecode(catalogUser.getShadowpassword()),catalogUser.getTypeName(),catalogUser.getSysproc(),catalogUser.getAdhoc());
+    String shadowPassword=catalogUser.getShadowpassword();
+    byte sha1ShadowPassword[]=null;
+    if (shadowPassword.length() == 40) {
+      sha1ShadowPassword=Encoder.hexDecode(shadowPassword);
+    }
+ else     if (shadowPassword.length() != 60) {
+      VoltDB.crashGlobalVoltDB("Found a shadowPassword in the catalog that was in an unrecogized format",true,null);
+    }
+    final AuthUser user=new AuthUser(sha1ShadowPassword,shadowPassword,catalogUser.getTypeName(),catalogUser.getSysproc(),catalogUser.getDefaultproc(),catalogUser.getAdhoc());
     m_users.put(user.m_name.intern(),user);
     for (    org.voltdb.catalog.GroupRef catalogGroupRef : catalogUser.getGroups()) {
       final org.voltdb.catalog.Group catalogGroup=catalogGroupRef.getGroup();
       AuthGroup group=null;
       if (!m_groups.containsKey(catalogGroup.getTypeName())) {
-        group=new AuthGroup(catalogGroup.getTypeName(),catalogGroup.getSysproc(),catalogGroup.getAdhoc());
+        group=new AuthGroup(catalogGroup.getTypeName(),catalogGroup.getSysproc(),catalogGroup.getDefaultproc(),catalogGroup.getAdhoc());
         m_groups.put(group.m_name,group);
       }
  else {
@@ -23,7 +31,7 @@
   for (  org.voltdb.catalog.Group catalogGroup : db.getGroups()) {
     AuthGroup group=null;
     if (!m_groups.containsKey(catalogGroup.getTypeName())) {
-      group=new AuthGroup(catalogGroup.getTypeName(),catalogGroup.getSysproc(),catalogGroup.getAdhoc());
+      group=new AuthGroup(catalogGroup.getTypeName(),catalogGroup.getSysproc(),catalogGroup.getDefaultproc(),catalogGroup.getAdhoc());
       m_groups.put(group.m_name,group);
     }
  else {

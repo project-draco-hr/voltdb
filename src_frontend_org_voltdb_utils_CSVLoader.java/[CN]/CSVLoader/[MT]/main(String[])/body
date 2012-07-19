@@ -1,5 +1,5 @@
 {
-  long start=System.currentTimeMillis();
+  start=System.currentTimeMillis();
   int waits=0;
   int shortWaits=0;
   CSVConfig cfg=new CSVConfig();
@@ -22,6 +22,7 @@
   }
  catch (  Exception e) {
     m_log.error("Error to connect to the servers:" + config.servers);
+    close_cleanup();
     System.exit(-1);
   }
   try {
@@ -30,14 +31,25 @@
     String line[]=null;
     int columnCnt=0;
     VoltTable procInfo=null;
+    boolean isProcExist=false;
     try {
       procInfo=csvClient.callProcedure("@SystemCatalog","PROCEDURECOLUMNS").getResults()[0];
       while (procInfo.advanceRow()) {
-        if (insertProcedure.matches((String)procInfo.get("PROCEDURE_NAME",VoltType.STRING)))         columnCnt++;
+        if (insertProcedure.matches((String)procInfo.get("PROCEDURE_NAME",VoltType.STRING))) {
+          columnCnt++;
+          isProcExist=true;
+        }
       }
     }
  catch (    Exception e) {
-      e.printStackTrace();
+      m_log.error(e.getMessage(),e);
+      close_cleanup();
+      System.exit(-1);
+    }
+    if (isProcExist == false) {
+      m_log.error("No matching insert procedure available");
+      close_cleanup();
+      System.exit(-1);
     }
     while ((config.limitrows-- > 0) && (line=csvReader.readNext()) != null) {
       outCount.incrementAndGet();
@@ -59,6 +71,7 @@ synchronized (errorInfo) {
             }
             if (errorInfo.size() >= config.maxerrors) {
               m_log.error("The number of Failure row data exceeds " + config.maxerrors);
+              produceFiles();
               close_cleanup();
               System.exit(-1);
             }
@@ -88,8 +101,7 @@ synchronized (errorInfo) {
       m_log.info("Waited too briefly? " + shortWaits + " times");
     }
   }
-  latency=System.currentTimeMillis() - start;
-  m_log.info("CSVLoader elaspsed: " + latency / 1000F + " seconds");
   produceFiles();
   close_cleanup();
+  csvClient.close();
 }
