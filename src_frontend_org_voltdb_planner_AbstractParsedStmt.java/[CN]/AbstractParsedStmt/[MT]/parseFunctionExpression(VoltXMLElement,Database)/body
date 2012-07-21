@@ -1,8 +1,15 @@
 {
   String name=exprNode.attributes.get("name").toLowerCase();
+  String volt_alias=exprNode.attributes.get("volt_alias");
   String value_type_name=exprNode.attributes.get("type");
   VoltType value_type=VoltType.typeFromString(value_type_name);
-  AbstractExpression expr=null;
+  if (volt_alias == null) {
+    volt_alias=name;
+  }
+  ExpressionType exprType=ExpressionType.get(volt_alias);
+  if (exprType == ExpressionType.INVALID) {
+    throw new PlanningErrorException("Function '" + volt_alias + "' is not supported.");
+  }
   ArrayList<AbstractExpression> args=new ArrayList<AbstractExpression>();
   for (  VoltXMLElement argNode : exprNode.children) {
     assert(argNode != null);
@@ -10,29 +17,7 @@
     assert(argExpr != null);
     args.add(argExpr);
   }
-  List<SQLFunction> overloads=SQLFunction.functionsByNameAndArgumentCount(name,args.size());
-  if (overloads == null) {
-    throw new PlanningErrorException("Function '" + name + "' with "+ args.size()+ " arguments is not supported");
-  }
-  SQLFunction resolved=null;
-  for (  SQLFunction supportedFunction : overloads) {
-    resolved=supportedFunction;
-    if (!supportedFunction.hasParameter()) {
-      break;
-    }
-    VoltType paramType=supportedFunction.paramType();
-    if (paramType.equals(value_type)) {
-      break;
-    }
-    if (paramType.equals(VoltType.NUMERIC) && (value_type.isExactNumeric() || value_type.equals(VoltType.FLOAT))) {
-      break;
-    }
-    resolved=null;
-  }
-  if (resolved == null) {
-    throw new PlanningErrorException("Function '" + name + "' does not support argument type '"+ value_type_name+ "'");
-  }
-  ExpressionType exprType=resolved.getExpressionType();
+  AbstractExpression expr=null;
   try {
     expr=exprType.getExpressionClass().newInstance();
   }
@@ -41,11 +26,8 @@
     throw new RuntimeException(e.getMessage(),e);
   }
   expr.setExpressionType(exprType);
-  VoltType vt=resolved.getValueType();
-  if (vt != null) {
-    expr.setValueType(vt);
-    expr.setValueSize(vt.getMaxLengthInBytes());
-  }
+  expr.setValueType(value_type);
+  expr.setValueSize(value_type.getMaxLengthInBytes());
   expr.setArgs(args);
   return expr;
 }
