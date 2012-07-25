@@ -1,13 +1,18 @@
 {
   m_mailbox.addPendingTxn(txn);
   increaseBackpressure(txn.messageSize);
-  HashSet<Long> nonCoordinatorSites=new HashSet<Long>(txn.coordinatorReplicas);
-  List<Long> sites=Arrays.asList(ArrayUtils.toObject(txn.otherSiteIds));
-  nonCoordinatorSites.addAll(sites);
+  long[] nonCoordinatorSites=new long[txn.coordinatorReplicas.size() + txn.otherSiteIds.length];
+  int i=0;
+  for (  long hsId : txn.coordinatorReplicas) {
+    nonCoordinatorSites[i++]=hsId;
+  }
+  for (  long hsId : txn.otherSiteIds) {
+    nonCoordinatorSites[i++]=hsId;
+  }
   MultiPartitionParticipantMessage notice=new MultiPartitionParticipantMessage(m_siteId,txn.firstCoordinatorId,txn.txnId,txn.isReadOnly);
   m_mailbox.send(txn.otherSiteIds,notice);
   long newestSafeTxnId=m_safetyState.getNewestSafeTxnIdForExecutorBySiteId(txn.firstCoordinatorId);
-  InitiateTaskMessage workRequest=new InitiateTaskMessage(m_siteId,txn.firstCoordinatorId,txn.txnId,txn.isReadOnly,txn.isSinglePartition,txn.invocation,newestSafeTxnId,ArrayUtils.toPrimitive(nonCoordinatorSites.toArray(new Long[0])));
+  InitiateTaskMessage workRequest=new InitiateTaskMessage(m_siteId,txn.firstCoordinatorId,txn.txnId,txn.isReadOnly,txn.isSinglePartition,txn.invocation,newestSafeTxnId,nonCoordinatorSites);
   m_mailbox.send(txn.firstCoordinatorId,workRequest);
   for (  Long replica : txn.coordinatorReplicas) {
     newestSafeTxnId=m_safetyState.getNewestSafeTxnIdForExecutorBySiteId(replica);
