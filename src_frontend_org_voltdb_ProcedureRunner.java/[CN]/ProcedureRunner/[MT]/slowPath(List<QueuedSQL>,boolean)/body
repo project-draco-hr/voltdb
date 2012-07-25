@@ -1,0 +1,32 @@
+{
+  return executeQueuedSQL(batch,new FragmentExecutor(){
+    @Override public VoltTable[] onExecutePrePlanned(    final List<QueuedSQL> batch,    final boolean last){
+      boolean hasRead=false;
+      boolean hasWrite=false;
+      for (int i=0; i < batch.size(); ++i) {
+        final SQLStmt stmt=batch.get(i).stmt;
+        if (stmt.catStmt != null) {
+          if (stmt.catStmt.getReadonly()) {
+            hasRead=true;
+          }
+ else {
+            hasWrite=true;
+          }
+        }
+        if (hasRead && hasWrite) {
+          return executeQueriesInIndividualBatches(batch,finalTask);
+        }
+      }
+      return executeSlowHomogeneousBatch(batch,finalTask && last);
+    }
+    @Override public VoltTable[] onExecuteUnplanned(    final List<QueuedSQL> batch,    final boolean last){
+      if (batch.size() > 1) {
+        return executeQueriesInIndividualBatches(batch,finalTask && last);
+      }
+ else {
+        return executeSlowHomogeneousBatch(batch,finalTask && last);
+      }
+    }
+  }
+);
+}

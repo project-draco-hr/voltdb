@@ -1,0 +1,45 @@
+{
+  ZooKeeper zk=m_messenger.getZK();
+  ArrayDeque<Mailbox> mailboxes=new ArrayDeque<Mailbox>();
+  hostLog.debug(zk.getChildren("/db",false));
+  while (m_siteTracker == null) {
+    Thread.sleep(1);
+  }
+  Set<Integer> hostIdsInTopology=new HashSet<Integer>();
+  JSONArray partitions=topology.getJSONArray("partitions");
+  for (int ii=0; ii < partitions.length(); ii++) {
+    JSONObject partition=partitions.getJSONObject(ii);
+    JSONArray replicas=partition.getJSONArray("replicas");
+    for (int zz=0; zz < replicas.length(); zz++) {
+      hostIdsInTopology.add(replicas.getInt(zz));
+    }
+  }
+  hostIdsInTopology.removeAll(m_siteTracker.m_allHostsImmutable);
+  if (hostIdsInTopology.isEmpty()) {
+    VoltDB.crashLocalVoltDB("Rejoin failed because there is no failed node to replace",false,null);
+  }
+  Integer hostToReplace=hostIdsInTopology.iterator().next();
+  Set<Integer> partitionsToReplicate=new TreeSet<Integer>();
+  for (int ii=0; ii < partitions.length(); ii++) {
+    JSONObject partition=partitions.getJSONObject(ii);
+    JSONArray replicas=partition.getJSONArray("replicas");
+    for (int zz=0; zz < replicas.length(); zz++) {
+      if (replicas.getInt(zz) == hostToReplace.intValue()) {
+        partitionsToReplicate.add(partition.getInt("partition_id"));
+        replicas.put(zz,m_messenger.getHostId());
+      }
+    }
+  }
+  zk.setData(VoltZK.topology,topology.toString(4).getBytes("UTF-8"),-1,new ZKUtil.StatCallback(),null);
+  final int sites_per_host=topology.getInt("sites_per_host");
+  ClusterConfig clusterConfig=new ClusterConfig(topology);
+  m_configuredNumberOfPartitions=clusterConfig.getPartitionCount();
+  assert(partitionsToReplicate.size() == sites_per_host);
+  for (  Integer partition : partitionsToReplicate) {
+    Mailbox mailbox=m_messenger.createMailbox();
+    mailboxes.add(mailbox);
+    MailboxNodeContent mnc=new MailboxNodeContent(mailbox.getHSId(),partition);
+    m_mailboxPublisher.registerMailbox(MailboxType.ExecutionSite,mnc);
+  }
+  return Pair.of(mailboxes,clusterConfig);
+}
