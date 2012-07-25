@@ -1,0 +1,56 @@
+{
+  boolean single_frag=readOnly && replicatedTable;
+  MpTestPlan plan=new MpTestPlan();
+  List<Integer> distributedOutputDepIds=new ArrayList<Integer>();
+  List<Integer> depsToResumeList=new ArrayList<Integer>();
+  List<Integer> depsForLocalTask=new ArrayList<Integer>();
+  for (int i=0; i < batchSize; i++) {
+    depsToResumeList.add(i);
+    if (!single_frag) {
+      depsForLocalTask.add(i + 1000);
+      distributedOutputDepIds.add(i + 1000);
+    }
+ else {
+      depsForLocalTask.add(-1);
+    }
+  }
+  plan.depsToResume=depsToResumeList;
+  plan.remoteWork=new FragmentTaskMessage(Long.MIN_VALUE,Long.MIN_VALUE,1234l,readOnly,false);
+  for (int i=0; i < distributedOutputDepIds.size(); i++) {
+    plan.remoteWork.addFragment(Long.MIN_VALUE,distributedOutputDepIds.get(i),createDummyParameterSet());
+  }
+  System.out.println("REMOTE TASK: " + plan.remoteWork.toString());
+  if (!single_frag) {
+    for (int i=0; i < remoteHSIds.length; i++) {
+      FragmentResponseMessage resp=new FragmentResponseMessage(plan.remoteWork,remoteHSIds[i]);
+      if (rollback && i == (remoteHSIds.length - 1)) {
+        resp.setStatus(FragmentResponseMessage.UNEXPECTED_ERROR,new EEException(1234));
+      }
+ else {
+        resp.setStatus(FragmentResponseMessage.SUCCESS,null);
+        for (int j=0; j < distributedOutputDepIds.size(); j++) {
+          resp.addDependency(distributedOutputDepIds.get(j),new VoltTable(new VoltTable.ColumnInfo("BOGO",VoltType.BIGINT)));
+        }
+      }
+      System.out.println("RESPONSE: " + resp);
+      plan.generatedResponses.add(resp);
+    }
+  }
+  plan.localWork=new FragmentTaskMessage(Long.MIN_VALUE,Long.MIN_VALUE,1234l,readOnly,false);
+  for (int i=0; i < batchSize; i++) {
+    plan.localWork.addFragment(0L,depsToResumeList.get(i),createDummyParameterSet());
+  }
+  for (int i=0; i < depsForLocalTask.size(); i++) {
+    if (depsForLocalTask.get(i) < 0)     continue;
+    plan.localWork.addInputDepId(i,depsForLocalTask.get(i));
+  }
+  FragmentResponseMessage resp=new FragmentResponseMessage(plan.remoteWork,remoteHSIds[0]);
+  resp.setStatus(FragmentResponseMessage.SUCCESS,null);
+  for (int j=0; j < batchSize; j++) {
+    resp.addDependency(depsToResumeList.get(j),new VoltTable(new VoltTable.ColumnInfo("BOGO",VoltType.BIGINT)));
+  }
+  System.out.println("BORROW RESPONSE: " + resp);
+  plan.generatedResponses.add(resp);
+  System.out.println("LOCAL TASK: " + plan.localWork.toString());
+  return plan;
+}

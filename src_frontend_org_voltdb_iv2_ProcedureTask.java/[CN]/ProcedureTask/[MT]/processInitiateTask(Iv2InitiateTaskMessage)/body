@@ -1,0 +1,44 @@
+{
+  final InitiateResponseMessage response=new InitiateResponseMessage(task);
+  try {
+    Object[] callerParams=null;
+    try {
+      callerParams=task.getParameters();
+    }
+ catch (    RuntimeException e) {
+      Writer result=new StringWriter();
+      PrintWriter pw=new PrintWriter(result);
+      e.printStackTrace(pw);
+      response.setResults(new ClientResponseImpl(ClientResponse.GRACEFUL_FAILURE,new VoltTable[]{},"Exception while deserializing procedure params\n" + result.toString()));
+    }
+    if (callerParams != null) {
+      ClientResponseImpl cr=null;
+      long txnId;
+      if (getMpTxnId() != Iv2InitiateTaskMessage.UNUSED_MP_TXNID) {
+        txnId=getMpTxnId();
+      }
+ else {
+        txnId=m_txn.txnId;
+      }
+      StoredProcedureInvocation invocation=m_txn.getInvocation();
+      if ((invocation != null) && (invocation.getType() == ProcedureInvocationType.REPLICATED)) {
+        txnId=invocation.getOriginalTxnId();
+      }
+      m_runner.setupTransaction(m_txn);
+      cr=m_runner.call(txnId,task.getParameters());
+      response.setResults(cr);
+      if ((!task.isReadOnly()) && task.isSinglePartition()) {
+        m_txn.storeResults(cr);
+      }
+    }
+  }
+ catch (  final ExpectedProcedureException e) {
+    execLog.l7dlog(Level.TRACE,LogKeys.org_voltdb_ExecutionSite_ExpectedProcedureException.name(),e);
+    response.setResults(new ClientResponseImpl(ClientResponse.GRACEFUL_FAILURE,new VoltTable[]{},e.toString()));
+  }
+catch (  final Exception e) {
+    hostLog.l7dlog(Level.ERROR,LogKeys.host_ExecutionSite_UnexpectedProcedureException.name(),e);
+    VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
+  }
+  return response;
+}

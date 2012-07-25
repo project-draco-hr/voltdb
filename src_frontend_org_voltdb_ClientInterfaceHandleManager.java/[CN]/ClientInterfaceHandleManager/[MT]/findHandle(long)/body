@@ -1,0 +1,36 @@
+{
+  assert(m_expectedThreadId == Thread.currentThread().getId());
+  int partitionId=getPartIdFromHandle(ciHandle);
+  Pair<HandleGenerator,Deque<Iv2InFlight>> partitionStuff=m_partitionStuff.get(partitionId);
+  if (partitionStuff == null) {
+    tmLog.error("Unable to find handle list for partition: " + partitionId);
+    return null;
+  }
+  Deque<Iv2InFlight> perPartDeque=partitionStuff.getSecond();
+  while (perPartDeque.peekFirst() != null) {
+    Iv2InFlight inFlight=perPartDeque.pollFirst();
+    if (inFlight.m_ciHandle < ciHandle) {
+      tmLog.info("CI found dropped transaction with handle: " + inFlight.m_ciHandle + " for partition: "+ partitionId+ " while searching for handle "+ ciHandle);
+      ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.RESPONSE_UNKNOWN,new VoltTable[0],"Transaction dropped during fault recovery",inFlight.m_clientHandle);
+      ByteBuffer buf=ByteBuffer.allocate(errorResponse.getSerializedSize() + 4);
+      buf.putInt(buf.capacity() - 4);
+      errorResponse.flattenToBuffer(buf);
+      buf.flip();
+      connection.writeStream().enqueue(buf);
+      m_outstandingTxns--;
+      m_acg.reduceBackpressure(inFlight.m_messageSize);
+    }
+ else     if (inFlight.m_ciHandle > ciHandle) {
+      tmLog.error("CI clientData lookup missing handle: " + ciHandle + ". Next expected client data handle is: "+ inFlight.m_ciHandle);
+      perPartDeque.addFirst(inFlight);
+      break;
+    }
+ else {
+      m_acg.reduceBackpressure(inFlight.m_messageSize);
+      m_outstandingTxns--;
+      return inFlight;
+    }
+  }
+  tmLog.error("Unable to find Client data for client interface handle: " + ciHandle);
+  return null;
+}
