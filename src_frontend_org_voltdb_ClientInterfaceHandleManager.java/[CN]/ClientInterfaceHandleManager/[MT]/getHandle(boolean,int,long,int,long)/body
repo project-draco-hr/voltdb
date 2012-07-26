@@ -1,0 +1,24 @@
+{
+  assert(m_expectedThreadId == Thread.currentThread().getId());
+  if (!isSinglePartition) {
+    partitionId=MP_PART_ID;
+  }
+  HandleGenerator generator;
+  Deque<Iv2InFlight> perPartDeque;
+  Pair<HandleGenerator,Deque<Iv2InFlight>> partitionStuff=m_partitionStuff.get(partitionId);
+  if (partitionStuff == null) {
+    perPartDeque=new ArrayDeque<Iv2InFlight>();
+    generator=new HandleGenerator(partitionId);
+    m_partitionStuff=new Builder<Integer,Pair<HandleGenerator,Deque<Iv2InFlight>>>().putAll(m_partitionStuff).put(partitionId,Pair.of(generator,perPartDeque)).build();
+  }
+ else {
+    generator=partitionStuff.getFirst();
+    perPartDeque=partitionStuff.getSecond();
+  }
+  long ciHandle=generator.getNextHandle();
+  Iv2InFlight inFlight=new Iv2InFlight(ciHandle,clientHandle,messageSize,creationTime);
+  perPartDeque.addLast(inFlight);
+  m_outstandingTxns++;
+  m_acg.increaseBackpressure(messageSize);
+  return ciHandle;
+}

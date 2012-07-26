@@ -3,32 +3,20 @@
     throw new RuntimeException("Procedure " + m_procedureName + " attempted to execute a batch "+ "after claiming a previous batch was final "+ "and will be aborted.\n  Examine calls to "+ "voltExecuteSQL() and verify that the call "+ "with the argument value 'true' is actually "+ "the final one");
   }
   m_seenFinalBatch=isFinalSQL;
-  try {
-    int batchSize=m_batch.size();
-    if (batchSize == 0) {
-      return new VoltTable[]{};
-    }
-    if (batchSize <= MAX_BATCH_SIZE) {
-      return executeQueriesInABatch(m_batch,isFinalSQL);
-    }
- else {
-      List<VoltTable[]> results=new ArrayList<VoltTable[]>();
-      for (int i=0; i < batchSize; ) {
-        int end=Math.min(i + MAX_BATCH_SIZE,batchSize);
-        List<QueuedSQL> subBatch=new ArrayList<QueuedSQL>(end - i);
-        for (; i < end; i++) {
-          subBatch.add(m_batch.get(i));
-        }
-        boolean finalSubBatch=isFinalSQL && (end == batchSize);
-        results.add(executeQueriesInABatch(subBatch,finalSubBatch));
-      }
-      VoltTable[] retval=MiscUtils.concatAll(new VoltTable[0],results);
-      assert(retval.length == batchSize);
-      return retval;
-    }
+  int batchSize=m_batch.size();
+  if (batchSize <= MAX_BATCH_SIZE) {
+    return executeQueriesInABatch(m_batch,isFinalSQL);
   }
-  finally {
-    m_batch.clear();
-    m_batchHasAdhoc=false;
+ else {
+    List<VoltTable[]> results=new ArrayList<VoltTable[]>();
+    while (m_batch.size() > 0) {
+      int subSize=Math.min(MAX_BATCH_SIZE,m_batch.size());
+      List<QueuedSQL> subBatch=m_batch.subList(0,subSize);
+      boolean finalSubBatch=isFinalSQL && (subSize == m_batch.size());
+      results.add(executeQueriesInABatch(subBatch,finalSubBatch));
+    }
+    VoltTable[] retval=MiscUtils.concatAll(new VoltTable[0],results);
+    assert(retval.length == batchSize);
+    return retval;
   }
 }
