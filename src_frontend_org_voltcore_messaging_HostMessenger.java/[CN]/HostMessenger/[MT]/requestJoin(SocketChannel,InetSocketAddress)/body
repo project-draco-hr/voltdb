@@ -3,32 +3,24 @@
   prepSocketChannel(socket);
   ForeignHost fhost=null;
   try {
-    try {
-      writeRequestJoinResponse(hostId,socket);
-      ByteBuffer finishedJoining=ByteBuffer.allocate(1);
-      socket.configureBlocking(false);
-      long start=System.currentTimeMillis();
-      while (finishedJoining.hasRemaining() && System.currentTimeMillis() - start < 120000) {
-        int read=socket.read(finishedJoining);
-        if (read == -1) {
-          hostLog.info("New connection was unable to establish mesh");
-          return;
-        }
- else         if (read < 1) {
-          Thread.sleep(5);
-        }
+    writeRequestJoinResponse(hostId,socket);
+    ByteBuffer finishedJoining=ByteBuffer.allocate(1);
+    socket.configureBlocking(false);
+    long start=System.currentTimeMillis();
+    while (finishedJoining.hasRemaining() && System.currentTimeMillis() - start < 120000) {
+      int read=socket.read(finishedJoining);
+      if (read == -1) {
+        hostLog.info("New connection was unable to establish mesh");
+        return;
       }
-      fhost=new ForeignHost(this,hostId,socket,m_config.deadHostTimeout,listeningAddress);
-      fhost.register(this);
-      putForeignHost(hostId,fhost);
-      fhost.enableRead();
+ else       if (read < 1) {
+        Thread.sleep(5);
+      }
     }
- catch (    Exception e) {
-      logger.error("Error joining new node",e);
-      m_knownFailedHosts.add(hostId);
-      removeForeignHost(hostId);
-      return;
-    }
+    fhost=new ForeignHost(this,hostId,socket,m_config.deadHostTimeout,listeningAddress);
+    fhost.register(this);
+    putForeignHost(hostId,fhost);
+    fhost.enableRead();
     long hsId=CoreUtils.getHSIdFromHostAndSite(hostId,AGREEMENT_SITE_ID);
     if (!m_agreementSite.requestJoin(hsId).await(60,TimeUnit.SECONDS)) {
       reportForeignHostFailed(hostId);
