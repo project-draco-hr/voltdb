@@ -353,6 +353,48 @@ catch (    VoltTypeException e) {
     }
     return new DependencyPair(dependency_id,result);
   }
+ else   if (fragmentId == SysProcFragmentId.PF_restoreAsyncRunLoop) {
+    Object paramsArray[]=params.toArray();
+    assert(paramsArray.length == 1);
+    assert(paramsArray[0] instanceof Long);
+    long coordinatorHSId=(Long)paramsArray[0];
+    Mailbox m=VoltDB.instance().getHostMessenger().createMailbox();
+    m_mbox=m;
+    ByteBuffer responseBuffer=ByteBuffer.allocate(16);
+    responseBuffer.putLong(m_site.getCorrespondingSiteId());
+    responseBuffer.putLong(m.getHSId());
+    BinaryPayloadMessage bpm=new BinaryPayloadMessage(new byte[0],responseBuffer.array());
+    m.send(coordinatorHSId,bpm);
+    bpm=null;
+    while (true) {
+      bpm=(BinaryPayloadMessage)m.recvBlocking();
+      if (bpm == null)       continue;
+      ByteBuffer wrappedMap=ByteBuffer.wrap(bpm.m_payload);
+      while (wrappedMap.hasRemaining()) {
+        long actualHSId=wrappedMap.getLong();
+        long generatedHSId=wrappedMap.getLong();
+        m_actualToGenerated.put(actualHSId,generatedHSId);
+      }
+      break;
+    }
+    while (true) {
+      VoltMessage vm=m.recvBlocking(1000);
+      if (vm == null)       continue;
+      if (vm instanceof FragmentTaskMessage) {
+        FragmentTaskMessage ftm=(FragmentTaskMessage)vm;
+        DependencyPair dp=m_runner.executePlanFragment(m_runner.getTxnState(),null,ftm.getFragmentId(0),ftm.getParameterSetForFragment(0));
+        FragmentResponseMessage frm=new FragmentResponseMessage(ftm,m.getHSId());
+        frm.addDependency(dp.depId,dp.dependency);
+        m.send(ftm.getCoordinatorHSId(),frm);
+      }
+ else       if (vm instanceof BinaryPayloadMessage) {
+        return new DependencyPair(DEP_restoreAsyncRunLoop,constructResultsTable());
+      }
+    }
+  }
+ else   if (fragmentId == SysProcFragmentId.PF_restoreAsyncRunLoopResults) {
+    return new DependencyPair(DEP_restoreAsyncRunLoopResults,constructResultsTable());
+  }
   assert(false);
   return null;
 }

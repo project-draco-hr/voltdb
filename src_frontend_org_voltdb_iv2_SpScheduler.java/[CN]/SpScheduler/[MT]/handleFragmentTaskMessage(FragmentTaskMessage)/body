@@ -1,0 +1,39 @@
+{
+  FragmentTaskMessage msg=message;
+  long newSpHandle;
+  if (m_isLeader) {
+    msg=new FragmentTaskMessage(message.getInitiatorHSId(),message.getCoordinatorHSId(),message);
+    newSpHandle=m_txnId.incrementAndGet();
+    msg.setSpHandle(newSpHandle);
+    if (m_sendToHSIds.size() > 0) {
+      FragmentTaskMessage replmsg=new FragmentTaskMessage(m_mailbox.getHSId(),m_mailbox.getHSId(),msg);
+      m_mailbox.send(com.google.common.primitives.Longs.toArray(m_sendToHSIds),replmsg);
+      DuplicateCounter counter;
+      if (message.getFragmentTaskType() != FragmentTaskMessage.SYS_PROC_PER_SITE) {
+        counter=new DuplicateCounter(msg.getCoordinatorHSId(),msg.getTxnId(),m_replicaHSIds);
+      }
+ else {
+        counter=new SysProcDuplicateCounter(msg.getCoordinatorHSId(),msg.getTxnId(),m_replicaHSIds);
+      }
+      m_duplicateCounters.put(newSpHandle,counter);
+    }
+  }
+ else {
+    newSpHandle=msg.getSpHandle();
+    m_txnId.set(newSpHandle);
+  }
+  TransactionState txn=m_outstandingTxns.get(msg.getTxnId());
+  Iv2Trace.logFragmentTaskMessage(message,m_mailbox.getHSId(),newSpHandle,false);
+  if (txn == null) {
+    txn=new ParticipantTransactionState(newSpHandle,msg);
+    m_outstandingTxns.put(msg.getTxnId(),txn);
+  }
+  if (msg.isSysProcTask()) {
+    final SysprocFragmentTask task=new SysprocFragmentTask(m_mailbox,(ParticipantTransactionState)txn,m_pendingTasks,msg,null);
+    m_pendingTasks.offer(task);
+  }
+ else {
+    final FragmentTask task=new FragmentTask(m_mailbox,(ParticipantTransactionState)txn,m_pendingTasks,msg,null);
+    m_pendingTasks.offer(task);
+  }
+}
