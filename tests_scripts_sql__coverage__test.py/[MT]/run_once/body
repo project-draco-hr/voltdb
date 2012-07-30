@@ -1,10 +1,4 @@
-def run_once(name, command, statements_path, results_path):
-    print 'Running "run_once":'
-    print ('  name: %s' % name)
-    print ('  command: %s' % command)
-    print ('  statements_path: %s' % statements_path)
-    print ('  results_path: %s' % results_path)
-    sys.stdout.flush()
+def run_once(name, command, statements):
     global normalize
     server = subprocess.Popen(((command + ' backend=') + name), shell=True)
     client = None
@@ -17,16 +11,8 @@ def run_once(name, command, statements_path, results_path):
         except socket.error:
             time.sleep(1)
     if (client == None):
-        print  >> sys.stderr, 'Unable to connect/create client'
-        sys.stderr.flush()
         return (-1)
-    statements_file = open(statements_path, 'rb')
-    results_file = open(results_path, 'wb')
-    while True:
-        try:
-            statement = cPickle.load(statements_file)
-        except EOFError:
-            break
+    for statement in statements:
         try:
             client.onecmd(('adhoc ' + statement['SQL']))
         except:
@@ -36,21 +22,14 @@ def run_once(name, command, statements_path, results_path):
             if (killer.returncode != 0):
                 print  >> sys.stderr, ('Failed to kill the server process %d' % server.pid)
             break
-        tables = None
-        if (client.response == None):
-            print  >> sys.stderr, ("No error, but an unexpected null client response (server crash?) from executing statement '%s': %s" % (statement['SQL'], sys.exc_info()[1]))
-            killer = subprocess.Popen(('kill -9 %d' % server.pid), shell=True)
-            killer.communicate()
-            if (killer.returncode != 0):
-                print  >> sys.stderr, ('Failed to kill the server process %d' % server.pid)
-            break
         if (client.response.tables != None):
             tables = [normalize(t, statement['SQL']) for t in client.response.tables]
-        cPickle.dump({'Status': client.response.status, 'Info': client.response.statusString, 'Result': tables, 'Exception': str(client.response.exception), }, results_file)
-    results_file.close()
-    statements_file.close()
+            tablestr = cPickle.dumps(tables, cPickle.HIGHEST_PROTOCOL)
+        else:
+            tablestr = cPickle.dumps(None, cPickle.HIGHEST_PROTOCOL)
+        statement[name] = {'Status': client.response.status, 'Info': client.response.statusString, 'Result': encodestring(tablestr), }
+        if (client.response.exception != None):
+            statement[name]['Exception'] = str(client.response.exception)
     client.onecmd('shutdown')
     server.communicate()
-    sys.stdout.flush()
-    sys.stderr.flush()
     return server.returncode
