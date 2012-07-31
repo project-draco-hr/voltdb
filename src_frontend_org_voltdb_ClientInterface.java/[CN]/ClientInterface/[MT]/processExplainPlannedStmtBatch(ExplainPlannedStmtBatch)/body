@@ -1,0 +1,46 @@
+{
+  final Connection c=(Connection)planBatch.clientData;
+  List<byte[]> planByteArray=planBatch.getAggregatorFragments();
+  VoltTable[] vt=new VoltTable[planBatch.getSQLStatements().size()];
+  if (planByteArray != null) {
+    int i=0;
+    for (    byte[] planByte : planByteArray) {
+      String plan=new String(planByte,VoltDB.UTF8ENCODING);
+      PlanNodeTree pnt=new PlanNodeTree();
+      try {
+        JSONObject jobj=new JSONObject(plan);
+        JSONArray jarray=jobj.getJSONArray("PLAN_NODES");
+        pnt.loadFromJSONArray(jarray,null);
+        String str=pnt.getRootPlanNode().toExplainPlanString();
+        vt[i++]=new VoltTable(new VoltTable.ColumnInfo(str,VoltType.STRING));
+      }
+ catch (      JSONException e) {
+        System.out.println(e.getMessage());
+      }
+    }
+  }
+ else {
+    planByteArray=planBatch.getCollectorFragments();
+    int i=0;
+    for (    byte[] planByte : planByteArray) {
+      String plan=new String(planByte,VoltDB.UTF8ENCODING);
+      PlanNodeTree pnt=new PlanNodeTree();
+      try {
+        JSONObject jobj=new JSONObject(plan);
+        JSONArray jarray=jobj.getJSONArray("PLAN_NODES");
+        pnt.loadFromJSONArray(jarray,null);
+        String str=pnt.getRootPlanNode().toExplainPlanString();
+        vt[i++]=new VoltTable(new VoltTable.ColumnInfo(str,VoltType.STRING));
+      }
+ catch (      JSONException e) {
+        System.out.println(e.getMessage());
+      }
+    }
+  }
+  ClientResponseImpl response=new ClientResponseImpl(ClientResponseImpl.SUCCESS,ClientResponse.SUCCESS,null,vt,null);
+  ByteBuffer buf=ByteBuffer.allocate(response.getSerializedSize() + 4);
+  buf.putInt(buf.capacity() - 4);
+  response.flattenToBuffer(buf);
+  buf.flip();
+  c.writeStream().enqueue(buf);
+}
