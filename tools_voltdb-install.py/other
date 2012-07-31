@@ -1,0 +1,48 @@
+import sys
+import os
+from glob import glob
+from optparse import OptionParser
+import tempfile
+import shutil
+import subprocess
+import pwd
+import grp
+from copy import copy
+actions = (Action('doc', 'usr/share/voltdb/doc'), Action('examples', 'usr/share/voltdb/examples'), Action('tools', 'usr/share/voltdb/tools'), Action('bin/*', 'usr/share/voltdb/bin', link_dir='usr/bin'), Action('lib/*', 'usr/lib/voltdb'), Action('voltdb/log4j*', 'usr/share/voltdb/voltdb'), Action('voltdb/*', 'usr/lib/voltdb'), Action('*', 'usr/share/voltdb', recursive=False))
+if (__name__ == '__main__'):
+    parser = OptionParser(description='This script can install, uninstall, validate an installation, and create\npackages for VoltDB. It uses the working directory to determine the active\nsource tree. When creating a package it detects whether the source tree is for\nthe pro or the community edition and adjusts the package accordingly.')
+    parser.set_usage('%prog [OPTIONS]')
+    parser.add_option('-C', '--clean', action='store_true', dest='clean', help='clean package building output')
+    parser.add_option('-c', '--check', action='store_true', dest='check', help='check VoltDB installation')
+    parser.add_option('-D', '--debian', action='store_true', dest='debian', help=('create debian package (in %s)' % relpath(Global.source_root, Global.debian_output_root)))
+    parser.add_option('-d', '--debug', action='store_true', dest='debug', help='display debug messages')
+    parser.add_option('-i', '--install', action='store_true', dest='install', help='install VoltDB directly (without creating package)')
+    parser.add_option('-k', '--keep', action='store_true', dest='keep', help="keep (don't delete) build directory")
+    parser.add_option('-n', '--dry-run', action='store_true', dest='dryrun', help='perform dry run without executing actions')
+    parser.add_option('-p', '--prefix', type='string', dest='prefix', default='/', help='specify prefix directory for installation target (default=/)')
+    parser.add_option('-u', '--uninstall', action='store_true', dest='uninstall', help='uninstall VoltDB')
+    parser.add_option('-v', '--verbose', action='store_true', dest='verbose', help='display verbose messages')
+    (Global.options, Global.args) = parser.parse_args()
+    if (len(Global.args) > 0):
+        error('Bad arguments to command line.')
+        parser.print_help()
+        abort()
+    acted = False
+    if Global.options.check:
+        check()
+        acted = True
+    if Global.options.uninstall:
+        uninstall()
+        acted = True
+    if Global.options.clean:
+        clean()
+        acted = True
+    if Global.options.debian:
+        debian()
+        acted = True
+    if Global.options.install:
+        install()
+        acted = True
+    if (not acted):
+        error('No action was selected')
+        parser.print_help()
