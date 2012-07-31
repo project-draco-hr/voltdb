@@ -20,21 +20,18 @@
     }
     partitions=m_allPartitions;
   }
-  List<byte[]> aggregatorFragmentList=plannedStmtBatch.getAggregatorFragments();
-  byte[][] aggregatorFragments=aggregatorFragmentList.toArray(new byte[aggregatorFragmentList.size()][]);
-  List<byte[]> collectorFragmentList=plannedStmtBatch.getCollectorFragments();
-  byte[][] collectorFragments=collectorFragmentList.toArray(new byte[collectorFragmentList.size()][]);
-  List<String> sqlStatementList=plannedStmtBatch.getSQLStatements();
-  String[] sqlStatements=sqlStatementList.toArray(new String[sqlStatementList.size()]);
-  List<Integer> replicatedTableDMLFlagList=plannedStmtBatch.getReplicatedTableDMLFlags();
-  int[] replicatedTableDMLFlags=ArrayUtils.toPrimitive(replicatedTableDMLFlagList.toArray(new Integer[replicatedTableDMLFlagList.size()]));
-  task.setParams(aggregatorFragments,collectorFragments,sqlStatements,replicatedTableDMLFlags);
+  ByteBuffer buf=ByteBuffer.allocate(plannedStmtBatch.getPlanArraySerializedSize());
+  plannedStmtBatch.flattenPlanArrayToBuffer(buf);
+  assert(buf.hasArray());
+  task.setParams(buf.array());
   task.clientHandle=plannedStmtBatch.clientHandle;
   FastSerializer fs=new FastSerializer();
+  int serializedSize=0;
   try {
     fs.writeObject(task);
     ByteBuffer source=fs.getBuffer();
     ByteBuffer copy=ByteBuffer.allocate(source.remaining());
+    serializedSize=copy.capacity();
     copy.put(source);
     copy.flip();
     FastDeserializer fds=new FastDeserializer(copy);
@@ -53,7 +50,7 @@
       }
     }
   }
-  createTransaction(plannedStmtBatch.connectionId,plannedStmtBatch.hostname,plannedStmtBatch.adminConnection,task,plannedStmtBatch.isReadOnly(),isSinglePartition,false,partitions,partitions.length,plannedStmtBatch.clientData,0,EstTime.currentTimeMillis(),allowMismatchedResults);
+  createTransaction(plannedStmtBatch.connectionId,plannedStmtBatch.hostname,plannedStmtBatch.adminConnection,task,plannedStmtBatch.isReadOnly(),isSinglePartition,false,partitions,partitions.length,plannedStmtBatch.clientData,serializedSize,EstTime.currentTimeMillis(),allowMismatchedResults);
   plannedStmtBatch.clientData=null;
   for (int index=0; index < plannedStmtBatch.getPlannedStatementCount(); index++) {
     m_adhocCache.put(plannedStmtBatch.getPlannedStatement(index));
