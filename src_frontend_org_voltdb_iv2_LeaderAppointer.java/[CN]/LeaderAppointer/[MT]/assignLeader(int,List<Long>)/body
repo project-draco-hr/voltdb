@@ -1,0 +1,34 @@
+{
+  int masterHostId=-1;
+  if (m_partitionCountLatch.getCount() > 0) {
+    try {
+      JSONArray parts=m_topo.getJSONArray("partitions");
+      for (int p=0; p < parts.length(); p++) {
+        JSONObject aPartition=parts.getJSONObject(p);
+        int pid=aPartition.getInt("partition_id");
+        if (pid == partitionId) {
+          masterHostId=aPartition.getInt("master");
+        }
+      }
+    }
+ catch (    JSONException jse) {
+      hostLog.error("Failed to find master for partition " + partitionId + ", defaulting to 0");
+      jse.printStackTrace();
+      masterHostId=-1;
+    }
+  }
+  long masterHSId=children.get(0);
+  for (  Long child : children) {
+    if (CoreUtils.getHostIdFromHSId(child) == masterHostId) {
+      masterHSId=child;
+      break;
+    }
+  }
+  MapCacheWriter iv2masters=new MapCache(m_zk,VoltZK.iv2masters);
+  try {
+    iv2masters.put(Integer.toString(partitionId),new JSONObject("{appointee:" + masterHSId + "}"));
+  }
+ catch (  Exception e) {
+    VoltDB.crashLocalVoltDB("Unable to appoint new master for partition " + partitionId,true,e);
+  }
+}

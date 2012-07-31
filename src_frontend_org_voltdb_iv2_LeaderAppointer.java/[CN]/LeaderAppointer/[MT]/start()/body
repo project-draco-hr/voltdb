@@ -1,0 +1,17 @@
+{
+  for (int i=0; i < m_partitionCountLatch.getCount(); i++) {
+    String dir=LeaderElector.electionDirForPartition(i);
+    try {
+      m_zk.create(dir,null,Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+    }
+ catch (    KeeperException.NodeExistsException e) {
+    }
+    m_callbacks[i]=new PartitionCallback(i);
+    Pair<BabySitter,List<String>> sitterstuff=BabySitter.blockingFactory(m_zk,dir,m_callbacks[i]);
+    m_partitionWatchers[i]=sitterstuff.getFirst();
+    if (sitterstuff.getSecond().size() == (m_kfactor + 1)) {
+      assignLeader(i,VoltZK.childrenToReplicaHSIds(sitterstuff.getSecond()));
+      m_partitionCountLatch.countDown();
+    }
+  }
+}
