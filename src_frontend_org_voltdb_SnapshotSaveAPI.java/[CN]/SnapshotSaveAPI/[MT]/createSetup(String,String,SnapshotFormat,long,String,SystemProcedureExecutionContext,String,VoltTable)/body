@@ -1,7 +1,7 @@
 {
 {
-    final int numLocalSites=(VoltDB.instance().getLocalSites().values().size() - ExecutionSite.recoveringSiteCount.get());
-    SiteTracker tracker=context.getSiteTracker();
+    SiteTracker tracker=context.getSiteTrackerForSnapshot();
+    final int numLocalSites=(tracker.getLocalSites().length - recoveringSiteCount.get());
     Long targetHSid=null;
     MessageDigest digest;
     try {
@@ -77,6 +77,7 @@
       }
       for (      final Table table : SnapshotUtil.getTablesToSave(context.getDatabase())) {
         if (format == SnapshotFormat.CSV && table.getIsreplicated() && !tracker.isFirstHost()) {
+          snapshotRecord.removeTable(table.getTypeName());
           continue;
         }
         String canSnapshot="SUCCESS";
@@ -90,7 +91,7 @@
             sdt=new SimpleFileSnapshotDataTarget(saveFilePath);
           }
  else           if (format == SnapshotFormat.NATIVE) {
-            sdt=constructSnapshotDataTargetForTable(context,saveFilePath,table,context.getHostId(),context.getSiteTracker().m_numberOfPartitions,txnId);
+            sdt=constructSnapshotDataTargetForTable(context,saveFilePath,table,context.getHostId(),tracker.m_numberOfPartitions,txnId);
           }
           if (sdt == null) {
             throw new IOException("Unable to create snapshot target");
@@ -98,7 +99,7 @@
           targets.add(sdt);
           final SnapshotDataTarget sdtFinal=sdt;
           final Runnable onClose=new Runnable(){
-            @Override public void run(){
+            @SuppressWarnings("synthetic-access") @Override public void run(){
               snapshotRecord.updateTable(table.getTypeName(),new SnapshotRegistry.Snapshot.TableUpdater(){
                 @Override public SnapshotRegistry.Snapshot.Table update(                SnapshotRegistry.Snapshot.Table registryTable){
                   return snapshotRecord.new Table(registryTable,sdtFinal.getBytesWritten(),sdtFinal.getLastWriteException());

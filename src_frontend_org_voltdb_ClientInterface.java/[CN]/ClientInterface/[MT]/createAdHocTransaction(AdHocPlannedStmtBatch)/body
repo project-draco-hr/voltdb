@@ -1,6 +1,6 @@
 {
   StoredProcedureInvocation task=new StoredProcedureInvocation();
-  boolean isSinglePartition=(plannedStmtBatch.partitionParam != null) && !m_isConfiguredForHSQL;
+  boolean isSinglePartition=plannedStmtBatch.isSinglePartitionCompatible() || m_isConfiguredForHSQL;
   int partitions[]=null;
   if (isSinglePartition) {
     if (plannedStmtBatch.isReadOnly()) {
@@ -9,7 +9,6 @@
  else {
       task.procName="@AdHoc_RW_SP";
     }
-    assert(plannedStmtBatch.isSinglePartitionCompatible());
     partitions=new int[]{TheHashinator.hashToPartition(plannedStmtBatch.partitionParam)};
   }
  else {
@@ -21,21 +20,18 @@
     }
     partitions=m_allPartitions;
   }
-  List<String> aggregatorFragmentList=plannedStmtBatch.getAggregatorFragments();
-  String[] aggregatorFragments=aggregatorFragmentList.toArray(new String[aggregatorFragmentList.size()]);
-  List<String> collectorFragmentList=plannedStmtBatch.getCollectorFragments();
-  String[] collectorFragments=collectorFragmentList.toArray(new String[collectorFragmentList.size()]);
-  List<String> sqlStatementList=plannedStmtBatch.getSQLStatements();
-  String[] sqlStatements=sqlStatementList.toArray(new String[sqlStatementList.size()]);
-  List<Integer> replicatedTableDMLFlagList=plannedStmtBatch.getReplicatedTableDMLFlags();
-  int[] replicatedTableDMLFlags=ArrayUtils.toPrimitive(replicatedTableDMLFlagList.toArray(new Integer[replicatedTableDMLFlagList.size()]));
-  task.setParams(aggregatorFragments,collectorFragments,sqlStatements,replicatedTableDMLFlags);
+  ByteBuffer buf=ByteBuffer.allocate(plannedStmtBatch.getPlanArraySerializedSize());
+  plannedStmtBatch.flattenPlanArrayToBuffer(buf);
+  assert(buf.hasArray());
+  task.setParams(buf.array());
   task.clientHandle=plannedStmtBatch.clientHandle;
   FastSerializer fs=new FastSerializer();
+  int serializedSize=0;
   try {
     fs.writeObject(task);
     ByteBuffer source=fs.getBuffer();
     ByteBuffer copy=ByteBuffer.allocate(source.remaining());
+    serializedSize=copy.capacity();
     copy.put(source);
     copy.flip();
     FastDeserializer fds=new FastDeserializer(copy);
@@ -54,7 +50,7 @@
       }
     }
   }
-  createTransaction(plannedStmtBatch.connectionId,plannedStmtBatch.hostname,plannedStmtBatch.adminConnection,task,plannedStmtBatch.isReadOnly(),isSinglePartition,false,partitions,partitions.length,plannedStmtBatch.clientData,0,EstTime.currentTimeMillis(),allowMismatchedResults);
+  createTransaction(plannedStmtBatch.connectionId,plannedStmtBatch.hostname,plannedStmtBatch.adminConnection,task,plannedStmtBatch.isReadOnly(),isSinglePartition,false,partitions,partitions.length,plannedStmtBatch.clientData,serializedSize,EstTime.currentTimeMillis(),allowMismatchedResults);
   plannedStmtBatch.clientData=null;
   for (int index=0; index < plannedStmtBatch.getPlannedStatementCount(); index++) {
     m_adhocCache.put(plannedStmtBatch.getPlannedStatement(index));

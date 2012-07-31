@@ -30,7 +30,6 @@
   }
   CompiledPlan rawplan=null;
   CompiledPlan bestPlan=null;
-  Object bestPartitioningKey=null;
   String bestFilename=null;
   double minCost=Double.MAX_VALUE;
   int planCounter=0;
@@ -49,9 +48,9 @@
       List<CompiledPlan> optimizedPlans=MicroOptimizationRunner.applyAll(rawplan);
       for (      CompiledPlan plan : optimizedPlans) {
         plan.sql=sql;
-        plan.fragments.get(0).planGraph.resolveColumnIndexes();
+        plan.rootPlanGraph.resolveColumnIndexes();
         stats=new PlanStatistics();
-        AbstractPlanNode planGraph=plan.fragments.get(0).planGraph;
+        AbstractPlanNode planGraph=plan.rootPlanGraph;
         boolean result=planGraph.computeEstimatesRecursively(stats,m_cluster,m_db,m_estimates,paramHints);
         assert(result);
         plan.cost=costModel.getPlanCost(stats);
@@ -60,7 +59,6 @@
           minCost=plan.cost;
           bestPlan=plan;
           bestFilename=filename;
-          bestPartitioningKey=plan.getPartitioningKey();
         }
         if (!m_quietPlanner) {
           if (m_fullDebug) {
@@ -80,11 +78,6 @@
   if (!m_quietPlanner) {
     finalizeOutput(stmtName,procName,bestFilename,stats);
   }
-  bestPlan=Fragmentizer.fragmentize(bestPlan,m_db);
-  if (bestPlan.fragments.size() > 2) {
-    m_recentErrorMsg="Unable to plan for statement. Possibly " + "joining partitioned tables in a multi-partition procedure " + "using a column that is not the partitioning attribute "+ "or a non-equality operator. "+ "This is statement not supported at this time.";
-    return null;
-  }
-  m_assembler.resetPartitioningKey(bestPartitioningKey);
+  Fragmentizer.fragmentize(bestPlan,m_db);
   return bestPlan;
 }

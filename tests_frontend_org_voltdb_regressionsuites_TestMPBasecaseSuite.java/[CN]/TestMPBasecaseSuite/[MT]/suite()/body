@@ -1,0 +1,41 @@
+{
+  VoltServerConfig config=null;
+  final MultiConfigSuiteBuilder builder=new MultiConfigSuiteBuilder(TestMPBasecaseSuite.class);
+  final VoltProjectBuilder project=new VoltProjectBuilder();
+  project.addStmtProcedure("CountP1","select count(*) from p1;");
+  project.addStmtProcedure("UpdateP1","update p1 set b2 = 2");
+  project.addStmtProcedure("SumP1","select sum(b2) from p1;");
+  project.addStmtProcedure("UpdateR1","update r1 set b2 = 2");
+  project.addStmtProcedure("SumR1","select sum(b2) from r1;");
+  project.addStmtProcedure("ConstraintViolationUpdate","update p1 set b1 = 1");
+  project.addStmtProcedure("SumB1","select sum(b1) from p1;");
+  project.addStmtProcedure("ConstraintViolationUpdate_R","update r1 set b1 = 1");
+  project.addStmtProcedure("SumB1_R","select sum(b1) from r1;");
+  project.addStmtProcedure("PartitionViolationUpdate","update p1 set key = 1");
+  project.addStmtProcedure("SumKey","select sum(key) from p1;");
+  try {
+    project.addLiteralSchema("CREATE TABLE p1(key INTEGER NOT NULL, b1 INTEGER NOT NULL, " + "b2 INTEGER NOT NULL, a2 VARCHAR(10) NOT NULL, PRIMARY KEY (b1));");
+    project.addPartitionInfo("p1","key");
+    project.addLiteralSchema("CREATE TABLE r1(key INTEGER NOT NULL, b1 INTEGER NOT NULL, " + "b2 INTEGER NOT NULL, a2 VARCHAR(10) NOT NULL, PRIMARY KEY (b1));");
+  }
+ catch (  IOException error) {
+    fail(error.getMessage());
+  }
+  config=new LocalCluster("sqltypes-onesite.jar",1,1,0,BackendTarget.NATIVE_EE_JNI);
+  boolean t1=config.compile(project);
+  assertTrue(t1);
+  builder.addServerConfig(config);
+  config=new LocalCluster("sqltypes-onesite.jar",3,1,0,BackendTarget.NATIVE_EE_JNI);
+  boolean t3=config.compile(project);
+  assertTrue(t3);
+  builder.addServerConfig(config);
+  config=new LocalCluster("sqltypes-cluster.jar",2,3,1,BackendTarget.NATIVE_EE_JNI);
+  boolean t2=config.compile(project);
+  assertTrue(t2);
+  builder.addServerConfig(config);
+  config=new LocalCluster("sqltypes-iv2cluster.jar",2,3,1,BackendTarget.NATIVE_EE_JNI,false,true);
+  boolean t4=config.compile(project);
+  assertTrue(t4);
+  builder.addServerConfig(config);
+  return builder;
+}
