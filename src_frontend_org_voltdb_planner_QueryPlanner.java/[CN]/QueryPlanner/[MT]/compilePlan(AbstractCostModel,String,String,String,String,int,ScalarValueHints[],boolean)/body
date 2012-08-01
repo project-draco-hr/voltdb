@@ -1,0 +1,42 @@
+{
+  assert(costModel != null);
+  assert(sql != null);
+  assert(stmtName != null);
+  assert(procName != null);
+  m_recentErrorMsg=null;
+  AbstractPlanNode.resetPlanNodeIds();
+  VoltXMLElement xmlSQL=null;
+  try {
+    xmlSQL=m_HSQL.getXMLCompiledStatement(sql);
+  }
+ catch (  HSQLParseException e) {
+    m_recentErrorMsg=e.getMessage();
+    return null;
+  }
+  if (!m_quietPlanner && m_fullDebug) {
+    outputCompiledStatement(stmtName,procName,xmlSQL);
+  }
+  Object[] extractedParams=null;
+  VoltXMLElement parameterizedXmlSQL=xmlSQL.duplicate();
+  Parameterizer pzer=new Parameterizer(parameterizedXmlSQL);
+  int preExistingParams=pzer.countParams();
+  if (parameterize && (preExistingParams == 0)) {
+    extractedParams=pzer.parameterize().toArray();
+    if (!m_quietPlanner && m_fullDebug) {
+      outputParameterizedCompiledStatement(stmtName,procName,xmlSQL);
+    }
+    try {
+      CompiledPlan plan=compileFromXML(parameterizedXmlSQL,costModel,sql,joinOrder,stmtName,procName,maxTablesPerJoin,paramHints,preExistingParams);
+      for (int i=0; i < plan.parameters.length; i++) {
+        extractedParams[i]=Parameterizer.valueForStringWithType((String)extractedParams[i],plan.parameters[i]);
+      }
+      plan.extractedParamValues.setParameters(extractedParams);
+      return plan;
+    }
+ catch (    Exception e) {
+      System.err.println("Failled to plan, but will continue without parameterization.");
+      e.printStackTrace();
+    }
+  }
+  return compileFromXML(xmlSQL,costModel,sql,joinOrder,stmtName,procName,maxTablesPerJoin,paramHints,preExistingParams);
+}

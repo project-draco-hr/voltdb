@@ -13,13 +13,25 @@
     assert(1 == paw.plannedStatements.size());
     QueuedSQL queuedSQL=new QueuedSQL();
     AdHocPlannedStatement plannedStatement=paw.plannedStatements.get(0);
-    queuedSQL.stmt=SQLStmtAdHocHelper.createWithPlan(plannedStatement.sql,plannedStatement.aggregatorFragment,plannedStatement.collectorFragment,plannedStatement.isReplicatedTableDML,plannedStatement.params);
-    queuedSQL.params=getCleanParams(queuedSQL.stmt,args);
+    queuedSQL.stmt=SQLStmtAdHocHelper.createWithPlan(plannedStatement.sql,plannedStatement.aggregatorFragment,plannedStatement.collectorFragment,plannedStatement.isReplicatedTableDML,plannedStatement.parameterTypes);
+    if (plannedStatement.extractedParamValues.size() == 0) {
+      queuedSQL.params=getCleanParams(queuedSQL.stmt,args);
+    }
+ else {
+      if (args.length > 0) {
+        String msg=String.format("Parameter values passed to voltQueueSQL for unparameterized statement: %s",sql);
+        throw new VoltAbortException(msg);
+      }
+      queuedSQL.params=getCleanParams(queuedSQL.stmt,plannedStatement.extractedParamValues.toArray());
+    }
     m_batch.add(queuedSQL);
   }
  catch (  Exception e) {
     if (e instanceof ExecutionException) {
       throw new VoltAbortException(e.getCause());
+    }
+    if (e instanceof VoltAbortException) {
+      throw (VoltAbortException)e;
     }
     throw new VoltAbortException(e);
   }
