@@ -1,0 +1,18 @@
+{
+  assert(serializedBatchData != null);
+  ByteBuffer buf=ByteBuffer.wrap(serializedBatchData);
+  AdHocPlannedStatement[] statements=AdHocPlannedStmtBatch.planArrayFromBuffer(buf);
+  if (statements.length == 0) {
+    return new VoltTable[]{};
+  }
+  int currentCatalogVersion=ctx.getCatalogVersion();
+  for (  AdHocPlannedStatement statement : statements) {
+    if (currentCatalogVersion != statement.catalogVersion) {
+      String msg=String.format("AdHoc transaction %d wasn't planned " + "against the current catalog version. Statement: %s",ctx.getCurrentTxnId(),new String(statement.sql,VoltDB.UTF8ENCODING));
+      throw new VoltAbortException(msg);
+    }
+    SQLStmt stmt=SQLStmtAdHocHelper.createWithPlan(statement.sql,statement.aggregatorFragment,statement.collectorFragment,statement.isReplicatedTableDML,statement.params);
+    voltQueueSQL(stmt);
+  }
+  return voltExecuteSQL(true);
+}
