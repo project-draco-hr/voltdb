@@ -1,0 +1,25 @@
+{
+  ParameterSet params=task.getParams();
+  int size=params.toArray().length;
+  VoltTable[] vt=new VoltTable[size];
+  for (int i=0; i < size; i++) {
+    String procName=(String)(params.toArray())[i];
+    Procedure proc=m_catalogContext.get().procedures.get(procName);
+    if (proc == null) {
+      ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],"Procedure " + procName + " not in catalog",task.clientHandle);
+      return errorResponse;
+    }
+    vt[i]=new VoltTable(new VoltTable.ColumnInfo("SQL Statement",VoltType.STRING),new VoltTable.ColumnInfo("Explained Plan",VoltType.STRING));
+    for (    Statement stmt : proc.getStatements()) {
+      vt[i].addRow(stmt.getSqltext(),Encoder.hexDecodeToString(stmt.getExplainplan()));
+    }
+  }
+  ClientResponseImpl response=new ClientResponseImpl(ClientResponseImpl.SUCCESS,ClientResponse.SUCCESS,null,vt,null);
+  response.setClientHandle(task.clientHandle);
+  ByteBuffer buf=ByteBuffer.allocate(response.getSerializedSize() + 4);
+  buf.putInt(buf.capacity() - 4);
+  response.flattenToBuffer(buf);
+  buf.flip();
+  ccxn.writeStream().enqueue(buf);
+  return null;
+}
