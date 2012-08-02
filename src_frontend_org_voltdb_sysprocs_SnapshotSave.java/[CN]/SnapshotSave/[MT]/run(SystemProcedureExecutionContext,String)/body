@@ -5,17 +5,20 @@
   final String async=!block ? "Asynchronously" : "Synchronously";
   final String path=jsObj.getString("path");
   final String nonce=jsObj.getString("nonce");
-  final String format=jsObj.optString("format","native");
-  boolean csv=false;
-  if (format.equals("csv")) {
-    csv=true;
+  String formatStr=jsObj.optString("format",SnapshotFormat.NATIVE.toString());
+  final SnapshotFormat format=SnapshotFormat.getEnumIgnoreCase(formatStr);
+  final String data=jsObj.optString("data");
+  if (format == SnapshotFormat.STREAM) {
+    HOST_LOG.info(async + " streaming database, ID: " + nonce+ " at "+ startTime);
   }
-  HOST_LOG.info(async + " saving database to path: " + path+ ", ID: "+ nonce+ " at "+ startTime);
+ else {
+    HOST_LOG.info(async + " saving database to path: " + path+ ", ID: "+ nonce+ " at "+ startTime);
+  }
   ColumnInfo[] error_result_columns=new ColumnInfo[2];
   int ii=0;
   error_result_columns[ii++]=new ColumnInfo("RESULT",VoltType.STRING);
   error_result_columns[ii++]=new ColumnInfo("ERR_MSG",VoltType.STRING);
-  if (path == null || path.equals("")) {
+  if (format.isFileBased() && (path == null || path.equals(""))) {
     VoltTable results[]=new VoltTable[]{new VoltTable(error_result_columns)};
     results[0].addRow("FAILURE","Provided path was null or the empty string");
     return results;
@@ -31,7 +34,7 @@
     return results;
   }
   VoltTable[] results;
-  results=performSaveFeasibilityWork(path,nonce,csv);
+  results=performSaveFeasibilityWork(path,nonce,format,data);
   while (results[0].advanceRow()) {
     if (results[0].getString("RESULT").equals("FAILURE")) {
       results[0].resetRowPosition();
@@ -39,7 +42,7 @@
     }
   }
   performQuiesce();
-  results=performSnapshotCreationWork(path,nonce,ctx.getCurrentTxnId(),(byte)(block ? 1 : 0),csv);
+  results=performSnapshotCreationWork(path,nonce,ctx.getCurrentTxnId(),(byte)(block ? 1 : 0),format,data);
   try {
     JSONStringer stringer=new JSONStringer();
     stringer.object();

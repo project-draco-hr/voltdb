@@ -1,0 +1,49 @@
+{
+  String my_schema="create table BLAH (" + "clm_integer integer default 0 not null, " + "clm_tinyint tinyint default 0, "+ "clm_smallint smallint default 0, "+ "clm_bigint bigint default 0, "+ "clm_string varchar(10) default null, "+ "clm_decimal decimal default null, "+ "clm_float float default null"+ ");";
+  try {
+    pathToCatalog=Configuration.getPathToCatalogForTest("csv.jar");
+    pathToDeployment=Configuration.getPathToCatalogForTest("csv.xml");
+    builder=new VoltProjectBuilder();
+    builder.addLiteralSchema(my_schema);
+    builder.addPartitionInfo("BLAH","clm_integer");
+    boolean success=builder.compile(pathToCatalog,2,1,0);
+    assertTrue(success);
+    MiscUtils.copyFile(builder.getPathToDeployment(),pathToDeployment);
+    config=new VoltDB.Configuration();
+    config.m_pathToCatalog=pathToCatalog;
+    config.m_pathToDeployment=pathToDeployment;
+    localServer=new ServerThread(config);
+    client=null;
+    localServer.start();
+    localServer.waitForInitialization();
+    client=ClientFactory.createClient();
+    client.createConnection("localhost");
+    int expectedLineCnt=5;
+    client.callProcedure("@AdHoc","INSERT INTO BLAH VALUES (1,1,1,11111111,'first',1.10,1.11);");
+    client.callProcedure("@AdHoc","INSERT INTO BLAH VALUES (2,2,2,222222,'second',2.20,2.22);");
+    client.callProcedure("@AdHoc","INSERT INTO BLAH VALUES (3,3,3,333333, 'third' ,3.33, 3.33);");
+    client.callProcedure("@AdHoc","INSERT INTO BLAH VALUES (4,4,4,444444, 'fourth' ,4.40 ,4.44);");
+    client.callProcedure("@AdHoc","INSERT INTO BLAH VALUES (5,5,5,5555555, 'fifth', 5.50, 5.55);");
+    client.callProcedure("@SnapshotSave","{uripath:\"file:///tmp\",nonce:\"mydb\",block:true,format:\"csv\"}");
+    client.callProcedure("@AdHoc","DELETE FROM BLAH;");
+    String[] my_options={"-f" + "/tmp/mydb-BLAH-host_0.csv","--maxerrors=50","--user=","--password=","--port=","--separator=,","--quotechar=\"","--escape=\\","--skip=0","--nowhitespace","BLAH"};
+    CSVLoader.main(my_options);
+    File file=new File("/tmp/mydb-BLAH-host_0.csv");
+    file.delete();
+    VoltTable modCount;
+    modCount=client.callProcedure("@AdHoc","SELECT * FROM BLAH;").getResults()[0];
+    System.out.println("data inserted to table BLAH:\n" + modCount);
+    int rowct=modCount.getRowCount();
+    assertEquals(expectedLineCnt,rowct);
+  }
+  finally {
+    if (client != null)     client.close();
+    client=null;
+    if (localServer != null) {
+      localServer.shutdown();
+      localServer.join();
+    }
+    localServer=null;
+    System.gc();
+  }
+}

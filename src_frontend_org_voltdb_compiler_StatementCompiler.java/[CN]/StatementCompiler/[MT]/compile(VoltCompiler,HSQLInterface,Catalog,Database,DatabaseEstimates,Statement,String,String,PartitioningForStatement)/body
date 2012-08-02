@@ -1,42 +1,44 @@
 {
-  boolean compilerDebug=System.getProperties().contains("compilerdebug");
   stmt=stmt.replaceAll("\n"," ");
   stmt=stmt.trim();
   compiler.addInfo("Compiling Statement: " + stmt);
-  QueryType qtype;
+  QueryType qtype=QueryType.INVALID;
+  boolean statementRO=true;
   if (stmt.toLowerCase().startsWith("insert")) {
     qtype=QueryType.INSERT;
-    catalogStmt.setReadonly(false);
+    statementRO=false;
   }
  else   if (stmt.toLowerCase().startsWith("update")) {
     qtype=QueryType.UPDATE;
-    catalogStmt.setReadonly(false);
+    statementRO=false;
   }
  else   if (stmt.toLowerCase().startsWith("delete")) {
     qtype=QueryType.DELETE;
-    catalogStmt.setReadonly(false);
+    statementRO=false;
   }
  else   if (stmt.toLowerCase().startsWith("select")) {
     qtype=QueryType.SELECT;
-    catalogStmt.setReadonly(true);
   }
- else {
-    throw compiler.new VoltCompilerException("Unparsable SQL statement: " + stmt);
+ else   if (stmt.toLowerCase().startsWith("(")) {
+    qtype=QueryType.SELECT;
   }
+  catalogStmt.setReadonly(statementRO);
   catalogStmt.setQuerytype(qtype.getValue());
   catalogStmt.setSqltext(stmt);
   catalogStmt.setSinglepartition(partitioning.wasSpecifiedAsSingle());
   catalogStmt.setBatched(false);
   catalogStmt.setParamnum(0);
   String name=catalogStmt.getParent().getTypeName() + "-" + catalogStmt.getTypeName();
-  PlanNodeList node_list=null;
   TrivialCostModel costModel=new TrivialCostModel();
-  QueryPlanner planner=new QueryPlanner(catalog.getClusters().get("cluster"),db,partitioning,hsql,estimates,true,false);
+  QueryPlanner planner=new QueryPlanner(catalog.getClusters().get("cluster"),db,partitioning,hsql,estimates,false);
   CompiledPlan plan=null;
   try {
     plan=planner.compilePlan(costModel,catalogStmt.getSqltext(),joinOrder,catalogStmt.getTypeName(),catalogStmt.getParent().getTypeName(),DEFAULT_MAX_JOIN_TABLES,null);
   }
- catch (  Exception e) {
+ catch (  PlanningErrorException e) {
+    throw compiler.new VoltCompilerException("Failed to plan for stmt: " + catalogStmt.getTypeName());
+  }
+catch (  Exception e) {
     e.printStackTrace();
     throw compiler.new VoltCompilerException("Failed to plan for stmt: " + catalogStmt.getTypeName());
   }
@@ -55,10 +57,11 @@
   String nondeterminismDetail=plan.nondeterminismDetail();
   catalogStmt.setNondeterminismdetail(nondeterminismDetail);
   catalogStmt.setSeqscancount(plan.countSeqScans());
-  for (  ParameterInfo param : plan.parameters) {
-    StmtParameter catalogParam=catalogStmt.getParameters().add(String.valueOf(param.index));
-    catalogParam.setJavatype(param.type.getValue());
-    catalogParam.setIndex(param.index);
+  for (int i=0; i < plan.parameters.length; ++i) {
+    VoltType type=plan.parameters[i];
+    StmtParameter catalogParam=catalogStmt.getParameters().add(String.valueOf(i));
+    catalogParam.setJavatype(type.getValue());
+    catalogParam.setIndex(i);
   }
   int index=0;
   for (  SchemaColumn col : plan.columns.getColumns()) {
@@ -77,50 +80,27 @@
   }
   catalogStmt.setReplicatedtabledml(plan.replicatedTableDML);
   partitioning.setIsReplicatedTableDML(plan.replicatedTableDML);
-  PrintStream plansOut=BuildDirectoryUtils.getDebugOutputPrintStream("statement-winner-plans",name + ".txt");
-  plansOut.println("SQL: " + plan.sql);
-  plansOut.println("COST: " + Double.toString(plan.cost));
-  plansOut.println("PLAN:\n");
-  plansOut.println(plan.explainedPlan);
-  plansOut.close();
+  StringBuilder planDescription=new StringBuilder(1000);
+  planDescription.append("SQL: ").append(plan.sql);
+  planDescription.append("\nCOST: ").append(plan.cost);
+  planDescription.append("\nPLAN:\n");
+  planDescription.append(plan.explainedPlan);
+  String planString=planDescription.toString();
+  BuildDirectoryUtils.writeFile("statement-winner-plans",name + ".txt",planString);
+  compiler.captureDiagnosticContext(planString);
   catalogStmt.setExplainplan(Encoder.hexEncode(plan.explainedPlan));
-  int i=0;
-  Collections.sort(plan.fragments);
-  for (  CompiledPlan.Fragment fragment : plan.fragments) {
-    node_list=new PlanNodeList(fragment.planGraph);
-    String planFragmentName=Integer.toString(i);
-    PlanFragment planFragment=catalogStmt.getFragments().add(planFragmentName);
-    planFragment.setNontransactional(!fragmentReferencesPersistentTable(fragment.planGraph));
-    planFragment.setHasdependencies(fragment.hasDependencies);
-    planFragment.setMultipartition(fragment.multiPartition);
-    String json=node_list.toJSONString();
-    if (compilerDebug) {
-      String prettyJson=null;
-      try {
-        JSONObject jobj=new JSONObject(json);
-        prettyJson=jobj.toString(4);
-      }
- catch (      JSONException e2) {
-        e2.printStackTrace();
-        throw compiler.new VoltCompilerException(e2.getMessage());
-      }
-      plansOut=BuildDirectoryUtils.getDebugOutputPrintStream("statement-winner-plan-fragments",name + "-" + String.valueOf(i)+ ".txt");
-      plansOut.println(prettyJson);
-      plansOut.close();
-      plansOut=BuildDirectoryUtils.getDebugOutputPrintStream("statement-winner-plan-fragments",name + String.valueOf(i) + ".dot");
-      plansOut.println(node_list.toDOTString(name + "-" + String.valueOf(i)));
-      plansOut.close();
-    }
-    try {
-      FastSerializer fs=new FastSerializer(true,false);
-      fs.write(json.getBytes());
-      String hexString=fs.getHexEncodedBytes();
-      planFragment.setPlannodetree(hexString);
-    }
- catch (    Exception e) {
-      e.printStackTrace();
-      throw compiler.new VoltCompilerException(e.getMessage());
-    }
-    i++;
+  PlanFragment planFragment=catalogStmt.getFragments().add("0");
+  planFragment.setHasdependencies(plan.subPlanGraph != null);
+  planFragment.setNontransactional(!fragmentReferencesPersistentTable(plan.rootPlanGraph));
+  planFragment.setMultipartition(plan.subPlanGraph != null);
+  writePlanBytes(compiler,planFragment,plan.rootPlanGraph);
+  if (plan.subPlanGraph != null) {
+    planFragment=catalogStmt.getFragments().add("1");
+    planFragment.setHasdependencies(false);
+    planFragment.setNontransactional(false);
+    planFragment.setMultipartition(true);
+    writePlanBytes(compiler,planFragment,plan.subPlanGraph);
   }
+  int validType=catalogStmt.getQuerytype();
+  assert(validType != QueryType.INVALID.getValue());
 }

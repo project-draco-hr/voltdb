@@ -1,0 +1,45 @@
+{
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println(" Setup & Initialization");
+  System.out.println(HORIZONTAL_RULE);
+  connect(config.servers);
+  System.out.println("\nPopulating Static Table\n");
+  client.callProcedure("Initialize");
+  ClientResponse rowResp=client.callProcedure("getLastRow");
+  VoltTable[] rowResults=rowResp.getResults();
+  assert(rowResp.getStatus() == ClientResponse.SUCCESS);
+  assert(rowResults.length == 1);
+  long count=0;
+  if (rowResults[0].getRowCount() == 1) {
+    count=rowResults[0].asScalarLong() + 1;
+  }
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println("Starting Benchmark");
+  System.out.println(HORIZONTAL_RULE);
+  java.util.Random r=new java.util.Random(2);
+  System.out.println("Warming up...");
+  final long warmupEndTime=System.currentTimeMillis() + (1000l * config.warmup);
+  while (warmupEndTime > System.currentTimeMillis()) {
+    client.callProcedure(new doTxnCallback(),"doTxn",(byte)r.nextInt(127),count,count > config.windowsize ? count - config.windowsize : 0,processor.generateForStore().getStoreValue());
+    count++;
+  }
+  fullStatsContext.fetchAndResetBaseline();
+  periodicStatsContext.fetchAndResetBaseline();
+  benchmarkStartTS=System.currentTimeMillis();
+  schedulePeriodicStats();
+  System.out.println("\nRunning benchmark...");
+  final long benchmarkEndTime=System.currentTimeMillis() + (1000l * config.duration);
+  while (benchmarkEndTime > System.currentTimeMillis()) {
+    if (r.nextDouble() < config.multisingleratio) {
+      client.callProcedure(new updateReplicatedCallback(),"updateReplicated");
+    }
+ else {
+      client.callProcedure(new doTxnCallback(),"doTxn",(byte)r.nextInt(127),count,count > config.windowsize ? count - config.windowsize : 0,processor.generateForStore().getStoreValue());
+      count++;
+    }
+  }
+  timer.cancel();
+  client.drain();
+  printResults();
+  client.close();
+}

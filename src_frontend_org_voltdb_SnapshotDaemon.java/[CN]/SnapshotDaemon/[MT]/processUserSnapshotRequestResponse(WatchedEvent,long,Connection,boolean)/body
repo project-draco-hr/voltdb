@@ -1,0 +1,44 @@
+{
+  byte responseBytes[]=m_zk.getData(event.getPath(),false,null);
+  try {
+    m_zk.delete(event.getPath(),-1,null,null);
+  }
+ catch (  Exception e) {
+    hostLog.error("Error cleaning up user snapshot request response in ZK",e);
+  }
+  ByteBuffer buf=ByteBuffer.wrap(responseBytes);
+  ClientResponseImpl response=new ClientResponseImpl();
+  response.initFromBuffer(buf);
+  response.setClientHandle(clientHandle);
+  ByteBuffer buf2=ByteBuffer.allocate(response.getSerializedSize() + 4);
+  buf2.putInt(buf2.capacity() - 4);
+  response.flattenToBuffer(buf2).flip();
+  c.writeStream().enqueue(buf2);
+  if (notifyChanges && SnapshotUtil.isSnapshotQueued(response.getResults())) {
+    Watcher watcher=new Watcher(){
+      @Override public void process(      final WatchedEvent event){
+        if (event.getState() == KeeperState.Disconnected)         return;
+switch (event.getType()) {
+case NodeCreated:
+          m_es.submit(new Runnable(){
+            @Override public void run(){
+              try {
+                processUserSnapshotRequestResponse(event,clientHandle,c,false);
+              }
+ catch (              Exception e) {
+                VoltDB.crashLocalVoltDB("Error retrieving user snapshot request response from ZK",true,e);
+              }
+            }
+          }
+);
+        break;
+default :
+    }
+  }
+}
+;
+if (m_zk.exists(event.getPath(),watcher) != null) {
+  processUserSnapshotRequestResponse(event,clientHandle,c,false);
+}
+}
+}

@@ -11,14 +11,17 @@
         params[i]=qs.params;
         i++;
       }
-      return m_site.executeQueryPlanFragmentsAndGetResults(fragmentIds,batchSize,params,batchSize,m_txnState.txnId,m_catProc.getReadonly());
+      return m_site.executePlanFragments(batchSize,fragmentIds,null,params,m_txnState.txnId,m_catProc.getReadonly());
     }
     @Override public VoltTable[] onExecuteUnplanned(    final List<QueuedSQL> batch,    final boolean last){
-      VoltTable[] results=new VoltTable[batch.size()];
+      final VoltTable[] results=new VoltTable[batch.size()];
       for (int i=0; i < batch.size(); i++) {
-        String aggregatorFragment=batch.get(i).stmt.getPlan().getAggregatorFragment();
+        final QueuedSQL queuedSQL=batch.get(i);
+        final SQLStmt stmt=queuedSQL.stmt;
+        final byte[] aggregatorFragment=stmt.getPlan().getAggregatorFragment();
         assert(aggregatorFragment != null);
-        results[i]=m_site.executeCustomPlanFragment(aggregatorFragment,AGG_DEPID,m_txnState.txnId);
+        long fragId=m_site.loadPlanFragment(aggregatorFragment);
+        results[i]=m_site.executePlanFragments(1,new long[]{fragId},new long[]{AGG_DEPID},new ParameterSet[]{queuedSQL.params},m_txnState.txnId,m_catProc.getReadonly())[0];
       }
       return results;
     }

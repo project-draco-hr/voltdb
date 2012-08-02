@@ -3,17 +3,38 @@
   m_hsId=site.getSiteId();
   m_nonCoordinatingSites=null;
   m_isCoordinator=false;
+  m_context=site.m_context;
   if (notice instanceof InitiateTaskMessage) {
     m_invocation=((InitiateTaskMessage)notice).getStoredProcedureInvocation();
+    if (m_invocation != null) {
+      String procName=m_invocation.getProcName();
+      if (procName.startsWith("@AdHoc")) {
+        m_allowMismatchedResults=true;
+      }
+ else {
+        if (m_context != null && m_context.procedures != null) {
+          Procedure proc=m_context.procedures.get(procName);
+          if (proc != null) {
+            CatalogMap<Statement> stmts=proc.getStatements();
+            if (stmts != null) {
+              for (              Statement stmt : stmts) {
+                if (!stmt.getIscontentdeterministic() || !stmt.getIsorderdeterministic()) {
+                  m_allowMismatchedResults=true;
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
     if (notice.getCoordinatorHSId() == m_hsId) {
       m_isCoordinator=true;
       m_task=(InitiateTaskMessage)notice;
       m_durabilityFlag=m_task.getDurabilityFlagIfItExists();
       SiteTracker tracker=site.getSiteTracker();
-      if (tracker != null) {
-        m_nonCoordinatingSites=tracker.getAllSitesExcluding(m_hsId);
-      }
-      m_readyWorkUnits.add(new WorkUnit(tracker,m_task,null,m_hsId,null,false));
+      m_readyWorkUnits.add(new WorkUnit(tracker,m_task,null,m_hsId,null,false,m_allowMismatchedResults));
+      m_nonCoordinatingSites=m_task.getNonCoordinatorSites();
     }
  else {
       m_durabilityFlag=((InitiateTaskMessage)notice).getDurabilityFlagIfItExists();

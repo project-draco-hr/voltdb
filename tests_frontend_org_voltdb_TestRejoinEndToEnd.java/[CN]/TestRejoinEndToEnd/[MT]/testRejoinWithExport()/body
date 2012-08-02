@@ -1,7 +1,7 @@
 {
   VoltProjectBuilder builder=getBuilderForTest();
   builder.addExport("org.voltdb.export.processors.RawProcessor",true,null);
-  LocalCluster cluster=new LocalCluster("rejoin.jar",2,3,1,BackendTarget.NATIVE_EE_JNI,false);
+  LocalCluster cluster=new LocalCluster("rejoin.jar",2,3,1,BackendTarget.NATIVE_EE_JNI,false,m_useIv2);
   cluster.overrideAnyRequestForValgrind();
   cluster.setMaxHeap(256);
   boolean success=cluster.compile(builder);
@@ -37,16 +37,18 @@
   cluster.shutDownSingleHost(0);
   Thread.sleep(100);
   VoltDB.Configuration config=new VoltDB.Configuration(cluster.portGenerator);
+  config.m_enableIV2=m_useIv2;
+  config.m_startAction=START_ACTION.REJOIN;
   config.m_pathToCatalog=Configuration.getPathToCatalogForTest("rejoin.jar");
   config.m_pathToDeployment=Configuration.getPathToCatalogForTest("rejoin.xml");
-  config.m_rejoinToHostAndPort=":" + cluster.internalPort(1);
+  config.m_leader=":" + cluster.internalPort(1);
   config.m_isRejoinTest=true;
   cluster.setPortsFromConfig(0,config);
   ServerThread localServer=new ServerThread(config);
   localServer.start();
-  localServer.waitForInitialization();
+  localServer.waitForRejoin();
   Thread.sleep(1000);
-  while (VoltDB.instance().recovering()) {
+  while (VoltDB.instance().rejoining()) {
     Thread.sleep(100);
   }
   client=ClientFactory.createClient(m_cconfig);

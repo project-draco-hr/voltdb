@@ -1,0 +1,26 @@
+{
+  if (sql == null || sql.isEmpty()) {
+    throw new IllegalArgumentException("SQL statement '" + sql + "' is null or the empty string");
+  }
+  try {
+    AdHocPlannedStmtBatch paw=m_csp.plan(sql,!m_catProc.getSinglepartition()).get();
+    if (paw.errorMsg != null) {
+      throw new VoltAbortException("Failed to plan sql '" + sql + "' error: "+ paw.errorMsg);
+    }
+    if (m_catProc.getReadonly() && !paw.isReadOnly()) {
+      throw new VoltAbortException("Attempted to queue DML adhoc sql '" + sql + "' from read only procedure");
+    }
+    assert(1 == paw.plannedStatements.size());
+    QueuedSQL queuedSQL=new QueuedSQL();
+    AdHocPlannedStatement plannedStatement=paw.plannedStatements.get(0);
+    queuedSQL.stmt=SQLStmtAdHocHelper.createWithPlan(plannedStatement.sql,plannedStatement.aggregatorFragment,plannedStatement.collectorFragment,plannedStatement.isReplicatedTableDML,plannedStatement.params);
+    queuedSQL.params=getCleanParams(queuedSQL.stmt,args);
+    m_batch.add(queuedSQL);
+  }
+ catch (  Exception e) {
+    if (e instanceof ExecutionException) {
+      throw new VoltAbortException(e.getCause());
+    }
+    throw new VoltAbortException(e);
+  }
+}

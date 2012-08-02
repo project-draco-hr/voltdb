@@ -53,21 +53,25 @@
     }
   }
  else   if (message instanceof RecoveryMessage) {
-    RecoveryMessage rm=(RecoveryMessage)message;
+    final RecoveryMessage rm=(RecoveryMessage)message;
     if (rm.recoveryMessagesAvailable()) {
       return;
     }
-    assert(!m_recovering);
-    if (m_recoveryProcessor != null) {
-      m_recoveryLog.error("ExecutionSite is not ready to handle " + "recovery request from site " + CoreUtils.hsIdToString(rm.sourceSite()));
+    assert(!m_rejoining);
+    if (m_recoveryProcessor != null || m_rejoinSnapshotProcessor != null) {
+      m_rejoinLog.error("ExecutionSite is not ready to handle " + "recovery request from site " + CoreUtils.hsIdToString(rm.sourceSite()));
       RecoveryMessage recoveryResponse=new RecoveryMessage(false);
       m_mailbox.send(rm.sourceSite(),recoveryResponse);
       return;
     }
     final long recoveringPartitionTxnId=rm.txnId();
     m_recoveryStartTime=System.currentTimeMillis();
-    m_recoveryLog.info("Recovery initiate received at site " + CoreUtils.hsIdToString(m_siteId) + " from site "+ CoreUtils.hsIdToString(rm.sourceSite())+ " requesting recovery start before txnid "+ recoveringPartitionTxnId);
-    m_recoveryProcessor=RecoverySiteProcessorSource.createProcessor(this,rm,m_context.database,m_tracker,ee,m_mailbox,m_siteId,m_onRecoveryCompletion,m_recoveryMessageHandler);
+    m_rejoinLog.info("Recovery initiate received at site " + CoreUtils.hsIdToString(m_siteId) + " from site "+ CoreUtils.hsIdToString(rm.sourceSite())+ " requesting recovery start before txnid "+ recoveringPartitionTxnId);
+    m_recoveryProcessor=RecoverySiteProcessorSource.createProcessor(this,rm,m_context.database,m_tracker,ee,m_mailbox,m_siteId,m_onRejoinCompletion,m_recoveryMessageHandler);
+  }
+ else   if (message instanceof RejoinMessage) {
+    RejoinMessage rm=(RejoinMessage)message;
+    handleRejoinMessage(rm);
   }
  else   if (message instanceof FragmentResponseMessage) {
     FragmentResponseMessage response=(FragmentResponseMessage)message;
@@ -121,7 +125,7 @@
     ExecutionSiteLocalSnapshotMessage snapshotMsg=(ExecutionSiteLocalSnapshotMessage)message;
     String nonce=snapshotMsg.nonce + "_" + snapshotMsg.m_roadblockTransactionId;
     SnapshotSaveAPI saveAPI=new SnapshotSaveAPI();
-    VoltTable startSnapshotting=saveAPI.startSnapshotting(snapshotMsg.path,nonce,false,(byte)0x1,snapshotMsg.m_roadblockTransactionId,m_systemProcedureContext,CoreUtils.getHostnameOrAddress());
+    VoltTable startSnapshotting=saveAPI.startSnapshotting(snapshotMsg.path,nonce,SnapshotFormat.NATIVE,(byte)0x1,snapshotMsg.m_roadblockTransactionId,null,m_systemProcedureContext,CoreUtils.getHostnameOrAddress());
     if (SnapshotSiteProcessor.ExecutionSitesCurrentlySnapshotting.get() == -1 && snapshotMsg.crash) {
       String msg="Executing local snapshot. Finished final snapshot. Shutting down. " + "Result: " + startSnapshotting.toString();
       VoltDB.crashLocalVoltDB(msg,false,null);

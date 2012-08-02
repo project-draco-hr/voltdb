@@ -1,0 +1,66 @@
+{
+  final Mailbox m=VoltDB.instance().getHostMessenger().createMailbox();
+  ExecutorService es=Executors.newSingleThreadExecutor();
+  Future<VoltTable[]> ft=es.submit(new Callable<VoltTable[]>(){
+    @Override public VoltTable[] call() throws Exception {
+      int discoveredMailboxes=0;
+      int totalMailboxes=st.m_numberOfExecutionSites;
+      Map<Long,Long> actualToGenerated=new HashMap<Long,Long>();
+      while (discoveredMailboxes < totalMailboxes) {
+        BinaryPayloadMessage bpm=(BinaryPayloadMessage)m.recvBlocking();
+        if (bpm == null)         continue;
+        discoveredMailboxes++;
+        ByteBuffer payload=ByteBuffer.wrap(bpm.m_payload);
+        long actualHSId=payload.getLong();
+        long asyncMailboxHSId=payload.getLong();
+        actualToGenerated.put(actualHSId,asyncMailboxHSId);
+      }
+      ByteBuffer generatedToActualBuf=ByteBuffer.allocate(actualToGenerated.size() * 16);
+      for (      Map.Entry<Long,Long> e : actualToGenerated.entrySet()) {
+        generatedToActualBuf.putLong(e.getKey());
+        generatedToActualBuf.putLong(e.getValue());
+      }
+      for (      Long generatedHSId : actualToGenerated.values()) {
+        BinaryPayloadMessage bpm=new BinaryPayloadMessage(new byte[0],Arrays.copyOf(generatedToActualBuf.array(),generatedToActualBuf.capacity()));
+        m.send(generatedHSId,bpm);
+      }
+      Set<Table> tables_to_restore=getTablesToRestore(savefileState.getSavedTableNames());
+      VoltTable[] restore_results=new VoltTable[1];
+      restore_results[0]=constructResultsTable();
+      ArrayList<SynthesizedPlanFragment[]> restorePlans=new ArrayList<SynthesizedPlanFragment[]>();
+      for (      Table t : tables_to_restore) {
+        TableSaveFileState table_state=savefileState.getTableState(t.getTypeName());
+        SynthesizedPlanFragment[] restore_plan=table_state.generateRestorePlan(t,st);
+        if (restore_plan == null) {
+          HOST_LOG.error("Unable to generate restore plan for " + t.getTypeName() + " table not restored");
+          throw new VoltAbortException("Unable to generate restore plan for " + t.getTypeName() + " table not restored");
+        }
+        restorePlans.add(restore_plan);
+      }
+      Iterator<Table> tableIterator=tables_to_restore.iterator();
+      for (      SynthesizedPlanFragment[] restore_plan : restorePlans) {
+        Table table=tableIterator.next();
+        TRACE_LOG.trace("Performing restore for table: " + table.getTypeName());
+        TRACE_LOG.trace("Plan has fragments: " + restore_plan.length);
+        for (int ii=0; ii < restore_plan.length - 1; ii++) {
+          restore_plan[ii].siteId=actualToGenerated.get(restore_plan[ii].siteId);
+        }
+        VoltTable[] results=executeSysProcPlanFragments(restore_plan,m);
+        while (results[0].advanceRow()) {
+          restore_results[0].add(results[0]);
+        }
+      }
+      for (      long hsid : actualToGenerated.values()) {
+        BinaryPayloadMessage bpm=new BinaryPayloadMessage(new byte[0],new byte[0]);
+        m.send(hsid,bpm);
+      }
+      return restore_results;
+    }
+  }
+);
+  distributeAsyncMailboxFragment(m.getHSId());
+  VoltTable restore_results[]=ft.get();
+  es.shutdown();
+  es.awaitTermination(365,TimeUnit.DAYS);
+  return restore_results;
+}

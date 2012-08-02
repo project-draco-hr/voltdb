@@ -1,0 +1,51 @@
+{
+  if (m_serverSocket == null) {
+    rejoinLog.error("Unable to accept rejoin connections, not bound to any port");
+    return;
+  }
+  try {
+    final long startTime=System.currentTimeMillis();
+    while (System.currentTimeMillis() - startTime < m_connectionTimeout) {
+      try {
+        m_sock=m_serverSocket.accept();
+        if (m_sock != null) {
+          break;
+        }
+      }
+ catch (      IOException e) {
+        rejoinLog.error("Exception while attempting to accept recovery connection",e);
+        m_serverSocket.close();
+      }
+      Thread.yield();
+    }
+    if (m_sock == null) {
+      VoltDB.crashLocalVoltDB("Timed out waiting for stream snapshot connection from source partition",false,null);
+    }
+    m_sock.configureBlocking(true);
+    m_sock.socket().setTcpNoDelay(true);
+  }
+ catch (  ClosedByInterruptException ignore) {
+    return;
+  }
+catch (  IOException e) {
+    VoltDB.crashLocalVoltDB("Failed to accept rejoin connection",true,e);
+  }
+ finally {
+    try {
+      assert(m_sock != null);
+      rejoinLog.debug("Closing listening socket, m_sock is " + m_sock);
+      m_serverSocket.close();
+    }
+ catch (    IOException ignore) {
+    }
+  }
+  rejoinLog.debug("Accepted a stream snapshot connection");
+  m_in=new StreamSnapshotDataReceiver(m_sock);
+  m_inThread=new Thread(m_in,"Snapshot data receiver");
+  m_inThread.setDaemon(true);
+  m_ack=new StreamSnapshotAckSender(m_sock,m_HSId);
+  m_ackThread=new Thread(m_ack,"Snapshot ack sender");
+  m_inThread.start();
+  m_ackThread.start();
+  m_initializationLock.release();
+}

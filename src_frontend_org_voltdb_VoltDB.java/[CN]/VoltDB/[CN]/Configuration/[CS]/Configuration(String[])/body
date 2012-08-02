@@ -1,6 +1,6 @@
 {
   String arg;
-  boolean containsLeaderPortConfig=false;
+  m_enableIV2=VoltDB.checkTestEnvForIv2();
   for (int i=0; i < args.length; ++i) {
     arg=args[i];
     if (arg.equals("")) {
@@ -67,25 +67,22 @@
  else     if (arg.startsWith("internalinterface ")) {
       m_internalInterface=arg.substring("internalinterface ".length()).trim();
     }
- else     if (arg.equals("leaderport")) {
-      m_leaderPort=Integer.valueOf(args[++i]);
-      containsLeaderPortConfig=true;
-    }
- else     if (arg.startsWith("leaderport ")) {
-      m_leaderPort=Integer.parseInt(arg.substring("leaderport ".length()));
-      containsLeaderPortConfig=true;
-    }
- else     if (arg.equals("leader")) {
+ else     if (arg.equals("host") || arg.equals("leader")) {
       m_leader=args[++i].trim();
+    }
+ else     if (arg.startsWith("host")) {
+      m_leader=arg.substring("host ".length()).trim();
     }
  else     if (arg.startsWith("leader")) {
       m_leader=arg.substring("leader ".length()).trim();
     }
  else     if (arg.equals("rejoinhost")) {
-      m_rejoinToHostAndPort=args[++i].trim();
+      m_startAction=START_ACTION.REJOIN;
+      m_leader=args[++i].trim();
     }
  else     if (arg.startsWith("rejoinhost ")) {
-      m_rejoinToHostAndPort=arg.substring("rejoinhost ".length()).trim();
+      m_startAction=START_ACTION.REJOIN;
+      m_leader=arg.substring("rejoinhost ".length()).trim();
     }
  else     if (arg.equals("create")) {
       m_startAction=START_ACTION.CREATE;
@@ -95,6 +92,15 @@
     }
  else     if (arg.equals("start")) {
       m_startAction=START_ACTION.START;
+    }
+ else     if (arg.equals("rejoin")) {
+      m_startAction=START_ACTION.REJOIN;
+    }
+ else     if (arg.startsWith("live rejoin")) {
+      m_startAction=START_ACTION.LIVE_REJOIN;
+    }
+ else     if (arg.equals("live") && args.length > i + 1 && args[++i].trim().equals("rejoin")) {
+      m_startAction=START_ACTION.LIVE_REJOIN;
     }
  else     if (arg.equals("replica")) {
       m_replicationRole=ReplicationRole.REPLICA;
@@ -133,16 +139,19 @@
         m_ipcPorts.add(Integer.valueOf(port));
       }
     }
+ else     if (arg.equals("enableiv2")) {
+      m_enableIV2=true;
+    }
  else {
       hostLog.fatal("Unrecognized option to VoltDB: " + arg);
       usage();
       System.exit(-1);
     }
-    if (!containsLeaderPortConfig) {
-      m_leaderPort=m_internalPort;
-    }
   }
-  if (m_leader == null && m_pathToDeployment == null) {
+  if (m_startAction == START_ACTION.RECOVER && m_pathToCatalog != null) {
+    hostLog.warn("Catalog is ignored for 'recover' action.");
+  }
+  if (m_leader == null && m_pathToDeployment == null && (m_startAction != START_ACTION.REJOIN && m_startAction != START_ACTION.LIVE_REJOIN)) {
     m_leader="localhost";
   }
 }
