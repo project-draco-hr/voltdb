@@ -88,6 +88,7 @@ synchronized (m_startAndStopLock) {
     if (m_licenseApi == null) {
       VoltDB.crashLocalVoltDB("Failed to initialize license verifier. " + "See previous log message for details.",false,null);
     }
+    m_globalServiceElector=new GlobalServiceElector(m_messenger.getZK(),m_messenger.getHostId());
     ArrayDeque<Mailbox> siteMailboxes=null;
     ClusterConfig clusterConfig=null;
     DtxnInitiatorMailbox initiatorMailbox=null;
@@ -106,8 +107,9 @@ synchronized (m_startAndStopLock) {
           m_iv2Initiators=createIv2Initiators(partitions);
         }
         long mpiBuddyHSId=m_iv2Initiators.get(0).getInitiatorHSId();
-        Initiator initiator=new MpInitiator(m_messenger,mpiBuddyHSId);
+        MpInitiator initiator=new MpInitiator(m_messenger,mpiBuddyHSId);
         m_iv2Initiators.add(initiator);
+        m_globalServiceElector.registerService(initiator);
       }
       m_mailboxTracker=new MailboxTracker(m_messenger.getZK(),this);
       m_mailboxTracker.start();
@@ -253,6 +255,12 @@ synchronized (m_startAndStopLock) {
         assert(runner.m_siteObj != null);
         m_localSites.put(runner.m_siteId,runner.m_siteObj);
       }
+    }
+    try {
+      m_globalServiceElector.start();
+    }
+ catch (    Exception e) {
+      VoltDB.crashLocalVoltDB("Unable to start GlobalServiceElector",true,e);
     }
     try {
       m_mailboxTracker.executeTask(new Runnable(){
