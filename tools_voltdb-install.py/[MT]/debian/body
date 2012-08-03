@@ -1,0 +1,31 @@
+def debian():
+    with ChDir(Global.source_root):
+        blddir = os.path.join(Global.debian_output_root, 'build')
+        debdir = os.path.join(blddir, 'DEBIAN')
+        Global.options.prefix = blddir
+        if os.path.exists(Global.debian_output_root):
+            info(('Removing existing output directory "%s"...' % Global.debian_output_root))
+            if (not Global.options.dryrun):
+                fix_ownership(Global.debian_output_root)
+                shutil.rmtree(Global.debian_output_root)
+        install()
+        if Global.options.dryrun:
+            return
+        for line in pipe_cmd('du', '-s', blddir):
+            installed_size = int(line.split()[0])
+        if (not os.path.exists(debdir)):
+            os.makedirs(debdir)
+        with open(os.path.join(debdir, 'conffiles'), 'w'):
+            pass
+        syms = copy(locals())
+        syms.update(Global.control)
+        with open(os.path.join(debdir, 'control'), 'w') as fout:
+            fout.write((Global.control_template % syms))
+        pkgfile = os.path.join(Global.debian_output_root, ('%(pkgname)s_%(pkgversion)s-%(pkgrelease)d_%(arch)s.deb' % syms))
+        info(('Creating Debian package "%s"...' % pkgfile))
+        run_cmd('dpkg-deb', '-b', blddir, pkgfile)
+        fix_ownership(Global.debian_output_root)
+        if (not Global.options.keep):
+            info(('Wiping build directory "%s"...' % blddir))
+            shutil.rmtree(blddir)
+        info(('Done creating Debian package: %s' % pkgfile))
