@@ -1,20 +1,24 @@
 {
-  for (int i=0; i < m_partitionCount; i++) {
-    String dir=LeaderElector.electionDirForPartition(i);
-    try {
-      m_zk.create(dir,null,Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
-    }
- catch (    KeeperException.NodeExistsException e) {
-    }
-    m_callbacks[i]=new PartitionCallback(i);
-    Pair<BabySitter,List<String>> sitterstuff=BabySitter.blockingFactory(m_zk,dir,m_callbacks[i]);
-    m_partitionWatchers[i]=sitterstuff.getFirst();
-    if (sitterstuff.getSecond().size() == (m_kfactor + 1)) {
-      tmLog.debug("Partition complete on start(): " + i);
-      assignLeader(i,VoltZK.childrenToReplicaHSIds(sitterstuff.getSecond()));
-      m_partitionCountLatch.countDown();
-    }
-  }
   m_iv2appointees.start(true);
   m_iv2masters.start(true);
+  if (m_iv2appointees.pointInTimeCache().size() == 0) {
+    tmLog.info("LeaderAppointer in startup");
+    m_inStartup.set(true);
+  }
+ else   if (m_iv2appointees.pointInTimeCache().size() != m_partitionCount) {
+    VoltDB.crashGlobalVoltDB("Detected failure during startup, unable to start",false,null);
+  }
+  if (m_inStartup.get()) {
+    for (int i=0; i < m_partitionCount; i++) {
+      String dir=LeaderElector.electionDirForPartition(i);
+      try {
+        m_zk.create(dir,null,Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+      }
+ catch (      KeeperException.NodeExistsException e) {
+      }
+      m_callbacks[i]=new PartitionCallback(i);
+      Pair<BabySitter,List<String>> sitterstuff=BabySitter.blockingFactory(m_zk,dir,m_callbacks[i]);
+      m_partitionWatchers[i]=sitterstuff.getFirst();
+    }
+  }
 }
