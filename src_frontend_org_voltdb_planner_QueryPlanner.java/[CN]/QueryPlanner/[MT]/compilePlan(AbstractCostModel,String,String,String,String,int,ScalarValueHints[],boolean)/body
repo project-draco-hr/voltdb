@@ -16,27 +16,37 @@
   if (!m_quietPlanner && m_fullDebug) {
     outputCompiledStatement(stmtName,procName,xmlSQL);
   }
-  Object[] extractedParams=null;
-  VoltXMLElement parameterizedXmlSQL=xmlSQL.duplicate();
-  Parameterizer pzer=new Parameterizer(parameterizedXmlSQL);
-  int preExistingParams=pzer.countParams();
-  if (parameterize && (preExistingParams == 0)) {
-    extractedParams=pzer.parameterize().toArray();
-    if (!m_quietPlanner && m_fullDebug) {
-      outputParameterizedCompiledStatement(stmtName,procName,xmlSQL);
-    }
-    try {
-      CompiledPlan plan=compileFromXML(parameterizedXmlSQL,costModel,sql,joinOrder,stmtName,procName,maxTablesPerJoin,paramHints,preExistingParams);
-      for (int i=0; i < plan.parameters.length; i++) {
-        extractedParams[i]=Parameterizer.valueForStringWithType((String)extractedParams[i],plan.parameters[i]);
+  if (parameterize) {
+    VoltXMLElement parameterizedXmlSQL=xmlSQL.duplicate();
+    Parameterizer pzer=new Parameterizer(parameterizedXmlSQL);
+    int preExistingParams=pzer.countParams();
+    if (preExistingParams == 0) {
+      Object[] extractedParams=null;
+      extractedParams=pzer.parameterize();
+      if (!m_quietPlanner && m_fullDebug) {
+        outputParameterizedCompiledStatement(stmtName,procName,xmlSQL);
       }
-      plan.extractedParamValues.setParameters(extractedParams);
-      return plan;
-    }
- catch (    Exception e) {
-      System.err.println("Failled to plan, but will continue without parameterization.");
-      e.printStackTrace();
+      try {
+        CompiledPlan plan=compileFromXML(parameterizedXmlSQL,costModel,sql,joinOrder,stmtName,procName,maxTablesPerJoin,paramHints);
+        for (int i=0; i < plan.parameters.length; i++) {
+          extractedParams[i]=Parameterizer.valueForStringWithType((String)extractedParams[i],plan.parameters[i]);
+        }
+        plan.extractedParamValues.setParameters(extractedParams);
+        if (m_partitioning.effectivePartitioningValue() == null) {
+          AbstractExpression expr=m_partitioning.effectivePartitioningExpression();
+          if (expr != null) {
+            if (expr instanceof ParameterValueExpression) {
+              ParameterValueExpression pve=(ParameterValueExpression)expr;
+              Object partitionValue=plan.extractedParamValues.toArray()[pve.getParameterIndex()];
+              plan.setPartitioningKey(partitionValue);
+            }
+          }
+        }
+        return plan;
+      }
+ catch (      Exception e) {
+      }
     }
   }
-  return compileFromXML(xmlSQL,costModel,sql,joinOrder,stmtName,procName,maxTablesPerJoin,paramHints,preExistingParams);
+  return compileFromXML(xmlSQL,costModel,sql,joinOrder,stmtName,procName,maxTablesPerJoin,paramHints);
 }
