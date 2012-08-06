@@ -2,28 +2,21 @@
   if (VoltDB.instance().isIV2Enabled()) {
     final ClientInterfaceHandleManager cihm=m_cihm.get(connectionId);
     long handle=cihm.getHandle(isSinglePartition,partitions[0],invocation.getClientHandle(),messageSize,now);
-    try {
-      long initiatorHSId;
-      if (isSinglePartition) {
-        JSONObject master=m_iv2Masters.get(Integer.toString(partitions[0]));
-        if (master == null) {
-          hostLog.error("Failed to find master initiator for partition: " + Integer.toString(partitions[0]) + ". Transaction not initiated.");
-          cihm.removeHandle(handle);
-          return false;
-        }
-        initiatorHSId=master.getLong("hsid");
+    Long initiatorHSId;
+    if (isSinglePartition) {
+      initiatorHSId=m_iv2Masters.get(partitions[0]);
+      if (initiatorHSId == null) {
+        hostLog.error("Failed to find master initiator for partition: " + Integer.toString(partitions[0]) + ". Transaction not initiated.");
+        cihm.removeHandle(handle);
+        return false;
       }
+    }
  else {
-        initiatorHSId=m_cartographer.getHSIdForMultiPartitionInitiator();
-      }
-      Iv2InitiateTaskMessage workRequest=new Iv2InitiateTaskMessage(m_siteId,initiatorHSId,Iv2InitiateTaskMessage.UNUSED_TRUNC_HANDLE,Iv2InitiateTaskMessage.UNUSED_MP_TXNID,isReadOnly,isSinglePartition,invocation,handle,connectionId);
-      Iv2Trace.logCreateTransaction(workRequest);
-      m_mailbox.send(initiatorHSId,workRequest);
+      initiatorHSId=m_cartographer.getHSIdForMultiPartitionInitiator();
     }
- catch (    JSONException e) {
-      cihm.removeHandle(handle);
-      throw new RuntimeException(e);
-    }
+    Iv2InitiateTaskMessage workRequest=new Iv2InitiateTaskMessage(m_siteId,initiatorHSId,Iv2InitiateTaskMessage.UNUSED_TRUNC_HANDLE,Iv2InitiateTaskMessage.UNUSED_MP_TXNID,isReadOnly,isSinglePartition,invocation,handle,connectionId);
+    Iv2Trace.logCreateTransaction(workRequest);
+    m_mailbox.send(initiatorHSId,workRequest);
     return true;
   }
  else {
