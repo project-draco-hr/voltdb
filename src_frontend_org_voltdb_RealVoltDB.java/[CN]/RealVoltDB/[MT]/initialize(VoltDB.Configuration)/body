@@ -5,7 +5,9 @@ synchronized (m_startAndStopLock) {
       System.exit(-1);
     }
     consoleLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_StartupString.name(),null);
-    consoleLog.info("ENABLE IV2: " + config.m_enableIV2);
+    if (config.m_enableIV2) {
+      consoleLog.warn("ENABLE IV2: " + config.m_enableIV2 + ". NOT SUPPORTED IN PRODUCTION.");
+    }
     if (config.m_pathToDeployment == null) {
       try {
         config.m_pathToDeployment=setupDefaultDeployment();
@@ -70,6 +72,7 @@ synchronized (m_startAndStopLock) {
     readBuildInfo(config.m_isEnterprise ? "Enterprise Edition" : "Community Edition");
     ResponseSampler.initializeIfEnabled();
     buildClusterMesh(isRejoin);
+    final Future<?> buildStringValidation=validateBuildString(getBuildString(),m_messenger.getZK());
     m_mailboxPublisher=new MailboxPublisher(VoltZK.mailboxes + "/" + m_messenger.getHostId());
     final int numberOfNodes=readDeploymentAndCreateStarterCatalogContext();
     if (!isRejoin) {
@@ -303,6 +306,12 @@ catch (    ExecutionException e) {
     }
     if (m_commandLog != null && isRejoin) {
       m_commandLog.initForRejoin(m_catalogContext,Long.MIN_VALUE,true);
+    }
+    try {
+      buildStringValidation.get();
+    }
+ catch (    Exception e) {
+      VoltDB.crashLocalVoltDB("Failed to validate cluster build string",false,e);
     }
     if (!isRejoin) {
       try {
