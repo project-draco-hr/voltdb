@@ -1,0 +1,175 @@
+{
+  m_changedSQL=false;
+  boolean noDiff=true;
+  ArrayList<AbstractPlanNode> list1=oldpn.getScanNodeList();
+  ArrayList<AbstractPlanNode> list2=newpn.getScanNodeList();
+  int size1=list1.size();
+  int size2=list2.size();
+  int max=Math.max(size1,size2);
+  int min=Math.min(size1,size2);
+  Pair intPair=new Pair(0,0);
+  Pair stringPair=new Pair("","");
+  ArrayList<String> messages=new ArrayList<String>();
+  if (max == 0) {
+    messages.add("0 scan statement");
+  }
+ else {
+    if (size1 != size2) {
+      intPair.set(size1,size2);
+      messages.add("Scan time diff : " + "\n" + intPair.toString() + "\n"+ "SQL statement might be changed");
+      m_changedSQL=true;
+      try {
+        for (int i=0; i < min; i++) {
+          JSONObject j1=new JSONObject(list1.get(i).toJSONString());
+          JSONObject j2=new JSONObject(list2.get(i).toJSONString());
+          String table1=j1.getString(AbstractScanPlanNode.Members.TARGET_TABLE_NAME.name());
+          String table2=j2.getString(AbstractScanPlanNode.Members.TARGET_TABLE_NAME.name());
+          String nodeType1=j1.getString(AbstractPlanNode.Members.PLAN_NODE_TYPE.name());
+          String nodeType2=j2.getString(AbstractPlanNode.Members.PLAN_NODE_TYPE.name());
+          if (!table1.equalsIgnoreCase(table2)) {
+            stringPair.set(nodeType1 + " on " + table1,nodeType2 + " on " + table2);
+            messages.add("Table diff at leaf " + i + ":"+ "\n"+ stringPair.toString());
+          }
+ else           if (!nodeType1.equalsIgnoreCase(nodeType2)) {
+            stringPair.set(nodeType1 + " on " + table1,nodeType2 + " on " + table2);
+            messages.add("Scan diff at leaf " + i + " :"+ "\n"+ stringPair.toString());
+          }
+ else           if (nodeType1.equalsIgnoreCase(PlanNodeType.INDEXSCAN.name())) {
+            String index1=j1.getString(IndexScanPlanNode.Members.TARGET_INDEX_NAME.name());
+            String index2=j2.getString(IndexScanPlanNode.Members.TARGET_INDEX_NAME.name());
+            stringPair.set(index1,index2);
+            if (!index1.equalsIgnoreCase(index2)) {
+              messages.add("Index diff at leaf " + i + " :"+ "\n"+ stringPair.toString());
+            }
+ else {
+              messages.add("Same at leaf " + i);
+            }
+          }
+ else {
+            messages.add("Same at leaf " + i);
+          }
+        }
+        if (size2 < max) {
+          for (int i=min; i < max; i++) {
+            JSONObject j=new JSONObject(list1.get(i).toJSONString());
+            String table=j.getString(AbstractScanPlanNode.Members.TARGET_TABLE_NAME.name());
+            String nodeType=j.getString(AbstractPlanNode.Members.PLAN_NODE_TYPE.name());
+            String index=null;
+            if (nodeType.equalsIgnoreCase(PlanNodeType.INDEXSCAN.name())) {
+              index=j.getString(IndexScanPlanNode.Members.TARGET_INDEX_NAME.name());
+            }
+            if (index != null) {
+              stringPair.set(nodeType + " on " + table+ " using "+ index,"Empty");
+              messages.add("Diff at leaf " + i + " :"+ "\n"+ stringPair.toString());
+            }
+ else {
+              stringPair.set(nodeType + " on " + table,"Empty");
+              messages.add("Diff at leaf " + i + ": "+ "\n"+ stringPair.toString());
+            }
+          }
+        }
+ else         if (size1 < max) {
+          for (int i=min; i < max; i++) {
+            JSONObject j=new JSONObject(list2.get(i).toJSONString());
+            String table=j.getString(AbstractScanPlanNode.Members.TARGET_TABLE_NAME.name());
+            String nodeType=j.getString(AbstractPlanNode.Members.PLAN_NODE_TYPE.name());
+            String index=null;
+            if (nodeType.equalsIgnoreCase(PlanNodeType.INDEXSCAN.name())) {
+              index=j.getString(IndexScanPlanNode.Members.TARGET_INDEX_NAME.name());
+            }
+            if (index != null) {
+              stringPair.set("Empty",nodeType + " on " + table+ " using "+ index);
+              messages.add("Diff at leaf " + i + " :"+ "\n"+ stringPair.toString());
+            }
+ else {
+              stringPair.set("Empty",nodeType + " on " + table);
+              messages.add("Diff at leaf " + i + ": "+ "\n"+ stringPair.toString());
+            }
+          }
+        }
+      }
+ catch (      JSONException e) {
+        e.printStackTrace();
+      }
+    }
+ else {
+      messages.add("same leaf size");
+      try {
+        if (max == 1) {
+          messages.add("Single scan plan");
+          JSONObject j1=new JSONObject(list1.get(0).toJSONString());
+          JSONObject j2=new JSONObject(list2.get(0).toJSONString());
+          String table1=j1.getString(AbstractScanPlanNode.Members.TARGET_TABLE_NAME.name());
+          String table2=j2.getString(AbstractScanPlanNode.Members.TARGET_TABLE_NAME.name());
+          String nodeType1=j1.getString(AbstractPlanNode.Members.PLAN_NODE_TYPE.name());
+          String nodeType2=j2.getString(AbstractPlanNode.Members.PLAN_NODE_TYPE.name());
+          if (!table1.equalsIgnoreCase(table2)) {
+            stringPair.set(nodeType1 + " on " + table1,nodeType2 + " on " + table2);
+            messages.add("Diff table at leaf " + 0 + " :"+ "\n"+ stringPair.toString());
+          }
+ else           if (!nodeType1.equalsIgnoreCase(nodeType2)) {
+            stringPair.set(nodeType1 + " on " + table1,nodeType2 + " on " + table2);
+            messages.add("Diff scan at leaf " + 0 + " :"+ "\n"+ stringPair.toString());
+          }
+ else           if (nodeType1.equalsIgnoreCase(PlanNodeType.INDEXSCAN.name())) {
+            String index1=j1.getString(IndexScanPlanNode.Members.TARGET_INDEX_NAME.name());
+            String index2=j2.getString(IndexScanPlanNode.Members.TARGET_INDEX_NAME.name());
+            if (!index1.equalsIgnoreCase(index2)) {
+              stringPair.set(nodeType1 + " on " + table1+ " using "+ index1,nodeType2 + " on " + table2+ " using "+ index2);
+              messages.add("Diff index at leaf " + 0 + ": "+ "\n"+ stringPair.toString());
+            }
+ else {
+              messages.add("Same at " + 0);
+            }
+          }
+ else {
+            messages.add("Same at " + 0);
+          }
+        }
+ else {
+          messages.add("Join query");
+          for (int i=0; i < max; i++) {
+            JSONObject j1=new JSONObject(list1.get(i).toJSONString());
+            JSONObject j2=new JSONObject(list2.get(i).toJSONString());
+            String table1=j1.getString(AbstractScanPlanNode.Members.TARGET_TABLE_NAME.name());
+            String table2=j2.getString(AbstractScanPlanNode.Members.TARGET_TABLE_NAME.name());
+            String nodeType1=j1.getString(AbstractPlanNode.Members.PLAN_NODE_TYPE.name());
+            String nodeType2=j2.getString(AbstractPlanNode.Members.PLAN_NODE_TYPE.name());
+            if (!table1.equalsIgnoreCase(table2)) {
+              stringPair.set(nodeType1 + " on " + table1,nodeType2 + " on " + table2);
+              messages.add("Diff table at leaf " + i + " :"+ "\n"+ stringPair.toString());
+            }
+ else             if (!nodeType1.equalsIgnoreCase(nodeType2)) {
+              stringPair.set(nodeType1 + " on " + table1,nodeType2 + " on " + table2);
+              messages.add("Diff scan at leaf " + i + " :"+ "\n"+ stringPair.toString());
+            }
+ else             if (nodeType1.equalsIgnoreCase(PlanNodeType.INDEXSCAN.name())) {
+              String index1=j1.getString(IndexScanPlanNode.Members.TARGET_INDEX_NAME.name());
+              String index2=j2.getString(IndexScanPlanNode.Members.TARGET_INDEX_NAME.name());
+              if (!index1.equalsIgnoreCase(index2)) {
+                stringPair.set(nodeType1 + " on " + table1+ " using "+ index1,nodeType2 + " on " + table2+ " using "+ index2);
+                messages.add("Diff index at leaf " + i + " :"+ "\n"+ stringPair.toString());
+              }
+ else {
+                messages.add("Same at leaf " + i);
+              }
+            }
+ else {
+              messages.add("Same at leaf " + i);
+            }
+          }
+        }
+      }
+ catch (      JSONException e) {
+        e.printStackTrace();
+      }
+    }
+  }
+  for (  String msg : messages) {
+    if (msg.contains("diff") || msg.contains("Diff")) {
+      noDiff=false;
+      m_diffMessages.add(msg);
+    }
+  }
+  return noDiff;
+}
