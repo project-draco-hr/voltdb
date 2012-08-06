@@ -1,0 +1,31 @@
+{
+  Set<String> children=new TreeSet<String>(m_zk.getChildren(m_rootNode,m_parentWatch));
+  Set<String> newChildren=new HashSet<String>(children);
+  newChildren.removeAll(m_lastChildren);
+  m_lastChildren=children;
+  List<ByteArrayCallback> callbacks=new ArrayList<ByteArrayCallback>();
+  for (  String child : children) {
+    ByteArrayCallback cb=new ByteArrayCallback();
+    if (newChildren.contains(child)) {
+      m_zk.getData(ZKUtil.joinZKPath(m_rootNode,child),m_childWatch,cb,null);
+    }
+ else {
+      m_zk.getData(ZKUtil.joinZKPath(m_rootNode,child),false,cb,null);
+    }
+    callbacks.add(cb);
+  }
+  HashMap<Integer,Long> cache=new HashMap<Integer,Long>();
+  for (  ByteArrayCallback callback : callbacks) {
+    try {
+      byte payload[]=callback.getData();
+      long HSId=Long.valueOf(new String(payload,"UTF-8"));
+      cache.put(getPartitionIdFromMapCachePath(callback.getPath()),HSId);
+    }
+ catch (    KeeperException.NoNodeException e) {
+    }
+  }
+  m_publicCache.set(ImmutableMap.copyOf(cache));
+  if (m_cb != null) {
+    m_cb.run(m_publicCache.get());
+  }
+}
