@@ -13,13 +13,29 @@
     assert(1 == paw.plannedStatements.size());
     QueuedSQL queuedSQL=new QueuedSQL();
     AdHocPlannedStatement plannedStatement=paw.plannedStatements.get(0);
-    queuedSQL.stmt=SQLStmtAdHocHelper.createWithPlan(plannedStatement.sql,plannedStatement.aggregatorFragment,plannedStatement.collectorFragment,plannedStatement.isReplicatedTableDML,plannedStatement.params);
-    queuedSQL.params=getCleanParams(queuedSQL.stmt,args);
+    queuedSQL.stmt=SQLStmtAdHocHelper.createWithPlan(plannedStatement.sql,plannedStatement.aggregatorFragment,plannedStatement.collectorFragment,plannedStatement.isReplicatedTableDML,plannedStatement.parameterTypes);
+    if (plannedStatement.extractedParamValues.size() == 0) {
+      queuedSQL.params=getCleanParams(queuedSQL.stmt,args);
+    }
+ else {
+      if (args.length > 0) {
+        throw new ExpectedProcedureException("Number of arguments provided was " + args.length + " where 0 were expected for statement "+ sql);
+      }
+      Object[] extractedParams=plannedStatement.extractedParamValues.toArray();
+      if (extractedParams.length != queuedSQL.stmt.numStatementParamJavaTypes) {
+        String msg=String.format("Wrong number of extracted param for parameterized statement: %s",sql);
+        throw new VoltAbortException(msg);
+      }
+      queuedSQL.params=getCleanParams(queuedSQL.stmt,extractedParams);
+    }
     m_batch.add(queuedSQL);
   }
  catch (  Exception e) {
     if (e instanceof ExecutionException) {
       throw new VoltAbortException(e.getCause());
+    }
+    if (e instanceof VoltAbortException) {
+      throw (VoltAbortException)e;
     }
     throw new VoltAbortException(e);
   }

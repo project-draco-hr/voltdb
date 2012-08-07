@@ -1,0 +1,20 @@
+{
+  long txnid=1234l;
+  long primary_hsid=1111l;
+  createObjs();
+  dut.setLeaderState(true);
+  List<Long> replicas=new ArrayList<Long>();
+  replicas.add(2l);
+  dut.updateReplicas(replicas);
+  FragmentTaskMessage sptask=createFrag(txnid,true,primary_hsid);
+  dut.deliver(sptask);
+  verify(mbox,times(0)).send(anyLong(),(VoltMessage)anyObject());
+  ArgumentCaptor<FragmentTaskMessage> replmsg=ArgumentCaptor.forClass(FragmentTaskMessage.class);
+  verify(mbox,times(1)).send(eq(new long[]{2}),replmsg.capture());
+  assertEquals(dut_hsid,replmsg.getValue().getCoordinatorHSId());
+  FragmentResponseMessage resp=new FragmentResponseMessage(sptask,0l);
+  dut.deliver(resp);
+  FragmentResponseMessage replresp=new FragmentResponseMessage(replmsg.getValue(),0l);
+  dut.deliver(replresp);
+  verify(mbox,times(1)).send(eq(primary_hsid),eq(resp));
+}

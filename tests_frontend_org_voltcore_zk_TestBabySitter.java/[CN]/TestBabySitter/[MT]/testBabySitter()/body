@@ -1,0 +1,25 @@
+{
+  System.out.println("\t\t ***** Starting BabySitter testcase.");
+  final Semaphore sem=new Semaphore(0);
+  BabySitter.Callback cb=new BabySitter.Callback(){
+    @Override public void run(    List<String> children){
+      sem.release(1);
+    }
+  }
+;
+  ZooKeeper zk=getClient(0);
+  zk.create("/babysitterroot",new byte[0],Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+  zk.create("/babysitterroot/c1",new byte[0],Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL_SEQUENTIAL);
+  Pair<BabySitter,List<String>> pair=BabySitter.blockingFactory(zk,"/babysitterroot",cb);
+  BabySitter bs=pair.getFirst();
+  sem.acquire();
+  assertTrue(bs.lastSeenChildren().size() == 1);
+  assertTrue(pair.getSecond().size() == 1);
+  zk.create("/babysitterroot/c2",new byte[0],Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL_SEQUENTIAL);
+  sem.acquire();
+  assertTrue(bs.lastSeenChildren().size() == 2);
+  zk.delete("/babysitterroot/" + bs.lastSeenChildren().get(0),-1);
+  sem.acquire();
+  assertTrue(bs.lastSeenChildren().size() == 1);
+  bs.shutdown();
+}
