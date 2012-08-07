@@ -3,12 +3,12 @@
   m_iv2masters.start(true);
   if (m_iv2appointees.pointInTimeCache().size() == 0) {
     tmLog.info("LeaderAppointer in startup");
-    m_inStartup.set(true);
+    m_state.set(AppointerState.CLUSTER_START);
   }
- else   if (m_iv2appointees.pointInTimeCache().size() != m_partitionCount) {
+ else   if ((m_iv2appointees.pointInTimeCache().size() != m_partitionCount) || (m_iv2masters.pointInTimeCache().size() != m_partitionCount)) {
     VoltDB.crashGlobalVoltDB("Detected failure during startup, unable to start",false,null);
   }
-  if (m_inStartup.get()) {
+  if (m_state.get() == AppointerState.CLUSTER_START) {
     for (int i=0; i < m_partitionCount; i++) {
       String dir=LeaderElector.electionDirForPartition(i);
       try {
@@ -21,6 +21,10 @@
       m_partitionWatchers[i]=sitterstuff.getFirst();
     }
   }
+ else   if (m_state.get() == AppointerState.CLUSTER_REPAIR) {
+    Map<Integer,Long> masters=m_iv2masters.pointInTimeCache();
+  }
  else {
+    VoltDB.crashLocalVoltDB("Leader appointer promoted but in neither startup nor repair.  Odd.",false,null);
   }
 }
