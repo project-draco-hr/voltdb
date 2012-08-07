@@ -8,6 +8,10 @@
  else   if ((m_iv2appointees.pointInTimeCache().size() != m_partitionCount) || (m_iv2masters.pointInTimeCache().size() != m_partitionCount)) {
     VoltDB.crashGlobalVoltDB("Detected failure during startup, unable to start",false,null);
   }
+ else {
+    tmLog.info("LeaderAppointer in repair");
+    m_state.set(AppointerState.DONE);
+  }
   if (m_state.get() == AppointerState.CLUSTER_START) {
     for (int i=0; i < m_partitionCount; i++) {
       String dir=LeaderElector.electionDirForPartition(i);
@@ -21,10 +25,15 @@
       m_partitionWatchers[i]=sitterstuff.getFirst();
     }
   }
- else   if (m_state.get() == AppointerState.CLUSTER_REPAIR) {
-    Map<Integer,Long> masters=m_iv2masters.pointInTimeCache();
-  }
  else {
-    VoltDB.crashLocalVoltDB("Leader appointer promoted but in neither startup nor repair.  Odd.",false,null);
+    Map<Integer,Long> masters=m_iv2masters.pointInTimeCache();
+    for (    Entry<Integer,Long> master : masters.entrySet()) {
+      int partId=master.getKey();
+      String dir=LeaderElector.electionDirForPartition(partId);
+      m_callbacks[partId]=new PartitionCallback(partId,master.getValue());
+      Pair<BabySitter,List<String>> sitterstuff=BabySitter.blockingFactory(m_zk,dir,m_callbacks[partId]);
+      m_partitionWatchers[partId]=sitterstuff.getFirst();
+    }
+    m_MPI.acceptPromotion();
   }
 }
