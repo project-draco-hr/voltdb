@@ -1,7 +1,8 @@
 {
   when(m_initiator.createTransaction(anyLong(),anyString(),anyBoolean(),any(StoredProcedureInvocation.class),anyBoolean(),anyBoolean(),anyBoolean(),any(int[].class),anyInt(),anyObject(),anyInt(),anyLong(),anyBoolean())).thenReturn(true);
-  AdHocPlannedStmtBatch plannedStmtBatch=new AdHocPlannedStmtBatch("select * from a",null,0,0,0,"localhost",false,null);
-  plannedStmtBatch.addStatement("select * from a",new byte[0],new byte[0],false,false,null);
+  AdHocPlannedStmtBatch plannedStmtBatch=new AdHocPlannedStmtBatch("select * from a",null,0,0,"localhost",false,null);
+  AdHocPlannedStatement s=new AdHocPlannedStatement("select * from a".getBytes(VoltDB.UTF8ENCODING),new byte[0],new byte[0],false,false,true,new VoltType[0],new ParameterSet(),0);
+  plannedStmtBatch.addStatement(s);
   m_ci.processFinishedCompilerWork(plannedStmtBatch).run();
   ArgumentCaptor<Boolean> boolCaptor=ArgumentCaptor.forClass(Boolean.class);
   ArgumentCaptor<StoredProcedureInvocation> invocationCaptor=ArgumentCaptor.forClass(StoredProcedureInvocation.class);
@@ -12,8 +13,9 @@
   assertFalse(boolValues.get(2));
   assertFalse(boolValues.get(3));
   assertEquals("@AdHoc_RO_MP",invocationCaptor.getValue().getProcName());
-  String[] sqlStatements=(String[])invocationCaptor.getValue().getParameterAtIndex(2);
-  assertNotNull(sqlStatements);
-  assertEquals(1,sqlStatements.length);
-  assertEquals("select * from a",sqlStatements[0]);
+  byte[] serializedData=(byte[])invocationCaptor.getValue().getParameterAtIndex(0);
+  AdHocPlannedStatement[] statements=AdHocPlannedStmtBatch.planArrayFromBuffer(ByteBuffer.wrap(serializedData));
+  assertEquals(1,statements.length);
+  String sql=new String(statements[0].sql,VoltDB.UTF8ENCODING);
+  assertEquals("select * from a",sql);
 }

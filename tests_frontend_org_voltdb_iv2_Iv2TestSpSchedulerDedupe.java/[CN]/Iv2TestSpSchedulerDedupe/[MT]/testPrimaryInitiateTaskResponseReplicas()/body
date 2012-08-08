@@ -1,0 +1,23 @@
+{
+  long txnid=1234l;
+  long primary_hsid=1111l;
+  createObjs();
+  dut.setLeaderState(true);
+  List<Long> replicas=new ArrayList<Long>();
+  replicas.add(2l);
+  dut.updateReplicas(replicas);
+  Iv2InitiateTaskMessage sptask=createMsg(txnid,true,true,primary_hsid);
+  dut.deliver(sptask);
+  verify(mbox,times(0)).send(anyLong(),(VoltMessage)anyObject());
+  ArgumentCaptor<Iv2InitiateTaskMessage> replmsg=ArgumentCaptor.forClass(Iv2InitiateTaskMessage.class);
+  verify(mbox,times(1)).send(eq(new long[]{2}),replmsg.capture());
+  assertEquals(dut_hsid,replmsg.getValue().getInitiatorHSId());
+  InitiateResponseMessage resp=new InitiateResponseMessage(sptask);
+  ClientResponseImpl cr=mock(ClientResponseImpl.class);
+  resp.setResults(cr);
+  InitiateResponseMessage replresp=new InitiateResponseMessage(replmsg.getValue());
+  replresp.setResults(cr);
+  dut.deliver(resp);
+  dut.deliver(replresp);
+  verify(mbox,times(1)).send(eq(primary_hsid),eq(resp));
+}

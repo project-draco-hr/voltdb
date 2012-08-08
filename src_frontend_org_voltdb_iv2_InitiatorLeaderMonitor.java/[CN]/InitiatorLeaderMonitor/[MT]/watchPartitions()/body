@@ -1,0 +1,21 @@
+{
+  HashSet<Integer> existingPartitions=new HashSet<Integer>(initiatorLeaders.keySet());
+  List<String> partitions=zk.getChildren(VoltZK.leaders_initiators,partitionWatcher);
+  Map<Integer,ChildrenCallback> callbacks=new HashMap<Integer,ChildrenCallback>();
+  for (  String partitionString : partitions) {
+    int partition=LeaderElector.getPartitionFromElectionDir(partitionString);
+    ChildrenCallback cb=new ChildrenCallback();
+    if (!existingPartitions.contains(partition)) {
+      String path=ZKUtil.joinZKPath(VoltZK.leaders_initiators,partitionString);
+      zk.getChildren(path,new LeaderWatcher(partition,path),cb,null);
+      callbacks.put(partition,cb);
+    }
+ else {
+      existingPartitions.remove(partition);
+    }
+  }
+  initiatorLeaders.keySet().removeAll(existingPartitions);
+  for (  Entry<Integer,ChildrenCallback> e : callbacks.entrySet()) {
+    processInitiatorLeader(e.getKey(),e.getValue());
+  }
+}

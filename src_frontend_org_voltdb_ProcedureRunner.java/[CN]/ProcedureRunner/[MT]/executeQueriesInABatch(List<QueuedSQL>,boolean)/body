@@ -1,14 +1,8 @@
 {
   final int batchSize=batch.size();
   VoltTable[] results=null;
-  if (batchSize == 0)   return new VoltTable[]{};
-  boolean slowPath=false;
-  for (int i=0; i < batchSize; ++i) {
-    final SQLStmt stmt=batch.get(i).stmt;
-    if (!stmt.isSinglePartition()) {
-      slowPath=true;
-      break;
-    }
+  if (batchSize == 0) {
+    return new VoltTable[]{};
   }
   if (getHsqlBackendIfExists() != null) {
     results=new VoltTable[batchSize];
@@ -21,17 +15,17 @@
       }
  else {
         assert(qs.stmt.plan != null);
-        assert(qs.params.toArray().length == 0);
+        qs.params=new ParameterSet();
         sparams=new ArrayList<StmtParameter>();
       }
       results[i++]=getHsqlBackendIfExists().runSQLWithSubstitutions(qs.stmt,qs.params,sparams);
     }
   }
- else   if (slowPath) {
-    results=slowPath(batch,isFinalSQL);
+ else   if (m_catProc.getSinglepartition()) {
+    results=fastPath(batch);
   }
  else {
-    results=fastPath(batch);
+    results=slowPath(batch,isFinalSQL);
   }
   int i=0;
   for (  QueuedSQL qs : batch) {
