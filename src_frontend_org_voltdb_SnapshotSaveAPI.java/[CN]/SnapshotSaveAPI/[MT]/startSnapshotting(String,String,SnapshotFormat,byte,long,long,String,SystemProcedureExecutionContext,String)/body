@@ -9,13 +9,16 @@ synchronized (SnapshotSiteProcessor.m_snapshotCreateLock) {
     try {
       SnapshotSiteProcessor.populateExportSequenceNumbersForExecutionSite(context);
       SnapshotSiteProcessor.m_snapshotCreateSetupPermit.acquire();
+      SnapshotSiteProcessor.m_partitionLastSeenTransactionIds.add(partitionTxnId);
     }
  catch (    InterruptedException e) {
       result.addRow(context.getHostId(),hostname,"","FAILURE",e.toString());
       return result;
     }
     if (SnapshotSiteProcessor.m_snapshotCreateSetupPermit.availablePermits() == 0) {
-      createSetup(file_path,file_nonce,format,txnId,data,context,hostname,result);
+      List<Long> partitionTransactionIds=SnapshotSiteProcessor.m_partitionLastSeenTransactionIds;
+      SnapshotSiteProcessor.m_partitionLastSeenTransactionIds=new ArrayList<Long>();
+      createSetup(file_path,file_nonce,format,multiPartTxnId,partitionTransactionIds,data,context,hostname,result);
       SnapshotSiteProcessor.m_snapshotCreateSetupPermit.release(numLocalSites);
     }
   }
@@ -30,7 +33,7 @@ synchronized (SnapshotSiteProcessor.m_taskListsForSites) {
     }
  else {
       assert(SnapshotSiteProcessor.ExecutionSitesCurrentlySnapshotting.get() > 0);
-      context.getSiteSnapshotConnection().initiateSnapshots(m_taskList,txnId,context.getSiteTrackerForSnapshot().getAllHosts().size());
+      context.getSiteSnapshotConnection().initiateSnapshots(m_taskList,multiPartTxnId,context.getSiteTrackerForSnapshot().getAllHosts().size());
     }
   }
   if (block != 0) {
