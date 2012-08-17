@@ -1,0 +1,32 @@
+{
+  m_mailbox=new LocalMailbox(hostMessenger){
+    @Override public void send(    long destinationHSId,    VoltMessage message){
+      message.m_sourceHSId=hsId;
+      hostMessenger.send(destinationHSId,message);
+    }
+    @Override public void deliver(    final VoltMessage message){
+      try {
+        m_es.submit(new Runnable(){
+          @Override public void run(){
+            handleMailboxMessage(message);
+          }
+        }
+);
+      }
+ catch (      RejectedExecutionException rejected) {
+        final LocalObjectMessage wrapper=(LocalObjectMessage)message;
+        AsyncCompilerWork work=(AsyncCompilerWork)(wrapper.payload);
+        AsyncCompilerResult retval=new AsyncCompilerResult();
+        retval.clientHandle=work.clientHandle;
+        retval.errorMsg="Ad Hoc Planner is not available. Try again.";
+        retval.connectionId=work.connectionId;
+        retval.hostname=work.hostname;
+        retval.adminConnection=work.adminConnection;
+        retval.clientData=work.clientData;
+        work.completionHandler.onCompletion(retval);
+      }
+    }
+  }
+;
+  hostMessenger.createMailbox(hsId,m_mailbox);
+}

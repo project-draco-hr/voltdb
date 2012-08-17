@@ -1,51 +1,22 @@
 {
-  m_faultManager=new FaultDistributor(this);
-  m_faultManager.registerFaultHandler(NodeFailureFault.NODE_FAILURE_CATALOG,m_faultHandler,FaultType.NODE_FAILURE);
-  if (!m_faultManager.testPartitionDetectionDirectory(m_catalogContext.cluster.getFaultsnapshots().get("CLUSTER_PARTITION"))) {
-    VoltDB.crashLocalVoltDB("No additional info",false,null);
+  final String leaderAddress=m_config.m_leader;
+  String hostname=MiscUtils.getHostnameFromHostnameColonPort(leaderAddress);
+  int port=MiscUtils.getPortFromHostnameColonPort(leaderAddress,m_config.m_internalPort);
+  org.voltcore.messaging.HostMessenger.Config hmconfig;
+  hmconfig=new org.voltcore.messaging.HostMessenger.Config(hostname,port);
+  hmconfig.internalPort=m_config.m_internalPort;
+  hmconfig.internalInterface=m_config.m_internalInterface;
+  hmconfig.zkInterface=m_config.m_zkInterface;
+  hmconfig.deadHostTimeout=m_config.m_deadHostTimeoutMS;
+  hmconfig.factory=new VoltDbMessageFactory();
+  m_messenger=new org.voltcore.messaging.HostMessenger(hmconfig);
+  hostLog.info(String.format("Beginning inter-node communication on port %d.",m_config.m_internalPort));
+  try {
+    m_messenger.start();
   }
-  m_network=new VoltNetwork(m_periodicWorkThread);
-  String leaderAddress=m_config.m_leader;
-  int numberOfNodes=m_deployment.getCluster().getHostcount();
-  long depCRC=CatalogUtil.getDeploymentCRC(m_config.m_pathToDeployment);
-  if (!isRejoin) {
-    InetAddress leader=null;
-    try {
-      leader=InetAddress.getByName(leaderAddress);
-    }
- catch (    UnknownHostException ex) {
-      hostLog.l7dlog(Level.FATAL,LogKeys.host_VoltDB_CouldNotRetrieveLeaderAddress.name(),new Object[]{leaderAddress},null);
-      VoltDB.crashLocalVoltDB("No additional info",false,null);
-    }
-    if (numberOfNodes <= 0) {
-      hostLog.l7dlog(Level.FATAL,LogKeys.host_VoltDB_InvalidHostCount.name(),new Object[]{numberOfNodes},null);
-      VoltDB.crashLocalVoltDB("No additional info",false,null);
-    }
-    hostLog.l7dlog(Level.TRACE,LogKeys.host_VoltDB_CreatingVoltDB.name(),new Object[]{numberOfNodes,leader},null);
-    hostLog.info(String.format("Beginning inter-node communication on port %d.",m_config.m_internalPort));
-    m_messenger=new HostMessenger(m_network,leader,numberOfNodes,0,depCRC,hostLog);
-    Object retval[]=m_messenger.waitForGroupJoin();
-    m_instanceId=new Object[]{retval[0],retval[1]};
+ catch (  Exception e) {
+    VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
   }
- else {
-    m_downHosts.addAll(rejoinExistingMesh(numberOfNodes,depCRC));
-  }
+  VoltZK.createPersistentZKNodes(m_messenger.getZK());
   m_myHostId=m_messenger.getHostId();
-  if (isRejoin) {
-    for (    Integer downHost : m_downHosts) {
-      m_downNonExecSites.addAll(m_catalogContext.siteTracker.getNonExecSitesForHost(downHost));
-      m_downSites.addAll(m_catalogContext.siteTracker.getNonExecSitesForHost(downHost));
-      m_faultManager.reportFault(new NodeFailureFault(downHost,m_catalogContext.siteTracker.getNonExecSitesForHost(downHost),"UNKNOWN"));
-    }
-    try {
-      m_faultHandler.m_waitForFaultReported.acquire(m_downHosts.size());
-    }
- catch (    InterruptedException e) {
-      VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
-    }
-    ExecutionSite.recoveringSiteCount.set(m_catalogContext.siteTracker.getLiveExecutionSitesForHost(m_messenger.getHostId()).size());
-    m_downSites.addAll(m_catalogContext.siteTracker.getAllSitesForHost(m_messenger.getHostId()));
-  }
-  m_catalogContext.m_transactionId=m_messenger.getDiscoveredCatalogTxnId();
-  assert(m_messenger.getDiscoveredCatalogTxnId() != 0);
 }

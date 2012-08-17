@@ -1,13 +1,14 @@
 {
   VoltProjectBuilder builder=getBuilderForTest();
   builder.setSecurityEnabled(true);
-  int processors=Runtime.getRuntime().availableProcessors();
+  int processors=CoreUtils.availableProcessors();
   final int numHosts=processors >= 8 ? 6 : 3;
   final int numTuples=204800 * (processors >= 8 ? 6 : 1);
   final int kfactor=2;
-  final LocalCluster cluster=new LocalCluster("rejoin.jar",1,numHosts,kfactor,BackendTarget.NATIVE_EE_JNI,LocalCluster.FailureState.ALL_RUNNING,false,true);
-  cluster.setMaxHeap(64);
-  if (cluster.isValgrind()) {
+  final LocalCluster cluster=new LocalCluster("rejoin.jar",1,numHosts,kfactor,BackendTarget.NATIVE_EE_JNI,LocalCluster.FailureState.ALL_RUNNING,false,true,false);
+  cluster.setMaxHeap(256);
+  String build=System.getProperties().getProperty("build","release");
+  if (cluster.isValgrind() || build.equalsIgnoreCase("MEMCHECK")) {
     return;
   }
   boolean success=cluster.compile(builder);
@@ -16,7 +17,7 @@
   cluster.setHasLocalServer(false);
   cluster.startUp();
   Client client=ClientFactory.createClient(m_cconfig);
-  client.createConnection("localhost");
+  client.createConnection("localhost",cluster.port(0));
   Random r=new Random();
   StringBuilder sb=new StringBuilder(512);
   for (int ii=0; ii < 512; ii++) {
@@ -79,7 +80,7 @@
               haveFailed.set(true);
               break;
             }
-            if (cluster.recoverOne(dead,toConnectTo,m_username + ":" + m_password+ "@localhost")) {
+            if (cluster.recoverOne(dead,toConnectTo,"")) {
               break;
             }
             attempts++;
@@ -119,7 +120,7 @@
           haveFailed.set(true);
           break;
         }
-        if (cluster.recoverOne(recoverNow,toConnectTo,m_username + ":" + m_password+ "@localhost")) {
+        if (cluster.recoverOne(recoverNow,toConnectTo,"")) {
           break;
         }
         attempts++;

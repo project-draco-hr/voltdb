@@ -1,55 +1,61 @@
 {
   System.out.println("Starting testENG1617");
   start(SITE_COUNT,PARTITION_COUNT,K_FACTOR);
-  for (int i=0; i < SITE_COUNT; ++i) {
-    m_mboxes[i].setFailureLikelihood(0);
+  for (  RussianRouletteMailbox m : m_mboxes.values()) {
+    m.setFailureLikelihood(0);
   }
   createAndRunSiteThreads(true);
-  List<Integer> involvedSites1=getSiteIdsForPartitionId(0);
-  List<Integer> involvedSites2=getSiteIdsForPartitionId(1);
-  int initiatorToDie1=getInitiatorIdForSiteId(involvedSites2.get(0));
+  List<Long> involvedSites1=getSiteIdsForPartitionId(0);
+  List<Long> involvedSites2=getSiteIdsForPartitionId(1);
+  int initiatorToDie1=getInitiatorIdForSiteId(CoreUtils.getSiteIdFromHSId(involvedSites2.get(0)));
   StoredProcedureInvocation spi=new StoredProcedureInvocation();
   spi.setProcName("org.voltdb.TestExecutionSite$MockSPVoltProcedure");
   spi.setParams("commit",new Integer(0));
-  InitiateTaskMessage itm=new InitiateTaskMessage(initiatorToDie1,involvedSites1.get(2),1,false,true,spi,0);
-  m_mboxes[involvedSites1.get(2)].deliver(itm);
-  int initiatorToDie2=getInitiatorIdForSiteId(involvedSites2.get(1));
+  InitiateTaskMessage itm=new InitiateTaskMessage(getInitiatorIds()[initiatorToDie1 / 1000],involvedSites1.get(2),getHSIdForES(1),false,true,spi,0);
+  itm.m_sourceHSId=getInitiatorIds()[initiatorToDie1 / 1000];
+  m_mboxes.get(involvedSites1.get(2)).deliver(itm);
+  int initiatorToDie2=getInitiatorIdForSiteId(CoreUtils.getSiteIdFromHSId(involvedSites2.get(1)));
   for (int ii=0; ii < 3; ii++) {
     spi=new StoredProcedureInvocation();
     spi.setProcName("org.voltdb.TestExecutionSite$MockSPVoltProcedure");
     spi.setParams("commit",new Integer(0));
-    itm=new InitiateTaskMessage(initiatorToDie2,involvedSites1.get(ii),3,false,true,spi,2);
-    m_mboxes[involvedSites1.get(ii)].deliver(itm);
+    itm=new InitiateTaskMessage(getInitiatorIds()[initiatorToDie2 / 1000],involvedSites1.get(ii),getHSIdForES(3),false,true,spi,2);
+    itm.m_sourceHSId=getInitiatorIds()[initiatorToDie2 / 1000];
+    m_mboxes.get(involvedSites1.get(ii)).deliver(itm);
   }
-  m_mboxes[involvedSites2.get(0)].deliver(new LocalObjectMessage(new Runnable(){
+  LocalObjectMessage lom=new LocalObjectMessage(new Runnable(){
     @Override public void run(){
       throw new Error();
     }
   }
-));
-  m_mboxes[involvedSites2.get(1)].deliver(new LocalObjectMessage(new Runnable(){
+);
+  lom.m_sourceHSId=involvedSites2.get(0);
+  m_mboxes.get(involvedSites2.get(0)).deliver(lom);
+  lom=new LocalObjectMessage(new Runnable(){
     @Override public void run(){
       throw new Error();
     }
   }
-));
-  m_siteThreads[involvedSites2.get(0)].join();
-  m_siteThreads[involvedSites2.get(1)].join();
-  m_sites[involvedSites2.get(0)].shutdown();
+);
+  lom.m_sourceHSId=involvedSites2.get(1);
+  m_mboxes.get(involvedSites2.get(1)).deliver(lom);
+  m_siteThreads.get(involvedSites2.get(0)).join();
+  m_siteThreads.get(involvedSites2.get(1)).join();
+  m_sites.get(involvedSites2.get(0)).shutdown();
   m_voltdb.killSite(involvedSites2.get(0));
-  m_voltdb.getFaultDistributor().reportFault(new NodeFailureFault(getHostIdForSiteId(involvedSites2.get(0)),m_voltdb.getCatalogContext().siteTracker.getNonExecSitesForHost(getHostIdForSiteId(involvedSites2.get(0))),String.valueOf(getHostIdForSiteId(involvedSites2.get(0)))));
+  m_voltdb.getFaultDistributor().reportFault(new SiteFailureFault(Arrays.asList(new Long[]{CoreUtils.getHSIdFromHostAndSite(involvedSites2.get(0).intValue(),(int)(involvedSites2.get(0).longValue() >> 32) + 1000),involvedSites2.get(0)})));
   postoffice.remove(involvedSites2.get(0));
-  m_sites[involvedSites2.get(1)].shutdown();
+  m_sites.get(involvedSites2.get(1)).shutdown();
   m_voltdb.killSite(involvedSites2.get(1));
-  m_voltdb.getFaultDistributor().reportFault(new NodeFailureFault(getHostIdForSiteId(involvedSites2.get(1)),m_voltdb.getCatalogContext().siteTracker.getNonExecSitesForHost(getHostIdForSiteId(involvedSites2.get(1))),String.valueOf(getHostIdForSiteId(involvedSites2.get(1)))));
+  m_voltdb.getFaultDistributor().reportFault(new SiteFailureFault(Arrays.asList(new Long[]{CoreUtils.getHSIdFromHostAndSite(involvedSites2.get(1).intValue(),(int)(involvedSites2.get(1).longValue() >> 32) + 1000),involvedSites2.get(1)})));
   postoffice.remove(involvedSites2.get(1));
   Thread.sleep(200);
   long start=System.currentTimeMillis();
   while (System.currentTimeMillis() - start > 15000) {
     boolean containsBadValue=false;
-    for (int ii=0; ii < m_sites.length; ii++) {
-      if (m_sites[ii] != null) {
-        if (m_sites[ii].m_transactionsById.containsKey(1L) || m_sites[ii].m_transactionsById.containsKey(3L)) {
+    for (    ExecutionSite site : m_sites.values()) {
+      if (site != null) {
+        if (site.m_transactionsById.containsKey(1L) || site.m_transactionsById.containsKey(3L)) {
           containsBadValue=true;
         }
       }
@@ -61,29 +67,31 @@
       Thread.sleep(100);
     }
   }
-  for (  RussianRouletteMailbox mailbox : m_mboxes) {
+  for (  RussianRouletteMailbox mailbox : m_mboxes.values()) {
     if (mailbox != null) {
-      mailbox.deliver(new LocalObjectMessage(new Runnable(){
+      lom=new LocalObjectMessage(new Runnable(){
         @Override public void run(){
           throw new Error();
         }
       }
-));
+);
+      lom.m_sourceHSId=mailbox.getHSId();
+      mailbox.deliver(lom);
     }
   }
-  for (  Thread t : m_siteThreads) {
+  for (  Thread t : m_siteThreads.values()) {
     t.join();
   }
-  for (int ii=0; ii < m_sites.length; ii++) {
-    if (m_sites[ii] != null) {
-      if (m_sites[ii].m_transactionsById.containsKey(1L)) {
-        System.out.println("Site " + ii + " contains txn 1");
+  for (  ExecutionSite es : m_sites.values()) {
+    if (es != null) {
+      if (es.m_transactionsById.containsKey(1L)) {
+        System.out.println("Site " + es.getCorrespondingSiteId() + " contains txn 1");
       }
-      assertFalse(m_sites[ii].m_transactionsById.containsKey(1L));
-      if (m_sites[ii].m_transactionsById.containsKey(3L)) {
-        System.out.println("Site " + ii + " contains txn 3");
+      assertFalse(es.m_transactionsById.containsKey(1L));
+      if (es.m_transactionsById.containsKey(3L)) {
+        System.out.println("Site " + es.getCorrespondingSiteId() + " contains txn 3");
       }
-      assertFalse(m_sites[ii].m_transactionsById.containsKey(3L));
+      assertFalse(es.m_transactionsById.containsKey(3L));
     }
   }
 }

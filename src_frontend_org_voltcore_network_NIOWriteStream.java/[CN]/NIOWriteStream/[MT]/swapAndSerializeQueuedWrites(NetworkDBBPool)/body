@@ -1,0 +1,46 @@
+{
+  ArrayDeque<DeferredSerialization> oldlist;
+synchronized (this) {
+    if (m_queuedWrites.isEmpty()) {
+      return;
+    }
+ else {
+      if (m_queuedWrites == m_queuedWrites1) {
+        oldlist=m_queuedWrites1;
+        m_queuedWrites=m_queuedWrites2;
+      }
+ else {
+        oldlist=m_queuedWrites2;
+        m_queuedWrites=m_queuedWrites1;
+      }
+    }
+  }
+  DeferredSerialization ds=null;
+  int bytesQueued=0;
+  while ((ds=oldlist.poll()) != null) {
+    ByteBuffer data[]=ds.serialize();
+    for (    ByteBuffer buf : data) {
+      assert(buf.limit() == buf.capacity());
+      buf.clear();
+      bytesQueued+=buf.remaining();
+      while (buf.hasRemaining()) {
+        BBContainer outCont=m_queuedBuffers.peekLast();
+        if (outCont == null || !outCont.b.hasRemaining()) {
+          outCont=pool.acquire();
+          outCont.b.clear();
+          m_queuedBuffers.offer(outCont);
+        }
+        if (outCont.b.remaining() >= buf.remaining()) {
+          outCont.b.put(buf);
+        }
+ else {
+          final int oldLimit=buf.limit();
+          buf.limit(buf.position() + outCont.b.remaining());
+          outCont.b.put(buf);
+          buf.limit(oldLimit);
+        }
+      }
+    }
+  }
+  updateQueued(bytesQueued,true);
+}

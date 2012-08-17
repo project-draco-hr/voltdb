@@ -1,12 +1,11 @@
 {
   CompiledPlan retval=new CompiledPlan();
-  CompiledPlan.Fragment fragment=new CompiledPlan.Fragment();
-  retval.fragments.add(fragment);
   AbstractParsedStmt nextStmt=null;
   if (m_parsedSelect != null) {
     nextStmt=m_parsedSelect;
-    fragment.planGraph=getNextSelectPlan();
-    if (fragment.planGraph != null) {
+    retval.rootPlanGraph=getNextSelectPlan();
+    retval.readOnly=true;
+    if (retval.rootPlanGraph != null) {
       addColumns(retval,m_parsedSelect);
       boolean orderIsDeterministic=m_parsedSelect.isOrderDeterministic();
       boolean contentIsDeterministic=(m_parsedSelect.hasLimitOrOffset() == false) || orderIsDeterministic;
@@ -14,17 +13,18 @@
     }
   }
  else {
+    retval.readOnly=false;
     if (m_parsedInsert != null) {
       nextStmt=m_parsedInsert;
-      fragment.planGraph=getNextInsertPlan();
+      retval.rootPlanGraph=getNextInsertPlan();
     }
  else     if (m_parsedUpdate != null) {
       nextStmt=m_parsedUpdate;
-      fragment.planGraph=getNextUpdatePlan();
+      retval.rootPlanGraph=getNextUpdatePlan();
     }
  else     if (m_parsedDelete != null) {
       nextStmt=m_parsedDelete;
-      fragment.planGraph=getNextDeletePlan();
+      retval.rootPlanGraph=getNextDeletePlan();
     }
  else {
       throw new RuntimeException("setupForNewPlans not called or not successfull.");
@@ -33,13 +33,14 @@
     if (nextStmt.tableList.get(0).getIsreplicated())     retval.replicatedTableDML=true;
     retval.statementGuaranteesDeterminism(true,true);
   }
-  if (fragment.planGraph == null) {
+  if (retval.rootPlanGraph == null) {
     return null;
   }
   assert(nextStmt != null);
   addParameters(retval,nextStmt);
   retval.fullWhereClause=nextStmt.where;
-  retval.fullWinnerPlan=fragment.planGraph;
-  fragment.planGraph.generateOutputSchema(m_catalogDb);
+  retval.fullWinnerPlan=retval.rootPlanGraph;
+  retval.rootPlanGraph.generateOutputSchema(m_catalogDb);
+  retval.setPartitioningKey(m_partitioning.effectivePartitioningValue());
   return retval;
 }

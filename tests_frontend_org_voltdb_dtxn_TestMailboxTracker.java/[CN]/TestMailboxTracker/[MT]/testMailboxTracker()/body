@@ -1,0 +1,23 @@
+{
+  ZooKeeper zk=getClient(0);
+  MailboxTracker tracker=new MailboxTracker(zk,handler);
+  MailboxPublisher publisher=new MailboxPublisher(VoltZK.mailboxes + "/1");
+  VoltZK.createPersistentZKNodes(zk);
+  publisher.registerMailbox(MailboxType.ExecutionSite,new MailboxNodeContent(1L,0));
+  publisher.registerMailbox(MailboxType.ExecutionSite,new MailboxNodeContent(2L,1));
+  publisher.publish(zk);
+  tracker.start();
+  @SuppressWarnings("rawtypes") ArgumentCaptor<Map> captor=ArgumentCaptor.forClass(Map.class);
+  verify(handler).handleMailboxUpdate(captor.capture());
+  Map<MailboxType,List<MailboxNodeContent>> value=captor.getValue();
+  assertTrue(value.containsKey(MailboxType.ExecutionSite));
+  List<MailboxNodeContent> list=value.get(MailboxType.ExecutionSite);
+  assertEquals(2,list.size());
+  MailboxNodeContent node1=list.get(0);
+  assertEquals(1,node1.HSId.longValue());
+  assertEquals(0,node1.partitionId.intValue());
+  MailboxNodeContent node2=list.get(1);
+  assertEquals(2,node2.HSId.longValue());
+  assertEquals(1,node2.partitionId.intValue());
+  tracker.shutdown();
+}

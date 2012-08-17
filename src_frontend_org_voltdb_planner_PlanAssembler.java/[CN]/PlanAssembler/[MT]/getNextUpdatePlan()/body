@@ -1,15 +1,9 @@
 {
   assert(subAssembler != null);
-  assert(m_parsedUpdate.tableList.size() == 1);
-  Table targetTable=m_parsedUpdate.tableList.get(0);
-  if (m_singlePartition && (targetTable.getIsreplicated())) {
-    String msg="Trying to update replicated table '" + targetTable.getTypeName() + "'";
-    msg+=" in a single-partition procedure.";
-    throw new PlanningErrorException(msg);
-  }
   AbstractPlanNode subSelectRoot=subAssembler.nextPlan();
   if (subSelectRoot == null)   return null;
   UpdatePlanNode updateNode=new UpdatePlanNode();
+  Table targetTable=m_parsedUpdate.tableList.get(0);
   updateNode.setTargetTableName(targetTable.getTypeName());
   updateNode.setUpdateIndexes(false);
   ProjectionPlanNode projectionNode=new ProjectionPlanNode();
@@ -32,28 +26,13 @@
     }
   }
   projectionNode.setOutputSchema(proj_schema);
-  if (m_singlePartition == true) {
-    assert(subSelectRoot instanceof AbstractScanPlanNode);
-    subSelectRoot.addInlinePlanNode(projectionNode);
-    updateNode.addAndLinkChild(subSelectRoot);
+  assert(subSelectRoot instanceof AbstractScanPlanNode);
+  subSelectRoot.addInlinePlanNode(projectionNode);
+  updateNode.addAndLinkChild(subSelectRoot);
+  if (m_partitioning.wasSpecifiedAsSingle() || m_partitioning.hasPartitioningConstantLockedIn()) {
     updateNode.generateOutputSchema(m_catalogDb);
     return updateNode;
   }
- else {
-    assert(subSelectRoot instanceof ReceivePlanNode);
-    ReceivePlanNode recvNode=(ReceivePlanNode)subSelectRoot;
-    assert(recvNode.getChildCount() == 1);
-    AbstractPlanNode sendNode=recvNode.getChild(0);
-    assert(sendNode.getChildCount() == 1);
-    AbstractPlanNode scanNode=sendNode.getChild(0);
-    sendNode.unlinkChild(scanNode);
-    assert(scanNode instanceof AbstractScanPlanNode);
-    scanNode.addInlinePlanNode(projectionNode);
-    updateNode.addAndLinkChild(scanNode);
-    updateNode.generateOutputSchema(m_catalogDb);
-    sendNode.addAndLinkChild(updateNode);
-    sendNode.generateOutputSchema(m_catalogDb);
-    recvNode.generateOutputSchema(m_catalogDb);
-    return addSumAndSendToDMLNode(subSelectRoot);
-  }
+  AbstractPlanNode recvNode=subAssembler.addSendReceivePair(updateNode);
+  return addSumAndSendToDMLNode(recvNode);
 }

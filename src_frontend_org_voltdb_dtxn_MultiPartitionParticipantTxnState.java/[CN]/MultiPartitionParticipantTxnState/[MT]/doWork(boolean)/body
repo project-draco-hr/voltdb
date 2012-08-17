@@ -1,10 +1,15 @@
 {
+  if (rejoining && (m_rejoinState == RejoinState.NORMAL)) {
+    m_rejoinState=RejoinState.REJOINING;
+    if (!m_isReadOnly) {
+      m_loggedFragments=new FragmentTaskLogMessage(m_notice.getInitiatorHSId(),m_notice.getCoordinatorHSId(),m_notice.getTxnId());
+      assert(m_loggedFragments.getTxnId() == getNotice().getTxnId());
+    }
+  }
   if (!m_hasStartedWork) {
     m_site.beginNewTxn(this);
     m_hasStartedWork=true;
-    m_startedWhileRecovering=recovering;
   }
-  assert(m_startedWhileRecovering == recovering);
   if (m_done) {
     return true;
   }
@@ -28,8 +33,8 @@
       initiateProcedure((InitiateTaskMessage)payload);
     }
  else     if (payload instanceof FragmentTaskMessage) {
-      if (recovering && (wu.nonTransactional == false)) {
-        processRecoveringFragmentWork((FragmentTaskMessage)payload,wu.getDependencies());
+      if ((m_rejoinState == RejoinState.REJOINING) && (wu.nonTransactional == false)) {
+        processRejoiningFragmentWork((FragmentTaskMessage)payload,wu.getDependencies());
       }
  else {
         processFragmentWork((FragmentTaskMessage)payload,wu.getDependencies());

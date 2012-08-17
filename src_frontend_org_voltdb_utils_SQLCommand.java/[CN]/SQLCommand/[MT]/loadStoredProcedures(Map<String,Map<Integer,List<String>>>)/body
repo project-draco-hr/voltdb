@@ -1,0 +1,60 @@
+{
+  VoltTable procs=null;
+  VoltTable params=null;
+  try {
+    procs=VoltDB.callProcedure("@SystemCatalog","PROCEDURES").getResults()[0];
+    params=VoltDB.callProcedure("@SystemCatalog","PROCEDURECOLUMNS").getResults()[0];
+  }
+ catch (  NoConnectionsException e) {
+    e.printStackTrace();
+    return;
+  }
+catch (  IOException e) {
+    e.printStackTrace();
+    return;
+  }
+catch (  ProcCallException e) {
+    e.printStackTrace();
+    return;
+  }
+  Map<String,Integer> proc_param_counts=Collections.synchronizedMap(new HashMap<String,Integer>());
+  while (params.advanceRow()) {
+    String this_proc=params.getString("PROCEDURE_NAME");
+    if (!proc_param_counts.containsKey(this_proc)) {
+      proc_param_counts.put(this_proc,0);
+    }
+    int curr_val=proc_param_counts.get(this_proc);
+    proc_param_counts.put(this_proc,++curr_val);
+  }
+  params.resetRowPosition();
+  while (procs.advanceRow()) {
+    String proc_name=procs.getString("PROCEDURE_NAME");
+    ArrayList<String> this_params=new ArrayList<String>();
+    if (proc_param_counts.get(proc_name) != null) {
+      for (int i=0; i < proc_param_counts.get(procs.getString("PROCEDURE_NAME")); i++) {
+        this_params.add(null);
+      }
+    }
+    HashMap<Integer,List<String>> argLists=new HashMap<Integer,List<String>>();
+    if (proc_param_counts.containsKey(proc_name)) {
+      argLists.put(proc_param_counts.get(proc_name),this_params);
+    }
+ else {
+      argLists.put(0,this_params);
+    }
+    procedures.put(procs.getString("PROCEDURE_NAME"),argLists);
+  }
+  params.resetRowPosition();
+  while (params.advanceRow()) {
+    Map<Integer,List<String>> argLists=procedures.get(params.getString("PROCEDURE_NAME"));
+    assert(argLists.size() == 1);
+    List<String> this_params=argLists.values().iterator().next();
+    int idx=(int)params.getLong("ORDINAL_POSITION") - 1;
+    String param_type=params.getString("TYPE_NAME").toLowerCase();
+    String param_remarks=params.getString("REMARKS");
+    if (null != param_remarks) {
+      param_type+=(param_remarks.equalsIgnoreCase("ARRAY_PARAMETER") ? "_array" : "");
+    }
+    this_params.set(idx,param_type);
+  }
+}

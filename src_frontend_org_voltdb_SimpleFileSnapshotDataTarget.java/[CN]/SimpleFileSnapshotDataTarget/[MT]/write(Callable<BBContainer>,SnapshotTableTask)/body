@@ -1,0 +1,33 @@
+{
+  final ListenableFuture<BBContainer> computedData=VoltDB.instance().getComputationService().submit(tupleData);
+  return m_es.submit(new Callable<Object>(){
+    @Override public Object call() throws Exception {
+      try {
+        final BBContainer data=computedData.get();
+        if (data == null)         return null;
+        if (m_writeFailed) {
+          data.discard();
+          return null;
+        }
+        try {
+          while (data.b.hasRemaining()) {
+            int written=m_fc.write(data.b);
+            if (written > 0) {
+              m_bytesWritten+=written;
+            }
+          }
+        }
+  finally {
+          data.discard();
+        }
+      }
+ catch (      Throwable t) {
+        m_writeException=t;
+        m_writeFailed=true;
+        throw Throwables.propagate(t);
+      }
+      return null;
+    }
+  }
+);
+}

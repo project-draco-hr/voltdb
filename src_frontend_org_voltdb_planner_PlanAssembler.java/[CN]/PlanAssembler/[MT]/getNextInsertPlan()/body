@@ -3,14 +3,9 @@
   m_insertPlanWasGenerated=true;
   assert(m_parsedInsert.tableList.size() == 1);
   Table targetTable=m_parsedInsert.tableList.get(0);
-  if (m_singlePartition && targetTable.getIsreplicated()) {
-    String msg="Trying to insert into replicated table '" + targetTable.getTypeName() + "'";
-    msg+=" in a single-partition procedure.";
-    throw new PlanningErrorException(msg);
-  }
   InsertPlanNode insertNode=new InsertPlanNode();
   insertNode.setTargetTableName(targetTable.getTypeName());
-  insertNode.setMultiPartition(m_singlePartition == false);
+  insertNode.setMultiPartition(m_partitioning.wasSpecifiedAsSingle() == false);
   MaterializePlanNode materializeNode=new MaterializePlanNode();
   NodeSchema mat_schema=new NodeSchema();
   List<Column> columns=CatalogUtil.getSortedCatalogItems(targetTable.getColumns(),"index");
@@ -40,22 +35,24 @@
  catch (    Exception e) {
       throw new PlanningErrorException(e.getMessage());
     }
+    if (column.equals(m_partitioning.getColumn())) {
+      String fullColumnName=targetTable.getTypeName() + "." + column.getTypeName();
+      m_partitioning.addPartitioningExpression(fullColumnName,expr);
+      m_partitioning.setInferredValue(ConstantValueExpression.extractPartitioningValue(expr.getValueType(),expr));
+    }
     mat_schema.addColumn(new SchemaColumn("VOLT_TEMP_TABLE",column.getTypeName(),column.getTypeName(),expr));
   }
   materializeNode.setOutputSchema(mat_schema);
   insertNode.addAndLinkChild(materializeNode);
   insertNode.generateOutputSchema(m_catalogDb);
-  AbstractPlanNode rootNode=insertNode;
-  if (m_singlePartition == false) {
-    SendPlanNode sendNode=new SendPlanNode();
-    sendNode.isMultiPartition=true;
-    sendNode.addAndLinkChild(rootNode);
-    sendNode.generateOutputSchema(m_catalogDb);
-    ReceivePlanNode recvNode=new ReceivePlanNode();
-    recvNode.addAndLinkChild(sendNode);
-    recvNode.generateOutputSchema(m_catalogDb);
-    rootNode=recvNode;
-    rootNode=addSumAndSendToDMLNode(rootNode);
+  if (m_partitioning.wasSpecifiedAsSingle() || m_partitioning.hasPartitioningConstantLockedIn()) {
+    return insertNode;
   }
-  return rootNode;
+  SendPlanNode sendNode=new SendPlanNode();
+  sendNode.isMultiPartition=true;
+  sendNode.addAndLinkChild(insertNode);
+  AbstractPlanNode recvNode=new ReceivePlanNode();
+  recvNode.addAndLinkChild(sendNode);
+  recvNode.generateOutputSchema(m_catalogDb);
+  return addSumAndSendToDMLNode(recvNode);
 }

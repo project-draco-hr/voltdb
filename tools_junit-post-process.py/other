@@ -1,0 +1,51 @@
+import sys, os, re, logging, time, shutil
+from optparse import OptionParser
+if (__name__ == '__main__'):
+    parser = OptionParser()
+    parser.add_option('-t', '--testname', action='store', type='string', dest='testname', help='name of test just that ran')
+    parser.add_option('-o', '--outputpath', action='store', type='string', dest='outputpath', help='path to JUnit results')
+    parser.add_option('-r', '--testresult', action='store', type='string', dest='testresult', help='did the test pass')
+    (options, args) = parser.parse_args()
+    if (options.testresult == 'true'):
+        magicpath = os.path.join(os.path.abspath(options.outputpath), 'JUNITHADFAILURES')
+        os.system(('touch %s' % magicpath))
+    resultPath = getPathToResultsFileForTest(options.testname, options.outputpath)
+    logpath = os.path.join(os.path.abspath(options.outputpath), 'post-process-log.txt')
+    logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p', filename=logpath, level=logging.DEBUG)
+    logging.info(('Running post processing for test %s' % options.testname))
+    procs = getProcs()
+    failures = []
+    for proc in procs:
+        if (proc.processType in ['VoltDB server process', 'JUnit Test Runner process']):
+            logging.error(('Found blacklisted process: %s' % proc))
+            cmd(('kill -9 %d' % proc.pid))
+            failures.append(proc)
+        else:
+            logging.info(('Found java process: %s' % proc))
+    if (len(failures) > 0):
+        if (not os.path.exists(resultPath)):
+            newpath = (resultPath + '-orig.xml')
+            logging.error(('Moving original results xml file to: %s' % newpath))
+            os.rename(resultPath, newpath)
+        f = open(resultPath, 'w')
+        testout = 'Test suite stranded some processes'
+        result = Result(options.testname, 'testPlaceholder', testout)
+        procinfo = 'Killed processes:\n\n'
+        for proc in failures:
+            procinfo += (str(proc) + '\n')
+        procinfo += '\nCommand Lines:\n\n'
+        for proc in failures:
+            procinfo += (str(proc) + '\n')
+        writeJUnitXml(f, options.testname, 1, procinfo, '', [result])
+    elif (not os.path.exists(resultPath)):
+        logging.error(("JUnit test runner didn't create expected results XML file: %s" % resultPath))
+        f = open(resultPath, 'w')
+        testout = 'JUnitRunner failed to write XML results file for suite'
+        result = Result(options.testname, 'testPlaceholder', testout)
+        writeJUnitXml(f, options.testname, 1, testout, '', [result])
+    junitlogfile = os.path.join(os.path.abspath(options.outputpath), 'volt-junit-fulllog.txt')
+    newlogpath = os.path.join(os.path.abspath(options.outputpath), (('junit.log.' + options.testname) + '.txt'))
+    if os.path.exists(junitlogfile):
+        shutil.move(junitlogfile, newlogpath)
+        logging.info('Truncated and renamed log file')
+    logging.info(('Finished post processing for test %s' % options.testname))

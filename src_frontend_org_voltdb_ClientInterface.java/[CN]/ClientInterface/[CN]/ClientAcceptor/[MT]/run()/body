@@ -40,15 +40,18 @@
                 }
                 socket.socket().setKeepAlive(true);
                 if (handler instanceof ClientInputHandler) {
-synchronized (m_connections) {
-                    Connection c=null;
-                    if (!m_hasDTXNBackPressure) {
-                      c=m_network.registerChannel(socket,handler,SelectionKey.OP_READ);
+                  final Connection c=m_network.registerChannel(socket,handler,0);
+                  if (!VoltDB.instance().isIV2Enabled()) {
+                    m_backpressureLock.lock();
+                    try {
+                      if (!m_hasDTXNBackPressure) {
+                        c.enableReadSelection();
+                      }
+                      m_connections.add(c);
                     }
- else {
-                      c=m_network.registerChannel(socket,handler,0);
+  finally {
+                      m_backpressureLock.unlock();
                     }
-                    m_connections.add(c);
                   }
                 }
  else {

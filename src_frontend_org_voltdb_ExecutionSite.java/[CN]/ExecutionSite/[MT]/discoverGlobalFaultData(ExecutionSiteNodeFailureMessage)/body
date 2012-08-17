@@ -1,33 +1,38 @@
 {
-  if (m_recovering) {
-    VoltDB.crashLocalVoltDB("Aborting recovery due to a remote node failure. Retry again.",false,null);
+  if (m_rejoining) {
+    VoltDB.crashLocalVoltDB("Aborting rejoin due to a remote node failure. Retry again.",false,null);
   }
-  HashSet<NodeFailureFault> failures=message.m_failedHosts;
+  SiteTracker newTracker=VoltDB.instance().getSiteTracker();
+  HashSet<SiteFailureFault> failures=message.m_failedSites;
   m_context=VoltDB.instance().getCatalogContext();
-  HashSet<Integer> failedSiteIds=new HashSet<Integer>();
-  for (  NodeFailureFault fault : failures) {
-    failedSiteIds.addAll(m_context.siteTracker.getAllSitesForHost(fault.getHostId()));
-  }
-  m_knownFailedSites.addAll(failedSiteIds);
-  HashMap<Integer,Long> initiatorSafeInitPoint=new HashMap<Integer,Long>();
-  int expectedResponses=discoverGlobalFaultData_send();
-  Long multiPartitionCommitPoint=discoverGlobalFaultData_rcv(expectedResponses,initiatorSafeInitPoint);
-  if (multiPartitionCommitPoint == null) {
-    return;
-  }
-  HashSet<Integer> newFailedSiteIds=new HashSet<Integer>(failedSiteIds);
-  newFailedSiteIds.removeAll(m_handledFailedSites);
-  PPDPolicyDecision makePPDPolicyDecisions=VoltDB.instance().getFaultDistributor().makePPDPolicyDecisions(newFailedSiteIds);
-  if (makePPDPolicyDecisions == PPDPolicyDecision.NodeFailure) {
-    handleSiteFaults(false,newFailedSiteIds,multiPartitionCommitPoint,initiatorSafeInitPoint);
-  }
- else   if (makePPDPolicyDecisions == PPDPolicyDecision.PartitionDetection) {
-    handleSiteFaults(true,newFailedSiteIds,multiPartitionCommitPoint,initiatorSafeInitPoint);
-  }
-  m_handledFailedSites.addAll(failedSiteIds);
-  for (  NodeFailureFault fault : failures) {
-    if (newFailedSiteIds.containsAll(m_context.siteTracker.getAllSitesForHost(fault.getHostId()))) {
-      VoltDB.instance().getFaultDistributor().reportFaultHandled(m_faultHandler,fault);
+  for (  SiteFailureFault fault : failures) {
+    for (    Long siteId : fault.getSiteIds()) {
+      if (!m_pendingFailedSites.add(siteId)) {
+        VoltDB.crashLocalVoltDB("A site id shouldn't be distributed as a fault twice",true,null);
+      }
     }
   }
+  HashSet<Long> delta=new HashSet<Long>(m_tracker.m_allSitesImmutable);
+  delta.removeAll(newTracker.m_allSitesImmutable);
+  HashMap<Long,Long> initiatorSafeInitPoint=new HashMap<Long,Long>();
+  discoverGlobalFaultData_send(newTracker);
+  Long multiPartitionCommitPoint=null;
+  if (discoverGlobalFaultData_rcv(newTracker)) {
+    multiPartitionCommitPoint=extractGlobalFaultData(newTracker,initiatorSafeInitPoint);
+  }
+ else {
+    return;
+  }
+  PPDPolicyDecision makePPDPolicyDecisions=VoltDB.instance().getFaultDistributor().makePPDPolicyDecisions(m_pendingFailedSites,newTracker);
+  if (makePPDPolicyDecisions == PPDPolicyDecision.NodeFailure) {
+    handleSiteFaults(false,m_pendingFailedSites,multiPartitionCommitPoint,initiatorSafeInitPoint);
+  }
+ else   if (makePPDPolicyDecisions == PPDPolicyDecision.PartitionDetection) {
+    handleSiteFaults(true,m_pendingFailedSites,multiPartitionCommitPoint,initiatorSafeInitPoint);
+  }
+  m_tracker=newTracker;
+  for (  Long initiator : m_tracker.m_allInitiatorsImmutable) {
+    m_transactionQueue.ensureInitiatorIsKnown(initiator);
+  }
+  m_pendingFailedSites.clear();
 }

@@ -1,12 +1,11 @@
 {
   long now=System.currentTimeMillis();
-  ClientResponseImpl response=null;
-  FastDeserializer fds=new FastDeserializer(buf);
+  ClientResponseImpl response=new ClientResponseImpl();
   try {
-    response=fds.readObject(ClientResponseImpl.class);
+    response.initFromBuffer(buf);
   }
- catch (  IOException e) {
-    e.printStackTrace();
+ catch (  IOException e1) {
+    e1.printStackTrace();
   }
   ProcedureCallback cb=null;
   long callTime=0;
@@ -27,19 +26,18 @@ synchronized (this) {
       callTime=stuff.timestamp;
       delta=(int)(now - callTime);
       cb=stuff.callback;
-      m_invocationsCompleted++;
       final byte status=response.getStatus();
       boolean abort=false;
       boolean error=false;
       if (status == ClientResponse.USER_ABORT || status == ClientResponse.GRACEFUL_FAILURE) {
-        m_invocationAborts++;
         abort=true;
       }
  else       if (status != ClientResponse.SUCCESS) {
-        m_invocationErrors++;
         error=true;
       }
-      updateStats(stuff.name,delta,response.getClusterRoundtrip(),abort,error);
+      int clusterRoundTrip=response.getClusterRoundtrip();
+      m_rateLimiter.transactionResponseReceived(now,clusterRoundTrip);
+      updateStats(stuff.name,delta,clusterRoundTrip,abort,error);
     }
   }
   if (cb != null) {

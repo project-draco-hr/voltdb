@@ -4,8 +4,14 @@
     List<String> params=parseQueryProcedureCallParameters(query);
     String procedure=params.remove(0);
     if (!Procedures.containsKey(procedure))     throw new Exception("Undefined procedure: " + procedure);
-    List<String> paramTypes=Procedures.get(procedure);
-    if (params.size() != paramTypes.size())     throw new Exception("Invalid parameter count for procedure: " + procedure + "(expected: "+ paramTypes.size()+ ", received: "+ params.size()+ ")");
+    List<String> paramTypes=Procedures.get(procedure).get(params.size());
+    if (paramTypes == null || params.size() != paramTypes.size()) {
+      String expectedSizes="";
+      for (      Integer expectedSize : Procedures.get(procedure).keySet()) {
+        expectedSizes+=expectedSize + ", ";
+      }
+      throw new Exception("Invalid parameter count for procedure: " + procedure + "(expected: "+ expectedSizes+ " received: "+ params.size()+ ")");
+    }
     Object[] objectParams=new Object[params.size()];
     if (procedure.equals("@SnapshotDelete")) {
       objectParams[0]=new String[]{Unquote.matcher(params.get(0)).replaceAll("").replace("''","'")};
@@ -21,23 +27,58 @@
         }
  else         if (paramType.equals("tinyint")) {
           if (IsNull.matcher(param).matches())           objectParams[i]=VoltType.NULL_TINYINT;
- else           objectParams[i]=Byte.parseByte(param);
+ else {
+            try {
+              objectParams[i]=Byte.parseByte(param);
+            }
+ catch (            NumberFormatException nfe) {
+              throw new Exception("Invalid parameter:  Expected a byte numeric value, got '" + param + "' (param "+ (i + 1)+ ").");
+            }
+          }
         }
  else         if (paramType.equals("smallint")) {
           if (IsNull.matcher(param).matches())           objectParams[i]=VoltType.NULL_SMALLINT;
- else           objectParams[i]=Short.parseShort(param);
+ else {
+            try {
+              objectParams[i]=Short.parseShort(param);
+            }
+ catch (            NumberFormatException nfe) {
+              throw new Exception("Invalid parameter:  Expected a short numeric value, got '" + param + "' (param "+ (i + 1)+ ").");
+            }
+          }
         }
  else         if (paramType.equals("int") || paramType.equals("integer")) {
           if (IsNull.matcher(param).matches())           objectParams[i]=VoltType.NULL_INTEGER;
- else           objectParams[i]=Integer.parseInt(param);
+ else {
+            try {
+              objectParams[i]=Integer.parseInt(param);
+            }
+ catch (            NumberFormatException nfe) {
+              throw new Exception("Invalid parameter:  Expected a numeric value, got '" + param + "' (param "+ (i + 1)+ ").");
+            }
+          }
         }
  else         if (paramType.equals("bigint")) {
           if (IsNull.matcher(param).matches())           objectParams[i]=VoltType.NULL_BIGINT;
- else           objectParams[i]=Long.parseLong(param);
+ else {
+            try {
+              objectParams[i]=Long.parseLong(param);
+            }
+ catch (            NumberFormatException nfe) {
+              throw new Exception("Invalid parameter:  Expected a numeric value, got '" + param + "' (param "+ (i + 1)+ ").");
+            }
+          }
         }
  else         if (paramType.equals("float")) {
           if (IsNull.matcher(param).matches())           objectParams[i]=VoltType.NULL_FLOAT;
- else           objectParams[i]=Double.parseDouble(param);
+ else {
+            try {
+              objectParams[i]=Double.parseDouble(param);
+            }
+ catch (            NumberFormatException nfe) {
+              throw new Exception("Invalid parameter:  Expected a float value, got '" + param + "' (param "+ (i + 1)+ ").");
+            }
+          }
         }
  else         if (paramType.equals("varchar")) {
           if (IsNull.matcher(param).matches())           objectParams[i]=VoltType.NULL_STRING_OR_VARBINARY;
@@ -52,20 +93,27 @@
  else           objectParams[i]=DateParser.parse(param);
         }
  else         if (paramType.equals("statisticscomponent")) {
-          if (!StatisticsComponents.contains(param.toUpperCase()))           throw new Exception("Invalid Statistics Component: " + param);
-          objectParams[i]=param.toUpperCase();
+          String p=preprocessParam(param);
+          if (!StatisticsComponents.contains(p))           throw new Exception("Invalid Statistics Component: " + param);
+          objectParams[i]=p;
         }
  else         if (paramType.equals("sysinfoselector")) {
-          if (!SysInfoSelectors.contains(param.toUpperCase()))           throw new Exception("Invalid SysInfo Selector: " + param);
-          objectParams[i]=param.toUpperCase();
+          String p=preprocessParam(param);
+          if (!SysInfoSelectors.contains(p))           throw new Exception("Invalid SysInfo Selector: " + param);
+          objectParams[i]=p;
         }
  else         if (paramType.equals("metadataselector")) {
-          if (!MetaDataSelectors.contains(param.toUpperCase()))           throw new Exception("Invalid Meta-Data Selector: " + param);
-          objectParams[i]=param.toUpperCase();
+          String p=preprocessParam(param);
+          if (!MetaDataSelectors.contains(p))           throw new Exception("Invalid Meta-Data Selector: " + param);
+          objectParams[i]=p;
         }
- else         if (paramType.equals("varbinary")) {
+ else         if (paramType.equals("varbinary") || paramType.equals("tinyint_array")) {
           if (IsNull.matcher(param).matches())           objectParams[i]=VoltType.NULL_STRING_OR_VARBINARY;
- else           objectParams[i]=hexStringToByteArray(Unquote.matcher(param).replaceAll("").replace("''","'"));
+ else {
+            if (param.length() % 2 == 1)             throw new Exception("Invalid varbinary value: input must have an even amount of characters to be a valid hex string.");
+            String val=Unquote.matcher(param).replaceAll("").replace("''","'");
+            objectParams[i]=hexStringToByteArray(val);
+          }
         }
  else         throw new Exception("Unsupported Data Type: " + paramType);
       }

@@ -1,99 +1,20 @@
 {
-  if (m_connected.get()) {
-    m_logger.error("Export client already connected.");
-    throw new ExportClientException(ExportClientException.Type.USER_ERROR,"Export client already connected.");
-  }
-  if (m_servers.size() == 0) {
-    m_logger.error("No servers provided for export client.");
-    throw new ExportClientException(ExportClientException.Type.USER_ERROR,"No servers provided for export client.");
-  }
-  m_exportConnections.clear();
-  boolean foundOneActiveServer=false;
-  ArrayList<Pair<Exception,InetSocketAddress>> connectErrors=new ArrayList<Pair<Exception,InetSocketAddress>>();
-  for (  InetSocketAddress serverAddr : m_servers) {
-    ExportConnection exportConnection=null;
-    try {
-      exportConnection=new ExportConnection(m_username,m_password,serverAddr,m_sinks,m_bandwidthMonitor);
-      exportConnection.openExportConnection();
-      if (!exportConnection.isConnected())       continue;
-      if (m_autodiscoverTopolgy) {
-        m_servers.clear();
-        m_logger.info("Discovered topology " + exportConnection.hosts.toString());
-        for (        String hostInfo : exportConnection.hosts) {
-          try {
-            JSONObject obj=new JSONObject(hostInfo);
-            JSONArray interfaces=obj.getJSONArray("interfaces");
-            if (interfaces.length() == 0) {
-              throw new RuntimeException("No interfaces listed for one host");
-            }
-            String intf=interfaces.getString(0);
-            int port=m_useAdminPorts ? obj.getInt("adminPort") : obj.getInt("clientPort");
-            InetSocketAddress addr=new InetSocketAddress(intf,port);
-            m_servers.add(addr);
-          }
- catch (          JSONException e) {
-            m_logger.error("JSON parsing exception while attempting to process: " + hostInfo,e);
-          }
-        }
-      }
- else {
-        m_logger.warn("Skipping topology auto-discovery per command line configuration.");
-        if (!m_hasPrintedAutodiscoveryWarning) {
-          m_logger.warn("Running without auto-discovery may produce unexpected results " + "and should only be run if the implications are understood.");
-          m_logger.warn("Please contact VoltDB support if more information is required.");
-          m_hasPrintedAutodiscoveryWarning=true;
-        }
-      }
-      foundOneActiveServer=true;
+  HashSet<AdvertisedDataSource> foundSources=new HashSet<AdvertisedDataSource>();
+  for (int attempt=0; attempt < 3; attempt++) {
+    foundSources.clear();
+    if (!tryToConnectToAllNodes(foundSources)) {
+      return false;
+    }
+    if (m_servers.size() == m_exportConnections.size()) {
       break;
     }
- catch (    IOException e) {
-      if (e instanceof java.nio.channels.ClosedByInterruptException) {
-        return false;
-      }
-      if (e.getMessage().contains("Export")) {
-        throw new ExportClientException(ExportClientException.Type.AUTH_FAILURE,"Export is not enabled on this server.",e);
-      }
- else       if (e.getMessage().contains("Authentication")) {
-        throw new ExportClientException(ExportClientException.Type.AUTH_FAILURE,"Authentication failure",e);
-      }
  else {
-        connectErrors.add(Pair.of((Exception)e,serverAddr));
-      }
+      disconnect();
     }
- finally {
-      if (exportConnection != null)       exportConnection.closeExportConnection();
-    }
-  }
-  if (!foundOneActiveServer) {
-    for (    Pair<Exception,InetSocketAddress> p : connectErrors) {
-      m_logger.warn("Failed to connect to server " + p.getSecond() + " with error: "+ p.getFirst().getMessage());
-    }
-    m_logger.warn("Unable to connect to a given server to discover the cluster topology");
-    return false;
-  }
-  HashSet<AdvertisedDataSource> foundSources=new HashSet<AdvertisedDataSource>();
-  for (int tryCount=0; tryCount < 3; tryCount++) {
-    for (    InetSocketAddress addr : m_servers) {
-      if (m_exportConnections.containsKey(addr))       continue;
-      ExportConnection connection;
-      try {
-        connection=connectToServer(addr);
-      }
- catch (      InterruptedException e) {
-        disconnect();
-        return false;
-      }
-      if (connection != null) {
-        m_exportConnections.put(addr,connection);
-        foundSources.addAll(connection.dataSources);
-      }
-    }
-    if (m_servers.size() == m_exportConnections.size())     break;
     try {
-      Thread.sleep(250);
+      Thread.sleep(500);
     }
- catch (    InterruptedException e) {
+ catch (    Exception e) {
     }
   }
   if (m_servers.size() != m_exportConnections.size()) {

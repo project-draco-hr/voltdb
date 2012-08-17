@@ -1,9 +1,6 @@
 {
-  if (m_haveDoneRestore) {
-    throw new VoltAbortException("Cluster has already been restored or has failed a restore." + " Restart the cluster before doing another restore.");
-  }
   final long startTime=System.currentTimeMillis();
-  HOST_LOG.info("Restoring from path: " + path + " with nonce: "+ nonce);
+  CONSOLE_LOG.info("Restoring from path: " + path + " with nonce: "+ nonce);
   VoltTable[] savefile_data;
   savefile_data=performRestoreScanWork(path,nonce);
   List<JSONObject> digests;
@@ -91,6 +88,12 @@
     return results;
   }
   try {
+    VoltDB.instance().getHostMessenger().getZK().create(VoltZK.restoreMarker,null,Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+  }
+ catch (  KeeperException.NodeExistsException e) {
+    throw new VoltAbortException("Cluster has already been restored or has failed a restore." + " Restart the cluster before doing another restore.");
+  }
+  try {
     ByteArrayOutputStream baos=new ByteArrayOutputStream();
     ObjectOutputStream oos=new ObjectOutputStream(baos);
     oos.writeObject(exportSequenceNumbers);
@@ -110,13 +113,33 @@ catch (  JSONException e) {
       throw new VoltAbortException("Error distributing export sequence numbers");
     }
   }
-  results=performTableRestoreWork(savefile_state);
+  results=performTableRestoreWork(savefile_state,ctx.getSiteTrackerForSnapshot());
   final long endTime=System.currentTimeMillis();
   final double duration=(endTime - startTime) / 1000.0;
   final StringWriter sw=new StringWriter();
   final PrintWriter pw=new PrintWriter(sw);
   pw.toString();
   pw.printf("%.2f",duration);
-  HOST_LOG.info("Finished restore of " + path + " with nonce: "+ nonce+ " in "+ sw.toString()+ " seconds");
+  CONSOLE_LOG.info("Finished restore of " + path + " with nonce: "+ nonce+ " in "+ sw.toString()+ " seconds");
+  final VoltDB.START_ACTION startAction=VoltDB.instance().getConfig().m_startAction;
+  final org.voltdb.OperationMode mode=VoltDB.instance().getMode();
+  final boolean isStartWithNoAutomatedRestore=startAction == VoltDB.START_ACTION.START && mode != org.voltdb.OperationMode.INITIALIZING;
+  final boolean isCLEnabled=VoltDB.instance().getCommandLog().getClass().getSimpleName().equals("CommandLogImpl");
+  final boolean isStartedWithCreateAction=startAction == VoltDB.START_ACTION.CREATE;
+  if (isCLEnabled && (isStartedWithCreateAction || isStartWithNoAutomatedRestore)) {
+    final ZooKeeper zk=VoltDB.instance().getHostMessenger().getZK();
+    HOST_LOG.info("Requesting truncation snapshot to make data loaded by snapshot restore durable.");
+    zk.create("/request_truncation_snapshot",null,Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT,new StringCallback(){
+      @Override public void processResult(      int rc,      String path,      Object ctx,      String name){
+        if (rc != 0) {
+          KeeperException.Code code=KeeperException.Code.get(rc);
+          if (code != KeeperException.Code.NODEEXISTS) {
+            HOST_LOG.warn("Don't expect this ZK response when requesting a truncation snapshot " + code);
+          }
+        }
+      }
+    }
+,null);
+  }
   return results;
 }

@@ -19,6 +19,7 @@
   }
   procedure.setClassname(className);
   procedure.setSystemproc(false);
+  procedure.setDefaultproc(procedureDescriptor.m_builtInStmt);
   procedure.setHasjava(false);
   ProcInfoData info=compiler.getProcInfoOverride(shortName);
   if (info == null) {
@@ -30,20 +31,25 @@
   }
   assert(info != null);
   Statement catalogStmt=procedure.getStatements().add(VoltDB.ANON_STMT_NAME);
-  StatementCompiler.compile(compiler,hsql,catalog,db,estimates,catalogStmt,procedureDescriptor.m_singleStmt,procedureDescriptor.m_joinOrder,info.singlePartition);
+  Object partitionParameter=null;
+  if (info.singlePartition) {
+    partitionParameter="StatementCompiler dummied up single partitioning for QueryPlanner";
+  }
+  PartitioningForStatement partitioning=new PartitioningForStatement(partitionParameter,false,true);
+  StatementCompiler.compile(compiler,hsql,catalog,db,estimates,catalogStmt,procedureDescriptor.m_singleStmt,procedureDescriptor.m_joinOrder,partitioning);
   boolean procHasWriteStmts=(catalogStmt.getReadonly() == false);
   procedure.setReadonly(procHasWriteStmts == false);
   int seqs=catalogStmt.getSeqscancount();
   procedure.setHasseqscans(seqs > 0);
   CatalogMap<ProcParameter> params=procedure.getParameters();
   CatalogMap<StmtParameter> stmtParams=catalogStmt.getParameters();
-  int i=0;
+  int paramCount=0;
   for (  StmtParameter stmtParam : CatalogUtil.getSortedCatalogItems(stmtParams,"index")) {
-    ProcParameter procParam=params.add("param" + String.valueOf(i));
+    ProcParameter procParam=params.add("param" + String.valueOf(paramCount));
     procParam.setIndex(stmtParam.getIndex());
     procParam.setIsarray(false);
     procParam.setType(stmtParam.getJavatype());
-    i++;
+    paramCount++;
   }
   procedure.setSinglepartition(info.singlePartition);
   if (info.singlePartition) {
@@ -51,6 +57,29 @@
     if (procedure.getPartitionparameter() >= params.size()) {
       String msg="PartitionInfo parameter not a valid parameter for procedure: " + procedure.getClassname();
       throw compiler.new VoltCompilerException(msg);
+    }
+  }
+ else {
+    if (partitioning.getCountOfIndependentlyPartitionedTables() == 1) {
+      AbstractExpression statementPartitionExpression=partitioning.singlePartitioningExpression();
+      if (statementPartitionExpression != null) {
+        String msg=null;
+        if (statementPartitionExpression instanceof ParameterValueExpression) {
+          msg="This procedure would benefit from setting the attribute 'partitioninfo=" + partitioning.getFullColumnName() + ":"+ ((ParameterValueExpression)statementPartitionExpression).getParameterIndex()+ "'";
+        }
+ else {
+          String valueDescription=null;
+          Object partitionValue=partitioning.inferredPartitioningValue();
+          if (partitionValue == null) {
+            valueDescription="of " + statementPartitionExpression.toString();
+          }
+ else {
+            valueDescription=partitionValue.toString();
+          }
+          msg="This procedure would benefit from adding a parameter to be passed the value " + valueDescription + " and setting the attribute 'partitioninfo="+ partitioning.getFullColumnName()+ ":"+ paramCount+ "'";
+        }
+        compiler.addWarn(msg);
+      }
     }
   }
 }

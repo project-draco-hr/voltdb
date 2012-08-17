@@ -1,0 +1,43 @@
+{
+  int hostCount=getHostCount();
+  int partitionCount=getPartitionCount();
+  int sitesPerHost=getSitesPerHost();
+  int partitionCounter=-1;
+  HashMap<Integer,ArrayList<Integer>> partToHosts=new HashMap<Integer,ArrayList<Integer>>();
+  for (int i=0; i < partitionCount; i++) {
+    ArrayList<Integer> hosts=new ArrayList<Integer>();
+    partToHosts.put(i,hosts);
+  }
+  for (int i=0; i < sitesPerHost * hostCount; i++) {
+    int partition=(++partitionCounter) % partitionCount;
+    int hostForSite=hostIds.get(i / sitesPerHost);
+    partToHosts.get(partition).add(hostForSite);
+  }
+  for (  Entry<Integer,ArrayList<Integer>> e : partToHosts.entrySet()) {
+    Collections.sort(e.getValue());
+  }
+  JSONStringer stringer=new JSONStringer();
+  stringer.object();
+  stringer.key("hostcount").value(m_hostCount);
+  stringer.key("kfactor").value(getReplicationFactor());
+  stringer.key("sites_per_host").value(sitesPerHost);
+  stringer.key("partitions").array();
+  for (int part=0; part < partitionCount; part++) {
+    stringer.object();
+    stringer.key("partition_id").value(part);
+    int index=part % (getReplicationFactor() + 1);
+    int master=partToHosts.get(part).get(index);
+    stringer.key("master").value(master);
+    stringer.key("replicas").array();
+    for (    int host_pos : partToHosts.get(part)) {
+      stringer.value(host_pos);
+    }
+    stringer.endArray();
+    stringer.endObject();
+  }
+  stringer.endArray();
+  stringer.endObject();
+  JSONObject topo=new JSONObject(stringer.toString());
+  hostLog.info("TOPO: " + topo.toString(2));
+  return topo;
+}

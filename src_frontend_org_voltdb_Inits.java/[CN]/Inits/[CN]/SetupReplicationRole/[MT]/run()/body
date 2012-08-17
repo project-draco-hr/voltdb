@@ -1,5 +1,24 @@
 {
-  if (!m_isRejoin) {
-    m_rvdb.setReplicationRole(m_config.m_replicationRole);
+  try {
+    ZooKeeper zk=m_rvdb.getHostMessenger().getZK();
+    if (!m_isRejoin) {
+      try {
+        zk.create(VoltZK.replicationrole,m_config.m_replicationRole.toString().getBytes("UTF-8"),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+      }
+ catch (      KeeperException.NodeExistsException e) {
+      }
+      String discoveredReplicationRole=new String(zk.getData(VoltZK.replicationrole,false,null),"UTF-8");
+      if (!discoveredReplicationRole.equals(m_config.m_replicationRole.toString())) {
+        VoltDB.crashGlobalVoltDB("Discovered replication role " + discoveredReplicationRole + " doesn't match locally specified replication role "+ m_config.m_replicationRole,true,null);
+      }
+      m_rvdb.setReplicationRole(ReplicationRole.valueOf(discoveredReplicationRole));
+    }
+ else {
+      String discoveredReplicationRole=new String(zk.getData(VoltZK.replicationrole,false,null),"UTF-8");
+      m_rvdb.setReplicationRole(ReplicationRole.valueOf(discoveredReplicationRole));
+    }
+  }
+ catch (  Exception e) {
+    VoltDB.crashGlobalVoltDB("Error discovering replication role",false,e);
   }
 }

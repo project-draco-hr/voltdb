@@ -1,0 +1,39 @@
+{
+  ArrayList<Object> params=new ArrayList<Object>();
+  params.add("number_of_batches");
+  params.add(new Integer(numberOfBatches));
+  final StoredProcedureInvocation spi=new StoredProcedureInvocation();
+  if (!rollback) {
+    spi.setProcName("org.voltdb.TestExecutionSite$MockMPVoltProcedure");
+    params.add("txn_outcome");
+    params.add("commit");
+    params.add(new Integer(partition_id));
+    spi.setParams(params.toArray());
+  }
+ else {
+    if (rollback_all) {
+      spi.setProcName("org.voltdb.TestExecutionSite$MockMPVoltProcedureRollbackParticipant");
+      params.add("txn_outcome");
+      params.add("rollback_all");
+      params.add(new Integer(partition_id));
+      spi.setParams(params.toArray());
+    }
+ else {
+      spi.setProcName("org.voltdb.TestExecutionSite$MockMPVoltProcedureRollbackParticipant");
+      params.add("txn_outcome");
+      params.add("rollback_random");
+      params.add(new Integer(partition_id));
+      spi.setParams(params.toArray());
+    }
+  }
+  testLog.info("Creating MP proc, TXN ID: " + txn_id + ", participants: "+ participants.toString());
+  assert(participants.size() == (SITE_COUNT - 1));
+  final InitiateTaskMessage itm=new InitiateTaskMessage(initiator_id,coordinator_id,txn_id,readOnly,false,spi,safe_txn_id,ArrayUtils.toPrimitive(participants.toArray(new Long[0])));
+  itm.m_sourceHSId=initiator_id;
+  m_mboxes.get(coordinator_id).deliver(itm);
+  for (  long participant : participants) {
+    final MultiPartitionParticipantMessage mppm=new MultiPartitionParticipantMessage(initiator_id,coordinator_id,txn_id,readOnly);
+    mppm.m_sourceHSId=initiator_id;
+    m_mboxes.get(participant).deliver(mppm);
+  }
+}

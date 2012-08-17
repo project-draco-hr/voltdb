@@ -1,9 +1,14 @@
 {
   String arg;
+  m_enableIV2=VoltDB.checkTestEnvForIv2();
   for (int i=0; i < args.length; ++i) {
     arg=args[i];
     if (arg.equals("")) {
       continue;
+    }
+    if (arg.equalsIgnoreCase("-h") || arg.equalsIgnoreCase("--help")) {
+      usage(System.out);
+      System.exit(-1);
     }
     if (arg.equals("noloadlib")) {
       m_noLoadLibVOLTDB=true;
@@ -62,25 +67,22 @@
  else     if (arg.startsWith("internalinterface ")) {
       m_internalInterface=arg.substring("internalinterface ".length()).trim();
     }
- else     if (arg.equals("leader")) {
+ else     if (arg.equals("host") || arg.equals("leader")) {
       m_leader=args[++i].trim();
-      if (m_leader.compareTo("") == 0) {
-        m_leader=null;
-      }
+    }
+ else     if (arg.startsWith("host")) {
+      m_leader=arg.substring("host ".length()).trim();
     }
  else     if (arg.startsWith("leader")) {
       m_leader=arg.substring("leader ".length()).trim();
-      if (m_leader.compareTo("") == 0) {
-        m_leader=null;
-      }
     }
  else     if (arg.equals("rejoinhost")) {
-      m_rejoinToHostAndPort=args[++i].trim();
-      if (m_rejoinToHostAndPort.compareTo("") == 0)       m_rejoinToHostAndPort=null;
+      m_startAction=START_ACTION.REJOIN;
+      m_leader=args[++i].trim();
     }
  else     if (arg.startsWith("rejoinhost ")) {
-      m_rejoinToHostAndPort=arg.substring("rejoinhost ".length()).trim();
-      if (m_rejoinToHostAndPort.compareTo("") == 0)       m_rejoinToHostAndPort=null;
+      m_startAction=START_ACTION.REJOIN;
+      m_leader=arg.substring("rejoinhost ".length()).trim();
     }
  else     if (arg.equals("create")) {
       m_startAction=START_ACTION.CREATE;
@@ -90,6 +92,15 @@
     }
  else     if (arg.equals("start")) {
       m_startAction=START_ACTION.START;
+    }
+ else     if (arg.equals("rejoin")) {
+      m_startAction=START_ACTION.REJOIN;
+    }
+ else     if (arg.startsWith("live rejoin")) {
+      m_startAction=START_ACTION.LIVE_REJOIN;
+    }
+ else     if (arg.equals("live") && args.length > i + 1 && args[++i].trim().equals("rejoin")) {
+      m_startAction=START_ACTION.LIVE_REJOIN;
     }
  else     if (arg.equals("replica")) {
       m_replicationRole=ReplicationRole.REPLICA;
@@ -103,6 +114,12 @@
  else     if (arg.startsWith("timestampsalt ")) {
       m_timestampTestingSalt=Long.parseLong(arg.substring("timestampsalt ".length()));
     }
+ else     if (arg.equals("tag")) {
+      m_tag=args[++i];
+    }
+ else     if (arg.startsWith("tag ")) {
+      m_tag=arg.substring("tag ".length());
+    }
  else     if (arg.equals("catalog")) {
       m_pathToCatalog=args[++i];
     }
@@ -115,9 +132,6 @@
  else     if (arg.equals("license")) {
       m_pathToLicense=args[++i];
     }
- else     if (arg.equalsIgnoreCase("useWatchdogs")) {
-      m_useWatchdogs=true;
-    }
  else     if (arg.equalsIgnoreCase("ipcports")) {
       String portList=args[++i];
       String ports[]=portList.split(",");
@@ -125,10 +139,19 @@
         m_ipcPorts.add(Integer.valueOf(port));
       }
     }
+ else     if (arg.equals("enableiv2")) {
+      m_enableIV2=true;
+    }
  else {
       hostLog.fatal("Unrecognized option to VoltDB: " + arg);
       usage();
       System.exit(-1);
     }
+  }
+  if (m_startAction == START_ACTION.RECOVER && m_pathToCatalog != null) {
+    hostLog.warn("Catalog is ignored for 'recover' action.");
+  }
+  if (m_leader == null && m_pathToDeployment == null && (m_startAction != START_ACTION.REJOIN && m_startAction != START_ACTION.LIVE_REJOIN)) {
+    m_leader="localhost";
   }
 }

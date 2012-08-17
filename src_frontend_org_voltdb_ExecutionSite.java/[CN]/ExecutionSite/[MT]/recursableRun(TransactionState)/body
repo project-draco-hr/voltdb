@@ -1,12 +1,11 @@
 {
   while (m_shouldContinue) {
-    if (currentTxnState.doWork(m_recovering)) {
+    if (currentTxnState.doWork(m_rejoining)) {
       if (currentTxnState.needsRollback()) {
         rollbackTransaction(currentTxnState);
       }
       completeTransaction(currentTxnState);
-      TransactionState ts=m_transactionsById.remove(currentTxnState.txnId);
-      assert(ts != null);
+      m_transactionsById.remove(currentTxnState.txnId);
       return null;
     }
  else     if (currentTxnState.shouldResumeProcedure()) {
@@ -17,6 +16,9 @@
  else     if (currentTxnState.isBlocked() && !currentTxnState.isDone() && currentTxnState.isCoordinator()&& currentTxnState.isReadOnly()&& !currentTxnState.hasTransactionalWork()) {
       assert(!currentTxnState.isSinglePartition());
       tryToSneakInASinglePartitionProcedure();
+      if (m_recoveryProcessor != null) {
+        m_recoveryProcessor.notifyBlockedOnMultiPartTxn(currentTxnState.txnId);
+      }
     }
  else {
       VoltMessage message=m_mailbox.recvBlocking(5);

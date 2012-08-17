@@ -1,0 +1,57 @@
+{
+  try {
+    final ByteBuffer compressionBuffer=ByteBuffer.allocateDirect(CompressionService.maxCompressedLength(1024 * 1024 * 2 + (1024 * 256)));
+    while (true) {
+      ByteBuffer lengthBuffer=ByteBuffer.allocate(4);
+      while (lengthBuffer.hasRemaining()) {
+        int read=m_sock.read(lengthBuffer);
+        if (read == -1) {
+          return;
+        }
+      }
+      lengthBuffer.flip();
+      final int length=lengthBuffer.getInt();
+      BBContainer container=m_buffers.take();
+      boolean success=false;
+      try {
+        ByteBuffer messageBuffer=container.b;
+        messageBuffer.clear();
+        compressionBuffer.clear();
+        compressionBuffer.limit(length);
+        while (compressionBuffer.hasRemaining()) {
+          int read=m_sock.read(compressionBuffer);
+          if (read == -1) {
+            throw new EOFException();
+          }
+        }
+        compressionBuffer.flip();
+        int uncompressedSize=CompressionService.decompressBuffer(compressionBuffer,messageBuffer);
+        messageBuffer.limit(uncompressedSize);
+        m_queue.offer(container);
+        success=true;
+      }
+  finally {
+        if (!success) {
+          container.discard();
+        }
+      }
+    }
+  }
+ catch (  IOException e) {
+    try {
+      while (!m_queue.isEmpty()) {
+        Thread.sleep(50);
+      }
+      Thread.sleep(300);
+    }
+ catch (    InterruptedException e2) {
+    }
+    if (m_closed) {
+      return;
+    }
+    rejoinLog.error("Error reading a message from a recovery stream.",e);
+  }
+catch (  InterruptedException e) {
+    return;
+  }
+}

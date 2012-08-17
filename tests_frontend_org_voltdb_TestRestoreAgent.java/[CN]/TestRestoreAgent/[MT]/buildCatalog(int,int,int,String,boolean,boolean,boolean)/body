@@ -30,6 +30,24 @@
   assertNotNull(serializedCat);
   Catalog catalog=new Catalog();
   catalog.execute(serializedCat);
+  ClusterConfig config=new ClusterConfig(hostCount,sitesPerHost,kfactor);
+  List<Integer> hostIds=new ArrayList<Integer>(hostCount);
+  for (int ii=0; ii < hostCount; ii++)   hostIds.add(ii);
+  JSONObject topology=config.getTopology(hostIds);
   long crc=CatalogUtil.compileDeploymentAndGetCRC(catalog,deploymentPath,true);
   context=new CatalogContext(0,catalog,bytes,crc,0,0);
+  siteTrackers=new HashMap<Integer,SiteTracker>();
+  for (int i=0; i < hostCount; i++) {
+    ArrayList<MailboxNodeContent> hosts=new ArrayList<MailboxNodeContent>();
+    for (int j=0; j < hostCount; j++) {
+      List<Integer> localPartitions=ClusterConfig.partitionsForHost(topology,j);
+      for (int zz=0; zz < localPartitions.size(); zz++) {
+        MailboxNodeContent mnc=new MailboxNodeContent(CoreUtils.getHSIdFromHostAndSite(j,zz),localPartitions.get(zz));
+        hosts.add(mnc);
+      }
+    }
+    HashMap<MailboxType,List<MailboxNodeContent>> blah=new HashMap<MailboxType,List<MailboxNodeContent>>();
+    blah.put(MailboxType.ExecutionSite,hosts);
+    siteTrackers.put(i,new SiteTracker(i,blah));
+  }
 }

@@ -25,24 +25,21 @@
       return;
     }
     m_state=RawProcessor.CONNECTED;
+    try {
+      VoltZK.updateClusterMetadata(m_clusterMetadata);
+    }
+ catch (    Exception e) {
+      protocolError(m,org.voltcore.utils.CoreUtils.throwableToString(e));
+    }
     FastSerializer fs=new FastSerializer();
     try {
       fs.writeInt(m_sourcesArray.size());
       for (      ExportDataSource src : m_sourcesArray) {
         src.writeAdvertisementTo(fs);
       }
-      CatalogContext cx=VoltDB.instance().getCatalogContext();
-      if (cx != null) {
-        Set<Integer> liveHosts=cx.siteTracker.getAllLiveHosts();
-        fs.writeInt(liveHosts.size());
-        for (        int hostId : liveHosts) {
-          String metadata=VoltDB.instance().getClusterMetadataMap().get(hostId);
-          assert(metadata.contains(":"));
-          fs.writeString(metadata);
-        }
-      }
- else {
-        fs.writeInt(0);
+      fs.writeInt(m_clusterMetadata.size());
+      for (      String metadata : m_clusterMetadata.values()) {
+        fs.writeString(metadata);
       }
     }
  catch (    IOException e) {
@@ -52,10 +49,8 @@
     final ExportProtoMessage r=new ExportProtoMessage(-1,-1,"");
     r.openResponse(fs.getBuffer());
     m_c.writeStream().enqueue(new DeferredSerialization(){
-      @Override public BBContainer serialize(      DBBPool p) throws IOException {
-        FastSerializer fs=new FastSerializer(p,r.serializableBytes() + 4);
-        r.writeToFastSerializer(fs);
-        return fs.getBBContainer();
+      @Override public ByteBuffer[] serialize() throws IOException {
+        return new ByteBuffer[]{r.toBuffer()};
       }
       @Override public void cancel(){
       }
@@ -73,14 +68,8 @@
       protocolError(m,"No Export data source exists for partition(" + m.getPartitionId() + ") and table("+ m.getSignature()+ ") pair.");
       return;
     }
-    try {
-      source.exportAction(new ExportInternalMessage(this,m));
-      return;
-    }
- catch (    MessagingException e) {
-      protocolError(m,e.getMessage());
-      return;
-    }
+    source.exportAction(new ExportInternalMessage(this,m));
+    return;
   }
  else   if (m.isClose()) {
     closeConnection();
@@ -88,10 +77,8 @@
   }
  else   if (m.isPollResponse()) {
     m_c.writeStream().enqueue(new DeferredSerialization(){
-      @Override public BBContainer serialize(      DBBPool p) throws IOException {
-        FastSerializer fs=new FastSerializer(p,m.serializableBytes() + 4);
-        m.writeToFastSerializer(fs);
-        return fs.getBBContainer();
+      @Override public ByteBuffer[] serialize() throws IOException {
+        return new ByteBuffer[]{m.toBuffer()};
       }
       @Override public void cancel(){
       }

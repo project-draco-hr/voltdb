@@ -1,0 +1,40 @@
+{
+  Integer hostId=selectNewHostId(socket.socket().getInetAddress().getHostAddress());
+  prepSocketChannel(socket);
+  ForeignHost fhost=null;
+  try {
+    try {
+      writeRequestJoinResponse(hostId,socket);
+      ByteBuffer finishedJoining=ByteBuffer.allocate(1);
+      socket.configureBlocking(false);
+      long start=System.currentTimeMillis();
+      while (finishedJoining.hasRemaining() && System.currentTimeMillis() - start < 120000) {
+        int read=socket.read(finishedJoining);
+        if (read == -1) {
+          hostLog.info("New connection was unable to establish mesh");
+          return;
+        }
+ else         if (read < 1) {
+          Thread.sleep(5);
+        }
+      }
+      fhost=new ForeignHost(this,hostId,socket,m_config.deadHostTimeout,listeningAddress);
+      fhost.register(this);
+      putForeignHost(hostId,fhost);
+      fhost.enableRead();
+    }
+ catch (    Exception e) {
+      logger.error("Error joining new node",e);
+      m_knownFailedHosts.add(hostId);
+      removeForeignHost(hostId);
+      return;
+    }
+    long hsId=CoreUtils.getHSIdFromHostAndSite(hostId,AGREEMENT_SITE_ID);
+    if (!m_agreementSite.requestJoin(hsId).await(60,TimeUnit.SECONDS)) {
+      reportForeignHostFailed(hostId);
+    }
+  }
+ catch (  Throwable e) {
+    org.voltdb.VoltDB.crashLocalVoltDB("",true,e);
+  }
+}

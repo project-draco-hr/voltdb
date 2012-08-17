@@ -1,63 +1,6 @@
 {
-  try {
-    AppHelper apph=new AppHelper(AsyncBenchmark.class.getCanonicalName()).add("display-interval","display_interval_in_seconds","Interval for performance feedback, in seconds.",10).add("duration","run_duration_in_seconds","Benchmark duration, in seconds.",120).add("servers","comma_separated_server_list","List of VoltDB servers to connect to.","localhost").add("port","port_number","Client port to connect to on cluster nodes.",21212).add("contestants","contestant_count","Number of contestants in the voting contest (from 1 to 10).",6).add("max-votes","max_votes_per_phone_number","Maximum number of votes accepted for a given voter (phone number).",2).add("rate-limit","rate_limit","Rate limit to start from (number of transactions per second).",100000).add("auto-tune","auto_tune","Flag indicating whether the benchmark should self-tune the transaction rate for a target execution latency (true|false).","true").add("latency-target","latency_target","Execution latency to target to tune transaction rate (in milliseconds).",10.0d).setArguments(args);
-    long displayInterval=apph.longValue("display-interval");
-    long duration=apph.longValue("duration");
-    String servers=apph.stringValue("servers");
-    int port=apph.intValue("port");
-    int contestantCount=apph.intValue("contestants");
-    int maxVoteCount=apph.intValue("max-votes");
-    long rateLimit=apph.longValue("rate-limit");
-    boolean autoTune=apph.booleanValue("auto-tune");
-    double latencyTarget=apph.doubleValue("latency-target");
-    final String csv=apph.stringValue("stats");
-    apph.validate("duration",(duration > 0)).validate("display-interval",(displayInterval > 0)).validate("contestants",(contestantCount > 0)).validate("max-votes",(maxVoteCount > 0)).validate("rate-limit",(rateLimit > 0)).validate("latency-target",(latencyTarget > 0));
-    apph.printActualUsage();
-    Con=ClientConnectionPool.getWithRetry(servers,port);
-    final int maxContestants=(int)Con.execute("Initialize",contestantCount,ContestantNamesCSV).getResults()[0].fetchRow(0).getLong(0);
-    PhoneCallGenerator switchboard=new PhoneCallGenerator(maxContestants);
-    Timer timer=new Timer();
-    timer.scheduleAtFixedRate(new TimerTask(){
-      @Override public void run(){
-        System.out.print(Con.getStatistics("Vote"));
-      }
-    }
-,displayInterval * 1000l,displayInterval * 1000l);
-    IRateLimiter limiter=null;
-    if (autoTune)     limiter=new LatencyLimiter(Con,"Vote",latencyTarget,rateLimit);
- else     limiter=new RateLimiter(rateLimit);
-    final long endTime=System.currentTimeMillis() + (1000l * duration);
-    while (endTime > System.currentTimeMillis()) {
-      PhoneCallGenerator.PhoneCall call=switchboard.receive();
-      Con.executeAsync(new ProcedureCallback(){
-        @Override public void clientCallback(        ClientResponse response) throws Exception {
-          if (response.getStatus() == ClientResponse.SUCCESS)           VotingBoardResults.incrementAndGet((int)response.getResults()[0].fetchRow(0).getLong(0));
- else           VotingBoardResults.incrementAndGet(3);
-        }
-      }
-,"Vote",call.phoneNumber,call.contestantNumber,maxVoteCount);
-      limiter.throttle();
-    }
-    timer.cancel();
-    System.out.printf("-------------------------------------------------------------------------------------\n" + " Voting Results\n" + "-------------------------------------------------------------------------------------\n\n"+ "A total of %d votes was received...\n"+ " - %,9d Accepted\n"+ " - %,9d Rejected (Invalid Contestant)\n"+ " - %,9d Rejected (Maximum Vote Count Reached)\n"+ " - %,9d Failed (Transaction Error)\n"+ "\n\n"+ "-------------------------------------------------------------------------------------\n"+ "Contestant Name\t\tVotes Received\n",Con.getStatistics("Vote").getExecutionCount(),VotingBoardResults.get(0),VotingBoardResults.get(1),VotingBoardResults.get(2),VotingBoardResults.get(3));
-    VoltTable result=Con.execute("Results").getResults()[0];
-    String winner="";
-    long winnerVoteCount=0;
-    while (result.advanceRow()) {
-      if (result.getLong(2) > winnerVoteCount) {
-        winnerVoteCount=result.getLong(2);
-        winner=result.getString(0);
-      }
-      System.out.printf("%s\t\t%,14d\n",result.getString(0),result.getLong(2));
-    }
-    System.out.printf("\n\nThe Winner is: %s\n-------------------------------------------------------------------------------------\n",winner);
-    System.out.println("\n\n-------------------------------------------------------------------------------------\n" + " System Statistics\n" + "-------------------------------------------------------------------------------------\n\n");
-    System.out.print(Con.getStatistics("Vote").toString(false));
-    Con.saveStatistics(csv);
-    Con.close();
-  }
- catch (  Exception x) {
-    System.out.println("Exception: " + x);
-    x.printStackTrace();
-  }
+  VoterConfig config=new VoterConfig();
+  config.parse(AsyncBenchmark.class.getName(),args);
+  AsyncBenchmark benchmark=new AsyncBenchmark(config);
+  benchmark.runBenchmark();
 }

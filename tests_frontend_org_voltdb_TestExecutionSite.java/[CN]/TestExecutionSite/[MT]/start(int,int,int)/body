@@ -5,24 +5,26 @@
   m_voltdb=new MockVoltDB();
   m_voltdb.setFaultDistributor(new FaultDistributor(m_voltdb));
   for (int ss=0; ss < siteCount; ss++) {
-    m_voltdb.addHost(getHostIdForSiteId(ss));
-    m_voltdb.addSite(getInitiatorIdForSiteId(ss),getHostIdForSiteId(ss),getPartitionIdForSiteId(ss),false);
+    final long siteId=CoreUtils.getHSIdFromHostAndSite(getHostIdForSiteId(ss),getInitiatorIdForSiteId(ss));
+    m_voltdb.addSite(siteId,MailboxType.Initiator);
     String logname=ExecutionSite.class.getName() + "." + ss;
-    m_siteLogger[ss]=new VoltLogger(logname);
-    m_siteResults[ss]=new StringWriter();
-    m_siteLogger[ss].addSimpleWriterAppender(m_siteResults[ss]);
-    m_siteLogger[ss].setLevel(Level.TRACE);
+    final VoltLogger siteLogger=new VoltLogger(logname);
+    m_siteLogger.put(siteId,siteLogger);
+    final StringWriter siteResults=new StringWriter();
+    m_siteResults.put(siteId,siteResults);
+    siteLogger.addSimpleWriterAppender(siteResults);
+    siteLogger.setLevel(Level.TRACE);
   }
-  int siteid=0;
+  int siteIndex=0;
   for (int pp=0; pp < partitionCount; pp++) {
-    m_voltdb.addPartition(pp);
     for (int kk=0; kk < (kFactor + 1); kk++) {
-      m_voltdb.addSite(siteid,getHostIdForSiteId(siteid),pp,true);
-      m_checker.addSite(siteid,pp,m_siteResults[siteid]);
-      ++siteid;
+      final long siteId=CoreUtils.getHSIdFromHostAndSite(getHostIdForSiteId(siteIndex),siteIndex);
+      m_voltdb.addSite(siteId,pp);
+      m_checker.addSite(siteId,pp,m_siteResults.get(CoreUtils.getHSIdFromHostAndSite(siteIndex,getInitiatorIdForSiteId(siteIndex))));
+      ++siteIndex;
     }
   }
-  if (siteid != siteCount) {
+  if (siteIndex != siteCount) {
     throw new RuntimeException("Invalid setup logic.");
   }
   Procedure proc=null;
@@ -40,9 +42,11 @@
   proc.setSinglepartition(false);
   VoltDB.replaceVoltDBInstanceForTest(m_voltdb);
   for (int ss=0; ss < siteCount; ++ss) {
-    m_mboxes[ss]=new RussianRouletteMailbox(ss);
-    m_rpqs[ss]=new RestrictedPriorityARRR(getInitiatorIds(),ss,m_mboxes[ss]);
-    m_sites[ss]=new ExecutionSite(m_voltdb,m_mboxes[ss],ss,null,m_rpqs[ss],new MockProcedureRunnerFactory(),false,false,new HashSet<Integer>(),0);
-    registerMailbox(ss,m_mboxes[ss]);
+    long siteId=CoreUtils.getHSIdFromHostAndSite(ss,ss);
+    m_mboxes.put(siteId,new RussianRouletteMailbox(siteId));
+    m_siteLogger.put(siteId,m_siteLogger.get(CoreUtils.getHSIdFromHostAndSite(ss,getInitiatorIdForSiteId(ss))));
+    m_rpqs.put(siteId,new RestrictedPriorityARRR(getInitiatorIds(),ss,m_mboxes.get(siteId)));
+    m_sites.put(siteId,new ExecutionSite(m_voltdb,m_mboxes.get(siteId),null,m_rpqs.get(siteId),new MockProcedureRunnerFactory(),false,false,0,partitionCount,null));
+    registerMailbox(siteId,m_mboxes.get(siteId));
   }
 }

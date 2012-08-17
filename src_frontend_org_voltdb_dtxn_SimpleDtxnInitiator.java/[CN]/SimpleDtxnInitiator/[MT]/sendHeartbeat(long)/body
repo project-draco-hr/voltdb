@@ -1,25 +1,20 @@
 {
-  final SiteTracker st=VoltDB.instance().getCatalogContext().siteTracker;
-  int remoteHeartbeatTargets[][]=st.getRemoteHeartbeatTargets();
-  int localHeartbeatTargets[]=st.getLocalHeartbeatTargets();
-  try {
-    for (    int hostTargets[] : remoteHeartbeatTargets) {
-      final int initiatorSiteId=st.getFirstNonExecSiteForHost(st.getHostForSite(hostTargets[0]));
-      assert(initiatorSiteId != 1);
-      long safeTxnIds[]=new long[hostTargets.length];
-      for (int ii=0; ii < safeTxnIds.length; ii++) {
-        safeTxnIds[ii]=m_safetyState.getNewestSafeTxnIdForExecutorBySiteId(hostTargets[ii]);
-      }
-      CoalescedHeartbeatMessage heartbeat=new CoalescedHeartbeatMessage(m_siteId,txnId,hostTargets,safeTxnIds);
-      m_mailbox.send(initiatorSiteId,VoltDB.DTXN_MAILBOX_ID,heartbeat);
+  final SiteTracker st=VoltDB.instance().getSiteTracker();
+  long remoteHeartbeatTargets[][]=st.getRemoteSites();
+  long localHeartbeatTargets[]=st.getLocalSites();
+  for (  long hostTargets[] : remoteHeartbeatTargets) {
+    final long initiatorSiteId=st.getInitiatorsForHost(SiteTracker.getHostForSite(hostTargets[0])).get(0);
+    assert(initiatorSiteId != 1L);
+    long safeTxnIds[]=new long[hostTargets.length];
+    for (int ii=0; ii < safeTxnIds.length; ii++) {
+      safeTxnIds[ii]=m_safetyState.getNewestSafeTxnIdForExecutorBySiteId(hostTargets[ii]);
     }
-    for (    int siteId : localHeartbeatTargets) {
-      long newestSafeTxnId=m_safetyState.getNewestSafeTxnIdForExecutorBySiteId(siteId);
-      HeartbeatMessage tickNotice=new HeartbeatMessage(m_siteId,txnId,newestSafeTxnId);
-      m_mailbox.send(siteId,VoltDB.DTXN_MAILBOX_ID,tickNotice);
-    }
+    CoalescedHeartbeatMessage heartbeat=new CoalescedHeartbeatMessage(m_siteId,txnId,hostTargets,safeTxnIds);
+    m_mailbox.send(initiatorSiteId,heartbeat);
   }
- catch (  MessagingException e) {
-    throw new RuntimeException(e);
+  for (  long siteId : localHeartbeatTargets) {
+    long newestSafeTxnId=m_safetyState.getNewestSafeTxnIdForExecutorBySiteId(siteId);
+    HeartbeatMessage tickNotice=new HeartbeatMessage(m_siteId,txnId,newestSafeTxnId);
+    m_mailbox.send(siteId,tickNotice);
   }
 }

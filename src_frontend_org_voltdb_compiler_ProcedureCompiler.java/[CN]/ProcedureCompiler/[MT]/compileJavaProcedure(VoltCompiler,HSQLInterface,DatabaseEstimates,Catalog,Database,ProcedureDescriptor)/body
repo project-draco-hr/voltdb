@@ -21,6 +21,7 @@
   }
   procedure.setClassname(className);
   procedure.setSystemproc(false);
+  procedure.setDefaultproc(procedureDescriptor.m_builtInStmt);
   procedure.setHasjava(true);
   ProcInfoData info=compiler.getProcInfoOverride(shortName);
   if (info == null) {
@@ -51,13 +52,12 @@ catch (  IllegalAccessException e1) {
   }
   boolean procHasWriteStmts=false;
   boolean procHasSeqScans=false;
+  boolean procWantsCommonPartitioning=true;
+  AbstractExpression commonPartitionExpression=null;
+  String exampleSPstatement=null;
+  Object exampleSPvalue=null;
   Map<String,Field> stmtMap=getValidSQLStmts(compiler,procClass.getSimpleName(),procClass,true);
-  Field[] fields=new Field[stmtMap.size()];
-  int index=0;
   for (  Field f : stmtMap.values()) {
-    fields[index++]=f;
-  }
-  for (  Field f : fields) {
     SQLStmt stmt=null;
     try {
       stmt=(SQLStmt)f.get(procInstance);
@@ -69,11 +69,64 @@ catch (    IllegalAccessException e) {
       e.printStackTrace();
     }
     Statement catalogStmt=procedure.getStatements().add(f.getName());
-    StatementCompiler.compile(compiler,hsql,catalog,db,estimates,catalogStmt,stmt.getText(),stmt.getJoinOrder(),info.singlePartition);
+    Object partitionParameter=null;
+    if (info.singlePartition) {
+      partitionParameter="StatementCompiler dummied up single partitioning for QueryPlanner";
+    }
+    PartitioningForStatement partitioning=new PartitioningForStatement(partitionParameter,false,true);
+    StatementCompiler.compile(compiler,hsql,catalog,db,estimates,catalogStmt,stmt.getText(),stmt.getJoinOrder(),partitioning);
+    if (partitioning.wasSpecifiedAsSingle()) {
+      procWantsCommonPartitioning=false;
+    }
+ else     if (procWantsCommonPartitioning) {
+      if (partitioning.getCountOfIndependentlyPartitionedTables() == 1) {
+        AbstractExpression statementPartitionExpression=partitioning.singlePartitioningExpression();
+        if (statementPartitionExpression != null) {
+          if (commonPartitionExpression == null) {
+            commonPartitionExpression=statementPartitionExpression;
+            exampleSPstatement=stmt.getText();
+            exampleSPvalue=partitioning.inferredPartitioningValue();
+          }
+ else           if (commonPartitionExpression.equals(statementPartitionExpression) || (statementPartitionExpression instanceof ParameterValueExpression && commonPartitionExpression instanceof ParameterValueExpression)) {
+          }
+ else {
+            procWantsCommonPartitioning=false;
+          }
+        }
+ else {
+          procWantsCommonPartitioning=false;
+        }
+      }
+ else       if (partitioning.getCountOfPartitionedTables() == 0) {
+        if (partitioning.getIsReplicatedTableDML()) {
+          procWantsCommonPartitioning=false;
+        }
+      }
+ else {
+        procWantsCommonPartitioning=false;
+      }
+    }
     if (catalogStmt.getReadonly() == false)     procHasWriteStmts=true;
     if (catalogStmt.getSeqscancount() > 0) {
       procHasSeqScans=true;
     }
+  }
+  if (procWantsCommonPartitioning && (commonPartitionExpression != null)) {
+    String msg=null;
+    if (commonPartitionExpression instanceof ParameterValueExpression) {
+      msg="This procedure might benefit from an @ProcInfo annotation designating parameter " + ((ParameterValueExpression)commonPartitionExpression).getParameterIndex() + " of statement '"+ exampleSPstatement+ "'";
+    }
+ else {
+      String valueDescription=null;
+      if (exampleSPvalue == null) {
+        valueDescription="of " + commonPartitionExpression.toString();
+      }
+ else {
+        valueDescription=exampleSPvalue.toString();
+      }
+      msg="This procedure might benefit from an @ProcInfo annotation referencing an added parameter passed the value " + valueDescription;
+    }
+    compiler.addInfo(msg);
   }
   procedure.setReadonly(procHasWriteStmts == false);
   procedure.setHasseqscans(procHasSeqScans);
@@ -132,19 +185,32 @@ catch (    IllegalAccessException e) {
       cls=cls.getComponentType();
     }
  else     param.setIsarray(false);
-    if ((cls == Long.class) || (cls == Integer.class) || (cls == Short.class)|| (cls == Byte.class)|| (cls == Double.class)|| (cls == Float.class)|| (cls == Character.class)|| (cls == Boolean.class)) {
+    if ((cls == Long.class) || (cls == Integer.class) || (cls == Short.class)|| (cls == Byte.class)|| (cls == Double.class)|| (cls == Character.class)|| (cls == Boolean.class)) {
       String msg="Procedure: " + shortName + " has a parameter with a boxed type: ";
       msg+=cls.getSimpleName();
       msg+=". Replace this parameter with the corresponding primitive type and the procedure may compile.";
+      throw compiler.new VoltCompilerException(msg);
+    }
+ else     if ((cls == Float.class) || (cls == float.class)) {
+      String msg="Procedure: " + shortName + " has a parameter with type: ";
+      msg+=cls.getSimpleName();
+      msg+=". Replace this parameter type with double and the procedure may compile.";
       throw compiler.new VoltCompilerException(msg);
     }
     VoltType type;
     try {
       type=VoltType.typeFromClass(cls);
     }
- catch (    RuntimeException e) {
+ catch (    VoltTypeException e) {
       String msg="Procedure: " + shortName + " has a parameter with invalid type: ";
       msg+=cls.getSimpleName();
+      throw compiler.new VoltCompilerException(msg);
+    }
+catch (    RuntimeException e) {
+      String msg="Procedure: " + shortName + " unexpectedly failed a check on a parameter of type: ";
+      msg+=cls.getSimpleName();
+      msg+=" with error: ";
+      msg+=e.toString();
       throw compiler.new VoltCompilerException(msg);
     }
     param.setType(type.getValue());
@@ -162,15 +228,19 @@ catch (    IllegalAccessException e) {
     for (    Class<?> candidate : validPartitionClzzes) {
       if (partitionType == candidate)       found=true;
     }
-    VoltType columnType=VoltType.get((byte)procedure.getPartitioncolumn().getType());
-    VoltType paramType=VoltType.typeFromClass(partitionType);
-    if (columnType != paramType) {
-      String msg="Mismatch between partition column and partition parameter for procedure " + procedure.getClassname() + "\nPartition column is type "+ columnType+ " and partition parameter is type "+ paramType;
-      throw compiler.new VoltCompilerException(msg);
-    }
     if (!found) {
       String msg="PartitionInfo parameter must be a String or Number for procedure: " + procedure.getClassname();
       throw compiler.new VoltCompilerException(msg);
+    }
+    VoltType columnType=VoltType.get((byte)procedure.getPartitioncolumn().getType());
+    VoltType paramType=VoltType.typeFromClass(partitionType);
+    if (!columnType.canExactlyRepresentAnyValueOf(paramType)) {
+      String msg="Type mismatch between partition column and partition parameter for procedure " + procedure.getClassname() + " may cause overflow or loss of precision.\nPartition column is type "+ columnType+ " and partition parameter is type "+ paramType;
+      throw compiler.new VoltCompilerException(msg);
+    }
+ else     if (!paramType.canExactlyRepresentAnyValueOf(columnType)) {
+      String msg="Type mismatch between partition column and partition parameter for procedure " + procedure.getClassname() + " does not allow the full range of partition key values.\nPartition column is type "+ columnType+ " and partition parameter is type "+ paramType;
+      compiler.addWarn(msg);
     }
   }
   VoltCompiler.addClassToJar(procClass,compiler);

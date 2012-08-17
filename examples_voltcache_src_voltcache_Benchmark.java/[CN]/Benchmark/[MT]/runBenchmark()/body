@@ -1,0 +1,41 @@
+{
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println(" Setup & Initialization");
+  System.out.println(HORIZONTAL_RULE);
+  System.out.println("Connecting to VoltDB...");
+  cache=new VoltCache(config.servers);
+  fullStatsContext=cache.getStatistics();
+  periodicStatsContext=cache.getStatistics();
+  System.out.println();
+  if (config.preload) {
+    System.out.println("Preloading data store...");
+    for (int i=0; i < config.poolsize; i++) {
+      cache.set(String.format(processor.KeyFormat,i),0,0,processor.generateForStore().getStoreValue(),true);
+    }
+    System.out.println("Preloading complete.\n");
+  }
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println("Starting Benchmark");
+  System.out.println(HORIZONTAL_RULE);
+  Thread[] cacheThreads=new Thread[config.threads];
+  for (int i=0; i < config.threads; ++i) {
+    cacheThreads[i]=new Thread(new VoltCacheThread());
+    cacheThreads[i].start();
+  }
+  System.out.println("Warming up...");
+  Thread.sleep(1000l * config.warmup);
+  warmupComplete.set(true);
+  fullStatsContext.fetchAndResetBaseline();
+  periodicStatsContext.fetchAndResetBaseline();
+  benchmarkStartTS=System.currentTimeMillis();
+  schedulePeriodicStats();
+  System.out.println("\nRunning benchmark...");
+  Thread.sleep(1000l * config.duration);
+  benchmarkComplete.set(true);
+  timer.cancel();
+  for (  Thread t : cacheThreads) {
+    t.join();
+  }
+  printResults();
+  cache.close();
+}

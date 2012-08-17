@@ -1,0 +1,37 @@
+{
+  final CountDownLatch cdl=new CountDownLatch(1);
+  final Runnable r=new Runnable(){
+    @Override public void run(){
+      try {
+        final long txnId=m_idManager.getNextUniqueTransactionId();
+        for (        long initiatorHSId : m_hsIds) {
+          if (initiatorHSId == m_hsId)           continue;
+          JSONObject jsObj=new JSONObject();
+          jsObj.put("txnId",txnId);
+          jsObj.put("initiatorHSId",m_hsId);
+          jsObj.put("joiningHSId",joiningSite);
+          jsObj.put("lastSafeTxnId",m_safetyState.getNewestSafeTxnIdForExecutorBySiteId(initiatorHSId));
+          byte payload[]=jsObj.toString(4).getBytes("UTF-8");
+          ByteBuffer metadata=ByteBuffer.allocate(1);
+          metadata.put(BINARY_PAYLOAD_JOIN_REQUEST);
+          BinaryPayloadMessage bpm=new BinaryPayloadMessage(metadata.array(),payload);
+          m_mailbox.send(initiatorHSId,bpm);
+        }
+        m_txnQueue.noteTransactionRecievedAndReturnLastSeen(m_hsId,txnId,false,m_safetyState.getNewestSafeTxnIdForExecutorBySiteId(m_hsId));
+        AgreementRejoinTransactionState arts=new AgreementRejoinTransactionState(txnId,m_hsId,joiningSite,cdl);
+        if (!m_txnQueue.add(arts)) {
+          org.voltdb.VoltDB.crashLocalVoltDB("Shouldn't have failed to add txn",true,null);
+        }
+        m_transactionsById.put(arts.txnId,arts);
+      }
+ catch (      Throwable e) {
+        org.voltdb.VoltDB.crashLocalVoltDB("Error constructing JSON",false,e);
+      }
+    }
+  }
+;
+  LocalObjectMessage lom=new LocalObjectMessage(r);
+  lom.m_sourceHSId=m_hsId;
+  m_mailbox.deliver(lom);
+  return cdl;
+}

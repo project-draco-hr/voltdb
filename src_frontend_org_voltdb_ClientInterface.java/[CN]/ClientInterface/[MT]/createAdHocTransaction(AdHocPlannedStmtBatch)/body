@@ -1,0 +1,63 @@
+{
+  StoredProcedureInvocation task=new StoredProcedureInvocation();
+  boolean isSinglePartition=plannedStmtBatch.isSinglePartitionCompatible() || m_isConfiguredForHSQL;
+  int partitions[]=null;
+  if (isSinglePartition) {
+    if (plannedStmtBatch.isReadOnly()) {
+      task.procName="@AdHoc_RO_SP";
+    }
+ else {
+      task.procName="@AdHoc_RW_SP";
+    }
+    partitions=new int[]{TheHashinator.hashToPartition(plannedStmtBatch.partitionParam)};
+  }
+ else {
+    if (plannedStmtBatch.isReadOnly()) {
+      task.procName="@AdHoc_RO_MP";
+    }
+ else {
+      task.procName="@AdHoc_RW_MP";
+    }
+    partitions=m_allPartitions;
+  }
+  ByteBuffer buf=ByteBuffer.allocate(plannedStmtBatch.getPlanArraySerializedSize());
+  try {
+    plannedStmtBatch.flattenPlanArrayToBuffer(buf);
+  }
+ catch (  Exception e) {
+    VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
+  }
+  assert(buf.hasArray());
+  task.setParams(buf.array());
+  task.clientHandle=plannedStmtBatch.clientHandle;
+  FastSerializer fs=new FastSerializer();
+  int serializedSize=0;
+  try {
+    fs.writeObject(task);
+    ByteBuffer source=fs.getBuffer();
+    ByteBuffer copy=ByteBuffer.allocate(source.remaining());
+    serializedSize=copy.capacity();
+    copy.put(source);
+    copy.flip();
+    FastDeserializer fds=new FastDeserializer(copy);
+    task=new StoredProcedureInvocation();
+    task.readExternal(fds);
+  }
+ catch (  Exception e) {
+    VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
+  }
+  boolean allowMismatchedResults=false;
+  if (plannedStmtBatch.isReadOnly()) {
+    for (    AdHocPlannedStatement stmt : plannedStmtBatch.plannedStatements) {
+      if (stmt.isNonDeterministic) {
+        allowMismatchedResults=true;
+        break;
+      }
+    }
+  }
+  createTransaction(plannedStmtBatch.connectionId,plannedStmtBatch.hostname,plannedStmtBatch.adminConnection,task,plannedStmtBatch.isReadOnly(),isSinglePartition,false,partitions,partitions.length,plannedStmtBatch.clientData,serializedSize,EstTime.currentTimeMillis(),allowMismatchedResults);
+  plannedStmtBatch.clientData=null;
+  for (int index=0; index < plannedStmtBatch.getPlannedStatementCount(); index++) {
+    m_adhocCache.put(plannedStmtBatch.getPlannedStatement(index));
+  }
+}

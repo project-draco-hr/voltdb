@@ -1,0 +1,47 @@
+{
+  TupleValueExpression tokenPartitionKey=null;
+  Set<Set<AbstractExpression>> eqSets=new HashSet<Set<AbstractExpression>>();
+  int unfilteredPartitionKeyCount=0;
+  for (  Table table : tableList) {
+    if (table.getIsreplicated()) {
+      continue;
+    }
+    String partitionedTable=table.getTypeName();
+    String columnNeedingCoverage=m_partitionColumnByTable.get(partitionedTable);
+    boolean unfiltered=true;
+    for (    AbstractExpression candidateColumn : valueEquivalence.keySet()) {
+      if (!(candidateColumn instanceof TupleValueExpression)) {
+        continue;
+      }
+      TupleValueExpression candidatePartitionKey=(TupleValueExpression)candidateColumn;
+      if (!candidatePartitionKey.getTableName().equals(partitionedTable)) {
+        continue;
+      }
+      if (!candidatePartitionKey.getColumnName().equals(columnNeedingCoverage)) {
+        continue;
+      }
+      unfiltered=false;
+      if (tokenPartitionKey == null) {
+        tokenPartitionKey=candidatePartitionKey;
+      }
+      eqSets.add(valueEquivalence.get(candidatePartitionKey));
+    }
+    if (unfiltered) {
+      ++unfilteredPartitionKeyCount;
+    }
+  }
+  m_countOfIndependentlyPartitionedTables=eqSets.size() + unfilteredPartitionKeyCount;
+  if ((unfilteredPartitionKeyCount == 0) && (eqSets.size() == 1)) {
+    for (    Set<AbstractExpression> partitioningValues : eqSets) {
+      for (      AbstractExpression constExpr : partitioningValues) {
+        if (constExpr instanceof TupleValueExpression) {
+          continue;
+        }
+        addPartitioningExpression(tokenPartitionKey.getTableName() + '.' + tokenPartitionKey.getColumnName(),constExpr);
+        Object partitioningObject=ConstantValueExpression.extractPartitioningValue(tokenPartitionKey.getValueType(),constExpr);
+        setInferredValue(partitioningObject);
+        break;
+      }
+    }
+  }
+}

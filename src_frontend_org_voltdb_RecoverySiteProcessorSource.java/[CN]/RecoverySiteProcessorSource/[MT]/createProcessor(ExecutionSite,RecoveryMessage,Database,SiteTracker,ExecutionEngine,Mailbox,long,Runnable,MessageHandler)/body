@@ -1,0 +1,48 @@
+{
+  final long destinationSiteId=rm.sourceSite();
+  if (!tracker.getAllSites().contains(destinationSiteId)) {
+    return null;
+  }
+  ArrayList<Pair<String,Integer>> tables=new ArrayList<Pair<String,Integer>>();
+  Iterator<Table> ti=db.getTables().iterator();
+  while (ti.hasNext()) {
+    Table t=ti.next();
+    if (!CatalogUtil.isTableExportOnly(db,t) && t.getMaterializer() == null) {
+      tables.add(Pair.of(t.getTypeName(),t.getRelativeIndex()));
+    }
+  }
+  recoveryLog.info("Found " + tables.size() + " tables to recover");
+  HashMap<Pair<String,Integer>,HashSet<Long>> tableToDestinationSite=new HashMap<Pair<String,Integer>,HashSet<Long>>();
+  for (  Pair<String,Integer> table : tables) {
+    recoveryLog.info("Initiating recovery for table " + table.getFirst());
+    HashSet<Long> destinations=tableToDestinationSite.get(table);
+    if (destinations == null) {
+      destinations=new HashSet<Long>();
+      tableToDestinationSite.put(table,destinations);
+    }
+    destinations.add(destinationSiteId);
+  }
+  RecoverySiteProcessorSource source=null;
+  try {
+    SocketChannel sc=createRecoveryConnection(rm.addresses(),rm.port());
+    final long destinationTxnId=rm.txnId();
+    source=new RecoverySiteProcessorSource(site,destinationTxnId,destinationSiteId,tableToDestinationSite,engine,mailbox,siteId,onCompletion,messageHandler,sc);
+  }
+ catch (  IOException e) {
+    StringBuilder sb=new StringBuilder();
+    sb.append(" attempted addresses -> ");
+    for (    byte address[] : rm.addresses()) {
+      String ip="invalid";
+      try {
+        InetAddress addr=InetAddress.getByAddress(address);
+        ip=addr.getHostAddress();
+      }
+ catch (      UnknownHostException ignore) {
+      }
+      sb.append(ip).append(',');
+    }
+    recoveryLog.error("Unable to create recovery connection, aborting. " + "The recovery message is: txnId -> " + rm.txnId() + ", "+ sb.toString()+ ", port -> "+ rm.port()+ ", source site -> "+ CoreUtils.hsIdToString(rm.sourceSite()),e);
+    return null;
+  }
+  return source;
+}

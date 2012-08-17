@@ -6,29 +6,31 @@
   final StoredProcedureInvocation tx1_spi=new StoredProcedureInvocation();
   tx1_spi.setProcName("org.voltdb.TestExecutionSite$MockMPVoltProcedure");
   tx1_spi.setParams("commit",new Integer(0));
-  final InitiateTaskMessage tx1_mn_1=new InitiateTaskMessage(getInitiatorIdForSiteId(0),0,1000,readOnly,singlePartition,tx1_spi,Long.MAX_VALUE);
-  final MultiPartitionParticipantTxnState tx1_1=new MultiPartitionParticipantTxnState(m_mboxes[0],m_sites[0],tx1_mn_1);
+  final long siteId0=getHSIdForES(0);
+  final long siteId1=getHSIdForES(1);
+  final InitiateTaskMessage tx1_mn_1=new InitiateTaskMessage(getInitiatorIdForSiteId(0),0,1000,readOnly,singlePartition,tx1_spi,Long.MAX_VALUE,new long[]{siteId1});
+  final MultiPartitionParticipantTxnState tx1_1=new MultiPartitionParticipantTxnState(m_mboxes.get(siteId0),m_sites.get(siteId0),tx1_mn_1);
   final MultiPartitionParticipantMessage tx1_mn_2=new MultiPartitionParticipantMessage(getInitiatorIdForSiteId(0),0,1000,readOnly);
-  final MultiPartitionParticipantTxnState tx1_2=new MultiPartitionParticipantTxnState(m_mboxes[1],m_sites[1],tx1_mn_2);
+  final MultiPartitionParticipantTxnState tx1_2=new MultiPartitionParticipantTxnState(m_mboxes.get(siteId1),m_sites.get(siteId1),tx1_mn_2);
   int callcheck=MockMPProcedureRunner.m_called;
   assertFalse(tx1_1.isDone());
   assertFalse(tx1_2.isDone());
-  assertEquals(0,m_sites[0].lastCommittedTxnId);
-  assertEquals(0,m_sites[0].lastKnownGloballyCommitedMultiPartTxnId);
-  assertEquals(0,m_sites[1].lastCommittedTxnId);
-  assertEquals(0,m_sites[1].lastKnownGloballyCommitedMultiPartTxnId);
-  m_sites[0].m_transactionsById.put(tx1_1.txnId,tx1_1);
-  m_sites[1].m_transactionsById.put(tx1_2.txnId,tx1_2);
+  assertEquals(0,m_sites.get(siteId0).lastCommittedTxnId);
+  assertEquals(0,m_sites.get(siteId0).lastKnownGloballyCommitedMultiPartTxnId);
+  assertEquals(0,m_sites.get(siteId1).lastCommittedTxnId);
+  assertEquals(0,m_sites.get(siteId1).lastKnownGloballyCommitedMultiPartTxnId);
+  m_sites.get(siteId0).m_transactionsById.put(tx1_1.txnId,tx1_1);
+  m_sites.get(siteId1).m_transactionsById.put(tx1_2.txnId,tx1_2);
   es1=new Thread(new Runnable(){
     @Override public void run(){
-      m_sites[0].recursableRun(tx1_1);
+      m_sites.get(siteId0).recursableRun(tx1_1);
     }
   }
 );
   es1.start();
   es2=new Thread(new Runnable(){
     @Override public void run(){
-      m_sites[1].recursableRun(tx1_2);
+      m_sites.get(siteId1).recursableRun(tx1_2);
     }
   }
 );
@@ -37,11 +39,11 @@
   es2.join();
   assertTrue(tx1_1.isDone());
   assertTrue(tx1_2.isDone());
-  assertEquals(null,m_sites[0].m_transactionsById.get(tx1_1.txnId));
-  assertEquals(null,m_sites[1].m_transactionsById.get(tx1_2.txnId));
-  assertEquals(1000,m_sites[0].lastCommittedTxnId);
-  assertEquals(1000,m_sites[0].lastKnownGloballyCommitedMultiPartTxnId);
-  assertEquals(1000,m_sites[1].lastCommittedTxnId);
-  assertEquals(1000,m_sites[1].lastKnownGloballyCommitedMultiPartTxnId);
+  assertEquals(null,m_sites.get(siteId0).m_transactionsById.get(tx1_1.txnId));
+  assertEquals(null,m_sites.get(siteId1).m_transactionsById.get(tx1_2.txnId));
+  assertEquals(1000,m_sites.get(siteId1).lastCommittedTxnId);
+  assertEquals(1000,m_sites.get(siteId0).lastKnownGloballyCommitedMultiPartTxnId);
+  assertEquals(1000,m_sites.get(siteId1).lastCommittedTxnId);
+  assertEquals(1000,m_sites.get(siteId1).lastKnownGloballyCommitedMultiPartTxnId);
   assertEquals((++callcheck),MockMPProcedureRunner.m_called);
 }

@@ -1,0 +1,20 @@
+{
+  if (m_recovering) {
+    org.voltdb.VoltDB.crashLocalVoltDB("Aborting recovery due to a remote node (" + CoreUtils.hsIdToString(faultMessage.failedSite) + ") failure. Retry again.",true,null);
+  }
+  if (!m_pendingFailedSites.add(faultMessage.failedSite)) {
+    VoltDB.crashLocalVoltDB("A site id shouldn't be distributed as a fault twice",true,null);
+  }
+  discoverGlobalFaultData_send();
+  HashMap<Long,Long> initiatorSafeInitPoint=new HashMap<Long,Long>();
+  if (discoverGlobalFaultData_rcv()) {
+    extractGlobalFaultData(initiatorSafeInitPoint);
+  }
+ else {
+    return;
+  }
+  handleSiteFaults(initiatorSafeInitPoint);
+  m_hsIds.removeAll(m_pendingFailedSites);
+  m_pendingFailedSites.clear();
+  assert(m_pendingFailedSites.isEmpty());
+}

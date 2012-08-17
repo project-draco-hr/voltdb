@@ -1,65 +1,100 @@
 {
   Object params[]=invocation.getParams().toArray();
-  if (params.length != 3) {
-    final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.GRACEFUL_FAILURE,new VoltTable[0],"@SnapshotSave requires 3 parameters. Path, nonce, and blocking",invocation.clientHandle);
-    c.writeStream().enqueue(errorResponse);
-    return;
-  }
-  if (params[0] == null) {
-    final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.GRACEFUL_FAILURE,new VoltTable[0],"@SnapshotSave path is null",invocation.clientHandle);
-    c.writeStream().enqueue(errorResponse);
-    return;
-  }
-  if (params[1] == null) {
-    final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.GRACEFUL_FAILURE,new VoltTable[0],"@SnapshotSave nonce is null",invocation.clientHandle);
-    c.writeStream().enqueue(errorResponse);
-    return;
-  }
-  if (params[2] == null) {
-    final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.GRACEFUL_FAILURE,new VoltTable[0],"@SnapshotSave blocking is null",invocation.clientHandle);
-    c.writeStream().enqueue(errorResponse);
-    return;
-  }
-  if (!(params[0] instanceof String)) {
-    final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.GRACEFUL_FAILURE,new VoltTable[0],"@SnapshotSave path param is a " + params[0].getClass().getSimpleName() + " and should be a java.lang.String",invocation.clientHandle);
-    c.writeStream().enqueue(errorResponse);
-    return;
-  }
-  if (!(params[1] instanceof String)) {
-    final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.GRACEFUL_FAILURE,new VoltTable[0],"@SnapshotSave nonce param is a " + params[0].getClass().getSimpleName() + " and should be a java.lang.String",invocation.clientHandle);
-    c.writeStream().enqueue(errorResponse);
-    return;
-  }
-  if (!(params[2] instanceof Byte || params[2] instanceof Short || params[2] instanceof Integer|| params[2] instanceof Long)) {
-    final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.GRACEFUL_FAILURE,new VoltTable[0],"@SnapshotSave blocking param is a " + params[0].getClass().getSimpleName() + " and should be a java.lang.[Byte|Short|Integer|Long]",invocation.clientHandle);
-    c.writeStream().enqueue(errorResponse);
-    return;
-  }
-  boolean requestExists=false;
+  String path=null;
+  String nonce=null;
+  boolean blocking=false;
+  SnapshotFormat format=SnapshotFormat.NATIVE;
   try {
-    final JSONObject jsObj=new JSONObject();
-    jsObj.put("path",(params[0]));
-    jsObj.put("nonce",(params[1]));
-    final long blocking=((Number)params[2]).longValue();
-    jsObj.put("blocking",blocking);
-    final String requestId=java.util.UUID.randomUUID().toString();
-    jsObj.put("requestId",requestId);
-    String zkString=jsObj.toString(4);
-    byte zkBytes[]=zkString.getBytes("UTF-8");
-    m_zk.create("/user_snapshot_request",zkBytes,Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
-    registerUserSnapshotResponseWatch(requestId,invocation,c);
+    if (params.length != 3 && params.length != 1) {
+      throw new Exception("@SnapshotSave requires 3 parameters or alternatively a single JSON blob. " + "Path, nonce, and blocking");
+    }
+    if (params[0] == null) {
+      throw new Exception("@SnapshotSave path is null");
+    }
+    if (params.length == 3) {
+      if (params[1] == null) {
+        throw new Exception("@SnapshotSave nonce is null");
+      }
+      if (params[2] == null) {
+        throw new Exception("@SnapshotSave blocking is null");
+      }
+    }
+    if (!(params[0] instanceof String)) {
+      throw new Exception("@SnapshotSave path param is a " + params[0].getClass().getSimpleName() + " and should be a java.lang.String");
+    }
+    if (params.length == 3) {
+      if (!(params[1] instanceof String)) {
+        throw new Exception("@SnapshotSave nonce param is a " + params[0].getClass().getSimpleName() + " and should be a java.lang.String");
+      }
+      if (!(params[2] instanceof Byte || params[2] instanceof Short || params[2] instanceof Integer|| params[2] instanceof Long)) {
+        throw new Exception("@SnapshotSave blocking param is a " + params[0].getClass().getSimpleName() + " and should be a java.lang.[Byte|Short|Integer|Long]");
+      }
+    }
+    if (params.length == 1) {
+      final JSONObject jsObj=new JSONObject((String)params[0]);
+      path=jsObj.getString("uripath");
+      if (path.isEmpty()) {
+        throw new Exception("uripath cannot be empty");
+      }
+      URI pathURI=new URI(path);
+      String pathURIScheme=pathURI.getScheme();
+      if (pathURIScheme == null) {
+        throw new Exception("URI scheme cannot be null");
+      }
+      if (!pathURIScheme.equals("file")) {
+        throw new Exception("Unsupported URI scheme " + pathURIScheme + " if this is a file path then you must prepend file://");
+      }
+      path=pathURI.getPath();
+      nonce=jsObj.getString("nonce");
+      if (nonce.isEmpty()) {
+        throw new Exception("nonce cannot be empty");
+      }
+      Object blockingObj=false;
+      if (jsObj.has("block")) {
+        blockingObj=jsObj.get("block");
+      }
+      if (blockingObj instanceof Number) {
+        blocking=((Number)blockingObj).byteValue() == 0 ? false : true;
+      }
+ else       if (blockingObj instanceof Boolean) {
+        blocking=(Boolean)blockingObj;
+      }
+ else       if (blockingObj instanceof String) {
+        blocking=Boolean.valueOf((String)blockingObj);
+      }
+ else {
+        throw new Exception(blockingObj.getClass().getName() + " is not supported as " + " type for the block parameter");
+      }
+      String formatString=jsObj.optString("format",SnapshotFormat.NATIVE.toString());
+      try {
+        format=SnapshotFormat.getEnumIgnoreCase(formatString);
+      }
+ catch (      IllegalArgumentException argException) {
+        throw new Exception("@SnapshotSave format param is a " + format + " and should be one of [\"native\" | \"csv\"]");
+      }
+    }
+ else {
+      path=(String)params[0];
+      nonce=(String)params[1];
+      blocking=((Number)params[2]).byteValue() == 0 ? false : true;
+    }
+    if (nonce.contains("-") || nonce.contains(",")) {
+      throw new Exception("Provided nonce " + nonce + " contains a prohibited character (- or ,)");
+    }
+    createAndWatchRequestNode(invocation.clientHandle,c,path,nonce,blocking,format,null,false);
   }
- catch (  KeeperException.NodeExistsException e) {
-    requestExists=true;
-  }
-catch (  Exception e) {
-    VoltDB.crashLocalVoltDB("Exception while attempting to create user snapshot request in ZK",true,e);
-  }
-  if (requestExists) {
-    VoltTable result=org.voltdb.sysprocs.SnapshotSave.constructNodeResultsTable();
-    result.addRow(-1,org.voltdb.client.ConnectionUtil.getHostnameOrAddress(),"","FAILURE","SNAPSHOT IN PROGRESS");
-    final ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.SUCCESS,new VoltTable[]{result},"A request to perform a user snapshot already exists",invocation.clientHandle);
-    c.writeStream().enqueue(errorResponse);
+ catch (  Exception e) {
+    VoltTable tables[]=new VoltTable[0];
+    byte status=ClientResponseImpl.GRACEFUL_FAILURE;
+    if (e instanceof ForwardClientException && ((ForwardClientException)e).m_table != null) {
+      tables=new VoltTable[]{((ForwardClientException)e).m_table};
+      status=ClientResponseImpl.SUCCESS;
+    }
+    final ClientResponseImpl errorResponse=new ClientResponseImpl(status,tables,Throwables.getStackTraceAsString(e),invocation.clientHandle);
+    ByteBuffer buf=ByteBuffer.allocate(errorResponse.getSerializedSize() + 4);
+    buf.putInt(buf.capacity() - 4);
+    errorResponse.flattenToBuffer(buf).flip();
+    c.writeStream().enqueue(buf);
     return;
   }
 }

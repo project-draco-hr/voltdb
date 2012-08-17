@@ -1,0 +1,37 @@
+{
+  final int batchSize=batch.size();
+  VoltTable[] results=null;
+  if (batchSize == 0) {
+    return new VoltTable[]{};
+  }
+  if (getHsqlBackendIfExists() != null) {
+    results=new VoltTable[batchSize];
+    int i=0;
+    for (    QueuedSQL qs : batch) {
+      List<StmtParameter> sparams;
+      if (qs.stmt.catStmt != null) {
+        CatalogMap<StmtParameter> sparamsMap=qs.stmt.catStmt.getParameters();
+        sparams=CatalogUtil.getSortedCatalogItems(sparamsMap,"index");
+      }
+ else {
+        assert(qs.stmt.plan != null);
+        qs.params=new ParameterSet();
+        sparams=new ArrayList<StmtParameter>();
+      }
+      results[i++]=getHsqlBackendIfExists().runSQLWithSubstitutions(qs.stmt,qs.params,sparams);
+    }
+  }
+ else   if (m_catProc.getSinglepartition()) {
+    results=fastPath(batch);
+  }
+ else {
+    results=slowPath(batch,isFinalSQL);
+  }
+  int i=0;
+  for (  QueuedSQL qs : batch) {
+    Expectation.check(m_procedureName,qs.stmt.sqlText,i,qs.expectation,results[i]);
+    i++;
+  }
+  batch.clear();
+  return results;
+}

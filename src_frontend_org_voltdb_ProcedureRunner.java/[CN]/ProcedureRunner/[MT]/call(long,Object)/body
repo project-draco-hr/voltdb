@@ -1,107 +1,104 @@
 {
+  assert(m_txnId == -1);
+  assert(m_statusCode == Byte.MIN_VALUE);
+  assert(m_statusString == null);
+  assert(m_cachedRNG == null);
+  Object[] paramList=paramListIn;
   m_txnId=txnId;
-  assert(m_txnId > 0);
-  m_statusCode=Byte.MIN_VALUE;
-  m_statusString=null;
-  m_cachedRNG=null;
-  m_statsCollector.beginProcedure();
-  byte status=ClientResponseImpl.SUCCESS;
-  if (paramList.length != m_paramTypesLength) {
-    m_statsCollector.endProcedure(false,true);
-    String msg="PROCEDURE " + m_procedureName + " EXPECTS "+ String.valueOf(m_paramTypesLength)+ " PARAMS, BUT RECEIVED "+ String.valueOf(paramList.length);
-    status=ClientResponseImpl.GRACEFUL_FAILURE;
-    return getErrorResponse(status,msg,null);
-  }
-  for (int i=0; i < m_paramTypesLength; i++) {
-    try {
-      paramList[i]=tryToMakeCompatible(i,paramList[i]);
-    }
- catch (    Exception e) {
-      m_statsCollector.endProcedure(false,true);
-      String msg="PROCEDURE " + m_procedureName + " TYPE ERROR FOR PARAMETER "+ i+ ": "+ e.getMessage();
-      status=ClientResponseImpl.GRACEFUL_FAILURE;
-      return getErrorResponse(status,msg,null);
-    }
-  }
-  m_batchQueryStmtIndex=0;
-  VoltTable[] results=new VoltTable[0];
-  if (paramList.length != m_paramTypesLength) {
-    m_statsCollector.endProcedure(false,true);
-    String msg="PROCEDURE " + m_procedureName + " EXPECTS "+ String.valueOf(m_paramTypesLength)+ " PARAMS, BUT RECEIVED "+ String.valueOf(paramList.length);
-    status=ClientResponseImpl.GRACEFUL_FAILURE;
-    return getErrorResponse(status,msg,null);
-  }
-  for (int i=0; i < m_paramTypesLength; i++) {
-    try {
-      paramList[i]=tryToMakeCompatible(i,paramList[i]);
-    }
- catch (    Exception e) {
-      m_statsCollector.endProcedure(false,true);
-      String msg="PROCEDURE " + m_procedureName + " TYPE ERROR FOR PARAMETER "+ i+ ": "+ e.getMessage();
-      status=ClientResponseImpl.GRACEFUL_FAILURE;
-      return getErrorResponse(status,msg,null);
-    }
-  }
+  assert(m_txnId >= 0);
   ClientResponseImpl retval=null;
-  boolean error=false;
-  boolean abort=false;
-  if (m_catProc.getHasjava()) {
-    try {
-      if (log.isTraceEnabled()) {
-        log.trace("invoking... procMethod=" + m_procMethod.getName() + ", class="+ getClass().getName());
-      }
+  assert(m_batch.size() == 0);
+  try {
+    m_statsCollector.beginProcedure();
+    byte status=ClientResponse.SUCCESS;
+    VoltTable[] results=null;
+    if (isSystemProcedure()) {
+      final Object[] combinedParams=new Object[paramList.length + 1];
+      combinedParams[0]=m_systemProcedureContext;
+      for (int i=0; i < paramList.length; ++i)       combinedParams[i + 1]=paramList[i];
+      paramList=combinedParams;
+    }
+    if (paramList.length != m_paramTypes.length) {
+      m_statsCollector.endProcedure(false,true);
+      String msg="PROCEDURE " + m_procedureName + " EXPECTS "+ String.valueOf(m_paramTypes.length)+ " PARAMS, BUT RECEIVED "+ String.valueOf(paramList.length);
+      status=ClientResponse.GRACEFUL_FAILURE;
+      return getErrorResponse(status,msg,null);
+    }
+    for (int i=0; i < m_paramTypes.length; i++) {
       try {
-        m_batchQueryArgs=new Object[MAX_BATCH_SIZE][];
-        m_parameterSets=new ParameterSet[MAX_BATCH_SIZE];
-        Object rawResult=m_procMethod.invoke(m_procedure,paramList);
-        results=getResultsFromRawResults(rawResult);
+        paramList[i]=ParameterConverter.tryToMakeCompatible(m_paramTypeIsPrimitive[i],m_paramTypeIsArray[i],m_paramTypes[i],m_paramTypeComponentType[i],paramList[i]);
       }
- catch (      IllegalAccessException e) {
-        throw new InvocationTargetException(e);
-      }
- finally {
-        m_batchQueryArgs=null;
-        m_parameterSets=null;
-      }
-      log.trace("invoked");
-    }
- catch (    InvocationTargetException itex) {
-      Throwable ex=itex.getCause();
-      if (ex instanceof VoltAbortException && !(ex instanceof EEException)) {
-        abort=true;
-      }
- else {
-        error=true;
-      }
-      if (ex instanceof Error) {
+ catch (      Exception e) {
         m_statsCollector.endProcedure(false,true);
-        throw (Error)ex;
+        String msg="PROCEDURE " + m_procedureName + " TYPE ERROR FOR PARAMETER "+ i+ ": "+ e.getMessage();
+        status=ClientResponse.GRACEFUL_FAILURE;
+        return getErrorResponse(status,msg,null);
       }
-      retval=getErrorResponse(ex);
     }
-  }
+    boolean error=false;
+    boolean abort=false;
+    if (m_catProc.getHasjava()) {
+      try {
+        if (log.isTraceEnabled()) {
+          log.trace("invoking... procMethod=" + m_procMethod.getName() + ", class="+ getClass().getName());
+        }
+        try {
+          Object rawResult=m_procMethod.invoke(m_procedure,paramList);
+          results=getResultsFromRawResults(rawResult);
+        }
+ catch (        IllegalAccessException e) {
+          throw new InvocationTargetException(e);
+        }
+        log.trace("invoked");
+      }
+ catch (      InvocationTargetException itex) {
+        Throwable ex=itex.getCause();
+        if (ex instanceof VoltAbortException && !(ex instanceof EEException)) {
+          abort=true;
+        }
  else {
-    assert(m_catProc.getStatements().size() == 1);
-    try {
-      m_batchQueryArgs=new Object[MAX_BATCH_SIZE][];
-      m_parameterSets=new ParameterSet[MAX_BATCH_SIZE];
-      if (!m_isNative) {
-        VoltTable table=m_hsql.runSQLWithSubstitutions(m_cachedSingleStmt[0],paramList);
-        results=new VoltTable[]{table};
+          error=true;
+        }
+        if (ex instanceof Error) {
+          m_statsCollector.endProcedure(false,true);
+          throw (Error)ex;
+        }
+        retval=getErrorResponse(ex);
       }
+    }
  else {
-        results=executeQueriesInABatch(1,m_cachedSingleStmt,new Object[][]{paramList},true);
+      assert(m_catProc.getStatements().size() == 1);
+      try {
+        m_cachedSingleStmt.params=getCleanParams(m_cachedSingleStmt.stmt,paramList);
+        if (getHsqlBackendIfExists() != null) {
+          CatalogMap<StmtParameter> sparamsMap=m_cachedSingleStmt.stmt.catStmt.getParameters();
+          List<StmtParameter> sparams=CatalogUtil.getSortedCatalogItems(sparamsMap,"index");
+          VoltTable table=getHsqlBackendIfExists().runSQLWithSubstitutions(m_cachedSingleStmt.stmt,m_cachedSingleStmt.params,sparams);
+          results=new VoltTable[]{table};
+        }
+ else {
+          m_batch.add(m_cachedSingleStmt);
+          results=voltExecuteSQL(true);
+        }
+      }
+ catch (      SerializableException ex) {
+        retval=getErrorResponse(ex);
       }
     }
- catch (    SerializableException ex) {
-      retval=getErrorResponse(ex);
-    }
- finally {
-      m_batchQueryArgs=null;
-      m_parameterSets=null;
-    }
+    m_statsCollector.endProcedure(abort,error);
+    if (results == null)     results=new VoltTable[0];
+    if (retval == null)     retval=new ClientResponseImpl(status,m_statusCode,m_statusString,results,null);
   }
-  m_statsCollector.endProcedure(abort,error);
-  if (retval == null)   retval=new ClientResponseImpl(status,m_statusCode,m_statusString,results,null);
+  finally {
+    m_batch.clear();
+    m_txnId=-1;
+    m_txnState=null;
+    m_statusCode=Byte.MIN_VALUE;
+    m_statusString=null;
+    m_cachedRNG=null;
+    m_cachedSingleStmt.params=null;
+    m_cachedSingleStmt.expectation=null;
+    m_seenFinalBatch=false;
+  }
   return retval;
 }

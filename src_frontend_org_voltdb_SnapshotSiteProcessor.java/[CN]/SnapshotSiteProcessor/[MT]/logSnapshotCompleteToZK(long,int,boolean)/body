@@ -1,6 +1,6 @@
 {
-  ZooKeeper zk=VoltDB.instance().getZK();
-  final String snapshotPath="/completed_snapshots/" + txnId;
+  ZooKeeper zk=VoltDB.instance().getHostMessenger().getZK();
+  final String snapshotPath=VoltZK.completed_snapshots + "/" + txnId;
   boolean success=false;
   while (!success) {
     Stat stat=new Stat();
@@ -19,9 +19,6 @@
       if (jsonObj.getLong("txnId") != txnId) {
         VoltDB.crashLocalVoltDB("TxnId should match",false,null);
       }
-      if (jsonObj.getInt("hosts") != numHosts) {
-        VoltDB.crashLocalVoltDB("Num hosts should match",false,null);
-      }
       int numHostsFinished=jsonObj.getInt("finishedHosts") + 1;
       jsonObj.put("finishedHosts",numHostsFinished);
       if (!snapshotSuccess) {
@@ -39,10 +36,10 @@ catch (    Exception e) {
     success=true;
   }
   try {
-    TreeSet<String> snapshots=new TreeSet<String>(zk.getChildren("/completed_snapshots",false));
+    TreeSet<String> snapshots=new TreeSet<String>(zk.getChildren(VoltZK.completed_snapshots,false));
     while (snapshots.size() > 30) {
       try {
-        zk.delete("/completed_snapshots/" + snapshots.first(),-1);
+        zk.delete(VoltZK.completed_snapshots + "/" + snapshots.first(),-1);
       }
  catch (      NoNodeException e) {
       }
@@ -56,7 +53,7 @@ catch (      Exception e) {
     VoltDB.crashLocalVoltDB("Retrieving list of completed snapshots from ZK should never fail",true,e);
   }
   try {
-    VoltDB.instance().getZK().delete("/nodes_currently_snapshotting/" + VoltDB.instance().getHostMessenger().getHostId(),-1);
+    VoltDB.instance().getHostMessenger().getZK().delete(VoltZK.nodes_currently_snapshotting + "/" + VoltDB.instance().getHostMessenger().getHostId(),-1);
   }
  catch (  NoNodeException e) {
     hostLog.warn("Expect the snapshot node to already exist during deletion",e);

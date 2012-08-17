@@ -1,25 +1,27 @@
 {
-  try {
-    m_rvdb.m_hasCatalog.await();
-  }
- catch (  InterruptedException e1) {
-    VoltDB.crashLocalVoltDB("System was interrupted while waiting for a catalog.",false,e1);
-  }
-  if (m_config.m_pathToCatalog.startsWith("http")) {
-    hostLog.info("Loading application catalog jarfile from " + m_config.m_pathToCatalog);
-  }
- else {
-    File f=new File(m_config.m_pathToCatalog);
-    hostLog.info("Loading application catalog jarfile from " + f.getAbsolutePath());
-  }
   byte[] catalogBytes=null;
+  int version=0;
+  do {
+    try {
+      ByteBuffer versionAndBytes=ByteBuffer.wrap(m_rvdb.getHostMessenger().getZK().getData(VoltZK.catalogbytes,false,null));
+      version=versionAndBytes.getInt();
+      catalogBytes=new byte[versionAndBytes.remaining()];
+      versionAndBytes.get(catalogBytes);
+      versionAndBytes=null;
+    }
+ catch (    org.apache.zookeeper_voltpatches.KeeperException.NoNodeException e) {
+    }
+catch (    Exception e) {
+      VoltDB.crashLocalVoltDB("System was interrupted while waiting for a catalog.",false,null);
+    }
+  }
+ while (catalogBytes == null);
   try {
-    catalogBytes=CatalogUtil.toBytes(new File(m_config.m_pathToCatalog));
+    m_rvdb.m_serializedCatalog=CatalogUtil.loadCatalogFromJar(catalogBytes,hostLog);
   }
  catch (  IOException e) {
-    VoltDB.crashLocalVoltDB("Failed to read catalog: " + e.getMessage(),false,e);
+    VoltDB.crashLocalVoltDB("Unable to load catalog: " + e.getMessage(),false,null);
   }
-  m_rvdb.m_serializedCatalog=CatalogUtil.loadCatalogFromJar(catalogBytes,hostLog);
   if ((m_rvdb.m_serializedCatalog == null) || (m_rvdb.m_serializedCatalog.length() == 0))   VoltDB.crashLocalVoltDB("Catalog loading failure",false,null);
   Catalog catalog=new Catalog();
   catalog.execute(m_rvdb.m_serializedCatalog);
@@ -31,13 +33,17 @@
     hostLog.fatal("Error parsing deployment file",e);
     System.exit(-1);
   }
-  Cluster newCluster=catalog.getClusters().get("cluster");
-  Cluster oldCluster=m_rvdb.m_catalogContext.cluster;
-  for (  Site site : oldCluster.getSites()) {
-    newCluster.getSites().get(site.getTypeName()).setIsup(site.getIsup());
+  try {
+    long catalogTxnId=org.voltdb.TransactionIdManager.makeIdFromComponents(System.currentTimeMillis(),0,0);
+    ZooKeeper zk=m_rvdb.getHostMessenger().getZK();
+    zk.create(VoltZK.initial_catalog_txnid,String.valueOf(catalogTxnId).getBytes("UTF-8"),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT,new ZKUtil.StringCallback(),null);
+    ZKUtil.ByteArrayCallback cb=new ZKUtil.ByteArrayCallback();
+    zk.getData(VoltZK.initial_catalog_txnid,false,cb,null);
+    catalogTxnId=Long.valueOf(new String(cb.getData(),"UTF-8"));
+    m_rvdb.m_serializedCatalog=catalog.serialize();
+    m_rvdb.m_catalogContext=new CatalogContext(catalogTxnId,catalog,catalogBytes,m_rvdb.m_depCRC,version,-1);
   }
-  long existingCatalogTxnId=m_rvdb.m_catalogContext.m_transactionId;
-  int existingCatalogVersion=m_rvdb.m_messenger.getDiscoveredCatalogVersion();
-  m_rvdb.m_serializedCatalog=catalog.serialize();
-  m_rvdb.m_catalogContext=new CatalogContext(existingCatalogTxnId,catalog,catalogBytes,m_rvdb.m_depCRC,existingCatalogVersion,-1);
+ catch (  Exception e) {
+    VoltDB.crashLocalVoltDB("Error agreeing on starting catalog version",false,e);
+  }
 }

@@ -1,24 +1,22 @@
 {
   m_mailbox.addPendingTxn(txn);
   increaseBackpressure(txn.messageSize);
+  long[] nonCoordinatorSites=new long[txn.coordinatorReplicas.size() + txn.otherSiteIds.length];
+  int i=0;
+  for (  long hsId : txn.coordinatorReplicas) {
+    nonCoordinatorSites[i++]=hsId;
+  }
+  for (  long hsId : txn.otherSiteIds) {
+    nonCoordinatorSites[i++]=hsId;
+  }
   MultiPartitionParticipantMessage notice=new MultiPartitionParticipantMessage(m_siteId,txn.firstCoordinatorId,txn.txnId,txn.isReadOnly);
-  try {
-    m_mailbox.send(txn.otherSiteIds,0,notice);
-  }
- catch (  MessagingException e) {
-    throw new RuntimeException(e);
-  }
+  m_mailbox.send(txn.otherSiteIds,notice);
   long newestSafeTxnId=m_safetyState.getNewestSafeTxnIdForExecutorBySiteId(txn.firstCoordinatorId);
-  InitiateTaskMessage workRequest=new InitiateTaskMessage(m_siteId,txn.firstCoordinatorId,txn.txnId,txn.isReadOnly,txn.isSinglePartition,txn.invocation,newestSafeTxnId);
-  try {
-    m_mailbox.send(txn.firstCoordinatorId,0,workRequest);
-    for (    Integer replica : txn.coordinatorReplicas) {
-      newestSafeTxnId=m_safetyState.getNewestSafeTxnIdForExecutorBySiteId(replica);
-      workRequest=new InitiateTaskMessage(m_siteId,txn.firstCoordinatorId,txn.txnId,txn.isReadOnly,txn.isSinglePartition,txn.invocation,newestSafeTxnId);
-      m_mailbox.send(replica,0,workRequest);
-    }
-  }
- catch (  MessagingException e) {
-    throw new RuntimeException(e);
+  InitiateTaskMessage workRequest=new InitiateTaskMessage(m_siteId,txn.firstCoordinatorId,txn.txnId,txn.isReadOnly,txn.isSinglePartition,txn.invocation,newestSafeTxnId,nonCoordinatorSites);
+  m_mailbox.send(txn.firstCoordinatorId,workRequest);
+  for (  Long replica : txn.coordinatorReplicas) {
+    newestSafeTxnId=m_safetyState.getNewestSafeTxnIdForExecutorBySiteId(replica);
+    workRequest=new InitiateTaskMessage(m_siteId,txn.firstCoordinatorId,txn.txnId,txn.isReadOnly,txn.isSinglePartition,txn.invocation,newestSafeTxnId);
+    m_mailbox.send(replica,workRequest);
   }
 }

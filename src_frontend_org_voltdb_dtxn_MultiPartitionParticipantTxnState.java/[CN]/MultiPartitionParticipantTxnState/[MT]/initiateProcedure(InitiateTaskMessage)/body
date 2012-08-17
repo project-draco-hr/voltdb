@@ -1,5 +1,6 @@
 {
   assert(m_isCoordinator);
+  assert(m_rejoinState != RejoinState.REPLAYING);
   m_response=m_site.processInitiateTask(this,itask);
   if (!m_response.shouldCommit()) {
     if (m_missingDependencies != null) {
@@ -7,26 +8,16 @@
     }
     m_needsRollback=true;
   }
-  m_outstandingAcks=new HashSet<Integer>();
+  m_outstandingAcks=new HashSet<Long>();
   if (!isReadOnly()) {
-    for (    int site_id : m_nonCoordinatingSites) {
-      m_outstandingAcks.add(site_id);
+    for (    long hsid : m_nonCoordinatingSites) {
+      m_outstandingAcks.add(hsid);
     }
   }
   CompleteTransactionMessage complete_msg=createCompleteTransactionMessage(m_response.shouldCommit() == false,!isReadOnly());
-  try {
-    m_mbox.send(m_nonCoordinatingSites,0,complete_msg);
-  }
- catch (  MessagingException e) {
-    throw new RuntimeException(e);
-  }
+  m_mbox.send(m_nonCoordinatingSites,complete_msg);
   if (m_outstandingAcks.size() == 0) {
-    try {
-      m_mbox.send(initiatorSiteId,0,m_response);
-    }
- catch (    MessagingException e) {
-      throw new RuntimeException(e);
-    }
+    m_mbox.send(initiatorHSId,m_response);
     m_done=true;
   }
 }

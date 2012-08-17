@@ -1,7 +1,9 @@
 {
   VoltProjectBuilder builder=getBuilderForTest();
   builder.addExport("org.voltdb.export.processors.RawProcessor",true,null);
-  LocalCluster cluster=new LocalCluster("rejoin.jar",2,3,1,BackendTarget.NATIVE_EE_JNI,true);
+  LocalCluster cluster=new LocalCluster("rejoin.jar",2,3,1,BackendTarget.NATIVE_EE_JNI,false,m_useIv2);
+  cluster.overrideAnyRequestForValgrind();
+  cluster.setMaxHeap(256);
   boolean success=cluster.compile(builder);
   assertTrue(success);
   MiscUtils.copyFile(builder.getPathToDeployment(),Configuration.getPathToCatalogForTest("rejoin.xml"));
@@ -10,7 +12,7 @@
   ClientResponse response;
   Client client;
   client=ClientFactory.createClient(m_cconfig);
-  client.createConnection("localhost");
+  client.createConnection("localhost",cluster.port(0));
   response=client.callProcedure("InsertSinglePartition",0);
   assertEquals(ClientResponse.SUCCESS,response.getStatus());
   response=client.callProcedure("Insert",1);
@@ -19,13 +21,13 @@
   assertEquals(ClientResponse.SUCCESS,response.getStatus());
   client.close();
   client=ClientFactory.createClient(m_cconfig);
-  client.createConnection("localhost",21213);
+  client.createConnection("localhost",cluster.port(1));
   response=client.callProcedure("InsertSinglePartition",2);
   assertEquals(ClientResponse.SUCCESS,response.getStatus());
   response=client.callProcedure("Insert",3);
   assertEquals(ClientResponse.SUCCESS,response.getStatus());
   client.close();
-  TrivialExportClient exportClient=new TrivialExportClient();
+  TrivialExportClient exportClient=new TrivialExportClient(cluster.port(0));
   exportClient.work();
   exportClient.work();
   Thread.sleep(4000);
@@ -34,20 +36,23 @@
   exportClient.work();
   cluster.shutDownSingleHost(0);
   Thread.sleep(100);
-  VoltDB.Configuration config=new VoltDB.Configuration();
+  VoltDB.Configuration config=new VoltDB.Configuration(cluster.portGenerator);
+  config.m_enableIV2=m_useIv2;
+  config.m_startAction=START_ACTION.REJOIN;
   config.m_pathToCatalog=Configuration.getPathToCatalogForTest("rejoin.jar");
   config.m_pathToDeployment=Configuration.getPathToCatalogForTest("rejoin.xml");
-  config.m_rejoinToHostAndPort=m_username + ":" + m_password+ "@localhost:21213";
+  config.m_leader=":" + cluster.internalPort(1);
   config.m_isRejoinTest=true;
+  cluster.setPortsFromConfig(0,config);
   ServerThread localServer=new ServerThread(config);
   localServer.start();
-  localServer.waitForInitialization();
+  localServer.waitForRejoin();
   Thread.sleep(1000);
-  while (VoltDB.instance().recovering()) {
+  while (VoltDB.instance().rejoining()) {
     Thread.sleep(100);
   }
   client=ClientFactory.createClient(m_cconfig);
-  client.createConnection("localhost");
+  client.createConnection("localhost",cluster.port(0));
   response=client.callProcedure("InsertSinglePartition",5);
   assertEquals(ClientResponse.SUCCESS,response.getStatus());
   response=client.callProcedure("Insert",6);
@@ -56,13 +61,13 @@
   assertEquals(ClientResponse.SUCCESS,response.getStatus());
   client.close();
   client=ClientFactory.createClient(m_cconfig);
-  client.createConnection("localhost",21213);
+  client.createConnection("localhost",cluster.port(1));
   response=client.callProcedure("InsertSinglePartition",8);
   assertEquals(ClientResponse.SUCCESS,response.getStatus());
   response=client.callProcedure("Insert",9);
   assertEquals(ClientResponse.SUCCESS,response.getStatus());
   client.close();
-  exportClient=new TrivialExportClient();
+  exportClient=new TrivialExportClient(cluster.port(0));
   exportClient.work();
   Thread.sleep(4000);
   exportClient.work();

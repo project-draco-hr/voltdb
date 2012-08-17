@@ -1,39 +1,15 @@
-def __generate_statement(self, statement):
-    tmp = statement.next()
-    if (tmp == None):
-        for stmt in statement.get_statement():
-            yield stmt
-    else:
-        if isinstance(tmp[0], VariableGenerator):
-            if isinstance(tmp[1][1][0], TableGenerator):
-                if (not statement.get_tables()):
-                    params_perm = (self.__schema.get_tables(),)
-                else:
-                    params_perm = (statement.get_tables(),)
-            elif isinstance(tmp[1][1][0], VarGenerator):
-                params_perm = self.__schema.pick_columns(statement.get_table_count(), 1, statement.get_tables(), map_type(tmp[0].get_type()))
-            elif isinstance(tmp[1][1][0], ValueGenerator):
-                params_perm = (None,)
-            for params in params_perm:
-                for i in tmp[0].generate(tmp[1][0], params):
-                    stmt = Statement(i, self.__operators, self.__variables, statement)
-                    for s in self.__generate_statement(stmt):
-                        yield s
-            return
-        c = [True for i in tmp[1][1] if isinstance(i, VarGenerator)].count(True)
-        if (c == 0):
-            for i in tmp[0].generate(tmp[1][0], (tmp[1][1],)):
-                stmt = Statement(i, self.__operators, self.__variables, statement)
-                for s in self.__generate_statement(stmt):
-                    yield s
-        else:
-            type = map_type(((tmp[1][1][0] and tmp[1][1][0].get_type()) or None))
-            col_gen = self.__schema.pick_columns(statement.get_table_count(), c, statement.get_tables(), type)
-            for columns in col_gen:
-                for i in xrange(len(tmp[1][1])):
-                    if tmp[1][1][i]:
-                        tmp[1][1][i] = columns.pop(0)
-                for i in tmp[0].generate(tmp[1][0], (tmp[1][1],)):
-                    stmt = Statement(i, self.__operators, self.__variables, statement)
-                    for s in self.__generate_statement(stmt):
-                        yield s
+def __generate_statement(self, text):
+    statement = Statement(text)
+    table_gens = statement.get_tables()
+    if table_gens:
+        schema_tables = self.get_schema_tables()
+        for i in xrange(0, len(schema_tables), len(table_gens)):
+            for (k, v) in zip(table_gens, schema_tables[i:]):
+                k.add_table(v)
+    for table_bound_statement in statement.next_table_bound_statement():
+        col_gens = statement.init_column_generators(table_bound_statement)
+        for col_gen in col_gens:
+            for (col_name, col_type) in self.get_schema_typed_columns(col_gen.get_table(), col_gen.get_type(), COUNT):
+                col_gen.add_column(col_name, col_type)
+        for complete_statement in statement.next_complete_statement():
+            yield complete_statement

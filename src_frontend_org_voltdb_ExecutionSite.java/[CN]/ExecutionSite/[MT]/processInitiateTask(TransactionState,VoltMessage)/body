@@ -1,6 +1,6 @@
 {
   final InitiateTaskMessage itask=(InitiateTaskMessage)task;
-  final ProcedureRunner runner=procs.get(itask.getStoredProcedureName());
+  final ProcedureRunner runner=m_loadedProcedures.procs.get(itask.getStoredProcedureName());
   final InitiateResponseMessage response=new InitiateResponseMessage(itask);
   if (runner == null) {
     response.setResults(new ClientResponseImpl(ClientResponse.GRACEFUL_FAILURE,new VoltTable[]{},"Procedure does not exist: " + itask.getStoredProcedureName()));
@@ -21,20 +21,15 @@
         ClientResponseImpl cr=null;
         long txnId=txnState.txnId;
         StoredProcedureInvocation invocation=txnState.getInvocation();
-        if ((invocation != null) && (invocation.getType() == ProcedureInvocationType.REPLICATED)) {
+        if (invocation == null) {
+          VoltDB.crashLocalVoltDB("Initiate task " + txnId + " missing invocation",false,null);
+        }
+        if ((invocation.getType() == ProcedureInvocationType.REPLICATED)) {
           txnId=invocation.getOriginalTxnId();
         }
         runner.setupTransaction(txnState);
-        if (runner.isSystemProcedure()) {
-          final Object[] combinedParams=new Object[callerParams.length + 1];
-          combinedParams[0]=m_systemProcedureContext;
-          for (int i=0; i < callerParams.length; ++i)           combinedParams[i + 1]=callerParams[i];
-          cr=runner.call(txnId,combinedParams);
-        }
- else {
-          cr=runner.call(txnId,itask.getParameters());
-        }
-        response.setResults(cr,itask);
+        cr=runner.call(txnId,itask.getParameters());
+        response.setResults(cr);
         if ((!itask.isReadOnly()) && itask.isSinglePartition()) {
           txnState.storeResults(cr);
         }

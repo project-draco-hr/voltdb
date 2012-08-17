@@ -1,0 +1,42 @@
+{
+{
+    VoltTable result=constructNodeResultsTable();
+    if (context.isLowestSiteId()) {
+      TRACE_LOG.trace("Checking feasibility of save with path and nonce: " + file_path + ", "+ file_nonce);
+      if (SnapshotSiteProcessor.ExecutionSitesCurrentlySnapshotting.get() != -1) {
+        HOST_LOG.debug("Snapshot in progress, " + SnapshotSiteProcessor.ExecutionSitesCurrentlySnapshotting.get() + " sites are still snapshotting");
+        result.addRow(context.getHostId(),hostname,"","FAILURE","SNAPSHOT IN PROGRESS");
+        return new DependencyPair(DEP_saveTest,result);
+      }
+      for (      Table table : SnapshotUtil.getTablesToSave(context.getDatabase())) {
+        String file_valid="SUCCESS";
+        String err_msg="";
+        if (format.isFileBased()) {
+          File saveFilePath=SnapshotUtil.constructFileForTable(table,file_path,file_nonce,format,context.getHostId());
+          TRACE_LOG.trace("Host ID " + context.getHostId() + " table: "+ table.getTypeName()+ " to path: "+ saveFilePath);
+          if (saveFilePath.exists()) {
+            file_valid="FAILURE";
+            err_msg="SAVE FILE ALREADY EXISTS: " + saveFilePath;
+          }
+ else           if (!saveFilePath.getParentFile().canWrite()) {
+            file_valid="FAILURE";
+            err_msg="FILE LOCATION UNWRITABLE: " + saveFilePath;
+          }
+ else {
+            try {
+              if (saveFilePath.createNewFile()) {
+                saveFilePath.delete();
+              }
+            }
+ catch (            IOException ex) {
+              file_valid="FAILURE";
+              err_msg="FILE CREATION OF " + saveFilePath + "RESULTED IN IOException: "+ ex.getMessage();
+            }
+          }
+        }
+        result.addRow(context.getHostId(),hostname,table.getTypeName(),file_valid,err_msg);
+      }
+    }
+    return new DependencyPair(DEP_saveTest,result);
+  }
+}

@@ -1,0 +1,40 @@
+{
+  long lastHeartbeatTime=System.currentTimeMillis();
+  while (m_recovering && m_shouldContinue) {
+    if (m_recoveryStage == RecoveryStage.WAITING_FOR_SAFETY) {
+      Long safeTxnId=m_txnQueue.safeToRecover();
+      if (safeTxnId != null) {
+        m_recoveryStage=RecoveryStage.SENT_PROPOSAL;
+        m_recoverBeforeTxn=safeTxnId;
+        long sourceHSId=0;
+        for (        Long hsId : m_hsIds) {
+          if (hsId != m_hsId) {
+            sourceHSId=hsId;
+            break;
+          }
+        }
+        RecoveryMessage recoveryMessage=new RecoveryMessage(m_hsId,safeTxnId,Arrays.asList(new byte[4]),-1);
+        m_mailbox.send(sourceHSId,recoveryMessage);
+      }
+    }
+    VoltMessage message=m_mailbox.recvBlocking(5);
+    if (message != null) {
+      processMessage(message);
+    }
+    final long now=System.currentTimeMillis();
+    if (now - lastHeartbeatTime > 5) {
+      lastHeartbeatTime=now;
+      sendHeartbeats();
+    }
+    if (m_recoverBeforeTxn == null) {
+      continue;
+    }
+    if (m_txnQueue.peek() != null && m_txnQueue.peek().txnId < m_recoverBeforeTxn.longValue()) {
+      m_transactionsById.remove(m_txnQueue.poll().txnId);
+    }
+ else     if (m_recoveryStage == RecoveryStage.RECEIVED_SNAPSHOT) {
+      processZKSnapshot();
+      return;
+    }
+  }
+}

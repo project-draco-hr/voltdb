@@ -4,7 +4,9 @@
   if (m_config.m_startAction == START_ACTION.START) {
     startActionLog+=" Will create a new database if there is nothing to recover from.";
   }
-  hostLog.info(startActionLog);
+  if (!m_rejoining) {
+    hostLog.info(startActionLog);
+  }
   hostLog.info(String.format("Listening for native wire protocol clients on port %d.",m_config.m_port));
   hostLog.info(String.format("Listening for admin wire protocol clients on port %d.",adminPort));
   if (m_startMode == OperationMode.PAUSED) {
@@ -42,27 +44,30 @@
   for (  String line : lines) {
     hostLog.info(line.trim());
   }
+  final ZooKeeper zk=m_messenger.getZK();
+  ZKUtil.ByteArrayCallback operationModeFuture=new ZKUtil.ByteArrayCallback();
   try {
-    m_zk.create("/cluster_metadata",null,Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT,new ZKUtil.StringCallback(),null);
-    m_zk.create("/cluster_metadata/" + m_messenger.getHostId(),getLocalMetadata().getBytes("UTF-8"),Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL,new ZKUtil.StringCallback(),null);
+    zk.create(VoltZK.cluster_metadata + "/" + m_messenger.getHostId(),getLocalMetadata().getBytes("UTF-8"),Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL,new ZKUtil.StringCallback(),null);
+    zk.getData(VoltZK.operationMode,false,operationModeFuture,null);
   }
  catch (  Exception e) {
     VoltDB.crashLocalVoltDB("Error creating \"/cluster_metadata\" node in ZK",true,e);
   }
-  HashSet<Integer> metadataToRetrieve=new HashSet<Integer>(m_catalogContext.siteTracker.getAllLiveHosts());
+  Map<Integer,String> clusterMetadata=new HashMap<Integer,String>(0);
+  HashSet<Integer> metadataToRetrieve=new HashSet<Integer>(m_siteTracker.getAllHosts());
   metadataToRetrieve.remove(m_messenger.getHostId());
   while (!metadataToRetrieve.isEmpty()) {
     Map<Integer,ZKUtil.ByteArrayCallback> callbacks=new HashMap<Integer,ZKUtil.ByteArrayCallback>();
     for (    Integer hostId : metadataToRetrieve) {
       ZKUtil.ByteArrayCallback cb=new ZKUtil.ByteArrayCallback();
-      m_zk.getData("/cluster_metadata/" + hostId,false,cb,null);
+      zk.getData(VoltZK.cluster_metadata + "/" + hostId,false,cb,null);
       callbacks.put(hostId,cb);
     }
     for (    Map.Entry<Integer,ZKUtil.ByteArrayCallback> entry : callbacks.entrySet()) {
       try {
         ZKUtil.ByteArrayCallback cb=entry.getValue();
         Integer hostId=entry.getKey();
-        m_clusterMetadata.put(hostId,new String(cb.getData(),"UTF-8"));
+        clusterMetadata.put(hostId,new String(cb.getData(),"UTF-8"));
         metadataToRetrieve.remove(hostId);
       }
  catch (      KeeperException.NoNodeException e) {
@@ -73,13 +78,24 @@ catch (      Exception e) {
     }
   }
   hostLog.info("About to list cluster interfaces for all nodes with format [ip1 ip2 ... ipN] client-port:admin-port:http-port");
-  for (  int hostId : m_catalogContext.siteTracker.getAllLiveHosts()) {
+  for (  int hostId : m_siteTracker.getAllHosts()) {
     if (hostId == m_messenger.getHostId()) {
       hostLog.info(String.format("  Host id: %d with interfaces: %s [SELF]",hostId,MiscUtils.formatHostMetadataFromJSON(getLocalMetadata())));
     }
  else {
-      String hostMeta=m_clusterMetadata.get(hostId);
+      String hostMeta=clusterMetadata.get(hostId);
       hostLog.info(String.format("  Host id: %d with interfaces: %s [PEER]",hostId,MiscUtils.formatHostMetadataFromJSON(hostMeta)));
     }
+  }
+  try {
+    if (operationModeFuture.getData() != null) {
+      String operationModeStr=new String(operationModeFuture.getData(),"UTF-8");
+      m_startMode=OperationMode.valueOf(operationModeStr);
+    }
+  }
+ catch (  KeeperException.NoNodeException e) {
+  }
+catch (  Exception e) {
+    throw new RuntimeException(e);
   }
 }

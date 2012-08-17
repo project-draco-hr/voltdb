@@ -19,11 +19,29 @@
   assert(insertProc != null);
   selectProc=procedures.get("MultiSiteSelect");
   assert(selectProc != null);
+  final AtomicReference<ExecutionEngine> site1Reference=new AtomicReference<ExecutionEngine>();
+  Thread site1Thread=new Thread(){
+    @Override public void run(){
+      site1Reference.set(new ExecutionEngineJNI(cluster.getRelativeIndex(),1,0,0,"",100,2));
+    }
+  }
+;
+  site1Thread.start();
+  site1Thread.join();
+  final AtomicReference<ExecutionEngine> site2Reference=new AtomicReference<ExecutionEngine>();
+  Thread site2Thread=new Thread(){
+    @Override public void run(){
+      site2Reference.set(new ExecutionEngineJNI(cluster.getRelativeIndex(),2,1,0,"",100,2));
+    }
+  }
+;
+  site2Thread.start();
+  site2Thread.join();
   site1=new ExecutionSite(0);
-  ee1=new ExecutionEngineJNI(site1,cluster.getRelativeIndex(),1,0,0,"",100);
+  ee1=site1Reference.get();
   ee1.loadCatalog(0,catalog.serialize());
   site2=new ExecutionSite(1);
-  ee2=new ExecutionEngineJNI(site2,cluster.getRelativeIndex(),2,0,0,"",100);
+  ee2=site2Reference.get();
   ee2.loadCatalog(0,catalog.serialize());
   selectStmt=selectProc.getStatements().get("selectAll");
   assert(selectStmt != null);
@@ -45,12 +63,13 @@
   PlanFragment insertFrag=null;
   for (  PlanFragment f : insertStmt.getFragments())   insertFrag=f;
   ParameterSet params=new ParameterSet();
-  params.m_params=new Object[]{1L,1L,1L};
-  VoltTable[] results=ee2.executeQueryPlanFragmentsAndGetResults(new long[]{CatalogUtil.getUniqueIdForFragment(insertFrag)},1,new ParameterSet[]{params},1,1,0,Long.MAX_VALUE);
+  params.setParameters(1L,1L,1L);
+  VoltTable[] results=ee2.executePlanFragments(1,new long[]{CatalogUtil.getUniqueIdForFragment(insertFrag)},null,new ParameterSet[]{params},1,0,Long.MAX_VALUE);
   assert(results.length == 1);
   assert(results[0].asScalarLong() == 1L);
-  params.m_params=new Object[]{2L,2L,2L};
-  results=ee1.executeQueryPlanFragmentsAndGetResults(new long[]{CatalogUtil.getUniqueIdForFragment(insertFrag)},1,new ParameterSet[]{params},1,2,1,Long.MAX_VALUE);
+  params=new ParameterSet();
+  params.setParameters(2L,2L,2L);
+  results=ee1.executePlanFragments(1,new long[]{CatalogUtil.getUniqueIdForFragment(insertFrag)},null,new ParameterSet[]{params},2,1,Long.MAX_VALUE);
   assert(results.length == 1);
   assert(results[0].asScalarLong() == 1L);
 }

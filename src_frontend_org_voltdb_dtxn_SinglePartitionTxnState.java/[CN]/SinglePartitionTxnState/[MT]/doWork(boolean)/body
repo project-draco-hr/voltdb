@@ -1,18 +1,17 @@
 {
-  if (recovering) {
-    return doWorkRecovering();
+  if (rejoining && (m_rejoinState != RejoinState.REPLAYING)) {
+    m_rejoinState=RejoinState.REJOINING;
+    return doWorkRejoining();
   }
   if (!m_done) {
     m_site.beginNewTxn(this);
-    InitiateResponseMessage response=m_site.processInitiateTask(this,m_task);
+    InitiateTaskMessage task=(InitiateTaskMessage)m_notice;
+    InitiateResponseMessage response=m_site.processInitiateTask(this,task);
     if (response.shouldCommit() == false) {
       m_needsRollback=true;
     }
-    try {
-      m_mbox.send(initiatorSiteId,0,response);
-    }
- catch (    MessagingException e) {
-      throw new RuntimeException(e);
+    if (m_rejoinState == RejoinState.NORMAL) {
+      m_mbox.send(initiatorHSId,response);
     }
     m_done=true;
   }

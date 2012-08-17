@@ -1,0 +1,57 @@
+{
+  boolean retval=false;
+  try {
+    hostLog.info("Attempting to bind to leader ip " + m_coordIp);
+    ServerSocketChannel listenerSocket=ServerSocketChannel.open();
+    listenerSocket.socket().bind(m_coordIp);
+    listenerSocket.socket().setPerformancePreferences(0,2,1);
+    listenerSocket.configureBlocking(false);
+    m_listenerSockets.add(listenerSocket);
+  }
+ catch (  IOException e) {
+    if (!m_listenerSockets.isEmpty()) {
+      try {
+        m_listenerSockets.get(0).close();
+        m_listenerSockets.clear();
+      }
+ catch (      IOException ex) {
+        new VoltLogger(SocketJoiner.class.getName()).l7dlog(Level.FATAL,null,ex);
+      }
+    }
+  }
+  if (!m_listenerSockets.isEmpty()) {
+    if (m_internalInterface != null && !m_internalInterface.equals("")) {
+      if (!m_internalInterface.equals(m_coordIp.getHostName()) && !m_internalInterface.equals(m_coordIp.getAddress().getCanonicalHostName()) && !m_internalInterface.equals(m_coordIp.getAddress().getHostAddress())) {
+        String msg="The provided internal interface (" + m_internalInterface + ") does not match the specified leader address ("+ m_coordIp.getHostName()+ ", "+ m_coordIp.getAddress().getHostAddress()+ "). This will result in either a cluster which fails to start"+ " or an unintended network topology. The leader will now exit;"+ " correct your specified leader and interface and try restarting.";
+        org.voltdb.VoltDB.crashLocalVoltDB(msg,false,null);
+      }
+    }
+    retval=true;
+    consoleLog.info("Connecting to VoltDB cluster as the leader...");
+    m_es.submit(new Callable<Object>(){
+      @Override public Object call() throws Exception {
+        externalInitBarrier.await();
+        return null;
+      }
+    }
+);
+  }
+ else {
+    consoleLog.info("Connecting to the VoltDB cluster leader " + m_coordIp);
+    connectToPrimary();
+  }
+  m_es.submit(new Runnable(){
+    @Override public void run(){
+      try {
+        runPrimary();
+      }
+ catch (      InterruptedException e) {
+      }
+catch (      Throwable e) {
+        org.voltdb.VoltDB.crashLocalVoltDB("Error in socket joiner run loop",false,e);
+      }
+    }
+  }
+);
+  return retval;
+}

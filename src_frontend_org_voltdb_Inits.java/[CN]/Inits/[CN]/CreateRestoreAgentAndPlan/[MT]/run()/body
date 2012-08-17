@@ -1,25 +1,19 @@
 {
   if (!m_isRejoin && !m_config.m_isRejoinTest) {
-    m_rvdb.startNetworkAndCreateZKClient();
     String snapshotPath=null;
     if (m_rvdb.m_catalogContext.cluster.getDatabases().get("database").getSnapshotschedule().get("default") != null) {
       snapshotPath=m_rvdb.m_catalogContext.cluster.getDatabases().get("database").getSnapshotschedule().get("default").getPath();
     }
-    int lowestSite=m_rvdb.m_catalogContext.siteTracker.getLowestLiveNonExecSiteId();
-    int lowestHostId=m_rvdb.m_catalogContext.siteTracker.getHostForSite(lowestSite);
-    int[] allPartitions=new int[m_rvdb.m_catalogContext.numberOfPartitions];
-    int i=0;
-    for (    Partition p : m_rvdb.m_catalogContext.cluster.getPartitions()) {
-      allPartitions[i++]=Integer.parseInt(p.getTypeName());
-    }
+    int[] allPartitions=m_rvdb.getSiteTracker().getAllPartitions();
     org.voltdb.catalog.CommandLog cl=m_rvdb.m_catalogContext.cluster.getLogconfig().get("log");
     try {
-      m_rvdb.m_restoreAgent=new RestoreAgent(m_rvdb.m_zk,m_rvdb.getSnapshotCompletionMonitor(),m_rvdb,m_rvdb.m_myHostId,m_config.m_startAction,m_rvdb.m_catalogContext.numberOfPartitions,cl.getEnabled(),cl.getLogpath(),cl.getInternalsnapshotpath(),snapshotPath,lowestHostId,allPartitions,m_rvdb.m_catalogContext.siteTracker.getAllLiveHosts());
+      m_rvdb.m_restoreAgent=new RestoreAgent(m_rvdb.m_messenger.getZK(),m_rvdb.getSnapshotCompletionMonitor(),m_rvdb,m_rvdb.m_myHostId,m_config.m_startAction,cl.getEnabled(),cl.getLogpath(),cl.getInternalsnapshotpath(),snapshotPath,allPartitions,m_rvdb.m_siteTracker.getAllHosts());
     }
  catch (    IOException e) {
       VoltDB.crashLocalVoltDB("Unable to establish a ZooKeeper connection: " + e.getMessage(),false,e);
     }
     m_rvdb.m_restoreAgent.setCatalogContext(m_rvdb.m_catalogContext);
+    m_rvdb.m_restoreAgent.setSiteTracker(m_rvdb.m_siteTracker);
     Pair<Integer,String> catalog=m_rvdb.m_restoreAgent.findRestoreCatalog();
     if (catalog != null) {
       hostLog.debug("Found catalog to load on host " + catalog.getFirst() + ": "+ catalog.getSecond());

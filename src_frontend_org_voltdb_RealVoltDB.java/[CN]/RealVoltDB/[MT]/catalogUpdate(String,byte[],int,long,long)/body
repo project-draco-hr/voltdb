@@ -3,17 +3,18 @@ synchronized (m_catalogUpdateLock) {
     if (currentTxnId <= m_catalogContext.m_transactionId && !m_txnIdToContextTracker.isEmpty()) {
       ContextTracker contextTracker=m_txnIdToContextTracker.get(currentTxnId);
       contextTracker.m_dispensedSites++;
-      int ttlsites=m_catalogContext.siteTracker.getLiveExecutionSitesForHost(m_messenger.getHostId()).size();
+      int ttlsites=m_siteTracker.getSitesForHost(m_messenger.getHostId()).size();
       if (contextTracker.m_dispensedSites == ttlsites) {
         m_txnIdToContextTracker.remove(currentTxnId);
       }
-      return contextTracker.m_context;
+      return Pair.of(contextTracker.m_context,contextTracker.m_csp);
     }
  else     if (m_catalogContext.catalogVersion != expectedCatalogVersion) {
       throw new RuntimeException("Trying to update main catalog context with diff " + "commands generated for an out-of date catalog. Expected catalog version: " + expectedCatalogVersion + " does not match actual version: "+ m_catalogContext.catalogVersion);
     }
     m_catalogContext=m_catalogContext.update(currentTxnId,newCatalogBytes,diffCommands,true,deploymentCRC);
-    m_txnIdToContextTracker.put(currentTxnId,new ContextTracker(m_catalogContext));
+    final CatalogSpecificPlanner csp=new CatalogSpecificPlanner(m_asyncCompilerAgent,m_catalogContext);
+    m_txnIdToContextTracker.put(currentTxnId,new ContextTracker(m_catalogContext,csp));
     m_catalogContext.logDebuggingInfoFromCatalog();
     ExportManager.instance().updateCatalog(m_catalogContext);
     for (    ClientInterface ci : m_clientInterfaces) {
@@ -22,6 +23,6 @@ synchronized (m_catalogUpdateLock) {
     if (m_adminListener != null) {
       m_adminListener.notifyOfCatalogUpdate();
     }
-    return m_catalogContext;
+    return Pair.of(m_catalogContext,csp);
   }
 }
