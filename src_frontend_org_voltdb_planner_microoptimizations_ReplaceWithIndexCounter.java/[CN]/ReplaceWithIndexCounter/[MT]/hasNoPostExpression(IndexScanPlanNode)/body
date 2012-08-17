@@ -1,0 +1,38 @@
+{
+  AbstractExpression predicateExpr=child.getPredicate();
+  if (predicateExpr == null)   return true;
+  AbstractExpression endExpr=child.getEndExpression();
+  ArrayList<AbstractExpression> subEndExpr=null;
+  if (endExpr != null) {
+    subEndExpr=endExpr.findAllSubexpressionsOfClass(TupleValueExpression.class);
+  }
+  assert(predicateExpr != null);
+  ArrayList<AbstractExpression> hasLeft=predicateExpr.findAllSubexpressionsOfClass(TupleValueExpression.class);
+  Set<String> columnsLeft=new HashSet<String>();
+  for (  AbstractExpression ae : hasLeft) {
+    TupleValueExpression tve=(TupleValueExpression)ae;
+    columnsLeft.add(tve.getColumnName());
+  }
+  if (endExpr != null && subEndExpr != null) {
+    for (    AbstractExpression ae : subEndExpr) {
+      TupleValueExpression tve=(TupleValueExpression)ae;
+      String columnName=tve.getColumnName();
+      if (columnsLeft.contains(columnName)) {
+        columnsLeft.remove(columnName);
+      }
+    }
+  }
+  Index idx=child.getCatalogIndex();
+  List<ColumnRef> sortedColumns=CatalogUtil.getSortedCatalogItems(idx.getColumns(),"index");
+  int searchKeySize=child.getSearchKeyExpressions().size();
+  if (columnsLeft.size() > searchKeySize)   return false;
+  for (int i=0; i < searchKeySize; i++) {
+    ColumnRef cr=sortedColumns.get(i);
+    String colName=cr.getColumn().getName();
+    if (columnsLeft.contains(colName)) {
+      columnsLeft.remove(colName);
+    }
+  }
+  if (columnsLeft.size() != 0)   return false;
+  return true;
+}
