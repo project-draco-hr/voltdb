@@ -1,0 +1,36 @@
+def parse(self):
+    iverb = 1
+    while (iverb < len(sys.argv)):
+        if sys.argv[iverb].startswith('-'):
+            for opt in vcli_meta.cli.options:
+                if (sys.argv[iverb] in opt.args):
+                    if ((not ('action' in opt.kwargs)) or (opt.kwargs['action'] == 'store')):
+                        iverb += 1
+        else:
+            break
+        iverb += 1
+    (opts, args) = optparse.OptionParser.parse_args(self, sys.argv[1:iverb])
+    assert (len(args) == 0)
+    for option in vcli_meta.cli.options:
+        name = option.kwargs['dest']
+        setattr(sys.modules[__name__], name, getattr(opts, name))
+    if (iverb == len(sys.argv)):
+        self._abort('Missing command.')
+    verb_name = sys.argv[iverb].lower()
+    verb = None
+    for verb_chk in vcli_meta.verbs:
+        if (verb_chk.name == verb_name):
+            verb = verb_chk
+            break
+    else:
+        self._abort(('Unknown command: %s' % verb_name))
+    verb_parser = optparse.OptionParser(description=verb.metadata.description, usage=verb.metadata.usage)
+    if ((iverb + 1) < len(sys.argv)):
+        if verb.metadata.options:
+            for opt in verb.metadata.options:
+                verb_parser.add_option(*opt.args, **opt.kwargs)
+        (options, args) = verb_parser.parse_args(sys.argv[(iverb + 1):])
+    else:
+        options = None
+        args = []
+    return (verb, options, args, verb_parser)

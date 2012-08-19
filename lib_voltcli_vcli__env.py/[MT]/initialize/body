@@ -1,0 +1,49 @@
+def initialize():
+    'Set the VOLTDB_HOME, VOLTDB_LIB and VOLTDB_VOLTDB environment variables\n    based on the location of this script.'
+    dir = vcli_meta.mydir
+    required_var_set = set(['VOLTDB_HOME', 'VOLTDB_LIB', 'VOLTDB_VOLTDB'])
+
+    def env_complete():
+        return set(os.environ.keys()).issuperset(required_var_set)
+    while ((dir != '/') and (not env_complete())):
+        vcli_util.debug(('Checking potential VoltDB root directory: %s' % dir))
+        if (not os.environ.get('VOLTDB_HOME', '')):
+            for subdir in ('', os.path.join('share', 'voltdb')):
+                for chk in ('Click Here to Start.html', 'examples', 'third_party'):
+                    if (not os.path.exists(os.path.join(dir, subdir, chk))):
+                        break
+                else:
+                    os.environ['VOLTDB_HOME'] = os.path.realpath(os.path.join(dir, subdir))
+                    vcli_util.debug(('VOLTDB_HOME=>%s' % os.environ['VOLTDB_HOME']))
+        if (not os.environ.get('VOLTDB_LIB', '')):
+            for subdir in ('lib', os.path.join('lib', 'voltdb')):
+                if glob.glob(os.path.join(os.path.join(dir, subdir), 'zmq*.jar')):
+                    os.environ['VOLTDB_LIB'] = os.path.realpath(os.path.join(dir, subdir))
+                    vcli_util.debug(('VOLTDB_LIB=>%s' % os.environ['VOLTDB_LIB']))
+        global voltdb_jar
+        if (not os.environ.get('VOLTDB_VOLTDB', '')):
+            for subdir in ('voltdb', os.path.join('lib', 'voltdb')):
+                for voltdb_jar_chk in glob.glob(os.path.join(os.path.join(dir, subdir), 'voltdb*.jar')):
+                    if re_voltdb_jar.match(os.path.basename(voltdb_jar_chk)):
+                        voltdb_jar = os.path.realpath(voltdb_jar_chk)
+                        os.environ['VOLTDB_VOLTDB'] = os.path.dirname(voltdb_jar)
+                        vcli_util.debug(('VOLTDB_VOLTDB=>%s' % os.environ['VOLTDB_VOLTDB']))
+        dir = os.path.dirname(dir)
+    missing = list(required_var_set.difference(os.environ.keys()))
+    if missing:
+        missing.sort()
+        vcli_util.abort('Failed to establish VoltDB environment.', ('You may need to perform a build.', ('Initial search directory: %s' % vcli_meta.mydir), 'Missing locations:', missing))
+    if ('LOG4J_CONFIG_PATH' not in os.environ):
+        for subdirs in (('$VOLTDB_HOME', 'src', 'frontend'), ('$VOLTDB_HOME', 'voltdb')):
+            path = os.path.join(os.path.expandvars(os.path.join(*subdirs)), 'log4j.xml')
+            if os.path.exists(path):
+                os.environ['LOG4J_CONFIG_PATH'] = path
+                break
+        else:
+            vcli_util.abort('Could not find log4j configuration file or LOG4J_CONFIG_PATH variable.')
+    for var in ('VOLTDB_HOME', 'VOLTDB_LIB', 'VOLTDB_VOLTDB', 'LOG4J_CONFIG_PATH'):
+        vcli_util.debug(('%s=%s' % (var, os.environ[var])))
+    global classpath
+    classpath = [voltdb_jar]
+    for path in glob.glob(os.path.join(os.environ['VOLTDB_LIB'], '*.jar')):
+        classpath.append(path)
