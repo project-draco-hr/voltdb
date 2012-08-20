@@ -1,0 +1,68 @@
+{
+  System.out.println("STARTING testExplicitErrorUDF");
+  Client client=getClient();
+  ProcedureCallback callback=new ProcedureCallback(){
+    @Override public void clientCallback(    ClientResponse clientResponse) throws Exception {
+      if (clientResponse.getStatus() != ClientResponse.SUCCESS) {
+        throw new RuntimeException("Failed with response: " + clientResponse.getStatusString());
+      }
+    }
+  }
+;
+  for (int id=7; id < 15; id++) {
+    client.callProcedure(callback,"P1.insert",-id,"X" + String.valueOf(id),10,1.1);
+    client.drain();
+  }
+  ClientResponse cr=null;
+  cr=client.callProcedure("@AdHoc","select SQL_ERROR(123) from P1 where ID = 0");
+  assertTrue(cr.getStatus() == ClientResponse.SUCCESS);
+  cr=client.callProcedure("@AdHoc","select SQL_ERROR('abc') from P1 where ID = 0");
+  assertTrue(cr.getStatus() == ClientResponse.SUCCESS);
+  cr=client.callProcedure("@AdHoc","select SQL_ERROR(123, 'abc') from P1 where ID = 0");
+  assertTrue(cr.getStatus() == ClientResponse.SUCCESS);
+  boolean caught=false;
+  caught=false;
+  try {
+    cr=client.callProcedure("@AdHoc","select SQL_ERROR(123, 'abc') from P1");
+    assertTrue(cr.getStatus() != ClientResponse.SUCCESS);
+  }
+ catch (  ProcCallException e) {
+    String msg=e.getMessage();
+    assertTrue(msg.indexOf("abc") != -1);
+    caught=true;
+  }
+  assertTrue(caught);
+  caught=false;
+  try {
+    cr=client.callProcedure("@AdHoc","select SQL_ERROR(123.5) from P1");
+    assertTrue(cr.getStatus() != ClientResponse.SUCCESS);
+  }
+ catch (  ProcCallException e) {
+    String msg=e.getMessage();
+    assertTrue(msg.indexOf("Specific error code") != -1);
+    caught=true;
+  }
+  assertTrue(caught);
+  caught=false;
+  try {
+    cr=client.callProcedure("@AdHoc","select SQL_ERROR('abc') from P1");
+    assertTrue(cr.getStatus() != ClientResponse.SUCCESS);
+  }
+ catch (  ProcCallException e) {
+    String msg=e.getMessage();
+    assertTrue(msg.indexOf("abc") != -1);
+    caught=true;
+  }
+  assertTrue(caught);
+  caught=false;
+  try {
+    cr=client.callProcedure("@AdHoc","select SQL_ERROR(123, 123) from P1");
+    assertTrue(cr.getStatus() != ClientResponse.SUCCESS);
+  }
+ catch (  ProcCallException e) {
+    String msg=e.getMessage();
+    assertTrue(msg.indexOf("INTEGER") != -1);
+    caught=true;
+  }
+  assertTrue(caught);
+}
