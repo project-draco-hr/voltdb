@@ -4,13 +4,25 @@
   String prefix=token.namePrefix;
   String prePrefix=token.namePrePrefix;
   if (isUndelimitedSimpleName()) {
-    FunctionSQL function=FunctionCustom.newCustomFunction(token.tokenString,token.tokenType);
+    FunctionSQL function;
+    function=FunctionForVoltDB.newVoltDBFunction(name,token.tokenType);
+    if (function == null) {
+      function=FunctionCustom.newCustomFunction(token.tokenString,token.tokenType);
+    }
     if (function != null) {
       int pos=getPosition();
+      HsqlException ex=null;
       try {
-        return readSQLFunction(function);
+        ExpressionOrException result=readSQLFunction(function,false);
+        ex=result.exception();
+        if (ex == null) {
+          return result.knownGood();
+        }
       }
- catch (      HsqlException ex) {
+ catch (      HsqlException caught) {
+        ex=caught;
+      }
+      if (ex != null) {
         ex.setLevel(compileContext.subQueryDepth);
         if (lastError == null || lastError.getLevel() < ex.getLevel()) {
           lastError=ex;
