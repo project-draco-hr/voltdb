@@ -9,33 +9,31 @@
   HashMap<Column,ArrayList<AbstractExpression>> eqColumns=new HashMap<Column,ArrayList<AbstractExpression>>();
   HashMap<Column,ArrayList<AbstractExpression>> gtColumns=new HashMap<Column,ArrayList<AbstractExpression>>();
   HashMap<Column,ArrayList<AbstractExpression>> ltColumns=new HashMap<Column,ArrayList<AbstractExpression>>();
-  for (  AbstractExpression expr : exprs) {
-    Column col=null;
-    AbstractExpression indexable=getIndexableExpressionForFilter(table,expr);
-    if (indexable != null && indexable.getExpressionType() == ExpressionType.VALUE_TUPLE) {
+  for (  AbstractExpression ae : exprs) {
+    AbstractExpression expr=getIndexableExpressionForFilter(table,ae);
+    if (expr != null) {
+      AbstractExpression indexable=expr.getLeft();
+      assert(indexable.getExpressionType() == ExpressionType.VALUE_TUPLE);
       TupleValueExpression tve=(TupleValueExpression)indexable;
-      col=getTableColumn(table,tve.getColumnName());
-    }
-    if (col != null) {
+      Column col=getTableColumn(table,tve.getColumnName());
+      assert(col != null);
       if (expr.getExpressionType() == ExpressionType.COMPARE_EQUAL) {
         if (eqColumns.containsKey(col) == false)         eqColumns.put(col,new ArrayList<AbstractExpression>());
         eqColumns.get(col).add(expr);
+        continue;
       }
- else       if ((expr.getExpressionType() == ExpressionType.COMPARE_GREATERTHAN) || (expr.getExpressionType() == ExpressionType.COMPARE_GREATERTHANOREQUALTO)) {
+      if ((expr.getExpressionType() == ExpressionType.COMPARE_GREATERTHAN) || (expr.getExpressionType() == ExpressionType.COMPARE_GREATERTHANOREQUALTO)) {
         if (gtColumns.containsKey(col) == false)         gtColumns.put(col,new ArrayList<AbstractExpression>());
         gtColumns.get(col).add(expr);
+        continue;
       }
- else       if ((expr.getExpressionType() == ExpressionType.COMPARE_LESSTHAN) || (expr.getExpressionType() == ExpressionType.COMPARE_LESSTHANOREQUALTO)) {
+      if ((expr.getExpressionType() == ExpressionType.COMPARE_LESSTHAN) || (expr.getExpressionType() == ExpressionType.COMPARE_LESSTHANOREQUALTO)) {
         if (ltColumns.containsKey(col) == false)         ltColumns.put(col,new ArrayList<AbstractExpression>());
         ltColumns.get(col).add(expr);
-      }
- else {
-        retval.otherExprs.add(expr);
+        continue;
       }
     }
- else {
-      retval.otherExprs.add(expr);
-    }
+    retval.otherExprs.add(ae);
   }
   if (indexScannable && m_parsedStmt instanceof ParsedSelectStmt) {
     ParsedSelectStmt parsedSelectStmt=(ParsedSelectStmt)m_parsedStmt;
@@ -86,11 +84,14 @@
       if (ltColumns.containsKey(col) && (ltColumns.get(col).size() >= 0)) {
         AbstractExpression expr=ltColumns.get(col).remove(0);
         retval.endExprs.add(expr);
+        if (retval.indexExprs.size() == 0) {
+          retval.lookupType=IndexLookupType.GTE;
+        }
       }
       break;
     }
   }
-  if (retval.indexExprs.size() == 0 && retval.sortDirection == SortDirectionType.INVALID)   return null;
+  if (retval.indexExprs.size() == 0 && retval.endExprs.size() == 0 && retval.sortDirection == SortDirectionType.INVALID)   return null;
   if (retval.use == IndexUseType.COVERING_UNIQUE_EQUALITY && retval.indexExprs.size() < index.getColumns().size()) {
     retval.use=IndexUseType.INDEX_SCAN;
     retval.lookupType=IndexLookupType.GTE;
