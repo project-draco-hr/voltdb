@@ -1,27 +1,32 @@
 {
   int offered=0;
-  if (!m_backlog.isEmpty()) {
-    if (m_backlog.getFirst().getTransactionState().isDone()) {
-      m_backlog.removeFirst();
-      while (!m_backlog.isEmpty()) {
-        TransactionTask next=m_backlog.getFirst();
-        taskQueueOffer(next);
+  if (!m_multipartBacklog.isEmpty()) {
+    Deque<TransactionTask> backlog=m_multipartBacklog.firstEntry().getValue();
+    if (backlog.peek().getTransactionState().isDone()) {
+      backlog.removeFirst();
+      m_multipartBacklog.remove(m_multipartBacklog.firstKey());
+      for (      TransactionTask task : backlog) {
+        taskQueueOffer(task);
         ++offered;
-        if (next.getTransactionState().isSinglePartition()) {
-          m_backlog.removeFirst();
-        }
- else {
-          Iterator<TransactionTask> iter=m_backlog.iterator();
-          iter.next();
-          while (iter.hasNext()) {
-            TransactionTask task=iter.next();
-            if (task.getTxnId() == next.getTxnId()) {
-              iter.remove();
-              taskQueueOffer(task);
-              ++offered;
+      }
+      if (!m_multipartBacklog.isEmpty() && !m_multipartBacklog.firstEntry().getValue().isEmpty() && !m_multipartBacklog.firstEntry().getValue().getFirst().getTransactionState().isSinglePartition()) {
+        Deque<TransactionTask> nextBacklog=m_multipartBacklog.firstEntry().getValue();
+        long txnId=m_multipartBacklog.firstKey();
+        Iterator<TransactionTask> iter=nextBacklog.iterator();
+        TransactionTask task=null;
+        boolean firstTask=true;
+        while (iter.hasNext()) {
+          task=iter.next();
+          if (task.getTxnId() == txnId) {
+            if (firstTask) {
+              firstTask=false;
             }
+ else {
+              iter.remove();
+            }
+            taskQueueOffer(task);
+            ++offered;
           }
-          break;
         }
       }
     }
