@@ -54,28 +54,21 @@
   final AtomicReference<ExecutionEngine> sourceReference=new AtomicReference<ExecutionEngine>();
   Thread sourceThread=new Thread("Source thread"){
     @Override public void run(){
+      final ExecutionEngine sourceEngine=new ExecutionEngineJNI(CLUSTER_ID,NODE_ID,(int)sourceId,(int)sourceId,"",100,1);
+      sourceReference.set(sourceEngine);
+      sourceEngine.loadCatalog(0,serializedCatalog);
       try {
-        final ExecutionEngine sourceEngine=new ExecutionEngineJNI(CLUSTER_ID,NODE_ID,(int)sourceId,(int)sourceId,"",100,1);
-        sourceReference.set(sourceEngine);
-        sourceEngine.loadCatalog(0,serializedCatalog);
-        try {
-          loadTestTables(sourceEngine,m_catalog);
-        }
- catch (        Exception e) {
-          e.printStackTrace();
-        }
-        VoltMessage message=sourceMailbox.recvBlocking();
-        assertTrue(message != null);
-        assertTrue(message instanceof RecoveryMessage);
-        RecoveryMessage rm=(RecoveryMessage)message;
-        SocketChannel sc=RecoverySiteProcessorSource.createRecoveryConnection(rm.addresses(),rm.port());
-        final RecoverySiteProcessorSource sourceProcessor=new RecoverySiteProcessorSource(null,rm.txnId(),rm.sourceSite(),tablesAndDestinations,sourceEngine,sourceMailbox,sourceId,onSourceCompletion,mh,sc);
-        sourceProcessor.doRecoveryWork(0);
+        loadTestTables(sourceEngine,m_catalog);
       }
- catch (      java.io.IOException e) {
+ catch (      Exception e) {
         e.printStackTrace();
-        return;
       }
+      VoltMessage message=sourceMailbox.recvBlocking();
+      assertTrue(message != null);
+      assertTrue(message instanceof RecoveryMessage);
+      RecoveryMessage rm=(RecoveryMessage)message;
+      final RecoverySiteProcessorSource sourceProcessor=new RecoverySiteProcessorSource(null,rm.txnId(),rm.sourceSite(),rm.getHSId(),tablesAndDestinations,sourceEngine,sourceMailbox,sourceId,onSourceCompletion,mh);
+      sourceProcessor.doRecoveryWork(0);
     }
   }
 ;
