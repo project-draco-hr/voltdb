@@ -1,6 +1,8 @@
 {
   final long sourceId=0;
+  final long sourceDataId=1;
   final long destinationId=32;
+  final long destinationDataId=33;
   final AtomicReference<Boolean> sourceCompleted=new AtomicReference<Boolean>(false);
   final AtomicReference<Boolean> destinationCompleted=new AtomicReference<Boolean>(false);
   final String serializedCatalog=m_catalog.serialize();
@@ -13,6 +15,9 @@
   tablesAndDestinations.put(Pair.of("WAREHOUSE",WAREHOUSE_TABLEID),destinations);
   final MockMailbox sourceMailbox=new MockMailbox();
   MockMailbox.registerMailbox(sourceId,sourceMailbox);
+  final MockMailbox sourceDataMailbox=new MockMailbox();
+  sourceDataMailbox.setHSId(sourceDataId);
+  MockMailbox.registerMailbox(sourceDataId,sourceDataMailbox);
   final Runnable onSourceCompletion=new Runnable(){
     @Override public void run(){
       sourceCompleted.set(true);
@@ -37,12 +42,15 @@
   tablesAndSources.put(Pair.of("WAREHOUSE",WAREHOUSE_TABLEID),sourceId);
   final MockMailbox destinationMailbox=new MockMailbox();
   MockMailbox.registerMailbox(destinationId,destinationMailbox);
+  final MockMailbox destinationDataMailbox=new MockMailbox();
+  destinationDataMailbox.setHSId(destinationDataId);
+  MockMailbox.registerMailbox(destinationDataId,destinationDataMailbox);
   Thread destinationThread=new Thread("Destination thread"){
     @Override public void run(){
       final ExecutionEngine destinationEngine=new ExecutionEngineJNI(CLUSTER_ID,NODE_ID,(int)destinationId,(int)destinationId,"",100,1);
       destinationReference.set(destinationEngine);
       destinationEngine.loadCatalog(0,serializedCatalog);
-      RecoverySiteProcessorDestination destinationProcess=new RecoverySiteProcessorDestination(tablesAndSources,destinationEngine,destinationMailbox,destinationId,0,onDestinationCompletion,mh);
+      RecoverySiteProcessorDestination destinationProcess=new RecoverySiteProcessorDestination(tablesAndSources,destinationEngine,destinationMailbox,destinationDataMailbox,destinationId,0,onDestinationCompletion,mh);
       destinationProcess.doRecoveryWork(-1);
       destinationProcess.doRecoveryWork(0);
       assert(destinationCompleted.get());
@@ -67,7 +75,7 @@
       assertTrue(message != null);
       assertTrue(message instanceof RecoveryMessage);
       RecoveryMessage rm=(RecoveryMessage)message;
-      final RecoverySiteProcessorSource sourceProcessor=new RecoverySiteProcessorSource(null,rm.txnId(),rm.sourceSite(),rm.getHSId(),tablesAndDestinations,sourceEngine,sourceMailbox,sourceId,onSourceCompletion,mh);
+      final RecoverySiteProcessorSource sourceProcessor=new RecoverySiteProcessorSource(null,rm.txnId(),rm.sourceSite(),rm.getHSId(),tablesAndDestinations,sourceEngine,sourceMailbox,sourceDataMailbox,sourceId,onSourceCompletion,mh);
       sourceProcessor.doRecoveryWork(0);
     }
   }
