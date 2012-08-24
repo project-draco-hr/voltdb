@@ -8,8 +8,7 @@
     String msg="Cannot load class for procedure: " + className;
     throw compiler.new VoltCompilerException(msg);
   }
-  String[] parts=className.split("\\.");
-  String shortName=parts[parts.length - 1];
+  String shortName=deriveShortProcedureName(className);
   final Procedure procedure=db.getProcedures().add(shortName);
   for (  String groupName : procedureDescriptor.m_authGroups) {
     final Group group=db.getGroups().get(groupName);
@@ -24,12 +23,26 @@
   procedure.setDefaultproc(procedureDescriptor.m_builtInStmt);
   procedure.setHasjava(true);
   ProcInfoData info=compiler.getProcInfoOverride(shortName);
+  ProcInfoData ddlInfo=null;
+  if (procedureDescriptor.m_partitionString != null && !procedureDescriptor.m_partitionString.trim().isEmpty()) {
+    ddlInfo=new ProcInfoData();
+    ddlInfo.partitionInfo=procedureDescriptor.m_partitionString;
+    ddlInfo.singlePartition=true;
+  }
   if (info == null) {
     info=new ProcInfoData();
     ProcInfo annotationInfo=procClass.getAnnotation(ProcInfo.class);
+    if (annotationInfo != null && ddlInfo != null) {
+      String msg="Procedure: " + shortName + " has partition properties defined both in ";
+      msg+="class \"" + className + "\" and in the schema defintion file(s)";
+      throw compiler.new VoltCompilerException(msg);
+    }
     if (annotationInfo != null) {
       info.partitionInfo=annotationInfo.partitionInfo();
       info.singlePartition=annotationInfo.singlePartition();
+    }
+ else     if (ddlInfo != null) {
+      info=ddlInfo;
     }
   }
   assert(info != null);
