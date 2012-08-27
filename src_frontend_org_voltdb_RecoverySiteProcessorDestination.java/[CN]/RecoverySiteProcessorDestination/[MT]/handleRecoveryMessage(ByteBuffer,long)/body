@@ -4,11 +4,7 @@
   message.getLong(HSIdOffset);
   final int blockIndex=message.getInt(blockIndexOffset);
   final int tableId=message.getInt(tableIdOffset);
-  ByteBuffer ackMessage=ByteBuffer.allocate(16);
-  ackMessage.putInt(12);
-  ackMessage.putLong(m_HSId);
-  ackMessage.putInt(blockIndex);
-  ackMessage.flip();
+  RejoinDataAckMessage ackMessage=new RejoinDataAckMessage(blockIndex);
   if (type == RecoveryMessageType.ScanTuples) {
     if (m_toggleProfiling.tryAcquire()) {
       m_engine.toggleProfiler(1);
@@ -26,35 +22,13 @@
     RecoveryTable table=m_tables.remove(tableId);
     recoveryLog.info("Received completion message at site " + CoreUtils.hsIdToString(m_HSId) + " for table "+ table.m_name);
     if (m_tables.isEmpty()) {
-      while (ackMessage.hasRemaining()) {
-        int written=0;
-        try {
-          written=m_sc.write(ackMessage);
-        }
- catch (        IOException e) {
-          break;
-        }
-        if (written == -1) {
-          break;
-        }
-      }
+      m_mb.send(m_recoverySourceHSId,ackMessage);
       return;
     }
   }
  else {
     VoltDB.crashLocalVoltDB("Received an unexpect message of type " + type,false,null);
   }
-  while (ackMessage.hasRemaining()) {
-    int written=0;
-    try {
-      written=m_sc.write(ackMessage);
-    }
- catch (    IOException e) {
-      VoltDB.crashLocalVoltDB("Unable to write ack message",true,e);
-    }
-    if (written == -1) {
-      VoltDB.crashLocalVoltDB("Unable to write ack message",false,null);
-    }
-  }
+  m_mb.send(m_recoverySourceHSId,ackMessage);
   recoveryLog.trace("Writing ack for block " + blockIndex + " from "+ CoreUtils.hsIdToString(m_HSId));
 }

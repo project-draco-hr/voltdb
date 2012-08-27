@@ -1,19 +1,11 @@
 {
-  List<byte[]> addresses=new ArrayList<byte[]>();
-  try {
-    Pair<ServerSocketChannel,Boolean> binded=bindSocket();
-    m_serverSocket=binded.getFirst();
-    Boolean allInterfaces=binded.getSecond();
-    if (allInterfaces) {
-      addresses=getLocalAddress();
-    }
- else {
-      addresses.add(m_serverSocket.socket().getInetAddress().getAddress());
-    }
-  }
- catch (  IOException e) {
-    VoltDB.crashLocalVoltDB("Unable to get local addresses",true,e);
-  }
-  m_acceptThread.start();
-  return Pair.of(addresses,m_serverSocket.socket().getLocalPort());
+  m_mb=VoltDB.instance().getHostMessenger().createMailbox();
+  m_in=new StreamSnapshotDataReceiver(m_mb);
+  m_inThread=new Thread(m_in,"Snapshot data receiver");
+  m_inThread.setDaemon(true);
+  m_ack=new StreamSnapshotAckSender(m_mb);
+  m_ackThread=new Thread(m_ack,"Snapshot ack sender");
+  m_inThread.start();
+  m_ackThread.start();
+  return m_mb.getHSId();
 }
