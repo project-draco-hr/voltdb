@@ -9,26 +9,21 @@
       }
       try {
         if (message.b.isDirect()) {
-          compressionBuffer.clear().position(4);
+          compressionBuffer.clear();
           final int compressedSize=CompressionService.compressBuffer(message.b,compressionBuffer);
-          compressionBuffer.putInt(0,compressedSize);
-          compressionBuffer.limit(4 + compressedSize);
+          compressionBuffer.limit(compressedSize);
           compressionBuffer.position(0);
-          while (compressionBuffer.hasRemaining()) {
-            m_bytesSent.addAndGet(m_sock.write(compressionBuffer));
-          }
+          byte[] data=new byte[compressedSize];
+          compressionBuffer.get(data);
+          RejoinDataMessage msg=new RejoinDataMessage(data);
+          m_mb.send(m_destHSId,msg);
+          m_bytesSent.addAndGet(compressedSize);
         }
  else {
-          ByteBuffer lengthPrefix=ByteBuffer.allocate(4);
           byte compressedBytes[]=CompressionService.compressBytes(message.b.array(),message.b.position(),message.b.remaining());
-          ByteBuffer contents=ByteBuffer.wrap(compressedBytes);
-          lengthPrefix.putInt(compressedBytes.length).flip();
-          while (lengthPrefix.hasRemaining()) {
-            m_bytesSent.addAndGet(m_sock.write(lengthPrefix));
-          }
-          while (contents.hasRemaining()) {
-            m_bytesSent.addAndGet(m_sock.write(contents));
-          }
+          RejoinDataMessage msg=new RejoinDataMessage(compressedBytes);
+          m_mb.send(m_destHSId,msg);
+          m_bytesSent.addAndGet(compressedBytes.length);
         }
       }
  catch (      IOException e) {
