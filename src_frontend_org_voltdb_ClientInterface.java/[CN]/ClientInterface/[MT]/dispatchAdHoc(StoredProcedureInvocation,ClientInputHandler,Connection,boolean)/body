@@ -1,0 +1,33 @@
+{
+  ParameterSet params=task.getParams();
+  String sql=(String)params.toArray()[0];
+  Object partitionParam=null;
+  if (params.toArray().length > 1) {
+    if (params.toArray()[1] == null) {
+      partitionParam=new Long(0);
+    }
+ else {
+      partitionParam=params.toArray()[1];
+    }
+  }
+  List<String> sqlStatements=MiscUtils.splitSQLStatements(sql);
+  AdHocPlannedStmtBatch planBatch=new AdHocPlannedStmtBatch(sql,partitionParam,task.clientHandle,handler.connectionId(),handler.m_hostname,handler.isAdmin(),ccxn);
+  for (  String sqlStatement : sqlStatements) {
+    AdHocPlannedStatement plannedStatement=m_adhocCache.get(sqlStatement,partitionParam != null);
+    if (plannedStatement == null || plannedStatement.catalogVersion != m_catalogContext.get().catalogVersion) {
+      break;
+    }
+    planBatch.addStatement(plannedStatement);
+  }
+  if (planBatch.getPlannedStatementCount() == sqlStatements.size()) {
+    createAdHocTransaction(planBatch);
+    return null;
+  }
+  AdHocPlannerWork ahpw=new AdHocPlannerWork(m_siteId,false,task.clientHandle,handler.connectionId(),handler.m_hostname,handler.isAdmin(),ccxn,sql,sqlStatements,partitionParam,null,false,true,m_adhocCompletionHandler);
+  if (isExplain) {
+    ahpw.setIsExplainWork();
+  }
+  LocalObjectMessage work=new LocalObjectMessage(ahpw);
+  m_mailbox.send(m_plannerSiteId,work);
+  return null;
+}
