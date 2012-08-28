@@ -1,0 +1,62 @@
+{
+  final Connection c=(Connection)planBatch.clientData;
+  Database db=m_catalogContext.get().database;
+  int size=planBatch.getPlannedStatementCount();
+  List<byte[]> aggByteArray=new ArrayList<byte[]>(size);
+  for (  AdHocPlannedStatement plannedStatement : planBatch.plannedStatements) {
+    aggByteArray.add(plannedStatement.aggregatorFragment);
+  }
+  List<byte[]> collByteArray=new ArrayList<byte[]>(size);
+  for (  AdHocPlannedStatement plannedStatement : planBatch.plannedStatements) {
+    collByteArray.add(plannedStatement.collectorFragment);
+  }
+  VoltTable[] vt=new VoltTable[size];
+  for (int i=0; i < size; i++) {
+    byte[] aggByte=aggByteArray.get(i);
+    byte[] collByte=collByteArray.get(i);
+    if (collByte == null) {
+      String plan=new String(aggByte,VoltDB.UTF8ENCODING);
+      PlanNodeTree pnt=new PlanNodeTree();
+      try {
+        JSONObject jobj=new JSONObject(plan);
+        JSONArray jarray=jobj.getJSONArray(PlanNodeTree.Members.PLAN_NODES.name());
+        pnt.loadFromJSONArray(jarray,db);
+        String str=pnt.getRootPlanNode().toExplainPlanString();
+        vt[i]=new VoltTable(new VoltTable.ColumnInfo("EXECUTION_PLAN",VoltType.STRING));
+        vt[i].addRow(str);
+      }
+ catch (      JSONException e) {
+        System.out.println(e.getMessage());
+      }
+    }
+ else {
+      String aggplan=new String(aggByte,VoltDB.UTF8ENCODING);
+      String collplan=new String(collByte,VoltDB.UTF8ENCODING);
+      PlanNodeTree pnt=new PlanNodeTree();
+      PlanNodeTree collpnt=new PlanNodeTree();
+      try {
+        JSONObject jobj=new JSONObject(aggplan);
+        JSONArray jarray=jobj.getJSONArray(PlanNodeTree.Members.PLAN_NODES.name());
+        pnt.loadFromJSONArray(jarray,db);
+        jobj=new JSONObject(collplan);
+        jarray=jobj.getJSONArray(PlanNodeTree.Members.PLAN_NODES.name());
+        collpnt.loadFromJSONArray(jarray,db);
+        assert(collpnt.getRootPlanNode() instanceof SendPlanNode);
+        pnt.getRootPlanNode().reattachFragment((SendPlanNode)collpnt.getRootPlanNode());
+        String str=pnt.getRootPlanNode().toExplainPlanString();
+        vt[i]=new VoltTable(new VoltTable.ColumnInfo("EXECUTION_PLAN",VoltType.STRING));
+        vt[i].addRow(str);
+      }
+ catch (      JSONException e) {
+        System.out.println(e.getMessage());
+      }
+    }
+  }
+  ClientResponseImpl response=new ClientResponseImpl(ClientResponseImpl.SUCCESS,ClientResponse.SUCCESS,null,vt,null);
+  response.setClientHandle(planBatch.clientHandle);
+  ByteBuffer buf=ByteBuffer.allocate(response.getSerializedSize() + 4);
+  buf.putInt(buf.capacity() - 4);
+  response.flattenToBuffer(buf);
+  buf.flip();
+  c.writeStream().enqueue(buf);
+}
