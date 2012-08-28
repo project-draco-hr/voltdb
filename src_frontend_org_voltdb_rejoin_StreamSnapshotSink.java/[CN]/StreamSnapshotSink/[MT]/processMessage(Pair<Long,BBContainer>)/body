@@ -1,0 +1,35 @@
+{
+  if (msg == null) {
+    return null;
+  }
+  long hsId=msg.getFirst();
+  BBContainer container=msg.getSecond();
+  try {
+    ByteBuffer block=container.b;
+    byte typeByte=block.get(StreamSnapshotDataTarget.typeOffset);
+    StreamSnapshotMessageType type=StreamSnapshotMessageType.values()[typeByte];
+    if (type == StreamSnapshotMessageType.END) {
+      m_EOF=true;
+      return null;
+    }
+ else     if (type == StreamSnapshotMessageType.SCHEMA) {
+      block.position(block.position() + 1);
+      m_schema=new byte[block.remaining()];
+      block.get(m_schema);
+      return null;
+    }
+    final int blockIndex=block.getInt(StreamSnapshotDataTarget.blockIndexOffset);
+    final int tableId=block.getInt(StreamSnapshotDataTarget.tableIdOffset);
+    if (m_schema == null) {
+      VoltDB.crashLocalVoltDB("No schema for table with ID " + tableId,false,null);
+    }
+    block.position(StreamSnapshotDataTarget.contentOffset);
+    ByteBuffer nextChunk=getNextChunk(block);
+    m_bytesReceived+=nextChunk.remaining();
+    m_ack.ack(hsId,blockIndex);
+    return Pair.of(tableId,nextChunk);
+  }
+  finally {
+    container.discard();
+  }
+}
