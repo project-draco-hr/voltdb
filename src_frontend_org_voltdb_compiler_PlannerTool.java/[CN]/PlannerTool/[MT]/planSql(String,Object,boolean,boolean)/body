@@ -4,25 +4,43 @@
   }
   String sql=sqlIn.trim();
   hostLog.debug("received sql stmt: " + sql);
+  boolean cacheable=(partitionParam == null) && (inferSP);
+  if (cacheable) {
+    AdHocPlannedStatement cachedPlan=m_cache.getWithSQL(sqlIn);
+    if (cachedPlan != null) {
+      return cachedPlan;
+    }
+  }
   AbstractPlanNode.resetPlanNodeIds();
   TrivialCostModel costModel=new TrivialCostModel();
   PartitioningForStatement partitioning=new PartitioningForStatement(partitionParam,inferSP,inferSP);
-  QueryPlanner planner=new QueryPlanner(m_cluster,m_database,partitioning,m_hsql,new DatabaseEstimates(),true);
+  QueryPlanner planner=new QueryPlanner(sql,"PlannerTool","PlannerToolProc",m_cluster,m_database,partitioning,m_hsql,new DatabaseEstimates(),true,AD_HOC_JOINED_TABLE_LIMIT,costModel,null,null);
   CompiledPlan plan=null;
+  String parsedToken=null;
   try {
-    plan=planner.compilePlan(costModel,sql,null,"PlannerTool","PlannerToolProc",AD_HOC_JOINED_TABLE_LIMIT,null,true);
+    planner.parse();
+    parsedToken=planner.parameterize();
+    if (parsedToken != null) {
+      if (cacheable) {
+        CorePlan core=m_cache.getWithParsedToken(parsedToken);
+        if (core != null) {
+          ParameterSet params=new ParameterSet();
+          planner.buildParameterSetFromExtractedLiteralsAndReturnPartitionIndex(core.parameterTypes,params);
+          Object partitionKey=null;
+          if (core.partitioningParamIndex >= 0) {
+            partitionKey=params.toArray()[core.partitioningParamIndex];
+          }
+          AdHocPlannedStatement ahps=new AdHocPlannedStatement(sql.getBytes(VoltDB.UTF8ENCODING),core,params,partitionKey);
+          m_cache.put(sql,parsedToken,ahps);
+          return ahps;
+        }
+      }
+      plan=planner.plan();
+      assert(plan != null);
+    }
   }
  catch (  Exception e) {
     throw new RuntimeException("Error compiling query: " + e.getMessage(),e);
-  }
-  if (plan == null) {
-    String plannerMsg=planner.getErrorMessage();
-    if (plannerMsg != null) {
-      throw new RuntimeException("ERROR: " + plannerMsg + "\n");
-    }
- else {
-      throw new RuntimeException("ERROR: UNKNOWN PLANNING ERROR\n");
-    }
   }
   if (!allowParameterization && (plan.extractedParamValues.size() == 0) && (plan.parameters.length > 0)) {
     throw new RuntimeException("ERROR: PARAMETERIZATION IN AD HOC QUERY");
@@ -31,5 +49,11 @@
     String potentialErrMsg="Statement has a non-deterministic result - statement: \"" + sql + "\" , reason: "+ plan.nondeterminismDetail();
     hostLog.warn(potentialErrMsg);
   }
-  return new AdHocPlannedStatement(plan);
+  AdHocPlannedStatement ahps=new AdHocPlannedStatement(plan,m_catalogVersion);
+  if (cacheable && planner.compiledAsParameterizedPlan()) {
+    assert(parsedToken != null);
+    assert(((ahps.partitionParam == null) && (ahps.core.partitioningParamIndex == -1)) || ((ahps.partitionParam != null) && (ahps.core.partitioningParamIndex >= 0)));
+    m_cache.put(sqlIn,parsedToken,ahps);
+  }
+  return ahps;
 }
