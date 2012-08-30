@@ -100,10 +100,18 @@ synchronized (m_startAndStopLock) {
         m_cartographer=new Cartographer(m_messenger.getZK(),iv2config.getPartitionCount());
         if (isRejoin) {
           List<Integer> partitionsToReplace=m_cartographer.getIv2PartitionsToReplace(topo);
+          m_iv2InitiatorStartingTxnIds=new long[partitionsToReplace.size()];
+          for (int ii=0; ii < partitionsToReplace.size(); ii++) {
+            m_iv2InitiatorStartingTxnIds[ii]=TxnEgo.makeZero(partitionsToReplace.get(ii)).getTxnId();
+          }
           m_iv2Initiators=createIv2Initiators(partitionsToReplace);
         }
  else {
           List<Integer> partitions=ClusterConfig.partitionsForHost(topo,m_messenger.getHostId());
+          m_iv2InitiatorStartingTxnIds=new long[partitions.size()];
+          for (int ii=0; ii < partitions.size(); ii++) {
+            m_iv2InitiatorStartingTxnIds[ii]=TxnEgo.makeZero(partitions.get(ii)).getTxnId();
+          }
           m_iv2Initiators=createIv2Initiators(partitions);
         }
         long mpiBuddyHSId=m_iv2Initiators.get(0).getInitiatorHSId();
@@ -314,7 +322,7 @@ catch (    ExecutionException e) {
       VoltDB.crashLocalVoltDB("Error initializing snapshot completion monitor",true,e);
     }
     if (m_commandLog != null && isRejoin) {
-      m_commandLog.initForRejoin(m_catalogContext,Long.MIN_VALUE,true);
+      m_commandLog.initForRejoin(m_catalogContext,Long.MIN_VALUE,m_iv2InitiatorStartingTxnIds,true);
     }
     try {
       buildStringValidation.get();
