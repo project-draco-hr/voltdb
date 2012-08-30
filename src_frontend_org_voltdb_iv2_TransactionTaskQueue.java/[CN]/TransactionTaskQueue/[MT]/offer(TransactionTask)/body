@@ -1,10 +1,50 @@
 {
   Iv2Trace.logTransactionTaskQueueOffer(task);
   boolean retval=false;
-  if (!m_backlog.isEmpty()) {
-    if (task.getMpTxnId() != m_backlog.getFirst().getMpTxnId()) {
-      m_backlog.addLast(task);
+  final TransactionState ts=task.getTransactionState();
+  if (ts.isForReplay() && !ts.isSinglePartition()) {
+    if (!m_multipartBacklog.isEmpty() && ts.txnId == m_multipartBacklog.firstKey()) {
+      Deque<TransactionTask> backlog=m_multipartBacklog.firstEntry().getValue();
+      TransactionTask first=backlog.peekFirst();
+      if (first != null) {
+        if (first.m_txn.txnId != task.getTxnId()) {
+          if (!first.m_txn.isSinglePartition()) {
+            VoltDB.crashLocalVoltDB("If the first backlog task is multi-part, " + "but has a different transaction id it is a bug",true,null);
+          }
+          backlog.addFirst(task);
+        }
+      }
+ else {
+        backlog.offer(task);
+      }
+      taskQueueOffer(task);
+    }
+ else     if (m_multipartBacklog.containsKey(ts.txnId)) {
+      m_multipartBacklog.get(ts.txnId).addFirst(task);
+      taskQueueOffer(task);
+    }
+ else {
+      if (m_multiPartPendingSentinelReceipt != null) {
+        VoltDB.crashLocalVoltDB("There should be only one multipart pending sentinel receipt at a time",true,null);
+      }
+      m_multiPartPendingSentinelReceipt=task;
       retval=true;
+    }
+  }
+ else   if (!m_multipartBacklog.isEmpty()) {
+    if (task.getTxnId() != m_multipartBacklog.firstKey()) {
+      if (!ts.isSinglePartition()) {
+        Deque<TransactionTask> d=m_multipartBacklog.get(task.getTxnId());
+        if (d == null) {
+          d=new ArrayDeque<TransactionTask>();
+          m_multipartBacklog.put(task.getTxnId(),d);
+        }
+        d.offerLast(task);
+      }
+ else {
+        m_multipartBacklog.lastEntry().getValue().addLast(task);
+        retval=true;
+      }
     }
  else {
       taskQueueOffer(task);
@@ -12,7 +52,9 @@
   }
  else {
     if (!task.getTransactionState().isSinglePartition()) {
-      m_backlog.addLast(task);
+      Deque<TransactionTask> d=new ArrayDeque<TransactionTask>();
+      d.offer(task);
+      m_multipartBacklog.put(task.getTxnId(),d);
       retval=true;
     }
     taskQueueOffer(task);

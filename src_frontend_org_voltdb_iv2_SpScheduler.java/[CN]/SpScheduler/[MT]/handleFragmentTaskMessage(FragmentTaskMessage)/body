@@ -3,8 +3,13 @@
   long newSpHandle;
   if (m_isLeader) {
     msg=new FragmentTaskMessage(message.getInitiatorHSId(),message.getCoordinatorHSId(),message);
-    newSpHandle=m_txnId.incrementAndGet();
+    TxnEgo ego=advanceTxnEgo();
+    newSpHandle=ego.getTxnId();
     msg.setSpHandle(newSpHandle);
+    if (msg.getInitiateTask() != null) {
+      msg.getInitiateTask().setSpHandle(newSpHandle);
+      msg.setInitiateTask(msg.getInitiateTask());
+    }
     if (m_sendToHSIds.size() > 0) {
       FragmentTaskMessage replmsg=new FragmentTaskMessage(m_mailbox.getHSId(),m_mailbox.getHSId(),msg);
       m_mailbox.send(com.google.common.primitives.Longs.toArray(m_sendToHSIds),replmsg);
@@ -20,7 +25,10 @@
   }
  else {
     newSpHandle=msg.getSpHandle();
-    m_txnId.set(newSpHandle);
+    setMaxSeenTxnId(newSpHandle);
+  }
+  if (msg.getInitiateTask() != null && !msg.getInitiateTask().isReadOnly()) {
+    m_cl.log(msg.getInitiateTask());
   }
   TransactionState txn=m_outstandingTxns.get(msg.getTxnId());
   Iv2Trace.logFragmentTaskMessage(message,m_mailbox.getHSId(),newSpHandle,false);
