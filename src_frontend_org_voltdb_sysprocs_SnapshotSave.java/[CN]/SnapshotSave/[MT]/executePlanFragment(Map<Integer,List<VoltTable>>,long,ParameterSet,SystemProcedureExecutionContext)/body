@@ -19,14 +19,23 @@
     assert(params.toArray()[2] != null);
     assert(params.toArray()[3] != null);
     assert(params.toArray()[4] != null);
+    assert(params.toArray()[5] != null);
     final String file_path=(String)params.toArray()[0];
     final String file_nonce=(String)params.toArray()[1];
     final long txnId=(Long)params.toArray()[2];
-    byte block=(Byte)params.toArray()[3];
-    SnapshotFormat format=SnapshotFormat.getEnumIgnoreCase((String)params.toArray()[4]);
+    long perPartitionTxnIds[]=(long[])params.toArray()[3];
+    byte block=(Byte)params.toArray()[4];
+    SnapshotFormat format=SnapshotFormat.getEnumIgnoreCase((String)params.toArray()[5]);
+    List<Long> perPartitionTransactionIdsToKeep=new ArrayList<Long>();
+    for (    long txnid : perPartitionTxnIds) {
+      int partitionId=(int)TxnEgo.getPartitionId(txnid);
+      if (partitionId >= context.getNumberOfPartitions() && partitionId != MpInitiator.MP_INIT_PID) {
+        perPartitionTransactionIdsToKeep.add(txnid);
+      }
+    }
     String data=(String)params.toArray()[5];
     SnapshotSaveAPI saveAPI=new SnapshotSaveAPI();
-    VoltTable result=saveAPI.startSnapshotting(file_path,file_nonce,format,block,txnId,context.getLastCommittedSpHandle(),data,context,hostname);
+    VoltTable result=saveAPI.startSnapshotting(file_path,file_nonce,format,block,txnId,context.getLastCommittedSpHandle(),Longs.toArray(perPartitionTransactionIdsToKeep),data,context,hostname);
     return new DependencyPair(SnapshotSave.DEP_createSnapshotTargets,result);
   }
  else   if (fragmentId == SysProcFragmentId.PF_createSnapshotTargetsResults) {
