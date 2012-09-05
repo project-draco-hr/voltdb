@@ -1,26 +1,69 @@
 {
-  if (statement == null) {
+  if (statement == null || statement.trim().isEmpty()) {
     return false;
   }
-  String[] tokens=statement.trim().split("\\s+");
-  if (tokens.length == 0) {
+  statement=statement.trim();
+  Matcher statementMatcher=voltdbStatementPrefixPattern.matcher(statement);
+  ;
+  if (!statementMatcher.find()) {
     return false;
   }
-  if (tokens[0].equalsIgnoreCase("PARTITION")) {
-    tokens=cleanupVoltDBDDLTerminator("PARTITION",tokens);
-    if (tokens.length != 6 || !tokens[1].equalsIgnoreCase("table") || !tokens[3].equalsIgnoreCase("on") || !tokens[4].equalsIgnoreCase("column")) {
-      throw m_compiler.new VoltCompilerException(String.format("Bad PARTITION DDL statement: \"%s\", " + "expected syntax: PARTITION TABLE <table> ON COLUMN <column>",StringUtils.join(tokens,' ')));
-    }
-    m_partitionMap.put(tokens[2],tokens[5]);
+  String commandPrefix=statementMatcher.group(1).toUpperCase();
+  statementMatcher=procedureClassPattern.matcher(statement);
+  if (statementMatcher.matches()) {
+    String clazz=checkIdentifierStart(statementMatcher.group(1),statement);
+    ProcedureDescriptor descriptor=m_compiler.new ProcedureDescriptor(new ArrayList<String>(),clazz);
+    m_partitionMap.add(descriptor);
     return true;
   }
- else   if (tokens[0].equalsIgnoreCase("REPLICATE")) {
-    tokens=cleanupVoltDBDDLTerminator("REPLICATE",tokens);
-    if (tokens.length != 3 || !tokens[1].equalsIgnoreCase("table")) {
-      throw m_compiler.new VoltCompilerException(String.format("Bad REPLICATE DDL statement: \"%s\", " + "expected syntax: REPLICATE TABLE <table>",StringUtils.join(tokens,' ')));
-    }
-    m_partitionMap.put(tokens[2],null);
+  statementMatcher=procedureSingleStatementPattern.matcher(statement);
+  if (statementMatcher.matches()) {
+    String clazz=checkIdentifierStart(statementMatcher.group(1),statement);
+    String sqlStatement=statementMatcher.group(2);
+    ProcedureDescriptor descriptor=m_compiler.new ProcedureDescriptor(new ArrayList<String>(),clazz,sqlStatement,null,null,false);
+    m_partitionMap.add(descriptor);
     return true;
+  }
+  statementMatcher=prePartitionPattern.matcher(statement);
+  if (statementMatcher.matches()) {
+    String partitionee=statementMatcher.group(1).toUpperCase();
+    if (TABLE.equals(partitionee)) {
+      statementMatcher=partitionTablePattern.matcher(statement);
+      if (!statementMatcher.matches()) {
+        throw m_compiler.new VoltCompilerException(String.format("Bad PARTITION DDL statement: \"%s\", " + "expected syntax: PARTITION TABLE <table> ON COLUMN <column>",statement.substring(0,statement.length() - 1)));
+      }
+      m_partitionMap.put(checkIdentifierStart(statementMatcher.group(1),statement),checkIdentifierStart(statementMatcher.group(2),statement));
+      return true;
+    }
+ else     if (PROCEDURE.equals(partitionee)) {
+      statementMatcher=partitionProcedurePattern.matcher(statement);
+      if (!statementMatcher.matches()) {
+        throw m_compiler.new VoltCompilerException(String.format("Bad PARTITION DDL statement: \"%s\", " + "expected syntax: PARTITION PROCEDURE <procedure> ON " + "TABLE <table> COLUMN <column> [PARAMETER <parameter-index-no>]",statement.substring(0,statement.length() - 1)));
+      }
+      String tableName=checkIdentifierStart(statementMatcher.group(2),statement);
+      String columnName=checkIdentifierStart(statementMatcher.group(3),statement);
+      String parameterNo=statementMatcher.group(4);
+      if (parameterNo == null) {
+        parameterNo="0";
+      }
+      String partitionInfo=String.format("%s.%s: %s",tableName,columnName,parameterNo);
+      m_partitionMap.addProcedurePartitionInfoTo(checkIdentifierStart(statementMatcher.group(1),statement),partitionInfo);
+      return true;
+    }
+  }
+  statementMatcher=replicatePattern.matcher(statement);
+  if (statementMatcher.matches()) {
+    m_partitionMap.put(checkIdentifierStart(statementMatcher.group(1),statement),null);
+    return true;
+  }
+  if (PARTITION.equals(commandPrefix)) {
+    throw m_compiler.new VoltCompilerException(String.format("Bad PARTITION DDL statement: \"%s\", " + "expected syntax: \"PARTITION TABLE <table> ON COLUMN <column>\" or " + "\"PARTITION PROCEDURE <procedure> ON "+ "TABLE <table> COLUMN <column> [PARAMETER <parameter-index-no>]\"",statement.substring(0,statement.length() - 1)));
+  }
+  if (REPLICATE.equals(commandPrefix)) {
+    throw m_compiler.new VoltCompilerException(String.format("Bad REPLICATE DDL statement: \"%s\", " + "expected syntax: REPLICATE TABLE <table>",statement.substring(0,statement.length() - 1)));
+  }
+  if (PROCEDURE.equals(commandPrefix)) {
+    throw m_compiler.new VoltCompilerException(String.format("Bad CREATE PROCEDURE DDL statement: \"%s\", " + "expected syntax: \"CREATE PROCEDURE FROM CLASS <class-name>\" " + "or: \"CREATE PROCEDURE <name> AS <single-select-or-dml-statement>\"",statement.substring(0,statement.length() - 1)));
   }
   return false;
 }

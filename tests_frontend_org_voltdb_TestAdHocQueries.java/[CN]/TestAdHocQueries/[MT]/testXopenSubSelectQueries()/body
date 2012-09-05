@@ -1,0 +1,50 @@
+{
+  TestEnv env=new TestEnv(m_catalogJar,m_pathToDeployment,2,1,0,m_useIv2);
+  String adHocQuery;
+  try {
+    env.setUp();
+    adHocQuery="  UPDATE STAFF \n" + "          SET GRADE=10*STAFF.GRADE \n" + "          WHERE STAFF.EMPNUM NOT IN \n"+ "                (SELECT WORKS.EMPNUM \n"+ "                      FROM WORKS \n"+ "                      WHERE STAFF.EMPNUM = WORKS.EMPNUM);";
+    try {
+      env.m_client.callProcedure("@AdHoc",adHocQuery);
+      fail("did not fail on subquery");
+    }
+ catch (    ProcCallException pcex) {
+      assertTrue(pcex.getMessage().indexOf("not yet support subqueries") > 0);
+    }
+    adHocQuery="     SELECT 'ZZ', EMPNUM, EMPNAME, -99 \n" + "           FROM STAFF \n" + "           WHERE NOT EXISTS (SELECT * FROM WORKS \n"+ "                WHERE WORKS.EMPNUM = STAFF.EMPNUM) \n"+ "                ORDER BY EMPNUM;";
+    try {
+      env.m_client.callProcedure("@AdHoc",adHocQuery);
+      fail("did not fail on exists clause");
+    }
+ catch (    ProcCallException pcex) {
+      assertTrue(pcex.getMessage().indexOf("not yet support EXISTS clause") > 0);
+    }
+    adHocQuery="   SELECT STAFF.EMPNAME \n" + "          FROM STAFF \n" + "          WHERE STAFF.EMPNUM IN \n"+ "                  (SELECT WORKS.EMPNUM \n"+ "                        FROM WORKS \n"+ "                        WHERE WORKS.PNUM IN \n"+ "                              (SELECT PROJ.PNUM \n"+ "                                    FROM PROJ \n"+ "                                    WHERE PROJ.CITY='Tampa')); \n"+ "";
+    try {
+      env.m_client.callProcedure("@AdHoc",adHocQuery);
+      fail("did not fail on subquery");
+    }
+ catch (    ProcCallException pcex) {
+      assertTrue(pcex.getMessage().indexOf("not yet support subqueries") > 0);
+    }
+    adHocQuery="SELECT FIRST1.EMPNUM, SECOND2.EMPNUM \n" + "          FROM STAFF FIRST1, STAFF SECOND2 \n" + "          WHERE FIRST1.CITY = SECOND2.CITY \n"+ "          AND FIRST1.EMPNUM < SECOND2.EMPNUM;";
+    try {
+      env.m_client.callProcedure("@AdHoc",adHocQuery);
+      fail("did not fail on selfjoin");
+    }
+ catch (    ProcCallException pcex) {
+      assertTrue(pcex.getMessage().indexOf("not yet support self joins") > 0);
+    }
+    adHocQuery="SELECT PNAME \n" + "         FROM PROJ \n" + "         WHERE 'Tampa' NOT BETWEEN CITY AND 'Vienna' \n"+ "                           AND PNUM > 'P2';";
+    try {
+      env.m_client.callProcedure("@AdHoc",adHocQuery);
+      fail("did not fail on static clause");
+    }
+ catch (    ProcCallException pcex) {
+      assertTrue(pcex.getMessage().indexOf("does not yet support where clauses containing only constants") > 0);
+    }
+  }
+  finally {
+    env.tearDown();
+  }
+}

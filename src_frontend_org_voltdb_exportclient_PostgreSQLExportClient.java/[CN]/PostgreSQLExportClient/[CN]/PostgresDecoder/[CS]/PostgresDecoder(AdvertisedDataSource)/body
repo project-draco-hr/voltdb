@@ -1,0 +1,92 @@
+{
+  super(source);
+  m_logger.debug("New PostgresDecoder for " + m_source.tableName);
+  Statement stmt=null;
+  try {
+    stmt=conn.createStatement();
+  }
+ catch (  SQLException e) {
+    m_logger.fatal("createStatement failed for " + m_source.tableName);
+    System.exit(-1);
+  }
+  try {
+    String schemaExistsQuery="SELECT EXISTS(SELECT * " + "FROM information_schema.schemata WHERE schema_name = '" + postgres_schema_prefix + m_source.m_generation+ "')";
+    ResultSet schemaExists=stmt.executeQuery(schemaExistsQuery);
+    schemaExists.next();
+    if (!schemaExists.getBoolean(1)) {
+      stmt.execute("CREATE SCHEMA " + postgres_schema_prefix + m_source.m_generation);
+      conn.commit();
+    }
+    schemaExists.close();
+    schemaExistsQuery=null;
+  }
+ catch (  SQLException e) {
+    m_logger.fatal("Schema creation failed");
+    System.exit(-1);
+  }
+  try {
+    String createTableQuery="CREATE TABLE IF NOT EXISTS " + postgres_schema_prefix + m_source.m_generation+ "."+ m_source.tableName+ " (";
+    for (int i=0; i < m_source.columnNames.size(); i++) {
+      if (i != 0) {
+        createTableQuery+=", ";
+      }
+      createTableQuery+=m_source.columnNames.get(i) + " ";
+      if (m_source.columnTypes.get(i) == VoltType.TINYINT) {
+        createTableQuery+="SMALLINT " + "CONSTRAINT " + m_source.columnNames.get(i) + "_tinyint CHECK (-128 <= "+ m_source.columnNames.get(i)+ " AND "+ m_source.columnNames.get(i)+ " <= 127)";
+      }
+ else       if (m_source.columnTypes.get(i) == VoltType.STRING) {
+        createTableQuery+="TEXT";
+      }
+ else       if (m_source.columnTypes.get(i) == VoltType.DECIMAL) {
+        createTableQuery+="DECIMAL(" + VoltDecimalHelper.kDefaultPrecision + ","+ VoltDecimalHelper.kDefaultScale+ ")";
+      }
+ else       if (m_source.columnTypes.get(i) == VoltType.FLOAT) {
+        createTableQuery+="DOUBLE PRECISION";
+      }
+ else       if (m_source.columnTypes.get(i) == VoltType.VARBINARY) {
+        createTableQuery+="BYTEA";
+      }
+ else {
+        createTableQuery+=m_source.columnTypes.get(i).name();
+      }
+    }
+    createTableQuery+=")";
+    stmt.execute(createTableQuery);
+    createTableQuery=null;
+    conn.commit();
+  }
+ catch (  SQLException e) {
+    e.printStackTrace();
+    System.exit(-1);
+  }
+  try {
+    stmt.close();
+  }
+ catch (  SQLException e) {
+    e.printStackTrace();
+    System.exit(-1);
+  }
+  String pstmtString="INSERT INTO " + postgres_schema_prefix + m_source.m_generation+ "."+ m_source.tableName+ " (";
+  for (int i=0; i < m_source.columnNames.size(); i++) {
+    if (i != 0) {
+      pstmtString+=", ";
+    }
+    pstmtString+=m_source.columnNames.get(i);
+  }
+  pstmtString+=") VALUES (";
+  for (int i=0; i < m_source.columnNames.size(); i++) {
+    if (i != 0) {
+      pstmtString+=", ";
+    }
+    pstmtString+="?";
+  }
+  pstmtString+=")";
+  try {
+    pstmt=conn.prepareStatement(pstmtString);
+  }
+ catch (  SQLException e) {
+    m_logger.fatal("Creation of PreparedStatement for table " + m_source.tableName + " failed");
+    System.exit(-1);
+  }
+  pstmtString=null;
+}
