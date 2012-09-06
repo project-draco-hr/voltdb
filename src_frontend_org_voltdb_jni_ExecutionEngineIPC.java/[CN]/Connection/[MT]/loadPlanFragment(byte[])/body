@@ -13,20 +13,31 @@
   }
   int result=ExecutionEngine.ERRORCODE_ERROR;
   long planFragId=0;
-  boolean cacheHit=false;
   long cacheSize=0;
+  PlannerStatsCollector.CacheUse cacheUse=PlannerStatsCollector.CacheUse.FAIL;
+  startPlanning();
   try {
-    result=m_connection.readStatusByte();
-    planFragId=m_connection.readLong();
-    cacheHit=m_connection.readLong() != 0;
-    cacheSize=m_connection.readLong();
+    try {
+      result=m_connection.readStatusByte();
+      planFragId=m_connection.readLong();
+      cacheSize=m_connection.readLong();
+      if (m_connection.readLong() != 0) {
+        cacheUse=PlannerStatsCollector.CacheUse.HIT1;
+      }
+ else {
+        cacheUse=PlannerStatsCollector.CacheUse.MISS;
+      }
+    }
+ catch (    final IOException e) {
+      System.out.println("Exception: " + e.getMessage());
+      throw new RuntimeException(e);
+    }
+    if (result != ExecutionEngine.ERRORCODE_SUCCESS) {
+      throw new EEException(ExecutionEngine.ERRORCODE_ERROR);
+    }
   }
- catch (  final IOException e) {
-    System.out.println("Exception: " + e.getMessage());
-    throw new RuntimeException(e);
-  }
-  if (result != ExecutionEngine.ERRORCODE_SUCCESS) {
-    throw new EEException(ExecutionEngine.ERRORCODE_ERROR);
+  finally {
+    endPlanning(cacheSize,cacheUse);
   }
   return planFragId;
 }
