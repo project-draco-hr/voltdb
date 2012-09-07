@@ -1,0 +1,50 @@
+import sys
+sys.path.append('../../src/py_client')
+import os.path
+import shutil
+import fnmatch
+import subprocess
+import time
+from optparse import OptionParser
+from subprocess import call
+from voltdbclient import *
+from Query import VoltQueryClient
+pkgName = {'comm': 'LINUX-voltdb', 'pro': 'LINUX-voltdb-ent', }
+tail = 'tar.gz'
+root = 'http://volt0/kits/candidate/'
+destDir = '/tmp/'
+workDir = (destDir + sys.argv[0].replace('.py', ''))
+elem2Test = {'helloworld': 'run.sh', 'voltcache': 'run.sh', 'voltkv': 'run.sh', 'voter': 'run.sh', }
+defaultHost = 'localhost'
+defaultPort = 21212
+if (__name__ == '__main__'):
+    parser = OptionParser()
+    parser.add_option('-r', '--release', dest='release', help='VoltDB release no. ')
+    parser.add_option('-p', '--pkg', dest='pkg', help='VoltDB package type: Community or Pro')
+    parser.add_option('-s', '--suite', dest='suite', help='Test suite name, if not set, then take all suites')
+    (options, args) = parser.parse_args()
+    print ("options = '%s'" % options)
+    print ("args = '%s'" % args)
+    print ("options.release = '%s' options.pkg = '%s'" % (options.release, options.pkg))
+    print ("workDir = '%s'" % workDir)
+    suite = options.suite
+    if (suite not in elem2Test.keys()):
+        print ("Warning: unknown suite name - '%s'" % suite)
+        print "Info: So we're going to cover all test suites in this run"
+        suite = 'all'
+    origDir = os.getcwd()
+    ret = installVoltDB(options.pkg, options.release)
+    success = ret['ok']
+    if (not success):
+        print 'After installVoltDB() Test Failed!!'
+        exit(1)
+    testSuiteList = setExecutables(ret['workDir'], suite)
+    for e in testSuiteList:
+        executable = testSuiteList[e]
+        print ("==-->>elem: '%s', executable: '%s'" % (e, executable))
+    success = startTest(testSuiteList)
+    for k in success:
+        if (not success[k]):
+            print ("Test '%s' Failed!!" % k)
+        else:
+            print ("Test '%s' passed!!" % k)
