@@ -4,6 +4,7 @@ import shutil
 import fnmatch
 import subprocess
 import time
+import filecmp
 from optparse import OptionParser
 from subprocess import call
 sys.path.append('../../src/py_client')
@@ -15,11 +16,14 @@ except ImportError:
 from Query import VoltQueryClient
 pkgName = {'comm': 'LINUX-voltdb', 'pro': 'LINUX-voltdb-ent', }
 tail = 'tar.gz'
+sepLineD = '========================================================'
+sepLineS = '--------------------------------------------'
 root = 'http://volt0/kits/candidate/'
 destDir = '/tmp/'
 elem2Test = {'helloworld': 'run.sh', 'voltcache': 'run.sh', 'voltkv': 'run.sh', 'voter': 'run.sh', }
 defaultHost = 'localhost'
 defaultPort = 21212
+'\n Voting Results\n --------------------------------------------------------------------------------\n\n A total of 8166781 votes were received...\n  - 7,816,923 Accepted\n   -    79,031 Rejected (Invalid Contestant)\n     -        12 Rejected (Maximum Vote Count Reached)\n     -         0 Failed (Transaction Error)\n\n    Contestant Name     Votes Received\n    Edwina Burnam            2,156,993\n    Jessie Eichman           1,652,654\n    Alana Bregman            1,189,909\n    Kelly Clauss             1,084,995\n    Jessie Alloway           1,060,892\n    Tabatha Gehling            939,604\n\n    The Winner is: Edwina Burnam\n'
 if (__name__ == '__main__'):
     parser = OptionParser()
     parser.add_option('-r', '--release', dest='release', help='VoltDB release no. If ommitted, it will find it from version.txt.')
@@ -29,27 +33,26 @@ if (__name__ == '__main__'):
     parser.set_defaults(suite='all')
     (options, args) = parser.parse_args()
     workDir = (destDir + os.path.basename(os.path.abspath(__file__)).replace('.py', ''))
-    print '============================================================'
-    print ("options = '%s'" % options)
-    print ("workDir = '%s'" % workDir)
-    print ("options.release = '%s' options.pkg = '%s'" % (options.release, options.pkg))
     suite = options.suite
     if ((suite not in elem2Test.keys()) and (suite != 'all')):
         print ("Warning: unknown suite name - '%s'" % suite)
         print "Info: So we're going to cover all test suites in this run"
     origDir = os.getcwd()
-    ret = installVoltDB(options.pkg, options.release)
+    releaseNum = options.release
+    if (releaseNum == None):
+        releaseNum = getReleaseNum()
+    print '############################################'
+    print ('Tested Version in this RUN: %s' % releaseNum)
+    print '############################################'
+    ret = installVoltDB(options.pkg, releaseNum)
     success = ret['ok']
     if (not success):
         print 'After installVoltDB() Test Failed!!'
         exit(1)
-    testSuiteList = setExecutables(ret['workDir'], suite)
-    for e in testSuiteList:
-        executable = testSuiteList[e]
-        print ("==-->>elem: '%s', executable: '%s'" % (e, executable))
+    testSuiteList = setTestSuite(ret['workDir'], suite)
     success = startTest(testSuiteList)
-    for k in success:
-        if (not success[k]):
-            print ("Test '%s' Failed!!" % k)
+    for module in success:
+        if (not success[module]['status']):
+            print ("\n%s\n%s\nTest '%s' FAILED!!\n%s" % (success[module]['msg'], sepLineS, module, sepLineD))
         else:
-            print ("Test '%s' passed!!" % k)
+            print ("\n%s\n%s\nTest '%s' PASSED!!\n%s" % (success[module]['msg'], sepLineS, module, sepLineD))
