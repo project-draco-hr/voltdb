@@ -2,7 +2,7 @@
   Iv2Trace.logTransactionTaskQueueOffer(task);
   boolean retval=false;
   final TransactionState ts=task.getTransactionState();
-  if (ts.isForReplay() && !ts.isSinglePartition()) {
+  if (ts.isForReplay() && (task instanceof FragmentTask)) {
     if (!m_multipartBacklog.isEmpty() && ts.txnId == m_multipartBacklog.firstKey()) {
       Deque<TransactionTask> backlog=m_multipartBacklog.firstEntry().getValue();
       TransactionTask first=backlog.peekFirst();
@@ -19,12 +19,14 @@
       }
       taskQueueOffer(task);
     }
- else     if (m_multipartBacklog.containsKey(ts.txnId)) {
-      m_multipartBacklog.get(ts.txnId).addFirst(task);
-      taskQueueOffer(task);
-    }
  else {
       if (m_multiPartPendingSentinelReceipt != null) {
+        hostLog.fatal("\tBacklog length: " + m_multipartBacklog.size());
+        if (!m_multipartBacklog.isEmpty()) {
+          hostLog.fatal("\tBacklog first item: " + m_multipartBacklog.firstEntry().getValue().peekFirst());
+        }
+        hostLog.fatal("\tHave this one SentinelReceipt: " + m_multiPartPendingSentinelReceipt);
+        hostLog.fatal("\tAnd got this one, too: " + task);
         VoltDB.crashLocalVoltDB("There should be only one multipart pending sentinel receipt at a time",true,null);
       }
       m_multiPartPendingSentinelReceipt=task;

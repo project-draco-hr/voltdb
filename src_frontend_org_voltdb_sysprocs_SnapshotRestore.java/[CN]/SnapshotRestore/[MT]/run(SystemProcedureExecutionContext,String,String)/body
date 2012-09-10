@@ -11,6 +11,9 @@
     digests=digestScanResult.digests;
     exportSequenceNumbers=digestScanResult.exportSequenceNumbers;
     perPartitionTxnIds=digestScanResult.perPartitionTxnIds;
+    if (perPartitionTxnIds.length == 0) {
+      perPartitionTxnIds=new long[]{ctx.getCurrentTxnId()};
+    }
   }
  catch (  VoltAbortException e) {
     ColumnInfo[] result_columns=new ColumnInfo[2];
@@ -95,6 +98,12 @@
  catch (  KeeperException.NodeExistsException e) {
     throw new VoltAbortException("Cluster has already been restored or has failed a restore." + " Restart the cluster before doing another restore.");
   }
+  ByteBuffer buf=ByteBuffer.allocate(perPartitionTxnIds.length * 8 + 4);
+  buf.putInt(perPartitionTxnIds.length);
+  for (  long txnid : perPartitionTxnIds) {
+    buf.putLong(txnid);
+  }
+  VoltDB.instance().getHostMessenger().getZK().create(VoltZK.perPartitionTxnIds,buf.array(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
   try {
     ByteArrayOutputStream baos=new ByteArrayOutputStream();
     ObjectOutputStream oos=new ObjectOutputStream(baos);
@@ -102,6 +111,7 @@
     oos.flush();
     byte exportSequenceNumberBytes[]=baos.toByteArray();
     oos.close();
+    ctx.getSiteProcedureConnection().setPerPartitionTxnIds(perPartitionTxnIds);
     results=performDistributeExportSequenceNumbers(exportSequenceNumberBytes,digests.get(0).getLong("txnId"),perPartitionTxnIds);
   }
  catch (  IOException e) {
