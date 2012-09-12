@@ -1,12 +1,14 @@
 {
   assert(m_expectedThreadId == Thread.currentThread().getId());
   int partitionId=getPartIdFromHandle(ciHandle);
-  Pair<HandleGenerator,Deque<Iv2InFlight>> partitionStuff=m_partitionStuff.get(partitionId);
+  PartitionData partitionStuff=m_partitionStuff.get(partitionId);
   if (partitionStuff == null) {
     tmLog.error("Unable to find handle list for partition: " + partitionId);
     return null;
   }
-  Deque<Iv2InFlight> perPartDeque=partitionStuff.getSecond();
+  final boolean readOnly=(ciHandle & (1L << 63)) != 0;
+  ciHandle=ciHandle & ~(1L << 63);
+  final Deque<Iv2InFlight> perPartDeque=readOnly ? partitionStuff.m_reads : partitionStuff.m_writes;
   while (perPartDeque.peekFirst() != null) {
     Iv2InFlight inFlight=perPartDeque.pollFirst();
     if (inFlight.m_ciHandle < ciHandle) {
