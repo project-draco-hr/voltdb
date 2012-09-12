@@ -1,0 +1,40 @@
+{
+  String voltDbOpts=System.getenv(VOLTDB_OPTS_ENV);
+  if (voltDbOpts == null || voltDbOpts.trim().isEmpty()) {
+    return null;
+  }
+  boolean skipNext=false;
+  List<String> nonJvmOptions=new ArrayList<String>();
+  for (  String option : CommandLineTokenizer.tokenize(voltDbOpts)) {
+    if (skipNext) {
+      skipNext=false;
+      continue;
+    }
+    if (!option.startsWith(JVM_OPT_PREFIX)) {
+      nonJvmOptions.add(option);
+      continue;
+    }
+    option=option.substring(JVM_OPT_PREFIX.length() - 1);
+    String truncated=truncateUptoDelimiter(option);
+    skipNext=requiresSkipNext.contains(truncated);
+    if (mayNotSpecify.contains(truncated)) {
+      CommandLine.hostLog.warn("Ignoring option \"" + option + "\" as it conflicts with VoltDB JVM options");
+      continue;
+    }
+    if (mayOtherwiseSpecify.contains(truncated)) {
+      CommandLine.hostLog.warn("Ignoring option \"" + option + "\" as it may be otherwise specified through VoltDB options");
+      continue;
+    }
+    jvmOptions.add(option);
+  }
+  boolean separate=false;
+  StringBuilder sb=new StringBuilder(256);
+  for (  String option : nonJvmOptions) {
+    if (separate) {
+      sb.append(" ");
+    }
+    sb.append(option);
+    separate=true;
+  }
+  return sb.toString();
+}
