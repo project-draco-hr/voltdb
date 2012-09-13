@@ -1,6 +1,4 @@
 {
-  Stack<AbstractPlanNode> coordGraph=new Stack<AbstractPlanNode>();
-  Stack<AbstractPlanNode> distGraph=new Stack<AbstractPlanNode>();
   int limitParamIndex=m_parsedSelect.getLimitParameterIndex();
   int offsetParamIndex=m_parsedSelect.getOffsetParameterIndex();
   LimitPlanNode topLimit=new LimitPlanNode();
@@ -8,24 +6,26 @@
   topLimit.setOffset((int)m_parsedSelect.offset);
   topLimit.setLimitParameterIndex(limitParamIndex);
   topLimit.setOffsetParameterIndex(offsetParamIndex);
-  boolean canPushDown=true;
-  if (m_parsedSelect.distinct || checkPushDownViability(root) == null) {
-    canPushDown=false;
-  }
-  for (  ParsedSelectStmt.ParsedColInfo col : m_parsedSelect.displayColumns) {
-    AbstractExpression rootExpr=col.expression;
-    if (rootExpr instanceof AggregateExpression) {
-      if (((AggregateExpression)rootExpr).m_distinct) {
-        canPushDown=false;
-        break;
+  AbstractPlanNode receiveNode=null;
+  boolean canPushDown=!m_parsedSelect.distinct;
+  if (canPushDown) {
+    receiveNode=checkPushDownViability(root);
+    if (receiveNode == null) {
+      canPushDown=false;
+    }
+ else {
+      for (      ParsedSelectStmt.ParsedColInfo col : m_parsedSelect.displayColumns) {
+        AbstractExpression rootExpr=col.expression;
+        if (rootExpr instanceof AggregateExpression) {
+          if (((AggregateExpression)rootExpr).m_distinct) {
+            canPushDown=false;
+            break;
+          }
+        }
       }
     }
   }
-  if ((canPushDown == false) || (root.hasAnyNodeOfType(PlanNodeType.RECEIVE) == false)) {
-    distGraph.push(topLimit);
-  }
- else {
-    coordGraph.push(topLimit);
+  if (canPushDown) {
     LimitPlanNode distLimit=new LimitPlanNode();
     if (m_parsedSelect.limit != -1) {
       distLimit.setLimit((int)(m_parsedSelect.limit + m_parsedSelect.offset));
@@ -40,7 +40,15 @@
       expr.setValueSize(VoltType.INTEGER.getLengthInBytesForFixedTypes());
       distLimit.setLimitExpression(expr);
     }
-    distGraph.push(distLimit);
+    AbstractPlanNode sendNode=receiveNode.getChild(0);
+    AbstractPlanNode distributedPlan=sendNode.getChild(0);
+    distributedPlan.clearParents();
+    sendNode.clearChildren();
+    distributedPlan=handleOrderBy(distributedPlan);
+    distLimit.addAndLinkChild(distributedPlan);
+    receiveNode.getChild(0).addAndLinkChild(distLimit);
   }
-  return pushDownLimit(root,distGraph,coordGraph);
+  topLimit.addAndLinkChild(root);
+  topLimit.generateOutputSchema(m_catalogDb);
+  return topLimit;
 }
