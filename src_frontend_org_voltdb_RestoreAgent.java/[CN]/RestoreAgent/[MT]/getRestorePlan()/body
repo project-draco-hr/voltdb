@@ -1,42 +1,14 @@
 {
-  LOG.debug("Waiting for all hosts to send their snapshot information");
-  List<String> children=null;
-  while (true) {
-    try {
-      children=m_zk.getChildren(RESTORE,false);
-    }
- catch (    KeeperException e2) {
-      throw e2;
-    }
-catch (    InterruptedException e2) {
-      continue;
-    }
-    if (children.size() < m_liveHosts.size()) {
-      try {
-        Thread.sleep(500);
-      }
- catch (      InterruptedException e1) {
-      }
-    }
- else {
-      break;
-    }
-  }
-  if (children == null) {
-    throw new RuntimeException("Unable to read agreement messages from" + " other hosts for restore plan");
-  }
-  TreeMap<Long,Set<SnapshotInfo>> snapshotFragments=new TreeMap<Long,Set<SnapshotInfo>>();
-  Long clStartTxnId=deserializeRestoreInformation(children,snapshotFragments);
+  List<String> children=waitOnVoltZK_restore();
   if (m_action == START_ACTION.CREATE) {
     return null;
   }
+  TreeMap<Long,Set<SnapshotInfo>> snapshotFragments=new TreeMap<Long,Set<SnapshotInfo>>();
+  Long clStartTxnId=deserializeRestoreInformation(children,snapshotFragments);
   if (clStartTxnId != null && clStartTxnId == Long.MIN_VALUE) {
     snapshotFragments.clear();
   }
-  if ((clStartTxnId != null && clStartTxnId != Long.MIN_VALUE) && snapshotFragments.size() == 0) {
-    throw new RuntimeException("No viable snapshots to restore");
-  }
-  LOG.debug("There are " + snapshotFragments.size() + " snapshots available in the cluster");
+  LOG.debug("There are " + snapshotFragments.size() + " restore candidate snapshots available in the cluster");
   HashMap<Long,Map<String,Set<Integer>>> snapshotTablePartitions=new HashMap<Long,Map<String,Set<Integer>>>();
   Iterator<Entry<Long,Set<SnapshotInfo>>> it=snapshotFragments.entrySet().iterator();
   while (it.hasNext()) {
