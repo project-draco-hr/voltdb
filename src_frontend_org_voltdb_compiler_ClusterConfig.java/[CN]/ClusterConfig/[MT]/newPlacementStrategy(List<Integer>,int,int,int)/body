@@ -1,0 +1,81 @@
+{
+  Collections.sort(hostIds);
+  List<Partition> partitions=new ArrayList<Partition>();
+  for (int ii=0; ii < partitionCount; ii++) {
+    partitions.add(new Partition(ii,getReplicationFactor() + 1));
+  }
+  List<Node> nodes=new ArrayList<Node>();
+  for (  Integer hostId : hostIds) {
+    nodes.add(new Node(hostId));
+  }
+  for (int ii=0; ii < partitions.size(); ii++) {
+    Partition p=partitions.get(ii);
+    Node n=nodes.get(ii % hostCount);
+    p.m_master=n;
+    p.decrementNeededReplicas();
+    n.m_masterPartitions.add(p);
+  }
+  while (needReplication(partitions)) {
+    Node n=nextNotFullNode(nodes,sitesPerHost);
+    boolean foundUsefulPartition=false;
+    Partition partitionToUse=null;
+    for (    Partition p : partitions) {
+      if (p.canUseAsReplica(n)) {
+        if (!p.m_master.m_replicationConnections.containsKey(n)) {
+          foundUsefulPartition=true;
+          partitionToUse=p;
+        }
+      }
+    }
+    if (!foundUsefulPartition) {
+      for (      Partition p : partitions) {
+        if (p.canUseAsReplica(n)) {
+          partitionToUse=p;
+          break;
+        }
+      }
+      if (partitionToUse == null) {
+        System.out.println("Oops");
+      }
+      Set<Partition> replicatedPartitions=partitionToUse.m_master.m_replicationConnections.get(n);
+      replicatedPartitions.add(partitionToUse);
+      partitionToUse.m_replicas.add(n);
+      n.m_replicaPartitions.add(partitionToUse);
+      partitionToUse.decrementNeededReplicas();
+    }
+ else {
+      Set<Partition> replicatedPartitions=new HashSet<Partition>();
+      replicatedPartitions.add(partitionToUse);
+      partitionToUse.m_master.m_replicationConnections.put(n,replicatedPartitions);
+      n.m_replicationConnections.put(partitionToUse.m_master,replicatedPartitions);
+      n.m_replicaPartitions.add(partitionToUse);
+      partitionToUse.decrementNeededReplicas();
+      partitionToUse.m_replicas.add(n);
+    }
+  }
+  JSONStringer stringer=new JSONStringer();
+  stringer.object();
+  stringer.key("hostcount").value(m_hostCount);
+  stringer.key("kfactor").value(getReplicationFactor());
+  stringer.key("sites_per_host").value(sitesPerHost);
+  stringer.key("partitions").array();
+  for (int part=0; part < partitionCount; part++) {
+    stringer.object();
+    stringer.key("partition_id").value(part);
+    stringer.key("master").value(partitions.get(part).m_master.m_hostId);
+    stringer.key("replicas").array();
+    for (    Node n : partitions.get(part).m_replicas) {
+      stringer.value(n.m_hostId);
+    }
+    stringer.value(partitions.get(part).m_master.m_hostId);
+    stringer.endArray();
+    stringer.endObject();
+  }
+  stringer.endArray();
+  stringer.endObject();
+  for (  Node n : nodes) {
+    System.out.println(n);
+  }
+  JSONObject topo=new JSONObject(stringer.toString());
+  return topo;
+}
