@@ -1,25 +1,37 @@
 def installVoltDB(pkg, release):
+    info = {}
+    info['ok'] = False
     if (pkg not in pkgName):
-        print 'Invalid pkg name!'
-        exit(1)
+        info['err'] = ("Invalid pkg name: '%s'!" % pkg)
+        info['err'] += '\nThe valid pkg names are:\n'
+        for k in pkgName:
+            info['err'] += (k + ', ')
+        info['err'] = info['err'].strip()
+        info['err'] = info['err'][:(-1)]
+        return info
     pkgname = ((((pkgName[pkg] + '-') + release) + '.') + tail)
     srce = (root + pkgname)
     dest = (destDir + pkgname)
     cmd = (((('wget ' + srce) + ' -O ') + dest) + ' 2>/dev/null')
     ret = call(cmd, shell=True)
-    info = {}
-    info['ok'] = False
-    if ((ret == 0) and os.path.exists(dest)):
-        fsize = os.path.getsize(dest)
-        if (fsize > 0):
-            ret = createAFreshDir(workDir)
-            if (ret == 0):
-                cmd = (((('tar zxf ' + dest) + ' -C ') + workDir) + ' 2>/dev/null')
-                ret = call(cmd, shell=True)
-                if (ret == 0):
-                    info['dest'] = dest
-                    info['srce'] = srce
-                    info['pkgname'] = pkgname
-                    info['workDir'] = workDir
-                    info['ok'] = True
+    if ((ret != 0) or (not os.path.exists(dest))):
+        info['err'] = ("Cannot download '%s'" % srce)
+        return info
+    fsize = os.path.getsize(dest)
+    if (fsize == 0):
+        info['err'] = ("The pkg '%s' is blank!" % dest)
+        return info
+    ret = createAFreshDir(workDir)
+    if (ret != 0):
+        info['err'] = ("Cannot create the working directory: '%s'" % workDir)
+        return info
+    cmd = (((('tar zxf ' + dest) + ' -C ') + workDir) + ' 2>/dev/null')
+    ret = call(cmd, shell=True)
+    if (ret == 0):
+        info['srce'] = srce
+        info['pkgname'] = pkgname
+        info['workDir'] = workDir
+        info['ok'] = True
+    else:
+        info['err'] = ("VoltDB pkg '%s' installation FAILED at location '%s'" % (dest, workDir))
     return info

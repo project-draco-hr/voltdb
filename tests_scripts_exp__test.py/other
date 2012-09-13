@@ -5,8 +5,11 @@ import fnmatch
 import subprocess
 import time
 import filecmp
+import socket
 from optparse import OptionParser
 from subprocess import call
+from xml.etree import ElementTree
+from xml.etree.ElementTree import Element, SubElement
 sys.path.append('../../src/py_client')
 try:
     from voltdbclient import *
@@ -14,6 +17,8 @@ except ImportError:
     sys.path.append('./src/py_client')
     from voltdbclient import *
 from Query import VoltQueryClient
+from XMLUtils import prettify
+hostname = socket.gethostname()
 pkgName = {'comm': 'LINUX-voltdb', 'pro': 'LINUX-voltdb-ent', }
 tail = 'tar.gz'
 sepLineD = '========================================================'
@@ -33,7 +38,8 @@ if (__name__ == '__main__'):
     parser.set_defaults(pkg='comm')
     parser.set_defaults(suite='all')
     (options, args) = parser.parse_args()
-    workDir = (destDir + os.path.basename(os.path.abspath(__file__)).replace('.py', ''))
+    testname = os.path.basename(os.path.abspath(__file__)).replace('.py', '')
+    workDir = (destDir + testname)
     suite = options.suite
     if ((suite not in elem2Test.keys()) and (suite != 'all')):
         print ("Warning: unknown suite name - '%s'" % suite)
@@ -46,18 +52,17 @@ if (__name__ == '__main__'):
     print ('Tested Version in this RUN: %s' % releaseNum)
     print '############################################'
     ret = installVoltDB(options.pkg, releaseNum)
-    success = ret['ok']
-    if (not success):
-        print 'After installVoltDB() Test Failed!!'
+    if (not ret['ok']):
+        print ('Error!! %s' % ret['err'])
         exit(1)
+    for k1 in ret:
+        print ("key: '%s', Val: '%s'" % (k1, ret[k1]))
     testSuiteList = setTestSuite(ret['workDir'], suite)
-    success = startTest(testSuiteList)
+    (tf, msg, keys) = startTest(testSuiteList)
     status = True
-    for module in success:
-        if (not success[module]['status']):
-            print ("\n%s\n%s\nTest '%s' FAILED!!\n%s" % (success[module]['msg'], sepLineS, module, sepLineD))
-            status = False
-        else:
-            print ("\n%s\n%s\nTest '%s' PASSED!!\n%s" % (success[module]['msg'], sepLineS, module, sepLineD))
+    reportXML = create_rpt(ret, tf, msg, keys)
+    print ("===--->>>reportXML = '%s'" % reportXML)
     if (status == False):
         print '\nAt lease one test suite is Failed!!\n'
+        exit(1)
+    exit(0)
