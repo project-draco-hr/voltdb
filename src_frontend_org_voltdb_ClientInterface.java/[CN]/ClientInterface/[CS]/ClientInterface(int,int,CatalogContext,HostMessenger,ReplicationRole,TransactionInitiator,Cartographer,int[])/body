@@ -18,14 +18,16 @@
           if (cihm != null) {
             cihm.connection.writeStream().enqueue(new DeferredSerialization(){
               @Override public ByteBuffer[] serialize() throws IOException {
+                ClientResponseImpl clientResponse=response.getClientResponseData();
                 ClientInterfaceHandleManager.Iv2InFlight clientData=cihm.findHandle(response.getClientInterfaceHandle());
-                response.getClientResponseData().setClientHandle(clientData.m_clientHandle);
                 final long now=System.currentTimeMillis();
                 final int delta=(int)(now - clientData.m_creationTime);
-                response.getClientResponseData().setClusterRoundtrip(delta);
-                ByteBuffer results=ByteBuffer.allocate(response.getClientResponseData().getSerializedSize() + 4);
+                cihm.m_acg.logTransactionCompleted(cihm.connection.connectionId(),cihm.connection.getHostnameOrIP(),clientData.m_procName,delta,clientResponse.getStatus());
+                clientResponse.setClientHandle(clientData.m_clientHandle);
+                clientResponse.setClusterRoundtrip(delta);
+                ByteBuffer results=ByteBuffer.allocate(clientResponse.getSerializedSize() + 4);
                 results.putInt(results.capacity() - 4);
-                response.getClientResponseData().flattenToBuffer(results);
+                clientResponse.flattenToBuffer(results);
                 return new ByteBuffer[]{results};
               }
               @Override public void cancel(){
