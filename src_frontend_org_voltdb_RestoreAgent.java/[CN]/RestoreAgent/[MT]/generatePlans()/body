@@ -6,69 +6,42 @@
   final Long maxLastSeenTxn=m_replayAgent.getMaxLastSeenTxn();
   Set<SnapshotInfo> snapshotInfos=new HashSet<SnapshotInfo>();
   for (  Entry<Long,Snapshot> e : snapshots.entrySet()) {
-    if (maxLastSeenTxn != null && e.getKey() < maxLastSeenTxn) {
-      continue;
-    }
-    Snapshot s=e.getValue();
-    File digest=s.m_digests.get(0);
-    int partitionCount=-1;
-    boolean skip=false;
-    for (    TableFiles tf : s.m_tableFiles.values()) {
-      if (tf.m_isReplicated) {
+    if (!VoltDB.instance().isIV2Enabled()) {
+      if (maxLastSeenTxn != null && e.getKey() < maxLastSeenTxn) {
         continue;
       }
-      if (skip) {
-        break;
-      }
-      for (      boolean completed : tf.m_completed) {
-        if (!completed) {
-          skip=true;
-          break;
+    }
+    SnapshotInfo info=checkSnapshotIsComplete(e.getKey(),e.getValue());
+    if (VoltDB.instance().isIV2Enabled()) {
+      final Map<Integer,Long> cmdlogmap=m_replayAgent.getMaxLastSeenTxnByPartition();
+      final Map<Integer,Long> snapmap=info.partitionToTxnId;
+      if (cmdlogmap != null) {
+        if (snapmap == null || cmdlogmap.size() != snapmap.size()) {
+          info=null;
+        }
+ else {
+          for (          Integer cmdpart : cmdlogmap.keySet()) {
+            Long snaptxnId=snapmap.get(cmdpart);
+            if (snaptxnId == null) {
+              info=null;
+              break;
+            }
+ else             if (snaptxnId < cmdlogmap.get(cmdpart)) {
+              info=null;
+              break;
+            }
+          }
         }
       }
-      for (      int count : tf.m_totalPartitionCounts) {
-        if (partitionCount == -1) {
-          partitionCount=count;
-        }
- else         if (count != partitionCount) {
-          skip=true;
-          break;
-        }
-      }
     }
-    Long catalog_crc=null;
-    try {
-      JSONObject digest_detail=SnapshotUtil.CRCCheck(digest);
-      catalog_crc=digest_detail.getLong("catalogCRC");
+    if (info != null) {
+      snapshotInfos.add(info);
     }
- catch (    IOException ioe) {
-      LOG.info("Unable to read digest file: " + digest.getAbsolutePath() + " due to: "+ ioe.getMessage());
-      skip=true;
-    }
-catch (    JSONException je) {
-      LOG.info("Unable to extract catalog CRC from digest: " + digest.getAbsolutePath() + " due to: "+ je.getMessage());
-      skip=true;
-    }
-    if (skip) {
-      continue;
-    }
-    SnapshotInfo info=new SnapshotInfo(e.getKey(),digest.getParent(),parseDigestFilename(digest.getName()),partitionCount,catalog_crc);
-    for (    Entry<String,TableFiles> te : s.m_tableFiles.entrySet()) {
-      TableFiles tableFile=te.getValue();
-      HashSet<Integer> ids=new HashSet<Integer>();
-      for (      Set<Integer> idSet : tableFile.m_validPartitionIds) {
-        ids.addAll(idSet);
-      }
-      if (!tableFile.m_isReplicated) {
-        info.partitions.put(te.getKey(),ids);
-      }
-    }
-    snapshotInfos.add(info);
   }
   LOG.debug("Gathered " + snapshotInfos.size() + " snapshot information");
   sendLocalRestoreInformation(maxLastSeenTxn,snapshotInfos);
   Set<SnapshotInfo> lastSnapshot=getRestorePlan();
-  SnapshotInfo infoWithMinHostId=pickSnapshotInfo(lastSnapshot);
+  SnapshotInfo infoWithMinHostId=consolidateSnapshotInfos(lastSnapshot);
   if (m_action == START_ACTION.RECOVER || m_action == START_ACTION.START) {
     m_replayAgent.generateReplayPlan();
   }
