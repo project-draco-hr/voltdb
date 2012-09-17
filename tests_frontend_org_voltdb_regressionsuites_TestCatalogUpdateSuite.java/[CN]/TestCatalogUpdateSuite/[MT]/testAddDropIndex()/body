@@ -1,6 +1,7 @@
 {
   ClientResponse callProcedure;
   String explanation;
+  VoltTable result;
   Client client=getClient();
   loadSomeData(client,0,10);
   client.drain();
@@ -12,16 +13,7 @@
   String deploymentURL=Configuration.getPathToCatalogForTest("catalogupdate-cluster-addindex.xml");
   VoltTable[] results=client.updateApplicationCatalog(new File(newCatalogURL),new File(deploymentURL)).getResults();
   assertTrue(results.length == 1);
-  callProcedure=client.callProcedure("@Statistics","INDEX",0);
-  assertTrue(callProcedure.getResults().length == 1);
-  assertTrue(callProcedure.getStatus() == ClientResponse.SUCCESS);
-  VoltTable result=callProcedure.getResults()[0];
-  long tupleCount=0;
-  while (result.advanceRow()) {
-    if (result.getString("TABLE_NAME").equals("NEW_ORDER") && result.getString("INDEX_NAME").equals("NEWINDEX")) {
-      tupleCount+=result.getLong("ENTRY_COUNT");
-    }
-  }
+  long tupleCount=indexEntryCountFromStats(client,"NEW_ORDER","NEWINDEX");
   assertTrue(tupleCount > 0);
   callProcedure=client.callProcedure("@AdHoc","insert into NEW_ORDER values (-1, -1, -1);");
   assertTrue(callProcedure.getResults().length == 1);
@@ -36,28 +28,11 @@
   loadSomeData(client,20,10);
   client.drain();
   assertTrue(callbackSuccess);
-  callProcedure=client.callProcedure("@Statistics","INDEX",0);
-  assertTrue(callProcedure.getResults().length == 1);
-  assertTrue(callProcedure.getStatus() == ClientResponse.SUCCESS);
-  result=callProcedure.getResults()[0];
-  long newTupleCount=0;
-  while (result.advanceRow()) {
-    if (result.getString("TABLE_NAME").equals("NEW_ORDER") && result.getString("INDEX_NAME").equals("NEWINDEX")) {
-      newTupleCount+=result.getLong("ENTRY_COUNT");
-    }
-  }
+  long newTupleCount=indexEntryCountFromStats(client,"NEW_ORDER","NEWINDEX");
   assertTrue(newTupleCount > tupleCount);
-  callProcedure=client.callProcedure("@Statistics","INDEX",0);
-  assertTrue(callProcedure.getResults().length == 1);
-  assertTrue(callProcedure.getStatus() == ClientResponse.SUCCESS);
-  result=callProcedure.getResults()[0];
-  long newTupleCount=0;
-  while (result.advanceRow()) {
-    if (result.getString("TABLE_NAME").equals("NEW_ORDER") && result.getString("INDEX_NAME").equals("NEWINDEX")) {
-      newTupleCount+=result.getLong("ENTRY_COUNT");
-    }
-  }
-  assertTrue(newTupleCount > tupleCount);
+  callProcedure=client.callProcedure("@AdHoc","select count(*) from NEW_ORDER;");
+  long rowCount=callProcedure.getResults()[0].asScalarLong();
+  assertEquals(newTupleCount,rowCount * (k + 1));
   newCatalogURL=Configuration.getPathToCatalogForTest("catalogupdate-cluster-base.jar");
   deploymentURL=Configuration.getPathToCatalogForTest("catalogupdate-cluster-base.xml");
   results=client.updateApplicationCatalog(new File(newCatalogURL),new File(deploymentURL)).getResults();
