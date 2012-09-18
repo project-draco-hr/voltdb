@@ -13,6 +13,9 @@
     }
     SnapshotInfo info=checkSnapshotIsComplete(e.getKey(),e.getValue());
     if (m_replayAgent.getInstanceId() != null && !m_replayAgent.getInstanceId().equals(info.instanceId)) {
+      LOG.debug("Rejecting snapshot due to mismatching instance IDs.");
+      LOG.debug("Command log ID: " + m_replayAgent.getInstanceId().serializeToJSONObject().toString());
+      LOG.debug("Snapshot ID: " + info.instanceId.serializeToJSONObject().toString());
       continue;
     }
     if (VoltDB.instance().isIV2Enabled()) {
@@ -20,6 +23,8 @@
       final Map<Integer,Long> snapmap=info.partitionToTxnId;
       if (cmdlogmap != null) {
         if (snapmap == null || cmdlogmap.size() != snapmap.size()) {
+          LOG.debug("Rejecting snapshot due to mismatching partition count (THIS IS BOGUS)");
+          LOG.debug("command log count: " + cmdlogmap.size() + ", snapshot count: "+ snapmap.size());
           info=null;
         }
  else {
@@ -27,9 +32,14 @@
             Long snaptxnId=snapmap.get(cmdpart);
             if (snaptxnId == null) {
               info=null;
+              LOG.debug("Rejecting snapshot due to missing partition: " + cmdpart);
               break;
             }
  else             if (snaptxnId < cmdlogmap.get(cmdpart)) {
+              LOG.debug("Rejecting snapshot because it does not overlap the command log");
+              LOG.debug("for partition: " + cmdpart);
+              LOG.debug("command log txn ID: " + cmdlogmap.get(cmdpart));
+              LOG.debug("snapshot txn ID: " + snaptxnId);
               info=null;
               break;
             }
