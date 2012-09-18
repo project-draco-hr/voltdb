@@ -6,6 +6,7 @@ import subprocess
 import time
 import filecmp
 import socket
+from collections import defaultdict
 from optparse import OptionParser
 from subprocess import call
 from xml.etree import ElementTree
@@ -19,10 +20,10 @@ except ImportError:
 from Query import VoltQueryClient
 from XMLUtils import prettify
 hostname = socket.gethostname()
+allPkgs = {'all': 'Community, Pro, Voltkv, Voltcache', }
 pkgName = {'comm': 'LINUX-voltdb', 'voltkv': 'LINUX-voltdb-voltkv', 'voltcache': 'LINUX-voltdb-voltcache', 'pro': 'LINUX-voltdb-ent', }
+suiteName = {'comm': 'Community', 'pro': 'Enterprise', 'voltkv': 'Voltkv', 'voltcache': 'Voltcache', }
 tail = 'tar.gz'
-sepLineD = '========================================================'
-sepLineS = '--------------------------------------------'
 root = 'http://volt0/kits/candidate/'
 destDir = '/tmp/'
 elem2Test = {'helloworld': 'run.sh', 'voltcache': 'run.sh', 'voltkv': 'run.sh', 'voter': 'run.sh', }
@@ -30,18 +31,20 @@ defaultHost = 'localhost'
 defaultPort = 21212
 '\n Voting Results\n --------------------------------------------------------------------------------\n\n A total of 8166781 votes were received...\n  - 7,816,923 Accepted\n   -    79,031 Rejected (Invalid Contestant)\n     -        12 Rejected (Maximum Vote Count Reached)\n     -         0 Failed (Transaction Error)\n\n    Contestant Name     Votes Received\n    Edwina Burnam            2,156,993\n    Jessie Eichman           1,652,654\n    Alana Bregman            1,189,909\n    Kelly Clauss             1,084,995\n    Jessie Alloway           1,060,892\n    Tabatha Gehling            939,604\n\n    The Winner is: Edwina Burnam\n'
 if (__name__ == '__main__'):
+    start = time.time()
     usage = 'Usage: %prog [options]'
     parser = OptionParser(usage='%prog [-r <release #>] [-p <comm|pro|voltkv|voltcache> <-s helloworld|voter|voltkv|voltcache>]', version='%prog 1.0')
     parser.add_option('-r', '--release', dest='release', help='VoltDB release no. If ommitted, it will find it from version.txt.')
     parser.add_option('-p', '--pkg', dest='pkg', help='VoltDB package type: Community, Pro, Voltkv or Voltcache. Defalut is Community.')
     parser.add_option('-s', '--suite', dest='suite', help='Test suite name, if not set, then take all suites')
-    parser.set_defaults(pkg='comm')
+    parser.set_defaults(pkg='all')
     parser.set_defaults(suite='all')
     (options, args) = parser.parse_args()
     testname = os.path.basename(os.path.abspath(__file__)).replace('.py', '')
     workDir = (destDir + testname)
     suite = options.suite
     if ((suite not in elem2Test.keys()) and (suite != 'all')):
+        suite = 'all'
         print ("Warning: unknown suite name - '%s'" % suite)
         print "Info: So we're going to cover all test suites in this run"
     origDir = os.getcwd()
@@ -50,22 +53,43 @@ if (__name__ == '__main__'):
         releaseNum = getReleaseNum()
     print '############################################'
     print ('Tested Version in this RUN: %s' % releaseNum)
+    if (options.pkg == 'all'):
+        print ('To test all packages in this RUN: %s' % allPkgs[options.pkg])
+    else:
+        print ('Tested pkg in this RUN: %s' % options.pkg)
     print '############################################'
-    ret = installVoltDB(options.pkg, releaseNum)
-    if (not ret['ok']):
-        print ('Error!! %s' % ret['err'])
-        exit(1)
-    for k1 in ret:
-        print ("key: '%s', Val: '%s'" % (k1, ret[k1]))
-    print ("suite = '%s'" % suite)
-    testSuiteList = setTestSuite(ret['workDir'], suite)
-    for i in testSuiteList:
-        print ("i = '%s', exec = '%s'" % (i, testSuiteList[i]))
-    (tf, msg, keys) = startTest(testSuiteList)
+    tf = msg = keys = None
+    tfD = defaultdict(dict)
+    msgD = defaultdict(dict)
+    keysD = defaultdict(dict)
+    list = None
+    if (options.pkg == 'all'):
+        list = ['comm', 'pro', 'voltkv', 'voltcache']
+    else:
+        list = [options.pkg]
+    for p in list:
+        ret = installVoltDB(p, releaseNum)
+        if (not ret['ok']):
+            print ('Error!! %s' % ret['err'])
+            exit(1)
+        testSuiteList = setTestSuite(ret['workDir'], suite)
+        (tf, msg, keys) = startTest(testSuiteList)
+        tfD[p] = tf
+        msgD[p] = msg
+        keysD[p] = keys
+    sepLineD = '================================================='
     status = True
-    reportXML = create_rpt(ret, tf, msg, keys)
-    print ("===--->>>reportXML = '%s'" % reportXML)
+    for module in tfD:
+        for suitename in tfD[module]:
+            if (not tfD[module][suitename]):
+                status = False
+                print  >> sys.stderr, ("The test suite '%s' in '%s' package FAILED                     \n'%s'\n%s" % (suitename, module, msgD[module][suitename], sepLineD))
+    elapsed = (time.time() - start)
+    reportXML = create_rpt(ret, tfD, msgD, keysD, elapsed)
+    print ("Refer to the final report '%s' for details." % reportXML)
+    print ("Total time consumed: '%.2f'" % elapsed)
     if (status == False):
         print '\nAt lease one test suite is Failed!!\n'
         exit(1)
+    print 'All tests are PASSED!!'
     exit(0)
