@@ -1,16 +1,24 @@
 {
-  long txnId=0;
   try {
-    byte[] data=m_zk.getData(SNAPSHOT_ID,false,null);
-    txnId=ByteBuffer.wrap(data).getLong();
+    byte[] data=m_zk.getData(VoltZK.restore_snapshot_id,false,null);
+    String jsonData=new String(data,VoltDB.UTF8ENCODING);
+    if (!jsonData.equals("{}")) {
+      m_hasRestored=true;
+      JSONObject jo=new JSONObject(jsonData);
+      SnapshotInfo info=new SnapshotInfo(jo);
+      m_replayAgent.setSnapshotTxnId(info);
+    }
+ else {
+      m_hasRestored=false;
+      m_replayAgent.setSnapshotTxnId(null);
+    }
   }
  catch (  KeeperException e2) {
     VoltDB.crashGlobalVoltDB(e2.getMessage(),false,e2);
   }
 catch (  InterruptedException e2) {
   }
-  if (txnId != 0) {
-    m_hasRestored=true;
+catch (  JSONException je) {
+    VoltDB.crashLocalVoltDB(je.getMessage(),true,je);
   }
-  m_replayAgent.setSnapshotTxnId(txnId);
 }
