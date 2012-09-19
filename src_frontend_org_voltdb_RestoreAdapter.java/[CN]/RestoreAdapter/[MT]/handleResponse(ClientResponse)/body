@@ -1,0 +1,31 @@
+{
+  boolean failure=false;
+  if (res.getStatus() != ClientResponse.SUCCESS) {
+    failure=true;
+  }
+  VoltTable[] results=res.getResults();
+  if (results == null || results.length != 1) {
+    failure=true;
+  }
+  while (!failure && results[0].advanceRow()) {
+    String resultStatus=results[0].getString("RESULT");
+    if (!resultStatus.equalsIgnoreCase("success")) {
+      failure=true;
+    }
+  }
+  if (failure) {
+    for (    VoltTable result : results) {
+      LOG.fatal(result);
+    }
+    VoltDB.crashGlobalVoltDB("Failed to restore from snapshot: " + res.getStatusString(),false,null);
+  }
+ else {
+    Thread networkHandoff=new Thread(){
+      @Override public void run(){
+        m_doneNotifier.run();
+      }
+    }
+;
+    networkHandoff.start();
+  }
+}

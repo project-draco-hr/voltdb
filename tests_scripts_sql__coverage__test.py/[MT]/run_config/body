@@ -1,5 +1,6 @@
-def run_config(config, basedir, output_dir, random_seed, report_all, generate_only, args):
+def run_config(suite_name, config, basedir, output_dir, random_seed, report_all, generate_only, args, testConfigKit):
     for key in config.iterkeys():
+        print ("in run_config key = '%s', config[key] = '%s'" % (key, config[key]))
         if (not os.path.isabs(config[key])):
             config[key] = os.path.abspath(os.path.join(basedir, config[key]))
     if (not os.path.exists(output_dir)):
@@ -27,7 +28,7 @@ def run_config(config, basedir, output_dir, random_seed, report_all, generate_on
     statements_file.close()
     if generate_only:
         return [0, 0]
-    if (run_once('jni', command, statements_path, jni_path) != 0):
+    if (run_once('jni', command, statements_path, jni_path, testConfigKit) != 0):
         print  >> sys.stderr, 'Test with the JNI backend had errors.'
         print  >> sys.stderr, ('  jni_path: %s' % jni_path)
         sys.stderr.flush()
@@ -43,8 +44,10 @@ def run_config(config, basedir, output_dir, random_seed, report_all, generate_on
         cPickle.dump({'id': counter, 'SQL': i, }, statements_file)
         counter += 1
     statements_file.close()
-    if (run_once('hsqldb', command, statements_path, hsql_path) != 0):
+    if (run_once('hsqldb', command, statements_path, hsql_path, testConfigKit) != 0):
         print  >> sys.stderr, 'Test with the HSQLDB backend had errors.'
         exit(1)
-    success = generate_html_reports(random_seed, statements_path, hsql_path, jni_path, output_dir, report_all)
+    global compare_results
+    compare_results = imp.load_source('normalizer', config['normalizer']).compare_results
+    success = compare_results(suite_name, random_seed, statements_path, hsql_path, jni_path, output_dir, report_all)
     return success
