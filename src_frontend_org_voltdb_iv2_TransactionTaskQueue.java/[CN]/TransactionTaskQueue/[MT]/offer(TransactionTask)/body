@@ -2,13 +2,28 @@
   Iv2Trace.logTransactionTaskQueueOffer(task);
   boolean retval=false;
   final TransactionState ts=task.getTransactionState();
-  if (ts.isForReplay() && (task instanceof FragmentTask)) {
-    if (!m_multipartBacklog.isEmpty() && ts.txnId == m_multipartBacklog.firstKey()) {
+  boolean isDRReplicated=false;
+  if (VoltDB.instance().getReplicationRole() == ReplicationRole.REPLICA && !ts.isReadOnly() && !(ts instanceof BorrowTransactionState)) {
+    isDRReplicated=true;
+  }
+  if ((ts.isForReplay() || isDRReplicated) && (task instanceof FragmentTask)) {
+    boolean hasSentinel=false;
+    if (!m_multipartBacklog.isEmpty()) {
+      long txnId=m_multipartBacklog.firstKey();
+      if (ts.txnId == txnId) {
+        hasSentinel=true;
+      }
+ else       if (txnId == GENERIC_MP_SENTINEL && isDRReplicated) {
+        hasSentinel=true;
+      }
+    }
+    if (hasSentinel) {
       Deque<TransactionTask> backlog=m_multipartBacklog.firstEntry().getValue();
       TransactionTask first=backlog.peekFirst();
       if (first != null) {
         if (first.m_txn.txnId != task.getTxnId()) {
           if (!first.m_txn.isSinglePartition()) {
+            hostLog.fatal("Head of backlog is " + first.m_txn.txnId + " but task is "+ task.getClass().getCanonicalName()+ " "+ task.getTxnId());
             VoltDB.crashLocalVoltDB("If the first backlog task is multi-part, " + "but has a different transaction id it is a bug",true,null);
           }
           backlog.addFirst(task);
@@ -34,7 +49,11 @@
     }
   }
  else   if (!m_multipartBacklog.isEmpty()) {
-    if (task.getTxnId() != m_multipartBacklog.firstKey()) {
+    boolean isDRMPTask=false;
+    if (((ts instanceof BorrowTransactionState) || !ts.isSinglePartition()) && !ts.isReadOnly() && m_multipartBacklog.firstKey() == GENERIC_MP_SENTINEL) {
+      isDRMPTask=true;
+    }
+    if (!isDRMPTask && task.getTxnId() != m_multipartBacklog.firstKey()) {
       if (!ts.isSinglePartition()) {
         Deque<TransactionTask> d=m_multipartBacklog.get(task.getTxnId());
         if (d == null) {
