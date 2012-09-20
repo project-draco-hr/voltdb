@@ -6,11 +6,21 @@ synchronized (this) {
     if (totalConnections == 0) {
       throw new NoConnectionsException("No connections.");
     }
-    for (int i=0; i < totalConnections; ++i) {
-      cxn=m_connections.get(Math.abs(++m_nextConnection % totalConnections));
-      if (!cxn.hadBackPressure() || ignoreBackpressure) {
+    if (m_useClientAffinity && m_hashinatorInitialized) {
+      final Procedure procedureInfo=m_procedureInfo.get(invocation.getProcName());
+      if (procedureInfo != null) {
+        Integer hashedPartition=invocation.getHashinatedParam(procedureInfo.partitionParameter);
+        cxn=m_partitionMasters.get(hashedPartition);
         backpressure=false;
-        break;
+      }
+    }
+    if (cxn == null) {
+      for (int i=0; i < totalConnections; ++i) {
+        cxn=m_connections.get(Math.abs(++m_nextConnection % totalConnections));
+        if (!cxn.hadBackPressure() || ignoreBackpressure) {
+          backpressure=false;
+          break;
+        }
       }
     }
     if (backpressure) {
