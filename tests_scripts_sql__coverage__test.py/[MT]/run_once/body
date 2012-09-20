@@ -1,16 +1,24 @@
-def run_once(name, command, statements_path, results_path):
+def run_once(name, command, statements_path, results_path, testConfigKit):
     print 'Running "run_once":'
     print ('  name: %s' % name)
     print ('  command: %s' % command)
     print ('  statements_path: %s' % statements_path)
     print ('  results_path: %s' % results_path)
     sys.stdout.flush()
+    host = defaultHost
+    port = defaultPort
+    if (name == 'jni'):
+        akey = 'hostname'
+        if (akey in testConfigKit):
+            host = testConfigKit['hostname']
+            port = testConfigKit['hostport']
     global normalize
-    server = subprocess.Popen(((command + ' backend=') + name), shell=True)
+    if (host == defaultHost):
+        server = subprocess.Popen(((command + ' backend=') + name), shell=True)
     client = None
     for i in xrange(10):
         try:
-            client = VoltQueryClient('localhost', 21212)
+            client = VoltQueryClient(host, port)
             client.set_quiet(True)
             client.set_timeout(5.0)
             break
@@ -20,6 +28,9 @@ def run_once(name, command, statements_path, results_path):
         print  >> sys.stderr, 'Unable to connect/create client'
         sys.stderr.flush()
         return (-1)
+    if (host != defaultHost):
+        client.onecmd(((('updatecatalog ' + testConfigKit['flushCatalog']) + ' ') + testConfigKit['deploymentFile']))
+        client.onecmd(((('updatecatalog ' + testConfigKit['testCatalog']) + ' ') + testConfigKit['deploymentFile']))
     statements_file = open(statements_path, 'rb')
     results_file = open(results_path, 'wb')
     while True:
@@ -31,26 +42,34 @@ def run_once(name, command, statements_path, results_path):
             client.onecmd(('adhoc ' + statement['SQL']))
         except:
             print  >> sys.stderr, ("Error occurred while executing '%s': %s" % (statement['SQL'], sys.exc_info()[1]))
-            killer = subprocess.Popen(('kill -9 %d' % server.pid), shell=True)
-            killer.communicate()
-            if (killer.returncode != 0):
-                print  >> sys.stderr, ('Failed to kill the server process %d' % server.pid)
+            if (host == defaultHost):
+                killer = subprocess.Popen(('kill -9 %d' % server.pid), shell=True)
+                killer.communicate()
+                if (killer.returncode != 0):
+                    print  >> sys.stderr, ('Failed to kill the server process %d' % server.pid)
             break
         tables = None
         if (client.response == None):
             print  >> sys.stderr, ("No error, but an unexpected null client response (server crash?) from executing statement '%s': %s" % (statement['SQL'], sys.exc_info()[1]))
-            killer = subprocess.Popen(('kill -9 %d' % server.pid), shell=True)
-            killer.communicate()
-            if (killer.returncode != 0):
-                print  >> sys.stderr, ('Failed to kill the server process %d' % server.pid)
+            if (host == defaultHost):
+                killer = subprocess.Popen(('kill -9 %d' % server.pid), shell=True)
+                killer.communicate()
+                if (killer.returncode != 0):
+                    print  >> sys.stderr, ('Failed to kill the server process %d' % server.pid)
             break
         if (client.response.tables != None):
             tables = [normalize(t, statement['SQL']) for t in client.response.tables]
         cPickle.dump({'Status': client.response.status, 'Info': client.response.statusString, 'Result': tables, 'Exception': str(client.response.exception), }, results_file)
     results_file.close()
     statements_file.close()
-    client.onecmd('shutdown')
-    server.communicate()
+    if (host == defaultHost):
+        client.onecmd('shutdown')
+        server.communicate()
+    else:
+        client.onecmd('disconnect')
     sys.stdout.flush()
     sys.stderr.flush()
-    return server.returncode
+    if (host == defaultHost):
+        return server.returncode
+    else:
+        return 0
