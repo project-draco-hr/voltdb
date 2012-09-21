@@ -3,6 +3,9 @@
   if (!isSinglePartition) {
     partitionId=MP_PART_ID;
   }
+  if (!isSinglePartition && isShortCircuitRead) {
+    throw new RuntimeException("Can't short circuit read a multi-part transaction");
+  }
   HandleGenerator generator;
   Deque<Iv2InFlight> perPartDeque;
   Pair<HandleGenerator,Deque<Iv2InFlight>> partitionStuff=m_partitionStuff.get(partitionId);
@@ -15,9 +18,14 @@
     generator=partitionStuff.getFirst();
     perPartDeque=partitionStuff.getSecond();
   }
-  long ciHandle=generator.getNextHandle();
+  long ciHandle=isShortCircuitRead ? m_shortCircuitHG.getNextHandle() : generator.getNextHandle();
   Iv2InFlight inFlight=new Iv2InFlight(ciHandle,clientHandle,messageSize,creationTime,procName);
-  perPartDeque.addLast(inFlight);
+  if (isShortCircuitRead) {
+    m_shortCircuitReads.put(ciHandle,inFlight);
+  }
+ else {
+    perPartDeque.addLast(inFlight);
+  }
   m_outstandingTxns++;
   m_acg.increaseBackpressure(messageSize);
   return ciHandle;
