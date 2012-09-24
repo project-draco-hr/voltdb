@@ -1,0 +1,23 @@
+{
+  assert(m_expectedThreadId == Thread.currentThread().getId());
+  if (!isSinglePartition) {
+    partitionId=MP_PART_ID;
+  }
+  PartitionData partitionStuff=m_partitionStuff.get(partitionId);
+  if (partitionStuff == null) {
+    partitionStuff=new PartitionData(partitionId);
+    m_partitionStuff=new Builder<Integer,PartitionData>().putAll(m_partitionStuff).put(partitionId,partitionStuff).build();
+  }
+  long ciHandle=partitionStuff.m_generator.getNextHandle();
+  Iv2InFlight inFlight=new Iv2InFlight(ciHandle,clientHandle,messageSize,creationTime,procName);
+  if (readOnly) {
+    ciHandle=setReadBit(ciHandle);
+    partitionStuff.m_reads.offer(inFlight);
+  }
+ else {
+    partitionStuff.m_writes.offer(inFlight);
+  }
+  m_outstandingTxns++;
+  m_acg.increaseBackpressure(messageSize);
+  return ciHandle;
+}

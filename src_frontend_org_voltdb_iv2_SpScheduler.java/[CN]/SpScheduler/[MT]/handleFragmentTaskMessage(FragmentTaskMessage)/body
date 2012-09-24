@@ -27,21 +27,25 @@
     newSpHandle=msg.getSpHandle();
     setMaxSeenTxnId(newSpHandle);
   }
-  if (msg.getInitiateTask() != null && !msg.getInitiateTask().isReadOnly()) {
-    m_cl.log(msg.getInitiateTask(),newSpHandle);
-  }
   TransactionState txn=m_outstandingTxns.get(msg.getTxnId());
   Iv2Trace.logFragmentTaskMessage(message,m_mailbox.getHSId(),newSpHandle,false);
   if (txn == null) {
     txn=new ParticipantTransactionState(newSpHandle,msg);
     m_outstandingTxns.put(msg.getTxnId(),txn);
   }
+  TransactionTask task;
   if (msg.isSysProcTask()) {
-    final SysprocFragmentTask task=new SysprocFragmentTask(m_mailbox,(ParticipantTransactionState)txn,m_pendingTasks,msg,null);
-    m_pendingTasks.offer(task);
+    task=new SysprocFragmentTask(m_mailbox,(ParticipantTransactionState)txn,m_pendingTasks,msg,null);
   }
  else {
-    final FragmentTask task=new FragmentTask(m_mailbox,(ParticipantTransactionState)txn,m_pendingTasks,msg,null);
+    task=new FragmentTask(m_mailbox,(ParticipantTransactionState)txn,m_pendingTasks,msg,null);
+  }
+  if (msg.getInitiateTask() != null && !msg.getInitiateTask().isReadOnly()) {
+    if (!m_cl.log(msg.getInitiateTask(),newSpHandle,m_durabilityListener,task)) {
+      m_pendingTasks.offer(task);
+    }
+  }
+ else {
     m_pendingTasks.offer(task);
   }
 }
