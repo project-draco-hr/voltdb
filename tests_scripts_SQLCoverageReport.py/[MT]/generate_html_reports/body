@@ -1,4 +1,4 @@
-def generate_html_reports(seed, statements_path, hsql_path, jni_path, output_dir, report_all, is_matching=False):
+def generate_html_reports(suite, seed, statements_path, hsql_path, jni_path, output_dir, report_all, cntonly=False, is_matching=False):
     if ((output_dir != None) and (not os.path.exists(output_dir))):
         os.makedirs(output_dir)
     statements_file = open(statements_path, 'rb')
@@ -24,21 +24,25 @@ def generate_html_reports(seed, statements_path, hsql_path, jni_path, output_dir
         statement['hsqldb'] = hsql
         statement['jni'] = jni
         if is_matching:
-            if (not is_different(statement)):
+            if (not is_different(statement, cntonly)):
                 mismatches.append(statement)
-        elif is_different(statement):
+        elif is_different(statement, cntonly):
             mismatches.append(statement)
         if report_all:
             all_results.append(statement)
     statements_file.close()
     hsql_file.close()
     jni_file.close()
-    report = ('\n<html>\n<head>\n<title>SQL Coverage Test Report</title>\n<style>\nh2 {text-transform: uppercase}\n</style>\n</head>\n\n<body>\nRandom seed: %s\n<br/>\nTotal statements: %d\n<br/>\nFailed (*not* necessarily mismatched) statements: %d\n' % (seed, count, failures))
+    topLine = getTopSummaryLine()
+    keyStats = createSummaryInHTML(count, failures, mismatches, seed)
+    report = ('\n<html>\n<head>\n<title>SQL Coverage Test Report</title>\n<style>\nh2 {text-transform: uppercase}\n</style>\n</head>\n\n<body>\n    <h2>Test Suite Name: %s</h2>\n    <h4>Random Seed: <b>%d</b></h4>\n    <table border=1><tr>%s</tr>\n' % (suite, seed, topLine))
+    report += ('\n<tr>%s</tr>\n</table>\n' % keyStats)
 
     def key(x):
         return int(x['id'])
-    sorted(mismatches, cmp=cmp, key=key)
-    report += print_section('Mismatched Statements', mismatches, output_dir)
+    if (len(mismatches) > 0):
+        sorted(mismatches, cmp=cmp, key=key)
+        report += print_section('Mismatched Statements', mismatches, output_dir)
     if report_all:
         report += print_section('Total Statements', all_results, output_dir)
     report += '\n</body>\n</html>\n'
@@ -46,4 +50,7 @@ def generate_html_reports(seed, statements_path, hsql_path, jni_path, output_dir
         summary = open(os.path.join(output_dir, 'index.html'), 'w')
         summary.write(report.encode('utf-8'))
         summary.close()
-    return (failures, len(mismatches))
+    results = {}
+    results['mis'] = len(mismatches)
+    results['keyStats'] = keyStats
+    return results
