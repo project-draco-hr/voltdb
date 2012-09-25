@@ -4,16 +4,23 @@
     long newSpHandle;
     long timestamp;
     Iv2InitiateTaskMessage msg=message;
-    if (m_isLeader) {
+    if (m_isLeader || message.isReadOnly()) {
+      if (!m_isLeader && CoreUtils.getHostIdFromHSId(msg.getInitiatorHSId()) != CoreUtils.getHostIdFromHSId(m_mailbox.getHSId())) {
+        VoltDB.crashLocalVoltDB("Only allowed to do short circuit reads locally",true,null);
+      }
       if (message.isForReplay()) {
         newSpHandle=message.getTxnId();
         timestamp=message.getTimestamp();
         setMaxSeenTxnId(newSpHandle);
       }
- else {
+ else       if (m_isLeader) {
         TxnEgo ego=advanceTxnEgo();
         newSpHandle=ego.getTxnId();
         timestamp=ego.getWallClock();
+      }
+ else {
+        timestamp=System.currentTimeMillis();
+        newSpHandle=getCurrentTxnId();
       }
       msg=new Iv2InitiateTaskMessage(message.getInitiatorHSId(),message.getCoordinatorHSId(),m_repairLogTruncationHandle,message.getTxnId(),message.getTimestamp(),message.isReadOnly(),message.isSinglePartition(),message.getStoredProcedureInvocation(),message.getClientInterfaceHandle(),message.getConnectionId(),message.isForReplay());
       msg.setSpHandle(newSpHandle);
@@ -21,7 +28,7 @@
         msg.setTxnId(newSpHandle);
         msg.setTimestamp(timestamp);
       }
-      if (m_sendToHSIds.size() > 0) {
+      if (m_isLeader && !msg.isReadOnly() && m_sendToHSIds.size() > 0) {
         Iv2InitiateTaskMessage replmsg=new Iv2InitiateTaskMessage(m_mailbox.getHSId(),m_mailbox.getHSId(),m_repairLogTruncationHandle,msg.getTxnId(),msg.getTimestamp(),msg.isReadOnly(),msg.isSinglePartition(),msg.getStoredProcedureInvocation(),msg.getClientInterfaceHandle(),msg.getConnectionId(),msg.isForReplay());
         replmsg.setSpHandle(newSpHandle);
         m_mailbox.send(com.google.common.primitives.Longs.toArray(m_sendToHSIds),replmsg);
@@ -34,12 +41,16 @@
       newSpHandle=msg.getSpHandle();
       timestamp=msg.getTimestamp();
     }
-    if (!msg.isReadOnly()) {
-      m_cl.log(msg,newSpHandle);
-    }
     Iv2Trace.logIv2InitiateTaskMessage(message,m_mailbox.getHSId(),msg.getTxnId(),newSpHandle);
     final SpProcedureTask task=new SpProcedureTask(m_mailbox,procedureName,m_pendingTasks,msg,m_drGateway);
-    m_pendingTasks.offer(task);
+    if (!msg.isReadOnly()) {
+      if (!m_cl.log(msg,newSpHandle,m_durabilityListener,task)) {
+        m_pendingTasks.offer(task);
+      }
+    }
+ else {
+      m_pendingTasks.offer(task);
+    }
     return;
   }
  else {

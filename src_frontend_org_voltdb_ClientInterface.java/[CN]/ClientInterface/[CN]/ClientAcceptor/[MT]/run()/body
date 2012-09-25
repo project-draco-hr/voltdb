@@ -16,14 +16,18 @@
       }
       if (m_numConnections.get() == MAX_CONNECTIONS.get()) {
         networkLog.warn("Rejected connection from " + socket.socket().getRemoteSocketAddress() + " because the connection limit of "+ MAX_CONNECTIONS+ " has been reached");
-        final ByteBuffer b=ByteBuffer.allocate(1);
-        b.put(MAX_CONNECTIONS_LIMIT_ERROR);
-        b.flip();
-        socket.configureBlocking(true);
-        for (int ii=0; ii < 4 && b.hasRemaining(); ii++) {
-          socket.write(b);
+        try {
+          final ByteBuffer b=ByteBuffer.allocate(1);
+          b.put(MAX_CONNECTIONS_LIMIT_ERROR);
+          b.flip();
+          socket.configureBlocking(true);
+          for (int ii=0; ii < 4 && b.hasRemaining(); ii++) {
+            socket.write(b);
+          }
+          socket.close();
         }
-        socket.close();
+ catch (        IOException e) {
+        }
         continue;
       }
       m_numConnections.incrementAndGet();
@@ -36,12 +40,12 @@
               if (handler != null) {
                 socket.configureBlocking(false);
                 if (handler instanceof ClientInputHandler) {
-                  socket.socket().setTcpNoDelay(false);
+                  socket.socket().setTcpNoDelay(true);
                 }
                 socket.socket().setKeepAlive(true);
                 if (handler instanceof ClientInputHandler) {
                   final Connection c=m_network.registerChannel(socket,handler,0);
-                  if (!VoltDB.instance().isIV2Enabled()) {
+                  if (!m_isIV2Enabled) {
                     m_backpressureLock.lock();
                     try {
                       if (!m_hasDTXNBackPressure) {
