@@ -2,42 +2,27 @@
   int hostCount=getHostCount();
   int partitionCount=getPartitionCount();
   int sitesPerHost=getSitesPerHost();
-  int partitionCounter=-1;
-  HashMap<Integer,ArrayList<Integer>> partToHosts=new HashMap<Integer,ArrayList<Integer>>();
-  for (int i=0; i < partitionCount; i++) {
-    ArrayList<Integer> hosts=new ArrayList<Integer>();
-    partToHosts.put(i,hosts);
+  if (hostCount != hostIds.size()) {
+    throw new RuntimeException("Provided " + hostIds.size() + " host ids when host count is "+ hostCount);
   }
-  for (int i=0; i < sitesPerHost * hostCount; i++) {
-    int partition=(++partitionCounter) % partitionCount;
-    int hostForSite=hostIds.get(i / sitesPerHost);
-    partToHosts.get(partition).add(hostForSite);
+  boolean useFallbackStrategy=Boolean.valueOf(System.getenv("VOLT_REPLICA_FALLBACK"));
+  if (sitesPerHost * hostCount % partitionCount > 0 || partitionCount < hostCount) {
+    hostLog.warn("Unable to use optimal replica placement strategy with this configuration. " + " Falling back to a less optimal strategy that may result in worse performance. " + " Try using an even number of sites per host.");
+    useFallbackStrategy=true;
   }
-  for (  Entry<Integer,ArrayList<Integer>> e : partToHosts.entrySet()) {
-    Collections.sort(e.getValue());
+  JSONObject topo=null;
+  if (useFallbackStrategy) {
+    topo=fallbackPlacementStrategy(hostIds,hostCount,partitionCount,sitesPerHost);
   }
-  JSONStringer stringer=new JSONStringer();
-  stringer.object();
-  stringer.key("hostcount").value(m_hostCount);
-  stringer.key("kfactor").value(getReplicationFactor());
-  stringer.key("sites_per_host").value(sitesPerHost);
-  stringer.key("partitions").array();
-  for (int part=0; part < partitionCount; part++) {
-    stringer.object();
-    stringer.key("partition_id").value(part);
-    int index=part % (getReplicationFactor() + 1);
-    int master=partToHosts.get(part).get(index);
-    stringer.key("master").value(master);
-    stringer.key("replicas").array();
-    for (    int host_pos : partToHosts.get(part)) {
-      stringer.value(host_pos);
+ else {
+    try {
+      topo=newPlacementStrategy(hostIds,hostCount,partitionCount,sitesPerHost);
     }
-    stringer.endArray();
-    stringer.endObject();
+ catch (    Exception e) {
+      hostLog.error("Unable to use optimal replica placement strategy. " + "Falling back to a less optimal strategy that may result in worse performance");
+      topo=fallbackPlacementStrategy(hostIds,hostCount,partitionCount,sitesPerHost);
+    }
   }
-  stringer.endArray();
-  stringer.endObject();
-  JSONObject topo=new JSONObject(stringer.toString());
   hostLog.info("TOPO: " + topo.toString(2));
   return topo;
 }
