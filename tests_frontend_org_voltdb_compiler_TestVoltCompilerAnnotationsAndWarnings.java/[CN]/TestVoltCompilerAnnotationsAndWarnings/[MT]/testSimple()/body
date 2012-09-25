@@ -1,17 +1,19 @@
 {
-  String simpleSchema="create table blah (" + "ival bigint default 0 not null, " + "sval varchar(255) not null"+ ");"+ "create table indexed_blah ("+ "ival bigint default 0 not null, "+ "sval varchar(255) not null, "+ "PRIMARY KEY(ival)"+ ");";
+  String simpleSchema="create table blah (" + "ival bigint default 0 not null, " + "sval varchar(255) not null"+ ");"+ "create table indexed_replicated_blah ("+ "ival bigint default 0 not null, "+ "sval varchar(255) not null, "+ "PRIMARY KEY(ival)"+ ");"+ "create table indexed_partitioned_blah ("+ "ival bigint default 0 not null, "+ "sval varchar(255) not null, "+ "PRIMARY KEY(ival)"+ ");"+ "";
   VoltProjectBuilder builder=new VoltProjectBuilder();
   ByteArrayOutputStream capturer=new ByteArrayOutputStream();
   PrintStream capturing=new PrintStream(capturer);
   builder.setCompilerDebugPrintStream(capturing);
   builder.addLiteralSchema(simpleSchema);
   builder.addPartitionInfo("blah","ival");
+  builder.addPartitionInfo("indexed_partitioned_blah","ival");
   builder.addStmtProcedure("Insert","insert                            into\t \tblah values\n\n(? \t ,\t\t\t?)                           ;",null);
   builder.addProcedures(NondeterministicROProc.class);
   builder.addProcedures(NondeterministicRWProc.class);
   builder.addProcedures(DeterministicRONonSeqProc.class);
   builder.addProcedures(DeterministicROSeqProc.class);
-  builder.addProcedures(DeterministicRWProc.class);
+  builder.addProcedures(DeterministicRWProc1.class);
+  builder.addProcedures(DeterministicRWProc2.class);
   builder.addProcedures(ProcSPcandidate1.class);
   builder.addProcedures(ProcSPcandidate2.class);
   builder.addProcedures(ProcSPcandidate3.class);
@@ -27,13 +29,13 @@
   builder.addProcedures(ProcSPNoncandidate6.class);
   builder.addStmtProcedure("StmtSPcandidate1","select count(*) from blah where ival = ?",null);
   builder.addStmtProcedure("StmtSPcandidate2","select count(*) from blah where ival = 12345678",null);
-  builder.addStmtProcedure("StmtSPcandidate3","select count(*) from blah, indexed_blah " + "where indexed_blah.sval = blah.sval and blah.ival = 12345678",null);
-  builder.addStmtProcedure("StmtSPcandidate4","select count(*) from blah, indexed_blah " + "where indexed_blah.sval = blah.sval and blah.ival = abs(1)+1",null);
+  builder.addStmtProcedure("StmtSPcandidate3","select count(*) from blah, indexed_replicated_blah " + "where indexed_replicated_blah.sval = blah.sval and blah.ival = 12345678",null);
+  builder.addStmtProcedure("StmtSPcandidate4","select count(*) from blah, indexed_replicated_blah " + "where indexed_replicated_blah.sval = blah.sval and blah.ival = abs(1)+1",null);
   builder.addStmtProcedure("StmtSPcandidate5","select count(*) from blah where sval = ? and ival = 12345678",null);
   builder.addStmtProcedure("StmtSPcandidate6","select count(*) from blah where sval = ? and ival = ?",null);
   builder.addStmtProcedure("StmtSPNoncandidate1","select count(*) from blah where sval = ?",null);
   builder.addStmtProcedure("StmtSPNoncandidate2","select count(*) from blah where sval = '12345678'",null);
-  builder.addStmtProcedure("StmtSPNoncandidate3","select count(*) from indexed_blah where ival = ?",null);
+  builder.addStmtProcedure("StmtSPNoncandidate3","select count(*) from indexed_replicated_blah where ival = ?",null);
   boolean success=builder.compile(Configuration.getPathToCatalogForTest("annotations.jar"));
   assert(success);
   String captured=capturer.toString("UTF-8");
@@ -58,6 +60,7 @@
   assertFalse(foundLineMatching(lines,".*\\[Seq].*BLAH.insert.*"));
   assertFalse(foundLineMatching(lines,".*\\[RO].*NondeterministicRWProc.*"));
   assertFalse(foundLineMatching(lines,".*\\[RO].*DeterministicRWProc.*"));
+  assertFalse(foundLineMatching(lines,".*DeterministicRWProc.*non-deterministic.*"));
   assertEquals(4,countLinesMatching(lines,".*\\[StmtSPcandidate.].*partitioninfo=BLAH\\.IVAL:0.*"));
   assertEquals(2,countLinesMatching(lines,".*\\[StmtSPcandidate.].*12345678.*partitioninfo=BLAH\\.IVAL:0.*"));
   assertEquals(1,countLinesMatching(lines,".*\\[StmtSPcandidate.].*abs.*partitioninfo=BLAH\\.IVAL:0.*"));

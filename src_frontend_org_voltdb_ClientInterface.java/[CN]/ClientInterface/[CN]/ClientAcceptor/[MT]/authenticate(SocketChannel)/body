@@ -3,19 +3,24 @@
   byte version=(byte)0;
   responseBuffer.putInt(2);
   responseBuffer.put(version);
-  socket.configureBlocking(false);
+  socket.configureBlocking(true);
   socket.socket().setTcpNoDelay(true);
   final ByteBuffer lengthBuffer=ByteBuffer.allocate(4);
-  for (int ii=0; ii < 4; ii++) {
-    socket.read(lengthBuffer);
-    if (!lengthBuffer.hasRemaining()) {
-      break;
+  ScheduledFuture<?> timeoutFuture=VoltDB.instance().scheduleWork(new Runnable(){
+    @Override public void run(){
+      try {
+        authLog.warn("Timing out login attempt from " + socket.socket().getRemoteSocketAddress() + " after 1600 milliseconds");
+        socket.close();
+      }
+ catch (      IOException e) {
+      }
     }
-    try {
-      Thread.sleep(400);
-    }
- catch (    InterruptedException e) {
-      throw new IOException(e);
+  }
+,1600,0,TimeUnit.MILLISECONDS);
+  while (lengthBuffer.hasRemaining()) {
+    int read=socket.read(lengthBuffer);
+    if (read == -1) {
+      throw new EOFException();
     }
   }
   if (lengthBuffer.hasRemaining()) {
@@ -59,6 +64,9 @@
     responseBuffer.put(WIRE_PROTOCOL_TIMEOUT_ERROR).flip();
     socket.write(responseBuffer);
     socket.close();
+    return null;
+  }
+  if (!timeoutFuture.cancel(false)) {
     return null;
   }
   message.flip().position(1);

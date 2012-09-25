@@ -6,11 +6,42 @@ synchronized (this) {
     if (totalConnections == 0) {
       throw new NoConnectionsException("No connections.");
     }
-    for (int i=0; i < totalConnections; ++i) {
-      cxn=m_connections.get(Math.abs(++m_nextConnection % totalConnections));
-      if (!cxn.hadBackPressure() || ignoreBackpressure) {
-        backpressure=false;
-        break;
+    if (m_useClientAffinity && m_hashinatorInitialized) {
+      final Procedure procedureInfo=m_procedureInfo.get(invocation.getProcName());
+      if (procedureInfo != null) {
+        Integer hashedPartition=invocation.getHashinatedParam(procedureInfo.partitionParameter);
+        if (procedureInfo.readOnly) {
+          NodeConnection partitionReplicas[]=m_partitionReplicas.get(hashedPartition);
+          if (partitionReplicas != null && partitionReplicas.length > 0) {
+            cxn=partitionReplicas[ThreadLocalRandom.current().nextInt(partitionReplicas.length)];
+            if (cxn.hadBackPressure()) {
+              for (              NodeConnection nc : partitionReplicas) {
+                if (!nc.hadBackPressure()) {
+                  cxn=nc;
+                  break;
+                }
+              }
+            }
+            if (!cxn.hadBackPressure() || ignoreBackpressure) {
+              backpressure=false;
+            }
+          }
+        }
+ else {
+          cxn=m_partitionMasters.get(hashedPartition);
+          if (cxn != null && !cxn.hadBackPressure() || ignoreBackpressure) {
+            backpressure=false;
+          }
+        }
+      }
+    }
+    if (cxn == null) {
+      for (int i=0; i < totalConnections; ++i) {
+        cxn=m_connections.get(Math.abs(++m_nextConnection % totalConnections));
+        if (!cxn.hadBackPressure() || ignoreBackpressure) {
+          backpressure=false;
+          break;
+        }
       }
     }
     if (backpressure) {
