@@ -6,6 +6,7 @@
     }
     for (    boolean completed : tf.m_completed) {
       if (!completed) {
+        LOG.debug("Rejecting snapshot because it was not completed.");
         return null;
       }
     }
@@ -14,6 +15,7 @@
         partitionCount=count;
       }
  else       if (count != partitionCount) {
+        LOG.debug("Rejecting snapshot because it had the wrong partition count.");
         return null;
       }
     }
@@ -21,6 +23,7 @@
   File digest=s.m_digests.get(0);
   Long catalog_crc=null;
   Map<Integer,Long> pidToTxnMap=new TreeMap<Integer,Long>();
+  InstanceId instanceId=new InstanceId(0,0);
   try {
     JSONObject digest_detail=SnapshotUtil.CRCCheck(digest);
     catalog_crc=digest_detail.getLong("catalogCRC");
@@ -33,6 +36,9 @@
         pidToTxnMap.put(Integer.valueOf(pidkey),txnidval);
       }
     }
+    if (digest_detail.has("instanceId")) {
+      instanceId=new InstanceId(digest_detail.getJSONObject("instanceId"));
+    }
   }
  catch (  IOException ioe) {
     LOG.info("Unable to read digest file: " + digest.getAbsolutePath() + " due to: "+ ioe.getMessage());
@@ -42,7 +48,7 @@ catch (  JSONException je) {
     LOG.info("Unable to extract catalog CRC from digest: " + digest.getAbsolutePath() + " due to: "+ je.getMessage());
     return null;
   }
-  SnapshotInfo info=new SnapshotInfo(key,digest.getParent(),parseDigestFilename(digest.getName()),partitionCount,catalog_crc,m_hostId);
+  SnapshotInfo info=new SnapshotInfo(key,digest.getParent(),parseDigestFilename(digest.getName()),partitionCount,catalog_crc,m_hostId,instanceId);
   for (  Entry<String,TableFiles> te : s.m_tableFiles.entrySet()) {
     TableFiles tableFile=te.getValue();
     HashSet<Integer> ids=new HashSet<Integer>();
