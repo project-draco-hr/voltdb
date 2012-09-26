@@ -1,0 +1,38 @@
+{
+  long inTxnId=in.getTxnId();
+  ReplayEntry found=m_replayEntries.get(inTxnId);
+  if (in instanceof MultiPartitionParticipantMessage) {
+    MultiPartitionParticipantMessage mppm=(MultiPartitionParticipantMessage)in;
+    if (found == null) {
+      ReplayEntry newEntry=new ReplayEntry();
+      newEntry.m_sentinalTxnId=inTxnId;
+      m_replayEntries.put(inTxnId,newEntry);
+    }
+ else {
+      found.m_sentinalTxnId=inTxnId;
+    }
+  }
+ else   if (in instanceof FragmentTaskMessage) {
+    FragmentTaskMessage ftm=(FragmentTaskMessage)in;
+    if (found == null) {
+      ReplayEntry newEntry=new ReplayEntry();
+      newEntry.m_firstFragment=ftm;
+      m_replayEntries.put(inTxnId,newEntry);
+    }
+ else     if (found.m_firstFragment == null) {
+      found.m_firstFragment=ftm;
+    }
+ else {
+      found.addBlockedMessage(ftm);
+    }
+  }
+ else {
+    if (m_replayEntries.isEmpty()) {
+      return false;
+    }
+ else {
+      m_replayEntries.lastEntry().getValue().addBlockedMessage(in);
+    }
+  }
+  return true;
+}
