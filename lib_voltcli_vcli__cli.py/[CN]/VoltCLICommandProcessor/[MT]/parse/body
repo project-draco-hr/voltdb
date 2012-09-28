@@ -1,0 +1,50 @@
+def parse(self, cmdargs):
+    iverb = 0
+    allow_no_command = False
+    while (iverb < len(cmdargs)):
+        if cmdargs[iverb].startswith('-'):
+            if (cmdargs[iverb] in ('-h', '--help', '--version')):
+                allow_no_command = True
+            for opt in self.options:
+                if (cmdargs[iverb] in opt.args):
+                    if ((not ('action' in opt.kwargs)) or (opt.kwargs['action'] == 'store')):
+                        iverb += 1
+        else:
+            break
+        iverb += 1
+    if ((iverb == len(cmdargs)) and (not allow_no_command)):
+        self._abort('Missing command.')
+    (opts, args) = optparse.OptionParser.parse_args(self, list(cmdargs[:iverb]))
+    assert (len(args) == 0)
+    for option in self.options:
+        name = option.kwargs['dest']
+        setattr(sys.modules[__name__], name, getattr(opts, name))
+    verb_name = cmdargs[iverb].lower()
+    if (verb_name in self.aliases):
+        alias_tokens = shlex.split(self.aliases[verb_name])
+        if (len(alias_tokens) == 0):
+            self._abort(('Missing alias definition for "%s"' % verb_name))
+        verb_name = alias_tokens[0]
+        if (len(alias_tokens) > 1):
+            args = (alias_tokens[1:] + args)
+    verb = None
+    for verb_chk in self.verbs:
+        if (verb_chk.name == verb_name):
+            verb = verb_chk
+            break
+    else:
+        self._abort(('Unknown command: %s' % verb_name))
+    secondary = optparse.OptionParser(description=verb.metadata.description, usage=('%%prog %s %s' % (verb.name, verb.metadata.usage)))
+    if (iverb < len(cmdargs)):
+        if verb.metadata.options:
+            for opt in verb.metadata.options:
+                secondary.add_option(*opt.args, **opt.kwargs)
+        if verb.metadata.passthrough:
+            args = cmdargs[(iverb + 1):]
+            options = None
+        else:
+            (options, args) = secondary.parse_args(list(cmdargs[(iverb + 1):]))
+    else:
+        options = None
+        args = []
+    return (verb, options, args, self, secondary)
