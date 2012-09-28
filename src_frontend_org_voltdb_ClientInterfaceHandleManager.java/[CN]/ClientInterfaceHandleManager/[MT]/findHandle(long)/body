@@ -1,13 +1,19 @@
 {
+  final boolean readOnly=getReadBit(ciHandle);
+  ciHandle=unsetReadBit(ciHandle);
   assert(m_expectedThreadId == Thread.currentThread().getId());
+  Iv2InFlight inflight=m_shortCircuitReads.remove(ciHandle);
+  if (inflight != null) {
+    m_acg.reduceBackpressure(inflight.m_messageSize);
+    m_outstandingTxns--;
+    return inflight;
+  }
   int partitionId=getPartIdFromHandle(ciHandle);
   PartitionData partitionStuff=m_partitionStuff.get(partitionId);
   if (partitionStuff == null) {
     tmLog.error("Unable to find handle list for partition: " + partitionId);
     return null;
   }
-  final boolean readOnly=getReadBit(ciHandle);
-  ciHandle=unsetReadBit(ciHandle);
   final Deque<Iv2InFlight> perPartDeque=readOnly ? partitionStuff.m_reads : partitionStuff.m_writes;
   while (perPartDeque.peekFirst() != null) {
     Iv2InFlight inFlight=perPartDeque.pollFirst();
