@@ -1,0 +1,31 @@
+{
+  final File schemaFile=VoltProjectBuilder.writeStringToTempFile(ddl != null ? ddl : "");
+  final String schemaPath=schemaFile.getPath();
+  String rolesBlock=(rolesElem != null ? String.format("<roles>%s</roles>",rolesElem) : "");
+  final String simpleProject="<?xml version=\"1.0\"?>\n" + "<project>" + "<database name='database'>"+ "<schemas>"+ "<schema path='" + schemaPath + "' />"+ "</schemas>"+ rolesBlock+ "<procedures/>"+ "</database>"+ "</project>";
+  final File projectFile=VoltProjectBuilder.writeStringToTempFile(simpleProject);
+  final String projectPath=projectFile.getPath();
+  final VoltCompiler compiler=new VoltCompiler();
+  final boolean success=compiler.compile(projectPath,testout_jar);
+  String error=(success || compiler.m_errors.size() == 0 ? "" : compiler.m_errors.get(compiler.m_errors.size() - 1).message);
+  if (errorRegex == null) {
+    assertTrue(String.format("Expected success\nXML: %s\nDDL: %s\nERR: %s",rolesElem,ddl,error),success);
+    Catalog cat=compiler.getCatalog();
+    CatalogMap<Group> groups=cat.getClusters().get("cluster").getDatabases().get("database").getGroups();
+    assertNotNull(groups);
+    assertEquals(roles.length,groups.size());
+    for (    TestRole role : roles) {
+      Group group=groups.get(role.name);
+      assertNotNull(String.format("Missing role \"%s\"",role.name),group);
+      assertEquals(String.format("Role \"%s\" adhoc flag mismatch:",role.name),role.adhoc,group.getAdhoc());
+      assertEquals(String.format("Role \"%s\" sysproc flag mismatch:",role.name),role.sysproc,group.getSysproc());
+      assertEquals(String.format("Role \"%s\" defaultproc flag mismatch:",role.name),role.defaultproc,group.getDefaultproc());
+    }
+  }
+ else {
+    assertFalse(String.format("Expected error (\"%s\")\nXML: %s\nDDL: %s",errorRegex,rolesElem,ddl),success);
+    assertFalse("Expected at least one error message.",error.isEmpty());
+    Matcher m=Pattern.compile(errorRegex).matcher(error);
+    assertTrue(String.format("%s\nEXPECTED: %s",error,errorRegex),m.matches());
+  }
+}
