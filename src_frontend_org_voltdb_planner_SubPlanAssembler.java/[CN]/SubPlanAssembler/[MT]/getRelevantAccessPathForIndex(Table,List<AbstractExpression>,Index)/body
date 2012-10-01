@@ -1,21 +1,27 @@
 {
   assert(index != null);
   assert(table != null);
-  if (!index.getExpressionsjson().equals("")) {
-    return null;
-  }
   if (exprs == null) {
     return null;
+  }
+  if (!index.getExpressionsjson().equals("")) {
+    return getRelevantAccessPathForExpressionIndex(table,exprs,index);
   }
   AccessPath retval=new AccessPath();
   retval.use=IndexUseType.COVERING_UNIQUE_EQUALITY;
   retval.index=index;
   final boolean indexScannable=(index.getType() == IndexType.BALANCED_TREE.getValue()) || (index.getType() == IndexType.BTREE.getValue());
+  List<ColumnRef> sortedColumns=CatalogUtil.getSortedCatalogItems(index.getColumns(),"index");
+  int[] colIds=new int[sortedColumns.size()];
+  int ii=0;
+  for (  ColumnRef cr : sortedColumns) {
+    colIds[ii++]=cr.getColumn().getIndex();
+  }
   HashMap<Column,ArrayList<AbstractExpression>> eqColumns=new HashMap<Column,ArrayList<AbstractExpression>>();
   HashMap<Column,ArrayList<AbstractExpression>> gtColumns=new HashMap<Column,ArrayList<AbstractExpression>>();
   HashMap<Column,ArrayList<AbstractExpression>> ltColumns=new HashMap<Column,ArrayList<AbstractExpression>>();
   for (  AbstractExpression ae : exprs) {
-    AbstractExpression expr=getIndexableExpressionForFilter(table,ae);
+    AbstractExpression expr=getIndexableExpressionForFilter(table,ae,colIds,null);
     if (expr != null) {
       AbstractExpression indexable=expr.getLeft();
       assert(indexable.getExpressionType() == ExpressionType.VALUE_TUPLE);
@@ -43,7 +49,6 @@
   if (indexScannable && m_parsedStmt instanceof ParsedSelectStmt) {
     ParsedSelectStmt parsedSelectStmt=(ParsedSelectStmt)m_parsedStmt;
     if (!parsedSelectStmt.orderColumns.isEmpty()) {
-      List<ColumnRef> sortedColumns=CatalogUtil.getSortedCatalogItems(index.getColumns(),"index");
       Iterator<ColumnRef> colRefIter=sortedColumns.iterator();
       boolean ascending=parsedSelectStmt.orderColumns.get(0).ascending;
       for (      ParsedColInfo colInfo : parsedSelectStmt.orderColumns) {
@@ -53,8 +58,7 @@
         }
         ColumnRef colRef=colRefIter.next();
         if (colInfo.expression instanceof TupleValueExpression && colInfo.tableName.equals(table.getTypeName()) && colInfo.columnName.equals(colRef.getColumn().getTypeName())&& colInfo.ascending == ascending) {
-          if (ascending)           retval.sortDirection=SortDirectionType.ASC;
- else           retval.sortDirection=SortDirectionType.DESC;
+          retval.sortDirection=ascending ? SortDirectionType.ASC : SortDirectionType.DESC;
           retval.use=IndexUseType.INDEX_SCAN;
         }
  else {
