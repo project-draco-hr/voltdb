@@ -1,12 +1,33 @@
 {
   assert(stmtNode.children.size() > 1);
-  for (  VoltXMLElement selectSQL : stmtNode.children) {
-    if (!selectSQL.name.equalsIgnoreCase(SELECT_NODE_NAME)) {
-      throw new RuntimeException("Unexpected Element in UNION statement: " + selectSQL.name);
+  tableList.clear();
+  for (  VoltXMLElement childSQL : stmtNode.children) {
+    if (!childSQL.name.equalsIgnoreCase(SELECT_NODE_NAME)) {
+      throw new PlanningErrorException("Unexpected Element in UNION statement: " + childSQL.name);
     }
-    AbstractParsedStmt selectStmt=new ParsedSelectStmt();
-    selectStmt.parseTablesAndParams(selectSQL,db);
-    m_children.add(selectStmt);
+    AbstractParsedStmt childStmt=new ParsedSelectStmt();
+    childStmt.parseTablesAndParams(childSQL,db);
+    m_children.add(childStmt);
+    HashSet<String> uniqueTables=new HashSet<String>();
+    if (childStmt.scanColumns != null) {
+      Set<String> tableNames=childStmt.scanColumns.keySet();
+      Iterator<Table> it=childStmt.tableList.iterator();
+      while (it.hasNext()) {
+        String tableName=it.next().getTypeName();
+        if (!tableNames.contains(tableName)) {
+          it.remove();
+        }
+ else         if (uniqueTables.contains(tableName)) {
+          throw new PlanningErrorException("Table " + tableName + " appears more than once in the union statement");
+        }
+ else {
+          uniqueTables.add(tableName);
+        }
+      }
+    }
+ else {
+      throw new PlanningErrorException("Select * is not supported within the UNION statement");
+    }
+    tableList.addAll(childStmt.tableList);
   }
-  tableList.addAll(m_children.get(0).tableList);
 }
