@@ -1,11 +1,14 @@
 {
-  verifyTablePartition(parsedStmt);
+  if (partitioning == null) {
+    partitioning=m_partitioning;
+  }
+  verifyTablePartition(parsedStmt,partitioning);
   if (parsedStmt instanceof ParsedSelectStmt) {
     if (tableListIncludesExportOnly(parsedStmt.tableList)) {
       throw new RuntimeException("Illegal to read an export table.");
     }
     m_parsedSelect=(ParsedSelectStmt)parsedStmt;
-    subAssembler=new SelectSubPlanAssembler(m_catalogDb,parsedStmt,m_partitioning);
+    subAssembler=new SelectSubPlanAssembler(m_catalogDb,parsedStmt,partitioning);
   }
  else {
     if (tableListIncludesView(parsedStmt.tableList)) {
@@ -14,13 +17,13 @@
     assert(parsedStmt.tableList.size() == 1);
     Table targetTable=parsedStmt.tableList.get(0);
     if (targetTable.getIsreplicated()) {
-      if (m_partitioning.wasSpecifiedAsSingle()) {
+      if (partitioning.wasSpecifiedAsSingle()) {
         String msg="Trying to write to replicated table '" + targetTable.getTypeName() + "' in a single-partition procedure.";
         throw new PlanningErrorException(msg);
       }
     }
- else     if (m_partitioning.wasSpecifiedAsSingle() == false) {
-      m_partitioning.setPartitioningColumn(targetTable.getPartitioncolumn());
+ else     if (partitioning.wasSpecifiedAsSingle() == false) {
+      partitioning.setPartitioningColumn(targetTable.getPartitioncolumn());
     }
     if (parsedStmt instanceof ParsedInsertStmt) {
       m_parsedInsert=(ParsedInsertStmt)parsedStmt;
@@ -41,6 +44,6 @@
  else {
       throw new RuntimeException("Unknown subclass of AbstractParsedStmt.");
     }
-    subAssembler=new WriterSubPlanAssembler(m_catalogDb,parsedStmt,m_partitioning);
+    subAssembler=new WriterSubPlanAssembler(m_catalogDb,parsedStmt,partitioning);
   }
 }
