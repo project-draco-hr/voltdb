@@ -1,3 +1,44 @@
 {
-  m_ee.tick(System.currentTimeMillis(),m_lastCommittedTxnId);
+  long time=System.currentTimeMillis();
+  m_ee.tick(time,m_lastCommittedTxnId);
+  if (m_tableStats != null) {
+    CatalogMap<Table> tables=m_context.database.getTables();
+    int[] tableIds=new int[tables.size()];
+    int i=0;
+    for (    Table table : tables) {
+      tableIds[i++]=table.getRelativeIndex();
+    }
+    long tupleCount=0;
+    int tupleDataMem=0;
+    int tupleAllocatedMem=0;
+    int indexMem=0;
+    int stringMem=0;
+    final VoltTable[] s1=m_ee.getStats(SysProcSelector.TABLE,tableIds,false,time);
+    if (s1 != null) {
+      VoltTable stats=s1[0];
+      assert(stats != null);
+      while (stats.advanceRow()) {
+        tupleCount+=stats.getLong(7);
+        tupleAllocatedMem+=(int)stats.getLong(8);
+        tupleDataMem+=(int)stats.getLong(9);
+        stringMem+=(int)stats.getLong(10);
+      }
+      stats.resetRowPosition();
+      m_tableStats.setStatsTable(stats);
+    }
+    final VoltTable[] s2=m_ee.getStats(SysProcSelector.INDEX,tableIds,false,time);
+    if ((s2 != null) && (s2.length > 0)) {
+      VoltTable stats=s2[0];
+      assert(stats != null);
+      while (stats.advanceRow()) {
+        indexMem+=stats.getLong(10);
+      }
+      stats.resetRowPosition();
+      m_indexStats.setStatsTable(stats);
+    }
+    MemoryStats memoryStats=VoltDB.instance().getMemoryStatsSource();
+    if (memoryStats != null) {
+      memoryStats.eeUpdateMemStats(m_siteId,tupleCount,tupleDataMem,tupleAllocatedMem,indexMem,stringMem,m_ee.getThreadLocalPoolAllocations());
+    }
+  }
 }
