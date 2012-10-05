@@ -2,7 +2,6 @@
   if (export == null) {
     return;
   }
-  org.voltdb.catalog.Connector catconn=catdb.getConnectors().add("0");
   final ArrayList<String> groupslist=new ArrayList<String>();
   if (export.getGroups() != null) {
     for (    String group : export.getGroups().split(",")) {
@@ -10,41 +9,11 @@
     }
   }
   for (  String groupName : groupslist) {
-    final Group group=catdb.getGroups().get(groupName);
-    if (group == null) {
-      throw new VoltCompilerException("Export has a group " + groupName + " that does not exist");
-    }
-    final GroupRef groupRef=catconn.getAuthgroups().add(groupName);
-    groupRef.setGroup(group);
+    grantExportToGroup(groupName,catdb);
   }
-  Integer i=0;
   if (export.getTables() != null) {
     for (    Tables.Table xmltable : export.getTables().getTable()) {
-      String tablename=xmltable.getName();
-      org.voltdb.catalog.Table tableref=catdb.getTables().getIgnoreCase(tablename);
-      if (tableref == null) {
-        throw new VoltCompilerException("While configuring export, table " + tablename + " was not present in "+ "the catalog.");
-      }
-      if (CatalogUtil.isTableMaterializeViewSource(catdb,tableref)) {
-        compilerLog.error("While configuring export, table " + tablename + " is a source table "+ "for a materialized view. Export only tables do not support views.");
-        throw new VoltCompilerException("Export table configured with materialized view.");
-      }
-      if (tableref.getMaterializer() != null) {
-        compilerLog.error("While configuring export, table " + tablename + " is a "+ "materialized view.  A view cannot be an export table.");
-        throw new VoltCompilerException("View configured as an export table");
-      }
-      if (tableref.getIndexes().size() > 0) {
-        compilerLog.error("While configuring export, table " + tablename + " has indexes defined. "+ "Export tables can't have indexes (including primary keys).");
-        throw new VoltCompilerException("Table with indexes configured as an export table");
-      }
-      if (tableref.getIsreplicated()) {
-        tableref.setIsreplicated(false);
-        tableref.setPartitioncolumn(null);
-      }
-      org.voltdb.catalog.ConnectorTableInfo connTableInfo=catconn.getTableinfo().add(tablename);
-      connTableInfo.setAppendonly(true);
-      connTableInfo.setTable(tableref);
-      ++i;
+      addExportTableToConnector(xmltable.getName(),catdb);
     }
     if (export.getTables().getTable().isEmpty()) {
       compilerLog.warn("Export defined with an empty <tables> element");

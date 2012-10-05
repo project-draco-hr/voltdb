@@ -10,9 +10,15 @@
   String error=(success || compiler.m_errors.size() == 0 ? "" : compiler.m_errors.get(compiler.m_errors.size() - 1).message);
   if (errorRegex == null) {
     assertTrue(String.format("Expected success\nXML: %s\nDDL: %s\nERR: %s",rolesElem,ddl,error),success);
-    Catalog cat=compiler.getCatalog();
-    CatalogMap<Group> groups=cat.getClusters().get("cluster").getDatabases().get("database").getGroups();
+    Database db=compiler.getCatalog().getClusters().get("cluster").getDatabases().get("database");
+    CatalogMap<Group> groups=db.getGroups();
+    CatalogMap<Connector> connectors=db.getConnectors();
+    if (connectors.get("0") == null) {
+      connectors.add("0");
+    }
+    CatalogMap<GroupRef> authGroups=connectors.get("0").getAuthgroups();
     assertNotNull(groups);
+    assertNotNull(authGroups);
     assertEquals(roles.length,groups.size());
     for (    TestRole role : roles) {
       Group group=groups.get(role.name);
@@ -20,6 +26,8 @@
       assertEquals(String.format("Role \"%s\" adhoc flag mismatch:",role.name),role.adhoc,group.getAdhoc());
       assertEquals(String.format("Role \"%s\" sysproc flag mismatch:",role.name),role.sysproc,group.getSysproc());
       assertEquals(String.format("Role \"%s\" defaultproc flag mismatch:",role.name),role.defaultproc,group.getDefaultproc());
+      boolean allowedToExport=authGroups.get(role.name) != null;
+      assertEquals(String.format("Role \"%s\" export flag mismatch:",role.name),role.export,allowedToExport);
     }
   }
  else {
