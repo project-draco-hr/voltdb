@@ -1,0 +1,78 @@
+{
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println(" Setup & Initialization");
+  System.out.println(HORIZONTAL_RULE);
+  connect();
+  Client initClient=clients.get(0);
+  initClient.callProcedure("Initialize");
+  ClientResponse rowResp=initClient.callProcedure("getLastRow");
+  VoltTable[] rowResults=rowResp.getResults();
+  assert(rowResp.getStatus() == ClientResponse.SUCCESS);
+  ClientResponse replicatedRowResp=initClient.callProcedure("getLastReplicatedRow");
+  VoltTable[] replicatedResults=replicatedRowResp.getResults();
+  assert(replicatedRowResp.getStatus() == ClientResponse.SUCCESS);
+  final int cidCount=127;
+  final long windowPerCid=config.windowsize / cidCount;
+  final Map<Integer,Long> rids=new HashMap<Integer,Long>();
+  for (int i=-1; i < cidCount; i++) {
+    rids.put(i,0l);
+    inFlight.put(i,new LinkedBlockingQueue<Long>());
+  }
+  while (rowResults[0].advanceRow()) {
+    long cid=rowResults[0].getLong("cid");
+    long last_rid=rowResults[0].getLong("last_rid");
+    rids.put((int)cid,last_rid + 1);
+  }
+  rids.put(-1,replicatedResults[0].asScalarLong() + 1);
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println("Starting Benchmark");
+  System.out.println(HORIZONTAL_RULE);
+  java.util.Random r=new java.util.Random(2);
+  benchmarkStartTS=System.currentTimeMillis();
+  schedulePeriodicStats();
+  System.out.println("\nRunning benchmark...");
+  final long benchmarkEndTime=System.currentTimeMillis() + (1000l * config.duration);
+  while (benchmarkEndTime > System.currentTimeMillis()) {
+    int cid;
+    if (r.nextDouble() < config.multisingleratio) {
+      cid=-1;
+    }
+ else {
+      cid=(byte)r.nextInt(cidCount);
+    }
+    long rid=rids.get(cid);
+    Client client=null;
+    try {
+      if (clients.isEmpty()) {
+        Thread.sleep(1000);
+        continue;
+      }
+      client=clients.get(cid % clients.size());
+      if (cid == -1) {
+        client.callProcedure(new updateReplicatedCallback(),"updateReplicated",rid);
+      }
+ else {
+        client.callProcedure(new doTxnCallback(cid),"doTxn",cid,rid,rid > windowPerCid ? rid - windowPerCid : 0,processor.generateForStore().getStoreValue());
+      }
+    }
+ catch (    IndexOutOfBoundsException e) {
+      Thread.sleep(1000);
+      continue;
+    }
+catch (    IOException e) {
+      Thread.sleep(1000);
+      continue;
+    }
+    inFlight.get(cid).add(rid);
+    rids.put(cid,rid + 1);
+  }
+  timer.cancel();
+  shutdown.set(true);
+  es.shutdownNow();
+  for (  Client client : clients) {
+    client.drain();
+    client.close();
+  }
+  clients.clear();
+  printResults();
+}
