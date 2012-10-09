@@ -1,58 +1,10 @@
 {
   Iv2Trace.logTransactionTaskQueueOffer(task);
   boolean retval=false;
-  final TransactionState ts=task.getTransactionState();
-  if (ts.isForReplay() && (task instanceof FragmentTask)) {
-    if (!m_multipartBacklog.isEmpty() && ts.txnId == m_multipartBacklog.firstKey()) {
-      Deque<TransactionTask> backlog=m_multipartBacklog.firstEntry().getValue();
-      TransactionTask first=backlog.peekFirst();
-      if (first != null) {
-        if (first.m_txn.txnId != task.getTxnId()) {
-          if (!first.m_txn.isSinglePartition()) {
-            VoltDB.crashLocalVoltDB("If the first backlog task is multi-part, " + "but has a different transaction id it is a bug",true,null);
-          }
-          backlog.addFirst(task);
-        }
-      }
- else {
-        backlog.offer(task);
-      }
-      taskQueueOffer(task);
-    }
- else {
-      Deque<TransactionTask> backlog=m_multipartBacklog.get(task.getTxnId());
-      if (backlog != null) {
-        backlog.addFirst(task);
-      }
- else {
-        if (m_multiPartPendingSentinelReceipt != null) {
-          hostLog.fatal("\tBacklog length: " + m_multipartBacklog.size());
-          if (!m_multipartBacklog.isEmpty()) {
-            hostLog.fatal("\tBacklog first item: " + m_multipartBacklog.firstEntry().getValue().peekFirst());
-          }
-          hostLog.fatal("\tHave this one SentinelReceipt: " + m_multiPartPendingSentinelReceipt);
-          hostLog.fatal("\tAnd got this one, too: " + task);
-          VoltDB.crashLocalVoltDB("There should be only one multipart pending sentinel receipt at a time",true,null);
-        }
-        m_multiPartPendingSentinelReceipt=task;
-      }
+  if (!m_backlog.isEmpty()) {
+    if (task.getTxnId() != m_backlog.getFirst().getTxnId()) {
+      m_backlog.addLast(task);
       retval=true;
-    }
-  }
- else   if (!m_multipartBacklog.isEmpty()) {
-    if (task.getTxnId() != m_multipartBacklog.firstKey()) {
-      if (!ts.isSinglePartition()) {
-        Deque<TransactionTask> d=m_multipartBacklog.get(task.getTxnId());
-        if (d == null) {
-          d=new ArrayDeque<TransactionTask>();
-          m_multipartBacklog.put(task.getTxnId(),d);
-        }
-        d.offerLast(task);
-      }
- else {
-        m_multipartBacklog.lastEntry().getValue().addLast(task);
-        retval=true;
-      }
     }
  else {
       taskQueueOffer(task);
@@ -60,9 +12,7 @@
   }
  else {
     if (!task.getTransactionState().isSinglePartition()) {
-      Deque<TransactionTask> d=new ArrayDeque<TransactionTask>();
-      d.offer(task);
-      m_multipartBacklog.put(task.getTxnId(),d);
+      m_backlog.addLast(task);
       retval=true;
     }
     taskQueueOffer(task);

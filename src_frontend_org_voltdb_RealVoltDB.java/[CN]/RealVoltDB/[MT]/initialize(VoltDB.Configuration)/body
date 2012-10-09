@@ -6,7 +6,7 @@ synchronized (m_startAndStopLock) {
     }
     consoleLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_StartupString.name(),null);
     if (config.m_enableIV2) {
-      consoleLog.warn("ENABLE IV2: " + config.m_enableIV2 + ". NOT SUPPORTED IN PRODUCTION.");
+      consoleLog.warn("Running Iv2 (3.0 preview). NOT SUPPORTED IN PRODUCTION.");
     }
     if (config.m_pathToDeployment == null) {
       try {
@@ -209,12 +209,32 @@ synchronized (m_startAndStopLock) {
     }
     collectLocalNetworkMetadata();
     final CatalogSpecificPlanner csp=new CatalogSpecificPlanner(m_asyncCompilerAgent,m_catalogContext);
+    File drOverflowDir=new File(m_catalogContext.cluster.getVoltroot(),"dr_overflow");
+    if (m_config.m_isEnterprise) {
+      try {
+        Class<?> ndrgwClass=Class.forName("org.voltdb.dr.InvocationBufferServer");
+        Constructor<?> ndrgwConstructor=ndrgwClass.getConstructor(File.class,boolean.class);
+        m_nodeDRGateway=(NodeDRGateway)ndrgwConstructor.newInstance(drOverflowDir,m_replicationActive);
+      }
+ catch (      Exception e) {
+        VoltDB.crashLocalVoltDB(e.getMessage(),false,null);
+      }
+    }
+    m_partitionCountStats=new PartitionCountStats(clusterConfig.getPartitionCount());
+    m_statsAgent.registerStatsSource(SysProcSelector.PARTITIONCOUNT,0,m_partitionCountStats);
+    m_ioStats=new IOStats();
+    m_statsAgent.registerStatsSource(SysProcSelector.IOSTATS,0,m_ioStats);
+    m_memoryStats=new MemoryStats();
+    m_statsAgent.registerStatsSource(SysProcSelector.MEMORY,0,m_memoryStats);
+    if (isIV2Enabled()) {
+      m_statsAgent.registerStatsSource(SysProcSelector.TOPO,0,m_cartographer);
+    }
     if (isIV2Enabled()) {
       try {
         m_leaderAppointer=new LeaderAppointer(m_messenger.getZK(),clusterConfig.getPartitionCount(),m_deployment.getCluster().getKfactor(),topo,m_MPI);
         m_globalServiceElector.registerService(m_leaderAppointer);
         for (        Initiator iv2init : m_iv2Initiators) {
-          iv2init.configure(getBackendTargetType(),m_serializedCatalog,m_catalogContext,m_deployment.getCluster().getKfactor(),csp,clusterConfig.getPartitionCount(),m_rejoining,m_commandLog);
+          iv2init.configure(getBackendTargetType(),m_serializedCatalog,m_catalogContext,m_deployment.getCluster().getKfactor(),csp,clusterConfig.getPartitionCount(),m_rejoining,m_statsAgent,m_memoryStats,m_commandLog,m_nodeDRGateway);
         }
       }
  catch (      Exception e) {
@@ -234,7 +254,7 @@ synchronized (m_startAndStopLock) {
         int sitesHostId=SiteTracker.getHostForSite(site);
         if (sitesHostId == m_myHostId) {
           ((org.voltcore.messaging.SiteMailbox)mailbox).setCommandLog(m_commandLog);
-          ExecutionSiteRunner runner=new ExecutionSiteRunner(mailbox,m_catalogContext,m_serializedCatalog,m_rejoining,m_replicationActive,hostLog,m_configuredNumberOfPartitions,csp);
+          ExecutionSiteRunner runner=new ExecutionSiteRunner(mailbox,m_catalogContext,m_serializedCatalog,m_rejoining,m_nodeDRGateway,hostLog,m_configuredNumberOfPartitions,csp);
           m_runners.add(runner);
           Thread runnerThread=new Thread(runner,"Site " + org.voltcore.utils.CoreUtils.hsIdToString(site));
           runnerThread.start();
@@ -243,7 +263,7 @@ synchronized (m_startAndStopLock) {
         }
       }
       try {
-        ExecutionSite siteObj=new ExecutionSite(VoltDB.instance(),localThreadMailbox,m_serializedCatalog,null,m_rejoining,m_replicationActive,m_catalogContext.m_transactionId,m_configuredNumberOfPartitions,csp);
+        ExecutionSite siteObj=new ExecutionSite(VoltDB.instance(),localThreadMailbox,m_serializedCatalog,null,m_rejoining,m_nodeDRGateway,m_catalogContext.m_transactionId,m_configuredNumberOfPartitions,csp);
         m_localSites.put(localThreadMailbox.getHSId(),siteObj);
         m_currentThreadSite=siteObj;
       }
@@ -297,23 +317,30 @@ catch (    ExecutionException e) {
       portOffset+=2;
       m_dtxns.add(initiator);
     }
-    m_partitionCountStats=new PartitionCountStats(clusterConfig.getPartitionCount());
-    m_statsAgent.registerStatsSource(SysProcSelector.PARTITIONCOUNT,0,m_partitionCountStats);
-    m_ioStats=new IOStats();
-    m_statsAgent.registerStatsSource(SysProcSelector.IOSTATS,0,m_ioStats);
-    m_memoryStats=new MemoryStats();
-    m_statsAgent.registerStatsSource(SysProcSelector.MEMORY,0,m_memoryStats);
-    if (isIV2Enabled()) {
-      m_statsAgent.registerStatsSource(SysProcSelector.TOPO,0,m_cartographer);
-    }
     m_statsManager=null;
     try {
-      final Class<?> statsManagerClass=Class.forName("org.voltdb.management.JMXStatsManager");
-      m_statsManager=(StatsManager)statsManagerClass.newInstance();
-      m_statsManager.initialize(new ArrayList<Long>(m_localSites.keySet()));
+      final Class<?> statsManagerClass=MiscUtils.loadProClass("org.voltdb.management.JMXStatsManager","JMX",true);
+      if (statsManagerClass != null) {
+        ArrayList<Long> localHSIds;
+        Long MPHSId;
+        if (isIV2Enabled()) {
+          localHSIds=new ArrayList<Long>();
+          for (          Initiator iv2Initiator : m_iv2Initiators) {
+            localHSIds.add(iv2Initiator.getInitiatorHSId());
+          }
+          MPHSId=m_MPI.getInitiatorHSId();
+        }
+ else {
+          localHSIds=new ArrayList<Long>(m_localSites.keySet());
+          MPHSId=null;
+        }
+        m_statsManager=(StatsManager)statsManagerClass.newInstance();
+        m_statsManager.initialize(localHSIds,MPHSId);
+      }
     }
  catch (    Exception e) {
-      int a=0;
+      hostLog.error("Failed to instantiate the JMX stats manager: " + e.getMessage() + ". Disabling JMX.");
+      e.printStackTrace();
     }
     try {
       m_snapshotCompletionMonitor.init(m_messenger.getZK());
