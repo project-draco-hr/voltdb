@@ -1,15 +1,23 @@
 {
   SiteTasker task=m_scheduler.poll();
-  if (task != null) {
-    if (task instanceof TransactionTask) {
-      m_currentTxnId=((TransactionTask)task).getTxnId();
-      m_lastTxnTime=EstTime.currentTimeMillis();
-    }
-    if (m_isRejoining) {
-      task.runForRejoin(getSiteProcedureConnection());
-    }
- else {
+  if (m_rejoinState == kStateRunning) {
+    if (task != null) {
+      if (task instanceof TransactionTask) {
+        m_currentTxnId=((TransactionTask)task).getTxnId();
+        m_lastTxnTime=EstTime.currentTimeMillis();
+      }
       task.run(getSiteProcedureConnection());
     }
+    return;
+  }
+  if (task != null) {
+    if (task instanceof TransactionTask) {
+      TransactionInfoBaseMessage tibm=((TransactionTask)task).m_txn.getNotice();
+      m_rejoinTaskLog.logTask(tibm);
+    }
+    task.runForRejoin(getSiteProcedureConnection());
+  }
+  if (m_rejoinState == kStateReplayingRejoin) {
+    replayFromTaskLog();
   }
 }
