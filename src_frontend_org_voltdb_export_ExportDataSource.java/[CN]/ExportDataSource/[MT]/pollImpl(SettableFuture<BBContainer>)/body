@@ -1,52 +1,57 @@
 {
   if (fut == null)   return;
-  StreamBlock first_unpolled_block=null;
-  if (m_endOfStream && m_committedBuffers.sizeInBytes() == 0) {
-    fut.set(null);
-    if (m_onDrain != null) {
-      try {
-        m_onDrain.run();
-      }
-  finally {
-        m_onDrain=null;
-      }
-    }
-    return;
-  }
-  ArrayList<StreamBlock> blocksToDelete=new ArrayList<StreamBlock>();
   try {
-    Iterator<StreamBlock> iter=m_committedBuffers.iterator();
-    while (iter.hasNext()) {
-      StreamBlock block=iter.next();
-      if (m_firstUnpolledUso < block.uso() + block.totalUso()) {
-        first_unpolled_block=block;
-        m_firstUnpolledUso=block.uso() + block.totalUso();
-        break;
+    StreamBlock first_unpolled_block=null;
+    if (m_endOfStream && m_committedBuffers.sizeInBytes() == 0) {
+      fut.set(null);
+      if (m_onDrain != null) {
+        try {
+          m_onDrain.run();
+        }
+  finally {
+          m_onDrain=null;
+        }
+      }
+      return;
+    }
+    ArrayList<StreamBlock> blocksToDelete=new ArrayList<StreamBlock>();
+    try {
+      Iterator<StreamBlock> iter=m_committedBuffers.iterator();
+      while (iter.hasNext()) {
+        StreamBlock block=iter.next();
+        if (m_firstUnpolledUso < block.uso() + block.totalUso()) {
+          first_unpolled_block=block;
+          m_firstUnpolledUso=block.uso() + block.totalUso();
+          break;
+        }
+ else {
+          blocksToDelete.add(block);
+          iter.remove();
+        }
+      }
+    }
+ catch (    RuntimeException e) {
+      if (e.getCause() instanceof IOException) {
+        VoltDB.crashLocalVoltDB("Error attempting to find unpolled export data",true,e);
       }
  else {
-        blocksToDelete.add(block);
-        iter.remove();
+        throw e;
       }
     }
-  }
- catch (  RuntimeException e) {
-    if (e.getCause() instanceof IOException) {
-      VoltDB.crashLocalVoltDB("Error attempting to find unpolled export data",true,e);
-    }
- else {
-      throw e;
-    }
-  }
  finally {
-    for (    StreamBlock sb : blocksToDelete) {
-      sb.deleteContent();
+      for (      StreamBlock sb : blocksToDelete) {
+        sb.deleteContent();
+      }
+    }
+    if (first_unpolled_block == null) {
+      m_pollFuture=fut;
+    }
+ else {
+      fut.set(new AckingContainer(first_unpolled_block.unreleasedBufferV2(),first_unpolled_block.uso() + first_unpolled_block.totalUso()));
+      m_pollFuture=null;
     }
   }
-  if (first_unpolled_block == null) {
-    m_pollFuture=fut;
-  }
- else {
-    fut.set(new AckingContainer(first_unpolled_block.unreleasedBuffer(),first_unpolled_block.uso() + first_unpolled_block.totalUso()));
-    m_pollFuture=null;
+ catch (  Throwable t) {
+    fut.setException(t);
   }
 }
