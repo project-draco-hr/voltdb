@@ -1,0 +1,21 @@
+{
+  final long txnId=this.getTransactionId();
+  final long ts=getTransactionTime().getTime();
+  final Random rand=getSeededRandomNumberGenerator();
+  voltQueueSQL(selectStmt);
+  voltQueueSQL(deleteStmt,EXPECT_SCALAR_LONG);
+  VoltTable previousResult=voltExecuteSQL()[0];
+  previousResult.advanceRow();
+  if (rand.nextDouble() < 0.1) {
+    setAppStatusCode((byte)AbortStatus.NORMAL.ordinal());
+    throw new VoltAbortException("Normal abort");
+  }
+  if (previousResult.getLong("rid") >= rid) {
+    setAppStatusCode((byte)AbortStatus.OUT_OF_ORDER.ordinal());
+    throw new VoltAbortException("updateReplicated may be executed out of order, " + "previous rid " + previousResult.getLong("rid") + " >= current rid "+ rid);
+  }
+  voltQueueSQL(insertStmt,EXPECT_SCALAR_MATCH(1),txnId,ts,rid);
+  voltQueueSQL(selectStmt);
+  VoltTable[] results=voltExecuteSQL(true);
+  return results[results.length - 1];
+}
