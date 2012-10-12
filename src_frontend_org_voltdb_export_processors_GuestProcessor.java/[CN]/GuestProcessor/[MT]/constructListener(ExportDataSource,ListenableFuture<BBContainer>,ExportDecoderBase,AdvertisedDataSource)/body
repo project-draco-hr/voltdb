@@ -1,0 +1,34 @@
+{
+  fut.addListener(new Runnable(){
+    @Override public void run(){
+      try {
+        BBContainer cont=fut.get();
+        if (cont == null) {
+synchronized (ads) {
+            edb.sourceNoLongerAdvertised(ads);
+          }
+          return;
+        }
+        try {
+          edb.onBlockStart();
+          cont.b.order(ByteOrder.LITTLE_ENDIAN);
+          while (cont.b.hasRemaining()) {
+            int length=cont.b.getInt();
+            byte[] rowdata=new byte[length];
+            cont.b.get(rowdata,0,length);
+            edb.processRow(length,rowdata);
+          }
+          edb.onBlockCompletion();
+        }
+  finally {
+          cont.discard();
+        }
+      }
+ catch (      Exception e) {
+        e.printStackTrace();
+      }
+      constructListener(source,source.poll(),edb,ads);
+    }
+  }
+,MoreExecutors.sameThreadExecutor());
+}

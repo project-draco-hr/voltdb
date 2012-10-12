@@ -1,0 +1,89 @@
+{
+  assert(m.m_m.getGeneration() == m_generation);
+  ExportProtoMessage message=m.m_m;
+  ExportProtoMessage result=new ExportProtoMessage(message.getGeneration(),message.m_partitionId,message.m_signature);
+  ExportInternalMessage mbp=new ExportInternalMessage(m.m_sb,result);
+  StreamBlock first_unpolled_block=null;
+  ArrayList<StreamBlock> blocksToDelete=new ArrayList<StreamBlock>();
+  boolean hitEndOfStreamWithNoRunnable=false;
+  try {
+    if (message.isAck() && message.getAckOffset() > 0) {
+      try {
+        releaseExportBytes(message.getAckOffset(),blocksToDelete);
+      }
+ catch (      IOException e) {
+        VoltDB.crashLocalVoltDB("Error attempting to release export bytes",true,e);
+        return;
+      }
+    }
+    if (m_endOfStream && m_committedBuffers.sizeInBytes() == 0) {
+      if (m_onDrain != null) {
+        try {
+          m_onDrain.run();
+        }
+  finally {
+          m_onDrain=null;
+        }
+      }
+ else {
+        hitEndOfStreamWithNoRunnable=true;
+      }
+      return;
+    }
+    if (message.isClose()) {
+      try {
+        resetPollMarker();
+      }
+ catch (      IOException e) {
+        exportLog.error(e);
+      }
+    }
+    try {
+      if (message.isPoll()) {
+        Iterator<StreamBlock> iter=m_committedBuffers.iterator();
+        while (iter.hasNext()) {
+          StreamBlock block=iter.next();
+          if (m_firstUnpolledUso < block.uso() + block.totalUso()) {
+            first_unpolled_block=block;
+            m_firstUnpolledUso=block.uso() + block.totalUso();
+            break;
+          }
+ else {
+            blocksToDelete.add(block);
+            iter.remove();
+          }
+        }
+      }
+    }
+ catch (    RuntimeException e) {
+      if (e.getCause() instanceof IOException) {
+        VoltDB.crashLocalVoltDB("Error attempting to find unpolled export data",true,e);
+      }
+ else {
+        throw e;
+      }
+    }
+  }
+  finally {
+    for (    StreamBlock sb : blocksToDelete) {
+      sb.deleteContent();
+    }
+    if (hitEndOfStreamWithNoRunnable) {
+      ByteBuffer buf=ByteBuffer.allocate(4);
+      buf.putInt(0).flip();
+      result.pollResponse(m_firstUnpolledUso,buf);
+      mbp.m_sb.event(result);
+    }
+  }
+  if (message.isPoll()) {
+    if (first_unpolled_block == null) {
+      ByteBuffer buf=ByteBuffer.allocate(4);
+      buf.putInt(0).flip();
+      result.pollResponse(m_firstUnpolledUso,buf);
+    }
+ else {
+      result.pollResponse(first_unpolled_block.uso() + first_unpolled_block.totalUso(),first_unpolled_block.unreleasedBuffer());
+    }
+    mbp.m_sb.event(result);
+  }
+}
