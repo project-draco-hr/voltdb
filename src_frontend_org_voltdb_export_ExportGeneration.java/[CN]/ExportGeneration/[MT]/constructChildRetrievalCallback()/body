@@ -1,0 +1,35 @@
+{
+  return new AsyncCallback.ChildrenCallback(){
+    @Override public void processResult(    final int rc,    final String path,    Object ctx,    final List<String> children){
+      m_childUpdatingThread.submit(new Runnable(){
+        @Override public void run(){
+          try {
+            KeeperException.Code code=KeeperException.Code.get(rc);
+            if (code != KeeperException.Code.OK) {
+              throw KeeperException.create(code);
+            }
+            final String split[]=path.split("/");
+            final int partition=Integer.valueOf(split[split.length - 1]);
+            ImmutableMap.Builder<Integer,ImmutableList<Long>> mapBuilder=ImmutableMap.builder();
+            ImmutableList.Builder<Long> mailboxes=ImmutableList.builder();
+            for (            String child : children) {
+              if (child.equals(Long.toString(m_mbox.getHSId())))               continue;
+              mailboxes.add(Long.valueOf(child));
+            }
+            mapBuilder.put(partition,mailboxes.build());
+            for (            Map.Entry<Integer,ImmutableList<Long>> entry : m_ackableMailboxes.entrySet()) {
+              if (entry.getKey() == partition)               continue;
+              mapBuilder.put(entry.getKey(),entry.getValue());
+            }
+            m_ackableMailboxes=mapBuilder.build();
+          }
+ catch (          Throwable t) {
+            VoltDB.crashLocalVoltDB("Error in export ack handling",false,t);
+          }
+        }
+      }
+);
+    }
+  }
+;
+}
