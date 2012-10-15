@@ -1,0 +1,59 @@
+{
+  Client client=getClient();
+  String filler="a";
+  for (int i=0; i < 62; i++) {
+    filler=filler + "a";
+  }
+  assert(filler.length() == 63);
+  final int MAX_ROWS=25000;
+  ProcedureCallback modifyOneCheck=new ProcedureCallback(){
+    @Override public void clientCallback(    ClientResponse clientResponse) throws Exception {
+      if (clientResponse.getStatus() != ClientResponse.SUCCESS) {
+        System.err.println(clientResponse.getStatusString());
+        if (clientResponse.getException() != null) {
+          System.err.println(clientResponse.getException().getMessage());
+          clientResponse.getException().printStackTrace();
+        }
+      }
+      assertEquals(ClientResponse.SUCCESS,clientResponse.getStatus());
+      assertEquals(1,clientResponse.getResults()[0].asScalarLong());
+    }
+  }
+;
+  System.out.printf("Inserting %d rows into the primary table and the view\n",MAX_ROWS);
+  for (int i=0; i < MAX_ROWS; i++) {
+    client.callProcedure(modifyOneCheck,insertName,i,String.valueOf(i),filler,filler,filler,filler,filler,filler,filler,filler);
+  }
+  client.drain();
+  System.out.printf("Deleting all even rows\n");
+  for (int i=0; i < MAX_ROWS; i+=2) {
+    client.callProcedure(modifyOneCheck,deleteName,i);
+  }
+  client.drain();
+  System.out.printf("Doing a full select and using the index for ordering.\n");
+  VoltTable table1=client.callProcedure(queryName).getResults()[0];
+  assertEquals(MAX_ROWS / 2,table1.getRowCount());
+  System.out.printf("Inserting even rows back into the table and view\n");
+  for (int i=0; i < MAX_ROWS; i+=2) {
+    VoltTable table=client.callProcedure(insertName,i,String.valueOf(i),filler,filler,filler,filler,filler,filler,filler,filler).getResults()[0];
+    assertEquals(1,table.asScalarLong());
+  }
+  System.out.printf("Inserting duplicates of half of the tuples (with unique primary keys)\n");
+  for (int i=MAX_ROWS + 1; i < (MAX_ROWS * 2); i+=2) {
+    VoltTable table=client.callProcedure(insertName,i,String.valueOf(i / 2),filler,filler,filler,filler,filler,filler,filler,filler).getResults()[0];
+    assertEquals(1,table.asScalarLong());
+  }
+  System.out.printf("Deleting all %d rows\n",MAX_ROWS);
+  for (int i=1; i < MAX_ROWS; i+=2) {
+    VoltTable table=client.callProcedure(deleteName,i).getResults()[0];
+    assertEquals(1,table.asScalarLong());
+  }
+  for (int i=0; i < MAX_ROWS; i+=2) {
+    VoltTable table=client.callProcedure(deleteName,i).getResults()[0];
+    assertEquals(1,table.asScalarLong());
+  }
+  for (int i=MAX_ROWS + 1; i < (MAX_ROWS * 2); i+=2) {
+    VoltTable table=client.callProcedure(deleteName,i).getResults()[0];
+    assertEquals(1,table.asScalarLong());
+  }
+}

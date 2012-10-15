@@ -3,9 +3,14 @@
   long newSpHandle;
   if (m_isLeader) {
     msg=new FragmentTaskMessage(message.getInitiatorHSId(),message.getCoordinatorHSId(),message);
-    newSpHandle=m_txnId.incrementAndGet();
+    TxnEgo ego=advanceTxnEgo();
+    newSpHandle=ego.getTxnId();
     msg.setSpHandle(newSpHandle);
-    if (m_sendToHSIds.size() > 0) {
+    if (msg.getInitiateTask() != null) {
+      msg.getInitiateTask().setSpHandle(newSpHandle);
+      msg.setInitiateTask(msg.getInitiateTask());
+    }
+    if (m_sendToHSIds.size() > 0 && (!msg.isReadOnly() || msg.isSysProcTask())) {
       FragmentTaskMessage replmsg=new FragmentTaskMessage(m_mailbox.getHSId(),m_mailbox.getHSId(),msg);
       m_mailbox.send(com.google.common.primitives.Longs.toArray(m_sendToHSIds),replmsg);
       DuplicateCounter counter;
@@ -15,12 +20,12 @@
  else {
         counter=new SysProcDuplicateCounter(msg.getCoordinatorHSId(),msg.getTxnId(),m_replicaHSIds);
       }
-      m_duplicateCounters.put(newSpHandle,counter);
+      m_duplicateCounters.put(new DuplicateCounterKey(msg.getTxnId(),newSpHandle),counter);
     }
   }
  else {
     newSpHandle=msg.getSpHandle();
-    m_txnId.set(newSpHandle);
+    setMaxSeenTxnId(newSpHandle);
   }
   TransactionState txn=m_outstandingTxns.get(msg.getTxnId());
   Iv2Trace.logFragmentTaskMessage(message,m_mailbox.getHSId(),newSpHandle,false);
@@ -28,12 +33,19 @@
     txn=new ParticipantTransactionState(newSpHandle,msg);
     m_outstandingTxns.put(msg.getTxnId(),txn);
   }
+  TransactionTask task;
   if (msg.isSysProcTask()) {
-    final SysprocFragmentTask task=new SysprocFragmentTask(m_mailbox,(ParticipantTransactionState)txn,m_pendingTasks,msg,null);
-    m_pendingTasks.offer(task);
+    task=new SysprocFragmentTask(m_mailbox,(ParticipantTransactionState)txn,m_pendingTasks,msg,null);
   }
  else {
-    final FragmentTask task=new FragmentTask(m_mailbox,(ParticipantTransactionState)txn,m_pendingTasks,msg,null);
+    task=new FragmentTask(m_mailbox,(ParticipantTransactionState)txn,m_pendingTasks,msg,null);
+  }
+  if (msg.getInitiateTask() != null && !msg.getInitiateTask().isReadOnly()) {
+    if (!m_cl.log(msg.getInitiateTask(),newSpHandle,m_durabilityListener,task)) {
+      m_pendingTasks.offer(task);
+    }
+  }
+ else {
     m_pendingTasks.offer(task);
   }
 }

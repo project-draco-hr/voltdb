@@ -7,10 +7,10 @@
   m_adminAcceptor=null;
   m_adminAcceptor=new ClientAcceptor(adminPort,messenger.getNetwork(),true);
   registerPolicies(replicationRole);
-  m_mailbox=new LocalMailbox(VoltDB.instance().getHostMessenger()){
+  m_mailbox=new LocalMailbox(messenger,messenger.getHSIdForLocalSite(HostMessenger.CLIENT_INTERFACE_SITE_ID)){
     LinkedBlockingQueue<VoltMessage> m_d=new LinkedBlockingQueue<VoltMessage>();
     @Override public void deliver(    final VoltMessage message){
-      if (VoltDB.instance().isIV2Enabled()) {
+      if (m_isIV2Enabled) {
         if (message instanceof InitiateResponseMessage) {
           final InitiateResponseMessage response=(InitiateResponseMessage)message;
           Iv2Trace.logFinishTransaction(response,m_mailbox.getHSId());
@@ -18,14 +18,16 @@
           if (cihm != null) {
             cihm.connection.writeStream().enqueue(new DeferredSerialization(){
               @Override public ByteBuffer[] serialize() throws IOException {
+                ClientResponseImpl clientResponse=response.getClientResponseData();
                 ClientInterfaceHandleManager.Iv2InFlight clientData=cihm.findHandle(response.getClientInterfaceHandle());
-                response.getClientResponseData().setClientHandle(clientData.m_clientHandle);
                 final long now=System.currentTimeMillis();
                 final int delta=(int)(now - clientData.m_creationTime);
-                response.getClientResponseData().setClusterRoundtrip(delta);
-                ByteBuffer results=ByteBuffer.allocate(response.getClientResponseData().getSerializedSize() + 4);
+                cihm.m_acg.logTransactionCompleted(cihm.connection.connectionId(),cihm.connection.getHostnameOrIP(),clientData.m_procName,delta,clientResponse.getStatus());
+                clientResponse.setClientHandle(clientData.m_clientHandle);
+                clientResponse.setClusterRoundtrip(delta);
+                ByteBuffer results=ByteBuffer.allocate(clientResponse.getSerializedSize() + 4);
                 results.putInt(results.capacity() - 4);
-                response.getClientResponseData().flattenToBuffer(results);
+                clientResponse.flattenToBuffer(results);
                 return new ByteBuffer[]{results};
               }
               @Override public void cancel(){
@@ -33,6 +35,9 @@
             }
 );
           }
+        }
+ else         if (message instanceof BinaryPayloadMessage) {
+          handlePartitionFailOver((BinaryPayloadMessage)message);
         }
  else {
           m_d.offer(message);
@@ -47,7 +52,8 @@
     }
   }
 ;
-  messenger.createMailbox(null,m_mailbox);
+  m_isIV2Enabled=VoltDB.instance().isIV2Enabled();
+  messenger.createMailbox(m_mailbox.getHSId(),m_mailbox);
   m_plannerSiteId=messenger.getHSIdForLocalSite(HostMessenger.ASYNC_COMPILER_SITE_ID);
   registerMailbox(messenger.getZK());
   m_siteId=m_mailbox.getHSId();

@@ -1,0 +1,153 @@
+{
+  String[] volt_servers=null;
+  String volt_user=null;
+  String volt_password=null;
+  char connect=' ';
+  String postgres_server=null;
+  String postgres_database=null;
+  String postgres_user=null;
+  String postgres_password=null;
+  Properties props=new Properties();
+  for (int ii=0; ii < args.length; ii++) {
+    String arg=args[ii];
+    if (arg.equals("--help")) {
+      printHelpAndQuit(1,true);
+    }
+ else     if (arg.equals("--connect")) {
+      if (args.length < ii + 1) {
+        System.err.println("Error: not enough args following --connect");
+        printHelpAndQuit(-1,false);
+      }
+      String connectStr=args[ii + 1];
+      if (connectStr.equalsIgnoreCase("admin")) {
+        connect='a';
+      }
+ else       if (connectStr.equalsIgnoreCase("client")) {
+        connect='c';
+      }
+ else {
+        System.err.println("Error: --connect must be one of \"admin\" or \"client\"");
+        printHelpAndQuit(-1,false);
+      }
+      ii++;
+    }
+ else     if (arg.equals("--servers")) {
+      if (args.length < ii + 1) {
+        System.err.println("Error: Not enough args following --servers");
+        printHelpAndQuit(-1,false);
+      }
+      volt_servers=args[ii + 1].split(",");
+      ii++;
+    }
+ else     if (arg.equals("--user")) {
+      if (args.length < ii + 1) {
+        System.err.println("Error: Not enoguh args following --user");
+        printHelpAndQuit(-1,false);
+      }
+      volt_user=args[ii + 1];
+      ii++;
+    }
+ else     if (arg.equals("--password")) {
+      if (args.length < ii + 1) {
+        System.err.println("Error: Not enough args following --password");
+        printHelpAndQuit(-1,false);
+      }
+      volt_password=args[ii + 1];
+      ii++;
+    }
+ else     if (arg.equals("--pgserver")) {
+      if (args.length < ii + 1) {
+        System.err.println("Error: Not enough args following --pgserver");
+        printHelpAndQuit(-1,false);
+      }
+      postgres_server=args[ii + 1];
+      ii++;
+    }
+ else     if (arg.equals("--pgdb")) {
+      if (args.length < ii + 1) {
+        System.err.println("Error: Not enough args following --pgdb");
+        printHelpAndQuit(-1,false);
+      }
+      postgres_database=args[ii + 1];
+      ii++;
+    }
+ else     if (arg.equals("--pgschema")) {
+      postgres_schema_prefix=args[ii + 1];
+      ii++;
+    }
+ else     if (arg.equals("--pguser")) {
+      if (args.length < ii + 1) {
+        System.err.println("Error: Not enough args following --pguser");
+        printHelpAndQuit(-1,false);
+      }
+      postgres_user=args[ii + 1];
+      ii++;
+    }
+ else     if (arg.equals("--pgpassword")) {
+      postgres_password=args[ii + 1];
+      ii++;
+    }
+  }
+  if (volt_servers == null || volt_servers.length < 1) {
+    System.err.println("PostgreSQLExportClient: must provide at least one VoltDB server");
+    printHelpAndQuit(-1,false);
+  }
+  if (connect == ' ') {
+    System.err.println("PostgreSQLExportClient: must specify connection type as admin or client using --connect argument");
+    printHelpAndQuit(-1,false);
+  }
+  assert((connect == 'c') || (connect == 'a'));
+  if (volt_user == null) {
+    volt_user="";
+  }
+  if (volt_password == null) {
+    volt_password="";
+  }
+  if (postgres_server == null) {
+    System.err.println("PostgreSQLExportClient: must specify a PostgreSQL server");
+    printHelpAndQuit(-1,false);
+  }
+  if (postgres_database == null) {
+    System.err.println("PostgreSQLExportClient: must specify a PostgreSQL database");
+    printHelpAndQuit(-1,false);
+  }
+  if (postgres_user == null) {
+    System.err.println("PostgreSQLExportClient: must specify a PostgreSQL user");
+    printHelpAndQuit(-1,false);
+  }
+  if (postgres_password == null) {
+    postgres_password="";
+  }
+  if (postgres_schema_prefix == null) {
+    postgres_schema_prefix="export_";
+  }
+  PostgreSQLExportClient client=new PostgreSQLExportClient(connect == 'a');
+  for (  String server : volt_servers)   client.addServerInfo(server,connect == 'a');
+  client.addCredentials(volt_user,volt_password);
+  String url="jdbc:postgresql://" + postgres_server + "/"+ postgres_database;
+  props.setProperty("user",postgres_user);
+  props.setProperty("password",postgres_password);
+  try {
+    conn=DriverManager.getConnection(url,props);
+    conn.setAutoCommit(false);
+  }
+ catch (  SQLException e) {
+    m_logger.fatal("Failed to connect to PostgreSQL");
+    System.exit(-1);
+  }
+  try {
+    client.run();
+  }
+ catch (  ExportClientException e) {
+    m_logger.error("ExportClient.run() failed");
+  }
+ finally {
+    try {
+      conn.close();
+    }
+ catch (    SQLException e) {
+      m_logger.error("PostgreSQL connection unable to be closed");
+      e.printStackTrace();
+    }
+  }
+}
