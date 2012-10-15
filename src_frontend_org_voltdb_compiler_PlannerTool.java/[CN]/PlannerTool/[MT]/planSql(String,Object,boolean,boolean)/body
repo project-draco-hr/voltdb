@@ -1,54 +1,78 @@
 {
-  if ((sqlIn == null) || (sqlIn.length() == 0)) {
-    throw new RuntimeException("Can't plan empty or null SQL.");
+  CacheUse cacheUse=CacheUse.FAIL;
+  if (m_plannerStats != null) {
+    m_plannerStats.startStatsCollection();
   }
-  String sql=sqlIn.trim();
-  hostLog.debug("received sql stmt: " + sql);
-  AbstractPlanNode.resetPlanNodeIds();
-  TrivialCostModel costModel=new TrivialCostModel();
-  PartitioningForStatement partitioning=new PartitioningForStatement(partitionParam,inferSP,inferSP);
-  QueryPlanner planner=new QueryPlanner(m_cluster,m_database,partitioning,m_hsql,new DatabaseEstimates(),true);
-  CompiledPlan plan=null;
   try {
-    plan=planner.compilePlan(costModel,sql,null,"PlannerTool","PlannerToolProc",AD_HOC_JOINED_TABLE_LIMIT,null);
-  }
- catch (  Exception e) {
-    throw new RuntimeException("Error compiling query: " + e.getMessage(),e);
-  }
-  if (plan == null) {
-    String plannerMsg=planner.getErrorMessage();
-    if (plannerMsg != null) {
-      throw new RuntimeException("ERROR: " + plannerMsg + "\n");
+    if ((sqlIn == null) || (sqlIn.length() == 0)) {
+      throw new RuntimeException("Can't plan empty or null SQL.");
     }
+    String sql=sqlIn.trim();
+    hostLog.debug("received sql stmt: " + sql);
+    boolean cacheable=(partitionParam == null) && (inferSP);
+    if (cacheable) {
+      AdHocPlannedStatement cachedPlan=m_cache.getWithSQL(sqlIn);
+      if (cachedPlan != null) {
+        cacheUse=CacheUse.HIT1;
+        return cachedPlan;
+      }
  else {
-      throw new RuntimeException("ERROR: UNKNOWN PLANNING ERROR\n");
+        cacheUse=CacheUse.MISS;
+      }
+    }
+    AbstractPlanNode.resetPlanNodeIds();
+    TrivialCostModel costModel=new TrivialCostModel();
+    PartitioningForStatement partitioning=new PartitioningForStatement(partitionParam,inferSP,inferSP);
+    QueryPlanner planner=new QueryPlanner(sql,"PlannerTool","PlannerToolProc",m_cluster,m_database,partitioning,m_hsql,new DatabaseEstimates(),true,AD_HOC_JOINED_TABLE_LIMIT,costModel,null,null);
+    CompiledPlan plan=null;
+    String parsedToken=null;
+    try {
+      planner.parse();
+      parsedToken=planner.parameterize();
+      if (parsedToken != null) {
+        if (cacheable) {
+          CorePlan core=m_cache.getWithParsedToken(parsedToken);
+          if (core != null) {
+            ParameterSet params=new ParameterSet();
+            planner.buildParameterSetFromExtractedLiteralsAndReturnPartitionIndex(core.parameterTypes,params);
+            Object partitionKey=null;
+            if (core.partitioningParamIndex >= 0) {
+              partitionKey=params.toArray()[core.partitioningParamIndex];
+            }
+            AdHocPlannedStatement ahps=new AdHocPlannedStatement(sql.getBytes(VoltDB.UTF8ENCODING),core,params,partitionKey);
+            m_cache.put(sql,parsedToken,ahps);
+            cacheUse=CacheUse.HIT2;
+            return ahps;
+          }
+        }
+        plan=planner.plan();
+        assert(plan != null);
+      }
+    }
+ catch (    Exception e) {
+      throw new RuntimeException("Error compiling query: " + e.getMessage(),e);
+    }
+    if (plan == null) {
+      throw new RuntimeException("Null plan received in PlannerTool.planSql");
+    }
+    if (!allowParameterization && (plan.extractedParamValues.size() == 0) && (plan.parameters.length > 0)) {
+      throw new RuntimeException("ERROR: PARAMETERIZATION IN AD HOC QUERY");
+    }
+    if (plan.isContentDeterministic() == false) {
+      String potentialErrMsg="Statement has a non-deterministic result - statement: \"" + sql + "\" , reason: "+ plan.nondeterminismDetail();
+      hostLog.warn(potentialErrMsg);
+    }
+    AdHocPlannedStatement ahps=new AdHocPlannedStatement(plan,m_catalogVersion);
+    if (cacheable && planner.compiledAsParameterizedPlan()) {
+      assert(parsedToken != null);
+      assert(((ahps.partitionParam == null) && (ahps.core.partitioningParamIndex == -1)) || ((ahps.partitionParam != null) && (ahps.core.partitioningParamIndex >= 0)));
+      m_cache.put(sqlIn,parsedToken,ahps);
+    }
+    return ahps;
+  }
+  finally {
+    if (m_plannerStats != null) {
+      m_plannerStats.endStatsCollection(m_cache.getLiteralCacheSize(),m_cache.getCoreCacheSize(),cacheUse,-1);
     }
   }
-  if (!allowParameterization && plan.parameters.size() > 0) {
-    throw new RuntimeException("ERROR: PARAMETERIZATION IN AD HOC QUERY");
-  }
-  if (plan.isContentDeterministic() == false) {
-    String potentialErrMsg="Statement has a non-deterministic result - statement: \"" + sql + "\" , reason: "+ plan.nondeterminismDetail();
-    hostLog.warn(potentialErrMsg);
-  }
-  assert(plan.fragments.size() <= 2);
-  Result retval=new Result();
-  retval.params=plan.parameters;
-  for (  Fragment frag : plan.fragments) {
-    PlanNodeList planList=new PlanNodeList(frag.planGraph);
-    String serializedPlan=planList.toJSONString();
-    String encodedPlan=serializedPlan;
-    if (frag.multiPartition) {
-      assert(retval.allPlan == null);
-      retval.allPlan=encodedPlan;
-    }
- else {
-      assert(retval.onePlan == null);
-      retval.onePlan=encodedPlan;
-    }
-  }
-  retval.replicatedDML=plan.replicatedTableDML;
-  retval.nonDeterministic=!plan.isContentDeterministic() || !plan.isOrderDeterministic();
-  retval.partitionParam=partitioning.effectivePartitioningValue();
-  return retval;
 }

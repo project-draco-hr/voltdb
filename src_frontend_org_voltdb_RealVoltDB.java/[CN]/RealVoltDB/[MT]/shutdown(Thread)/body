@@ -10,6 +10,10 @@ synchronized (m_startAndStopLock) {
       m_periodicWorkThread.shutdown();
       heartbeatThread.interrupt();
       heartbeatThread.join();
+      if (m_leaderAppointer != null) {
+        m_leaderAppointer.shutdown();
+      }
+      m_globalServiceElector.shutdown();
       if (m_hasStartedSampler.get()) {
         m_sampler.setShouldStop();
         m_sampler.join();
@@ -19,22 +23,39 @@ synchronized (m_startAndStopLock) {
         ci.shutdown();
       }
       ExportManager.instance().shutdown();
-      if (m_localSites != null) {
-        for (        ExecutionSite site : m_localSites.values())         site.startShutdown();
+      if (!isIV2Enabled()) {
+        if (m_localSites != null) {
+          for (          ExecutionSite site : m_localSites.values())           site.startShutdown();
+        }
       }
-      if (m_siteThreads != null) {
-        for (        Thread siteThread : m_siteThreads.values()) {
-          if (Thread.currentThread().equals(siteThread) == false) {
-            siteThread.join();
+      if (m_iv2Initiators != null) {
+        for (        Initiator init : m_iv2Initiators)         init.shutdown();
+      }
+      if (m_cartographer != null) {
+        m_cartographer.shutdown();
+      }
+      if (!isIV2Enabled()) {
+        if (m_siteThreads != null) {
+          for (          Thread siteThread : m_siteThreads.values()) {
+            if (Thread.currentThread().equals(siteThread) == false) {
+              siteThread.join();
+            }
+          }
+        }
+        if (mainSiteThread != null) {
+          if (Thread.currentThread().equals(mainSiteThread) == false) {
+            mainSiteThread.join();
           }
         }
       }
-      if (mainSiteThread != null) {
-        if (Thread.currentThread().equals(mainSiteThread) == false) {
-          mainSiteThread.join();
+      if (m_nodeDRGateway != null) {
+        try {
+          m_nodeDRGateway.shutdown();
+        }
+ catch (        InterruptedException e) {
+          log.warn("Interrupted shutting down invocation buffer server",e);
         }
       }
-      PartitionDRGateway.shutdown();
       m_localSites=null;
       m_currentThreadSite=null;
       m_siteThreads=null;

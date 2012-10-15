@@ -1,0 +1,37 @@
+{
+  deserializer.clear();
+  long cacheSize=0;
+  CacheUse cacheUse=CacheUse.FAIL;
+  startStatsCollection();
+  int errorCode=0;
+synchronized (ExecutionEngineJNI.class) {
+    errorCode=nativeLoadPlanFragment(pointer,plan);
+  }
+  try {
+    checkErrorCode(errorCode);
+    FastDeserializer fds=fallbackBuffer == null ? deserializer : new FastDeserializer(fallbackBuffer);
+    try {
+      final long fragId=fds.readLong();
+      final boolean wasHit=fds.readBoolean();
+      cacheSize=fds.readLong();
+      if (fragId == 0) {
+        throw new EEException(ERRORCODE_ERROR);
+      }
+      if (wasHit) {
+        cacheUse=CacheUse.HIT1;
+      }
+ else {
+        cacheUse=CacheUse.MISS;
+      }
+      return fragId;
+    }
+ catch (    final IOException ex) {
+      LOG.error("Failed to deserialze loadPlanFragment results" + ex);
+      throw new EEException(ERRORCODE_WRONG_SERIALIZED_BYTES);
+    }
+  }
+  finally {
+    endStatsCollection(cacheSize,cacheUse);
+    fallbackBuffer=null;
+  }
+}

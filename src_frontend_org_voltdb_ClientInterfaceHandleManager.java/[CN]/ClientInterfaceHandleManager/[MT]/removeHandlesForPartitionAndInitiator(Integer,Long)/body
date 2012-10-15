@@ -1,0 +1,29 @@
+{
+  assert(m_expectedThreadId == Thread.currentThread().getId());
+  List<Iv2InFlight> retval=new ArrayList<Iv2InFlight>();
+  if (!m_partitionStuff.containsKey(partitionId))   return retval;
+  PartitionData partitionStuff=m_partitionStuff.get(partitionId);
+  Deque<Iv2InFlight> inFlight=partitionStuff.m_reads;
+  Iterator<Iv2InFlight> i=inFlight.iterator();
+  while (i.hasNext()) {
+    Iv2InFlight entry=i.next();
+    if (entry.m_initiatorHSId != initiatorHSId) {
+      i.remove();
+      retval.add(entry);
+      m_outstandingTxns--;
+      m_acg.reduceBackpressure(entry.m_messageSize);
+    }
+  }
+  inFlight=partitionStuff.m_writes;
+  i=inFlight.iterator();
+  while (i.hasNext()) {
+    Iv2InFlight entry=i.next();
+    if (entry.m_initiatorHSId != initiatorHSId) {
+      i.remove();
+      retval.add(entry);
+      m_outstandingTxns--;
+      m_acg.reduceBackpressure(entry.m_messageSize);
+    }
+  }
+  return retval;
+}

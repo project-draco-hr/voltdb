@@ -4,11 +4,11 @@
   currentFragResponse.setStatus(FragmentResponseMessage.SUCCESS,null);
   if (!ftask.isSysProcTask()) {
     if (dependencies != null) {
-      ee.stashWorkUnitDependencies(dependencies);
+      stashWorkUnitDependencies(dependencies);
     }
   }
   for (int frag=0; frag < ftask.getFragmentCount(); frag++) {
-    final long fragmentId=ftask.getFragmentId(frag);
+    long fragmentId=ftask.getFragmentId(frag);
     final int outputDepId=ftask.getOutputDepId(frag);
     ParameterSet params=null;
     final ByteBuffer paramData=ftask.getParameterDataForFragment(frag);
@@ -25,17 +25,17 @@
  else {
       params=new ParameterSet();
     }
-    String fragmentPlan=ftask.getFragmentPlan(frag);
-    if (fragmentPlan != null) {
-      return processCustomFragmentTask(txnState,dependencies,currentFragResponse,params,fragmentPlan,outputDepId);
-    }
- else     if (ftask.isSysProcTask()) {
+    byte[] fragmentPlan=ftask.getFragmentPlan(frag);
+    if (ftask.isSysProcTask()) {
       return processSysprocFragmentTask(txnState,dependencies,fragmentId,currentFragResponse,params);
     }
  else {
       final int inputDepId=ftask.getOnlyInputDepId(frag);
       try {
-        final VoltTable dependency=ee.executePlanFragment(fragmentId,inputDepId,params,txnState.txnId,lastCommittedTxnId,txnState.isReadOnly() ? Long.MAX_VALUE : getNextUndoToken());
+        if (fragmentPlan != null) {
+          fragmentId=ee.loadPlanFragment(fragmentPlan);
+        }
+        final VoltTable dependency=ee.executePlanFragments(1,new long[]{fragmentId},new long[]{inputDepId},new ParameterSet[]{params},txnState.txnId,lastCommittedTxnId,txnState.isReadOnly() ? Long.MAX_VALUE : getNextUndoToken())[0];
         sendDependency(currentFragResponse,outputDepId,dependency);
       }
  catch (      final EEException e) {

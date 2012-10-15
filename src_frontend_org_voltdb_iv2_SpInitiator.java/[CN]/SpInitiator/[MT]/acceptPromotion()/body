@@ -1,0 +1,28 @@
+{
+  try {
+    long startTime=System.currentTimeMillis();
+    Boolean success=false;
+    m_term=createTerm(m_messenger.getZK(),m_partitionId,getInitiatorHSId(),m_initiatorMailbox,m_whoami);
+    m_term.start();
+    while (!success) {
+      RepairAlgo repair=null;
+      repair=createPromoteAlgo(m_term.getInterestingHSIds(),m_initiatorMailbox,m_whoami);
+      m_initiatorMailbox.setRepairAlgo(repair);
+      Pair<Boolean,Long> result=repair.start().get();
+      success=result.getFirst();
+      if (success) {
+        m_initiatorMailbox.setLeaderState(result.getSecond());
+        tmLog.info(m_whoami + "finished leader promotion. Took " + (System.currentTimeMillis() - startTime)+ " ms.");
+        LeaderCacheWriter iv2masters=new LeaderCache(m_messenger.getZK(),m_zkMailboxNode);
+        iv2masters.put(m_partitionId,m_initiatorMailbox.getHSId());
+      }
+ else {
+        tmLog.info(m_whoami + "interrupted during leader promotion after " + (System.currentTimeMillis() - startTime)+ " ms. of "+ "trying. Retrying.");
+      }
+    }
+    super.acceptPromotion();
+  }
+ catch (  Exception e) {
+    VoltDB.crashLocalVoltDB("Terminally failed leader promotion.",true,e);
+  }
+}

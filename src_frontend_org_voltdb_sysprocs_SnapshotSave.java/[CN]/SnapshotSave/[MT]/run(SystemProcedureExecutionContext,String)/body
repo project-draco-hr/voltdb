@@ -8,7 +8,21 @@
   String formatStr=jsObj.optString("format",SnapshotFormat.NATIVE.toString());
   final SnapshotFormat format=SnapshotFormat.getEnumIgnoreCase(formatStr);
   final String data=jsObj.optString("data");
-  HOST_LOG.info(async + " saving database to path: " + path+ ", ID: "+ nonce+ " at "+ startTime);
+  JSONArray perPartitionTransactionIdsArray=jsObj.optJSONArray("perPartitionTxnIds");
+  if (perPartitionTransactionIdsArray == null) {
+    HOST_LOG.error("Failed to retrieve per partition transaction ids array from SnapshotDaemon." + "This shouldn't happen and it prevents the snapshot from including transaction ids " + "for partitions that are no longer active in the cluster. Those ids are necessary "+ "to prevent those partitions from generating duplicate unique ids when they are brought back.");
+    perPartitionTransactionIdsArray=new JSONArray();
+  }
+  long perPartitionTxnIds[]=new long[perPartitionTransactionIdsArray.length()];
+  for (int ii=0; ii < perPartitionTxnIds.length; ii++) {
+    perPartitionTxnIds[ii]=perPartitionTransactionIdsArray.getLong(ii);
+  }
+  if (format == SnapshotFormat.STREAM) {
+    HOST_LOG.info(async + " streaming database, ID: " + nonce+ " at "+ startTime);
+  }
+ else {
+    HOST_LOG.info(async + " saving database to path: " + path+ ", ID: "+ nonce+ " at "+ startTime);
+  }
   ColumnInfo[] error_result_columns=new ColumnInfo[2];
   int ii=0;
   error_result_columns[ii++]=new ColumnInfo("RESULT",VoltType.STRING);
@@ -37,7 +51,7 @@
     }
   }
   performQuiesce();
-  results=performSnapshotCreationWork(path,nonce,ctx.getCurrentTxnId(),(byte)(block ? 1 : 0),format,data);
+  results=performSnapshotCreationWork(path,nonce,ctx.getCurrentTxnId(),perPartitionTxnIds,(byte)(block ? 1 : 0),format,data);
   try {
     JSONStringer stringer=new JSONStringer();
     stringer.object();

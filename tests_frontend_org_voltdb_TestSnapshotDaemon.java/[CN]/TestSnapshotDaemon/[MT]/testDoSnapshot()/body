@@ -2,7 +2,7 @@
   SnapshotDaemon daemon=getBasicDaemon();
   long handle=m_initiator.clientData;
   m_initiator.clear();
-  daemon.processClientResponse(getSuccessfulScanOneResult(),handle).get();
+  daemon.processClientResponse(getSuccessfulScanOneResult(handle)).get();
   assertNull(m_initiator.procedureName);
   Thread.sleep(500);
   assertNull(m_initiator.procedureName);
@@ -12,32 +12,32 @@
   JSONObject jsObj=new JSONObject((String)m_initiator.params[0]);
   assertTrue(jsObj.getString("path").equals("/tmp"));
   assertTrue(jsObj.getString("nonce").startsWith("woobie_"));
-  assertTrue(jsObj.length() == 2);
+  assertTrue(jsObj.length() == 3);
   handle=m_initiator.clientData;
   m_initiator.clear();
-  daemon.processClientResponse(getFailureResponse(),handle).get();
+  daemon.processClientResponse(getFailureResponse(handle)).get();
   assertNull(m_initiator.procedureName);
   assertEquals(SnapshotDaemon.State.FAILURE,daemon.getState());
   daemon=getBasicDaemon();
   assertNotNull(m_initiator.procedureName);
   handle=m_initiator.clientData;
   m_initiator.clear();
-  daemon.processClientResponse(getSuccessfulScanOneResult(),handle);
+  daemon.processClientResponse(getSuccessfulScanOneResult(handle));
   Thread.sleep(1200);
   assertNotNull(m_initiator.procedureName);
   handle=m_initiator.clientData;
   m_initiator.clear();
-  daemon.processClientResponse(getErrMsgResponse(),handle).get();
+  daemon.processClientResponse(getErrMsgResponse(handle)).get();
   assertEquals(daemon.getState(),SnapshotDaemon.State.WAITING);
   daemon=getBasicDaemon();
   assertNotNull(m_initiator.procedureName);
   handle=m_initiator.clientData;
   m_initiator.clear();
-  daemon.processClientResponse(getSuccessfulScanThreeResults(),handle).get();
+  daemon.processClientResponse(getSuccessfulScanThreeResults(handle)).get();
   assertNotNull(m_initiator.procedureName);
   handle=m_initiator.clientData;
   m_initiator.clear();
-  daemon.processClientResponse(getErrMsgResponse(),handle).get();
+  daemon.processClientResponse(getErrMsgResponse(handle)).get();
   assertNull(m_initiator.procedureName);
   Thread.sleep(1200);
   assertNotNull(m_initiator.procedureName);
@@ -45,8 +45,9 @@
   m_initiator.clear();
   Thread.sleep(1200);
   assertNull(m_initiator.procedureName);
-  daemon.processClientResponse(new ClientResponse(){
-    @Override public Exception getException(){
+  final long handleForClosure1=handle;
+  ClientResponseImpl response=new ClientResponseImpl(){
+    @Override public SerializableException getException(){
       return null;
     }
     @Override public String getStatusString(){
@@ -72,8 +73,12 @@
     @Override public String getAppStatusString(){
       return null;
     }
+    @Override public long getClientHandle(){
+      return handleForClosure1;
+    }
   }
-,handle).get();
+;
+  daemon.processClientResponse(Callables.returning(response)).get();
   assertEquals(SnapshotDaemon.State.WAITING,daemon.getState());
   assertNull(m_initiator.procedureName);
   Thread.sleep(1200);
@@ -81,8 +86,9 @@
   assertTrue("@SnapshotSave".equals(m_initiator.procedureName));
   handle=m_initiator.clientData;
   m_initiator.clear();
-  daemon.processClientResponse(new ClientResponse(){
-    @Override public Exception getException(){
+  final long handleForClosure2=handle;
+  response=new ClientResponseImpl(){
+    @Override public SerializableException getException(){
       return null;
     }
     @Override public String getStatusString(){
@@ -108,8 +114,12 @@
     @Override public String getAppStatusString(){
       return null;
     }
+    @Override public long getClientHandle(){
+      return handleForClosure2;
+    }
   }
-,handle);
+;
+  daemon.processClientResponse(Callables.returning(response));
   Thread.sleep(1200);
   assertNotNull(m_initiator.procedureName);
   assertTrue("@SnapshotDelete".equals(m_initiator.procedureName));

@@ -1,6 +1,8 @@
 {
   final long sourceId=0;
+  final long sourceDataId=1;
   final long destinationId=32;
+  final long destinationDataId=33;
   final AtomicReference<Boolean> sourceCompleted=new AtomicReference<Boolean>(false);
   final AtomicReference<Boolean> destinationCompleted=new AtomicReference<Boolean>(false);
   final String serializedCatalog=m_catalog.serialize();
@@ -13,6 +15,9 @@
   tablesAndDestinations.put(Pair.of("WAREHOUSE",WAREHOUSE_TABLEID),destinations);
   final MockMailbox sourceMailbox=new MockMailbox();
   MockMailbox.registerMailbox(sourceId,sourceMailbox);
+  final MockMailbox sourceDataMailbox=new MockMailbox();
+  sourceDataMailbox.setHSId(sourceDataId);
+  MockMailbox.registerMailbox(sourceDataId,sourceDataMailbox);
   final Runnable onSourceCompletion=new Runnable(){
     @Override public void run(){
       sourceCompleted.set(true);
@@ -25,40 +30,6 @@
     }
   }
 ;
-  final AtomicReference<ExecutionEngine> sourceReference=new AtomicReference<ExecutionEngine>();
-  Thread sourceThread=new Thread("Source thread"){
-    @Override public void run(){
-      try {
-        final ExecutionEngine sourceEngine=new ExecutionEngineJNI(CLUSTER_ID,NODE_ID,(int)sourceId,(int)sourceId,"",100,1);
-        sourceReference.set(sourceEngine);
-        sourceEngine.loadCatalog(0,serializedCatalog);
-        try {
-          loadTestTables(sourceEngine,m_catalog);
-        }
- catch (        Exception e) {
-          e.printStackTrace();
-        }
-        VoltMessage message=sourceMailbox.recvBlocking();
-        assertTrue(message != null);
-        assertTrue(message instanceof RecoveryMessage);
-        RecoveryMessage rm=(RecoveryMessage)message;
-        SocketChannel sc=RecoverySiteProcessorSource.createRecoveryConnection(rm.addresses(),rm.port());
-        final RecoverySiteProcessorSource sourceProcessor=new RecoverySiteProcessorSource(null,rm.txnId(),rm.sourceSite(),tablesAndDestinations,sourceEngine,sourceMailbox,sourceId,onSourceCompletion,mh,sc);
-        sourceProcessor.doRecoveryWork(0);
-      }
- catch (      java.io.IOException e) {
-        e.printStackTrace();
-        return;
-      }
-    }
-  }
-;
-  sourceThread.start();
-  final HashMap<Pair<String,Integer>,Long> tablesAndSources=new HashMap<Pair<String,Integer>,Long>();
-  tablesAndSources.put(Pair.of("STOCK",STOCK_TABLEID),sourceId);
-  tablesAndSources.put(Pair.of("WAREHOUSE",WAREHOUSE_TABLEID),sourceId);
-  final MockMailbox destinationMailbox=new MockMailbox();
-  MockMailbox.registerMailbox(destinationId,destinationMailbox);
   final Runnable onDestinationCompletion=new Runnable(){
     @Override public void run(){
       destinationCompleted.set(true);
@@ -66,12 +37,20 @@
   }
 ;
   final AtomicReference<ExecutionEngine> destinationReference=new AtomicReference<ExecutionEngine>();
+  final HashMap<Pair<String,Integer>,Long> tablesAndSources=new HashMap<Pair<String,Integer>,Long>();
+  tablesAndSources.put(Pair.of("STOCK",STOCK_TABLEID),sourceId);
+  tablesAndSources.put(Pair.of("WAREHOUSE",WAREHOUSE_TABLEID),sourceId);
+  final MockMailbox destinationMailbox=new MockMailbox();
+  MockMailbox.registerMailbox(destinationId,destinationMailbox);
+  final MockMailbox destinationDataMailbox=new MockMailbox();
+  destinationDataMailbox.setHSId(destinationDataId);
+  MockMailbox.registerMailbox(destinationDataId,destinationDataMailbox);
   Thread destinationThread=new Thread("Destination thread"){
     @Override public void run(){
       final ExecutionEngine destinationEngine=new ExecutionEngineJNI(CLUSTER_ID,NODE_ID,(int)destinationId,(int)destinationId,"",100,1);
       destinationReference.set(destinationEngine);
       destinationEngine.loadCatalog(0,serializedCatalog);
-      RecoverySiteProcessorDestination destinationProcess=new RecoverySiteProcessorDestination(tablesAndSources,destinationEngine,destinationMailbox,destinationId,0,onDestinationCompletion,mh);
+      RecoverySiteProcessorDestination destinationProcess=new RecoverySiteProcessorDestination(tablesAndSources,destinationEngine,destinationMailbox,destinationDataMailbox,destinationId,0,onDestinationCompletion,mh);
       destinationProcess.doRecoveryWork(-1);
       destinationProcess.doRecoveryWork(0);
       assert(destinationCompleted.get());
@@ -79,6 +58,29 @@
   }
 ;
   destinationThread.start();
+  Thread.sleep(1000);
+  final AtomicReference<ExecutionEngine> sourceReference=new AtomicReference<ExecutionEngine>();
+  Thread sourceThread=new Thread("Source thread"){
+    @Override public void run(){
+      final ExecutionEngine sourceEngine=new ExecutionEngineJNI(CLUSTER_ID,NODE_ID,(int)sourceId,(int)sourceId,"",100,1);
+      sourceReference.set(sourceEngine);
+      sourceEngine.loadCatalog(0,serializedCatalog);
+      try {
+        loadTestTables(sourceEngine,m_catalog);
+      }
+ catch (      Exception e) {
+        e.printStackTrace();
+      }
+      VoltMessage message=sourceMailbox.recvBlocking();
+      assertTrue(message != null);
+      assertTrue(message instanceof RecoveryMessage);
+      RecoveryMessage rm=(RecoveryMessage)message;
+      final RecoverySiteProcessorSource sourceProcessor=new RecoverySiteProcessorSource(null,rm.txnId(),rm.sourceSite(),rm.getHSId(),tablesAndDestinations,sourceEngine,sourceMailbox,sourceDataMailbox,sourceId,onSourceCompletion,mh);
+      sourceProcessor.doRecoveryWork(0);
+    }
+  }
+;
+  sourceThread.start();
   destinationThread.join();
   sourceThread.join();
   assertEquals(sourceReference.get().tableHashCode(STOCK_TABLEID),destinationReference.get().tableHashCode(STOCK_TABLEID));

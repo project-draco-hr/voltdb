@@ -5,7 +5,7 @@
     System.out.println("testRejoinWithMultipartLoad");
     VoltProjectBuilder builder=getBuilderForTest();
     builder.setSecurityEnabled(true);
-    LocalCluster cluster=new LocalCluster("rejoin.jar",2,2,1,BackendTarget.NATIVE_EE_JNI,LocalCluster.FailureState.ALL_RUNNING,false,true);
+    LocalCluster cluster=new LocalCluster("rejoin.jar",2,3,1,BackendTarget.NATIVE_EE_JNI,LocalCluster.FailureState.ALL_RUNNING,false,true,m_useIv2);
     cluster.setMaxHeap(256);
     cluster.overrideAnyRequestForValgrind();
     boolean success=cluster.compile(builder);
@@ -39,7 +39,7 @@
                   }
                 }
               }
-,"@Statistics","MANAGEMENT",1);
+,"SelectCountPartitioned");
               Thread.sleep(1);
               final long now=System.currentTimeMillis();
               if (now - startTime > 1000 * 10) {
@@ -68,14 +68,16 @@
     ServerThread localServer=null;
     try {
       VoltDB.Configuration config=new VoltDB.Configuration(cluster.portGenerator);
+      config.m_enableIV2=m_useIv2;
+      config.m_startAction=START_ACTION.REJOIN;
       config.m_pathToCatalog=Configuration.getPathToCatalogForTest("rejoin.jar");
       config.m_pathToDeployment=Configuration.getPathToCatalogForTest("rejoin.xml");
-      config.m_rejoinToHostAndPort=":" + cluster.internalPort(1);
+      config.m_leader=":" + cluster.internalPort(1);
       config.m_isRejoinTest=true;
       cluster.setPortsFromConfig(0,config);
       localServer=new ServerThread(config);
       localServer.start();
-      localServer.waitForInitialization();
+      localServer.waitForRejoin();
       Thread.sleep(2000);
       client=ClientFactory.createClient(m_cconfig);
       client.createConnection("localhost",cluster.port(1));

@@ -1,0 +1,18 @@
+{
+  final long spHandle=message.getSpHandle();
+  DuplicateCounter counter=m_duplicateCounters.get(new DuplicateCounterKey(message.getTxnId(),spHandle));
+  if (counter != null) {
+    int result=counter.offer(message);
+    if (result == DuplicateCounter.DONE) {
+      m_duplicateCounters.remove(new DuplicateCounterKey(message.getTxnId(),spHandle));
+      m_repairLogTruncationHandle=spHandle;
+      m_mailbox.send(counter.m_destinationId,message);
+    }
+ else     if (result == DuplicateCounter.MISMATCH) {
+      VoltDB.crashLocalVoltDB("HASH MISMATCH: replicas produced different results.",true,null);
+    }
+    return;
+  }
+  m_repairLogTruncationHandle=spHandle;
+  m_mailbox.send(message.getInitiatorHSId(),message);
+}

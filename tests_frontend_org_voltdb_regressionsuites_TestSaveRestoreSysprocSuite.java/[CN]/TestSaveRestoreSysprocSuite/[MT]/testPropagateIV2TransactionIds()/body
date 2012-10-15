@@ -1,0 +1,50 @@
+{
+  if (!VoltDB.instance().isIV2Enabled())   return;
+  System.out.println("Starting testPropagateIV2TransactionIds");
+  int num_replicated_items=1000;
+  int num_partitioned_items=126;
+  Client client=getClient();
+  VoltTable repl_table=createReplicatedTable(num_replicated_items,0,null);
+  VoltTable partition_table=createPartitionedTable(num_partitioned_items,0);
+  loadTable(client,"REPLICATED_TESTER",true,repl_table);
+  loadTable(client,"PARTITION_TESTER",false,partition_table);
+  saveTablesWithDefaultOptions(client);
+  Map<Integer,Long> expectedTransactionIds=new HashMap<Integer,Long>();
+  expectedTransactionIds.put(0,3619631924101120L);
+  expectedTransactionIds.put(1,3619631924084737L);
+  expectedTransactionIds.put(MpInitiator.MP_INIT_PID,3619631923249151L);
+  expectedTransactionIds.put(2,3619631924084738L);
+  JSONObject digest=SnapshotUtil.CRCCheck(new VoltFile(TMPDIR,TESTNONCE + "-host_0.digest"));
+  JSONObject transactionIds=digest.getJSONObject("partitionTransactionIds");
+  System.out.println("TRANSACTION IDS: " + transactionIds.toString());
+  assertEquals(expectedTransactionIds.size(),transactionIds.length());
+  for (  Map.Entry<Integer,Long> expectedValues : expectedTransactionIds.entrySet()) {
+    final long foundTxnId=transactionIds.getLong(expectedValues.getKey().toString());
+    assertEquals(expectedValues.getValue().longValue(),foundTxnId);
+  }
+  m_config.shutDown();
+  CatalogChangeSingleProcessServer config=(CatalogChangeSingleProcessServer)m_config;
+  config.recompile(1);
+  try {
+    m_config.startUp(false);
+    client=getClient();
+    client.callProcedure("@SnapshotRestore",TMPDIR,TESTNONCE).getResults();
+    saveTables(client,TMPDIR,TESTNONCE + 2,true,false);
+    digest=SnapshotUtil.CRCCheck(new VoltFile(TMPDIR,TESTNONCE + "2-host_0.digest"));
+    transactionIds=digest.getJSONObject("partitionTransactionIds");
+    assertEquals(expectedTransactionIds.size(),transactionIds.length());
+    for (    Map.Entry<Integer,Long> expectedValues : expectedTransactionIds.entrySet()) {
+      final long txnid=transactionIds.getLong(expectedValues.getKey().toString());
+      final int partitionId=expectedValues.getKey();
+      if (partitionId == 2 || partitionId == 1) {
+        assertEquals(txnid,expectedValues.getValue().longValue());
+      }
+ else       if (partitionId == MpInitiator.MP_INIT_PID || partitionId == 1) {
+        assertTrue(txnid > expectedValues.getValue().longValue());
+      }
+    }
+  }
+  finally {
+    config.revertCompile();
+  }
+}

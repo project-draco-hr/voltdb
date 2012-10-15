@@ -17,6 +17,7 @@
   HashMap<String,Map<Integer,Long>> exportSequenceNumbers=new HashMap<String,Map<Integer,Long>>();
   Long digestTxnId=null;
   ArrayList<JSONObject> digests=new ArrayList<JSONObject>();
+  Set<Long> perPartitionTxnIds=new HashSet<Long>();
   try {
     while (results[0].advanceRow()) {
       if (results[0].getString("RESULT").equals("FAILURE")) {
@@ -50,10 +51,21 @@
           }
         }
       }
+      if (digest.has("partitionTransactionIds")) {
+        JSONObject partitionTxnIds=digest.getJSONObject("partitionTransactionIds");
+        @SuppressWarnings("unchecked") Iterator<String> keys=partitionTxnIds.keys();
+        while (keys.hasNext()) {
+          perPartitionTxnIds.add(partitionTxnIds.getLong(keys.next()));
+        }
+      }
     }
   }
  catch (  JSONException e) {
     throw new VoltAbortException(e);
   }
-  return Pair.of((List<JSONObject>)digests,(Map<String,Map<Integer,Long>>)exportSequenceNumbers);
+  DigestScanResult result=new DigestScanResult();
+  result.digests=digests;
+  result.exportSequenceNumbers=exportSequenceNumbers;
+  result.perPartitionTxnIds=Longs.toArray(perPartitionTxnIds);
+  return result;
 }

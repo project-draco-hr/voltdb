@@ -1,0 +1,85 @@
+{
+  FileOutputStream fos=null;
+  try {
+    String prefix=null;
+    if (new File(local_file).isDirectory()) {
+      prefix=local_file + File.separator;
+    }
+    String command="scp -f " + remote_file;
+    JSch jsch=new JSch();
+    if (null != key)     jsch.addIdentity(key);
+    Session session=jsch.getSession(user,host,22);
+    java.util.Properties config=new java.util.Properties();
+    config.put("StrictHostKeyChecking","no");
+    session.setConfig(config);
+    session.connect();
+    Channel channel=session.openChannel("exec");
+    ((ChannelExec)channel).setCommand(command);
+    OutputStream out=channel.getOutputStream();
+    InputStream in=channel.getInputStream();
+    channel.connect();
+    byte[] buf=new byte[1024];
+    buf[0]=0;
+    out.write(buf,0,1);
+    out.flush();
+    while (true) {
+      int c=checkAck(in);
+      if (c != 'C') {
+        break;
+      }
+      in.read(buf,0,5);
+      long filesize=0L;
+      while (true) {
+        if (in.read(buf,0,1) < 0) {
+          break;
+        }
+        if (buf[0] == ' ')         break;
+        filesize=filesize * 10L + (buf[0] - '0');
+      }
+      String file=null;
+      for (int i=0; ; i++) {
+        in.read(buf,i,1);
+        if (buf[i] == (byte)0x0a) {
+          file=new String(buf,0,i);
+          break;
+        }
+      }
+      buf[0]=0;
+      out.write(buf,0,1);
+      out.flush();
+      fos=new FileOutputStream(prefix == null ? local_file : prefix + file);
+      int foo;
+      while (true) {
+        if (buf.length < filesize)         foo=buf.length;
+ else         foo=(int)filesize;
+        foo=in.read(buf,0,foo);
+        if (foo < 0) {
+          break;
+        }
+        fos.write(buf,0,foo);
+        filesize-=foo;
+        if (filesize == 0L)         break;
+      }
+      fos.close();
+      fos=null;
+      if (checkAck(in) != 0) {
+        System.out.println("checkAck did not equal zero.");
+        return false;
+      }
+      buf[0]=0;
+      out.write(buf,0,1);
+      out.flush();
+    }
+    session.disconnect();
+  }
+ catch (  Exception e) {
+    System.out.println(e);
+    try {
+      if (fos != null)       fos.close();
+    }
+ catch (    Exception ee) {
+    }
+    return false;
+  }
+  return true;
+}
