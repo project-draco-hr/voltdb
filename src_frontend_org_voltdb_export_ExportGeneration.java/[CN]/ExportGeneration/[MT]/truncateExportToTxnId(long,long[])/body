@@ -3,6 +3,7 @@
   for (  long tid : perPartitionTxnIds) {
     partitionToTxnId.put(TxnEgo.getPartitionId(tid),tid);
   }
+  List<ListenableFuture<?>> tasks=new ArrayList<ListenableFuture<?>>();
   for (  HashMap<String,ExportDataSource> dataSources : m_dataSourcesByPartition.values()) {
     for (    ExportDataSource source : dataSources.values()) {
       if (VoltDB.instance().isIV2Enabled()) {
@@ -11,12 +12,18 @@
           exportLog.error("Snapshot " + txnId + " does not include truncation point for partition "+ source.getPartitionId());
         }
  else {
-          source.truncateExportToTxnId(truncationPoint);
+          tasks.add(source.truncateExportToTxnId(truncationPoint));
         }
       }
  else {
-        source.truncateExportToTxnId(txnId);
+        tasks.add(source.truncateExportToTxnId(txnId));
       }
     }
+  }
+  try {
+    Futures.allAsList(tasks).get();
+  }
+ catch (  Exception e) {
+    VoltDB.crashLocalVoltDB("Unexpected exception truncating export data during snapshot restore. " + "You can back up export overflow data and start the " + "DB without it to get past this error",false,e);
   }
 }
