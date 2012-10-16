@@ -1,47 +1,22 @@
 def parse(self, cmdargs):
-    iverb = 0
-    allow_no_command = False
-    while (iverb < len(cmdargs)):
-        if cmdargs[iverb].startswith('-'):
-            if (cmdargs[iverb] in ('-h', '--help', '--version')):
-                allow_no_command = True
-            for option_spec in self.options_spec:
-                if (cmdargs[iverb] in option_spec.args):
-                    if ((not ('action' in option_spec.kwargs)) or (option_spec.kwargs['action'] == 'store')):
-                        iverb += 1
-        else:
-            break
-        iverb += 1
-    if ((iverb == len(cmdargs)) and (not allow_no_command)):
-        self._abort('Missing command.')
-    (outer_opts, outer_args) = optparse.OptionParser.parse_args(self, list(cmdargs[:iverb]))
+    '\n        Parse a command line.\n        '
+    self.preproc.preprocess(cmdargs)
+    allow_no_verb = (self.preproc.get_option('-h', '--help', '--version') is not None)
+    if ((self.preproc.verb is None) and (not allow_no_verb)):
+        self._abort('No verb was specified.')
+    if (self.preproc.verb not in self.verbs):
+        self._abort(('Unknown command: %s' % self.preproc.verb))
+    verb = self.verbs[self.preproc.verb]
+    (outer_opts, outer_args) = optparse.OptionParser.parse_args(self, self.preproc.outer_opts)
     assert (len(outer_args) == 0)
-    verb_name = cmdargs[iverb].lower()
-    if (verb_name in self.aliases):
-        alias_tokens = shlex.split(self.aliases[verb_name])
-        if (len(alias_tokens) == 0):
-            self._abort(('Missing alias definition for "%s"' % verb_name))
-        verb_name = alias_tokens[0]
-        if (len(alias_tokens) > 1):
-            outer_args = (alias_tokens[1:] + outer_args)
-    verb = None
-    for verb_chk in self.verbs:
-        if (verb_chk.name == verb_name):
-            verb = verb_chk
-            break
-    else:
-        self._abort(('Unknown command: %s' % verb_name))
-    inner_parser = optparse.OptionParser(description=verb.metadata.description, usage=('%%prog %s %s' % (verb.name, verb.metadata.usage)))
-    if (iverb < len(cmdargs)):
-        if verb.metadata.options_spec:
-            for option_spec in verb.metadata.options_spec:
-                inner_parser.add_option(*option_spec.args, **option_spec.kwargs)
-        if verb.metadata.passthrough:
-            inner_args = cmdargs[(iverb + 1):]
-            inner_opts = None
+    verb_parser = self.create_verb_parser(verb)
+    if self.preproc.verb:
+        if verb.cli_spec.passthrough:
+            verb_args = self.preproc.verb_cmdargs
+            verb_opts = None
         else:
-            (inner_opts, inner_args) = inner_parser.parse_args(list(cmdargs[(iverb + 1):]))
+            (verb_opts, verb_args) = verb_parser.parse_args(self.preproc.verb_cmdargs)
     else:
-        inner_opts = None
-        inner_args = []
-    return ParsedCommand(self, outer_opts, inner_parser, inner_opts, inner_args, verb)
+        verb_opts = None
+        args = []
+    return ParsedCommand(self, outer_opts, verb_parser, verb_opts, verb_args, verb)
