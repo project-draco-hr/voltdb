@@ -1,11 +1,6 @@
 {
   m_zk=messenger.getZK();
-  m_zk.create(VoltZK.exportGenerations,null,Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT,new ZKUtil.StringCallback(),null);
   m_zkPath=VoltZK.exportGenerations + "/" + m_timestamp;
-  m_zk.create(m_zkPath,null,Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT,new ZKUtil.StringCallback(),null);
-  for (  Integer partition : localPartitions) {
-    m_zk.create(m_zkPath + "/" + partition,null,Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT,new ZKUtil.StringCallback(),null);
-  }
   m_mbox=new LocalMailbox(messenger){
     @Override public void deliver(    VoltMessage message){
       if (message instanceof BinaryPayloadMessage) {
@@ -38,9 +33,7 @@
   messenger.createMailbox(null,m_mbox);
   List<ZKUtil.StringCallback> callbacks=new ArrayList<ZKUtil.StringCallback>();
   for (  Integer partition : localPartitions) {
-    ZKUtil.StringCallback callback=new ZKUtil.StringCallback();
-    m_zk.create(m_zkPath + "/" + partition+ "/"+ m_mbox.getHSId(),null,Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL,callback,null);
-    callbacks.add(callback);
+    callbacks.add(ZKUtil.asyncMkdirs(m_zk,m_zkPath + "/" + partition+ "/"+ m_mbox.getHSId()));
   }
   for (  ZKUtil.StringCallback cb : callbacks) {
     try {
@@ -58,7 +51,6 @@
         m_zk.getChildren(m_zkPath + "/" + partition,constructChildWatcher(),callback,null);
         callbacks.add(Pair.of(partition,callback));
       }
-      ImmutableMap.Builder<Integer,ImmutableList<Long>> mapBuilder=ImmutableMap.builder();
       for (      Pair<Integer,ZKUtil.ChildrenCallback> p : callbacks) {
         final Integer partition=p.getFirst();
         List<String> children=null;
@@ -76,9 +68,11 @@ catch (        KeeperException e) {
           if (child.equals(Long.toString(m_mbox.getHSId())))           continue;
           mailboxes.add(Long.valueOf(child));
         }
-        mapBuilder.put(partition,mailboxes.build());
+        ImmutableList<Long> mailboxHsids=mailboxes.build();
+        for (        ExportDataSource eds : m_dataSourcesByPartition.get(partition).values()) {
+          eds.updateAckMailboxes(Pair.of(m_mbox,mailboxHsids));
+        }
       }
-      m_ackableMailboxes=mapBuilder.build();
     }
   }
 );

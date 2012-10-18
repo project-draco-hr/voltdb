@@ -1,0 +1,50 @@
+{
+  VoltDB.replaceVoltDBInstanceForTest(m_mockVoltDB);
+  Table table=m_mockVoltDB.getCatalogContext().database.getTables().get("TableName");
+  ExportDataSource s=new ExportDataSource(Mockito.mock(Runnable.class),"database",table.getTypeName(),m_part,m_site,table.getSignature(),0,table.getColumns(),"/tmp");
+  final CountDownLatch cdl=new CountDownLatch(1);
+  Runnable cdlWaiter=new Runnable(){
+    @Override public void run(){
+      cdl.countDown();
+    }
+  }
+;
+  s.setOnMastership(cdlWaiter);
+  s.acceptMastership();
+  cdl.await();
+  ByteBuffer foo=ByteBuffer.allocate(20);
+  s.pushExportBuffer(23,0,foo.duplicate(),false,false);
+  assertEquals(s.sizeInBytes(),20);
+  s.pushExportBuffer(43,0,foo.duplicate(),false,false);
+  assertEquals(s.sizeInBytes(),40);
+  s.pushExportBuffer(63,0,foo.duplicate(),false,false);
+  assertEquals(s.sizeInBytes(),72);
+  s.pushExportBuffer(63,0,null,true,false);
+  assertEquals(96,s.sizeInBytes());
+  AckingContainer cont=(AckingContainer)s.poll().get();
+  assertEquals(96,s.sizeInBytes());
+  assertEquals(43,cont.m_uso);
+  foo=ByteBuffer.allocate(20);
+  foo.order(ByteOrder.LITTLE_ENDIAN);
+  assertEquals(foo,cont.b);
+  cont.discard();
+  cont=(AckingContainer)s.poll().get();
+  assertEquals(96,s.sizeInBytes());
+  assertEquals(63,cont.m_uso);
+  assertEquals(foo,cont.b);
+  cont.discard();
+  cont=(AckingContainer)s.poll().get();
+  assertEquals(32,s.sizeInBytes());
+  assertEquals(83,cont.m_uso);
+  assertEquals(foo,cont.b);
+  cont.discard();
+  ListenableFuture<BBContainer> fut=s.poll();
+  try {
+    cont=(AckingContainer)fut.get(100,TimeUnit.MILLISECONDS);
+    fail("did not get expected timeout");
+  }
+ catch (  TimeoutException ignoreIt) {
+  }
+  s.pushExportBuffer(83,0,null,false,true);
+  assertNull(fut.get());
+}
