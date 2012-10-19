@@ -1,13 +1,22 @@
 {
-  for (int i=1; global_replay_mpTxn != null || i < 10; ++i) {
-    if (m_rejoinTaskLog.isEmpty()) {
-      assert(global_replay_mpTxn == null);
-      return;
+  if (m_rejoinState != kStateReplayingRejoin) {
+    return;
+  }
+  for (int i=0; i < 10; ++i) {
+    if (m_rejoinTaskLog == null || m_rejoinTaskLog.isEmpty()) {
+      break;
     }
     TransactionInfoBaseMessage tibm=m_rejoinTaskLog.getNextMessage();
     if (tibm == null) {
       rejoinLog.debug("Site " + m_siteId + ": rejoin log unavailable. Async fetch.");
-      return;
+      while (tibm == null) {
+        try {
+          Thread.sleep(10);
+        }
+ catch (        Exception fuckyou) {
+        }
+        tibm=m_rejoinTaskLog.getNextMessage();
+      }
     }
     if (filter(tibm)) {
       continue;
@@ -19,18 +28,35 @@
     }
  else     if (tibm instanceof FragmentTaskMessage) {
       FragmentTaskMessage m=(FragmentTaskMessage)tibm;
-      global_replay_mpTxn=new ParticipantTransactionState(m.getTxnId(),m);
+      if (global_replay_mpTxn == null) {
+        global_replay_mpTxn=new ParticipantTransactionState(m.getTxnId(),m);
+      }
+ else       if (global_replay_mpTxn.txnId != m.getTxnId()) {
+        System.out.println("Old global: " + global_replay_mpTxn.txnId);
+        System.out.println("New txnId: " + m.getTxnId());
+        VoltDB.crashLocalVoltDB("Started a MP transaction during replay before completing " + " open transaction.",false,null);
+      }
       FragmentTask t=new FragmentTask(m_initiatorMailbox,m,global_replay_mpTxn);
       t.runFromTaskLog(this);
     }
  else     if (tibm instanceof CompleteTransactionMessage) {
       CompleteTransactionMessage m=(CompleteTransactionMessage)tibm;
       CompleteTransactionTask t=new CompleteTransactionTask(global_replay_mpTxn,null,m,null);
-      t.runFromTaskLog(this);
       global_replay_mpTxn=null;
+      System.out.println("COMPLETING: " + m.getTxnId());
+      t.runFromTaskLog(this);
     }
  else {
       VoltDB.crashLocalVoltDB("Can not replay message type " + tibm + " during live rejoin. Unexpected error.",false,null);
     }
+  }
+  if (m_rejoinTaskLog == null) {
+    setReplayRejoinComplete();
+  }
+ else   if (m_rejoinTaskLog.isEmpty() && global_replay_mpTxn == null) {
+    setReplayRejoinComplete();
+  }
+ else   if (m_rejoinTaskLog.isEmpty()) {
+    System.out.println("EMPTY TASK LOG. GLOBAL_MP: " + global_replay_mpTxn);
   }
 }
