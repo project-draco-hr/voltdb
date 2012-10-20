@@ -6,7 +6,6 @@
       AbstractParsedStmt childStmt=new ParsedSelectStmt();
       childStmt.parseTablesAndParams(childSQL,db);
       m_children.add(childStmt);
-      HashSet<String> uniqueTables=new HashSet<String>();
       if (childStmt.scanColumns != null) {
         Set<String> tableNames=childStmt.scanColumns.keySet();
         Iterator<Table> it=childStmt.tableList.iterator();
@@ -15,24 +14,26 @@
           if (!tableNames.contains(tableName)) {
             it.remove();
           }
- else           if (uniqueTables.contains(tableName)) {
+ else           if (m_uniqueTables.contains(tableName)) {
             throw new PlanningErrorException("Table " + tableName + " appears more than once in the union statement");
           }
  else {
-            uniqueTables.add(tableName);
+            m_uniqueTables.add(tableName);
           }
         }
       }
  else {
-        throw new PlanningErrorException("Select * is not supported within the UNION statement");
+        throw new PlanningErrorException("Scan columns are NULL the UNION statement");
       }
       tableList.addAll(childStmt.tableList);
     }
  else     if (childSQL.name.equalsIgnoreCase(UNION_NODE_NAME)) {
-      AbstractParsedStmt childStmt=new ParsedUnionStmt();
+      ParsedUnionStmt childStmt=new ParsedUnionStmt();
+      childStmt.m_uniqueTables=m_uniqueTables;
       childStmt.parseTablesAndParams(childSQL,db);
       m_children.add(childStmt);
       tableList.addAll(childStmt.tableList);
+      m_uniqueTables=childStmt.m_uniqueTables;
     }
  else {
       throw new PlanningErrorException("Unexpected Element in UNION statement: " + childSQL.name);
