@@ -1,6 +1,6 @@
 {
   m_zk=messenger.getZK();
-  m_zkPath=VoltZK.exportGenerations + "/" + m_timestamp;
+  m_mailboxesZKPath=VoltZK.exportGenerations + "/" + m_timestamp+ "/"+ "mailboxes";
   m_mbox=new LocalMailbox(messenger){
     @Override public void deliver(    VoltMessage message){
       if (message instanceof BinaryPayloadMessage) {
@@ -31,24 +31,15 @@
   }
 ;
   messenger.createMailbox(null,m_mbox);
-  List<ZKUtil.StringCallback> callbacks=new ArrayList<ZKUtil.StringCallback>();
   for (  Integer partition : localPartitions) {
-    callbacks.add(ZKUtil.asyncMkdirs(m_zk,m_zkPath + "/" + partition+ "/"+ m_mbox.getHSId()));
-  }
-  for (  ZKUtil.StringCallback cb : callbacks) {
-    try {
-      cb.get();
-    }
- catch (    Throwable t) {
-      Throwables.propagate(t);
-    }
+    ZKUtil.asyncMkdirs(m_zk,m_mailboxesZKPath + "/" + partition+ "/"+ m_mbox.getHSId());
   }
   ListenableFuture<?> fut=m_childUpdatingThread.submit(new Runnable(){
     @Override public void run(){
       List<Pair<Integer,ZKUtil.ChildrenCallback>> callbacks=new ArrayList<Pair<Integer,ZKUtil.ChildrenCallback>>();
       for (      Integer partition : localPartitions) {
         ZKUtil.ChildrenCallback callback=new ZKUtil.ChildrenCallback();
-        m_zk.getChildren(m_zkPath + "/" + partition,constructChildWatcher(),callback,null);
+        m_zk.getChildren(m_mailboxesZKPath + "/" + partition,constructMailboxChildWatcher(),callback,null);
         callbacks.add(Pair.of(partition,callback));
       }
       for (      Pair<Integer,ZKUtil.ChildrenCallback> p : callbacks) {

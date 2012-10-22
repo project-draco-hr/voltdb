@@ -1,8 +1,22 @@
 {
-synchronized (m_batchLock) {
+  m_batchLock.writeLock().lock();
+  try {
     m_logger.trace("Rolling batch.");
-    m_current.end=rollTime;
-    if (m_current.m_decoders.size() == 0)     m_current.closeAllWriters();
-    m_current=new PeriodicExportContext(rollTime);
+    new Thread("Rolling batch " + rollTime){
+      @Override public void run(){
+        m_current.end=rollTime;
+        m_current=new PeriodicExportContext(rollTime);
+        try {
+          m_current.closeAllWriters();
+        }
+ catch (        Throwable t) {
+          m_logger.error("Error rolling batch",t);
+        }
+      }
+    }
+.start();
+  }
+  finally {
+    m_batchLock.writeLock().unlock();
   }
 }
