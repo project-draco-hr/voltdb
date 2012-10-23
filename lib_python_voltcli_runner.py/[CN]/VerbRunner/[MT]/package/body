@@ -1,16 +1,16 @@
-def package(self, output_dir_in, force):
+def package(self, output_dir_in, force, *args):
     '\n        Create python-runnable package/zip file.\n        '
     if (output_dir_in is None):
         output_dir = ''
     else:
         output_dir = output_dir_in
-    output_path = os.path.join(output_dir, ('%s' % environment.command_name))
-    utility.info(('Creating compressed Python-runnable file: %s' % output_path))
-    zipper = utility.Zipper(excludes=['[.]pyc$'])
-    zipper.open(output_path, force=force, preamble='#!/usr/bin/env python\n')
-    try:
-        main_script = ("import sys\nfrom voltcli import runner\nrunner.main('%(name)s', '', '%(version)s', '%(description)s', package = True, *sys.argv[1:])" % self.verbspace.__dict__)
-        zipper.add_file_from_string(main_script, '__main__.py')
-        zipper.add_directory(environment.volt_python, '')
-    finally:
-        zipper.close(make_executable=True)
+    if args:
+        for name in args:
+            if (name not in self.internal_verbspaces):
+                utility.abort(('Unknown base command "%s" specified for packaging.' % name))
+            verbspace = self.internal_verbspaces[name]
+            self._create_package(output_dir, verbspace.name, verbspace.version, verbspace.description, force)
+    else:
+        self._create_package(output_dir, self.verbspace.name, self.verbspace.version, self.verbspace.description, force)
+    if ((sys.version_info[0] == 2) and (sys.version_info[1] < 6)):
+        utility.warning('Generated program packages require Python version 2.6 or greater.', ('The running Python version is %d.%d.%d' % sys.version_info[:3]), "It will crash with Python versions that can't detect and run zip packages.")

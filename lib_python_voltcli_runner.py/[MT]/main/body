@@ -1,11 +1,6 @@
 def main(command_name, command_dir, version, description, *args, **kwargs):
     '\n    Called by running script to execute command with command line arguments.\n    '
-    package = False
-    for key in kwargs:
-        if (key == 'package'):
-            package = True
-        else:
-            utility.abort(('Bad main() keyword: %s' % key))
+    package = utility.kwargs_get(kwargs, 'package', default=False)
     try:
         preproc = cli.VoltCLICommandPreprocessor(base_cli_spec.cli_options)
         preproc.preprocess(args)
@@ -17,12 +12,12 @@ def main(command_name, command_dir, version, description, *args, **kwargs):
         config = VoltConfig(permanent_path, local_path)
         environment.initialize(command_name, command_dir, version)
         verbspace = load_verbspace(command_name, command_dir, config, version, description, package)
+        internal_verbspaces = {}
         if (command_name not in internal_commands):
             for internal_command in internal_commands:
                 internal_verbspace = load_verbspace(internal_command, None, config, version, ('Internal "%s" command' % internal_command), package)
-                tool_runner = ToolRunner(internal_verbspace, config)
-                setattr(verbspace.VOLT, internal_command, tool_runner)
-        run_command(verbspace, config, *args)
+                internal_verbspaces[internal_command] = internal_verbspace
+        run_command(verbspace, internal_verbspaces, config, *args)
     except KeyboardInterrupt:
         sys.stderr.write('\n')
         utility.abort('break')
