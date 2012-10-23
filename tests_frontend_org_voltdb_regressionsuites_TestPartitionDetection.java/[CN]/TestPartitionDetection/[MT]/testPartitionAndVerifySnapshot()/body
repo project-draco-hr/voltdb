@@ -2,22 +2,6 @@
   final Semaphore rateLimit=new Semaphore(10);
   final Client client=ClientFactory.createClient();
   try {
-    File dir=new File(TMPDIR);
-    File[] files=dir.listFiles(new FilenameFilter(){
-      @Override public boolean accept(      File arg0,      String arg1){
-        if (arg1.startsWith(TESTNONCE))         return true;
-        return false;
-      }
-    }
-);
-    for (    File file : files) {
-      file.delete();
-    }
-  }
- catch (  Exception ignored) {
-    ignored.printStackTrace();
-  }
-  try {
     VoltProjectBuilder builder=getBuilderForTest();
     LocalCluster cluster=new LocalCluster("partition-detection1.jar",2,2,1,BackendTarget.NATIVE_EE_JNI);
     cluster.overrideAnyRequestForValgrind();
@@ -40,7 +24,12 @@
       System.err.println("Waiting for cluster to stop execution");
       Thread.sleep(5000);
     }
-    validateSnapshot(true);
+    for (int i=0; i < cluster.getNodeCount(); i++) {
+      if (i == blessed) {
+        continue;
+      }
+      validateSnapshot(true,cluster.getSubRoots().get(i).getAbsolutePath());
+    }
   }
   finally {
     client.close();
