@@ -1,0 +1,26 @@
+def load_verbspace(command_name, command_dir, config, version, description, package):
+    "\n    Build a verb space by searching for source files with verbs in this source\n    file's directory, the calling script location (if provided), and the\n    working directory.\n    "
+    utility.debug(('Loading verbspace for "%s" from "%s"...' % (command_name, command_dir)))
+    scan_base_dirs = [os.path.dirname(__file__)]
+    verbs_subdir = ('%s.d' % command_name)
+    if ((command_dir is not None) and (command_dir not in scan_base_dirs)):
+        scan_base_dirs.append(command_dir)
+    cwd = os.getcwd()
+    if (cwd not in scan_base_dirs):
+        scan_base_dirs.append(cwd)
+    verbs = {}
+    verb_decorators = VerbDecorators(verbs)
+    namespace_VOLT = VOLT(verb_decorators)
+    finder = utility.PythonSourceFinder()
+    for scan_dir in scan_base_dirs:
+        finder.add_path(os.path.join(scan_dir, verbs_subdir))
+    if package:
+        finder.add_resource('__main__', os.path.join('voltcli', verbs_subdir))
+    finder.search_and_execute(VOLT=namespace_VOLT)
+
+    def default_func(runner):
+        runner.go()
+    for (verb_name, verb_cls) in (('help', HelpVerb), ('package', PackageVerb)):
+        if (verb_name not in verbs):
+            verbs[verb_name] = verb_cls(verb_name, default_func)
+    return VerbSpace(command_name, version, description, namespace_VOLT, verbs)

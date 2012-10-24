@@ -1,0 +1,23 @@
+def main(command_name, command_dir, version, description, *args, **kwargs):
+    '\n    Called by running script to execute command with command line arguments.\n    '
+    package = utility.kwargs_get(kwargs, 'package', default=False)
+    try:
+        preproc = cli.VoltCLICommandPreprocessor(base_cli_spec.cli_options)
+        preproc.preprocess(args)
+        utility.set_verbose((preproc.get_option('-v', '--verbose') == True))
+        utility.set_debug((preproc.get_option('-d', '--debug') == True))
+        utility.set_dryrun((preproc.get_option('-n', '--dry-run') == True))
+        permanent_path = os.path.join(os.getcwd(), 'volt.cfg')
+        local_path = os.path.join(os.getcwd(), 'volt_local.cfg')
+        config = VoltConfig(permanent_path, local_path)
+        environment.initialize(command_name, command_dir, version)
+        verbspace = load_verbspace(command_name, command_dir, config, version, description, package)
+        internal_verbspaces = {}
+        if (command_name not in internal_commands):
+            for internal_command in internal_commands:
+                internal_verbspace = load_verbspace(internal_command, None, config, version, ('Internal "%s" command' % internal_command), package)
+                internal_verbspaces[internal_command] = internal_verbspace
+        run_command(verbspace, internal_verbspaces, config, *args)
+    except KeyboardInterrupt:
+        sys.stderr.write('\n')
+        utility.abort('break')
