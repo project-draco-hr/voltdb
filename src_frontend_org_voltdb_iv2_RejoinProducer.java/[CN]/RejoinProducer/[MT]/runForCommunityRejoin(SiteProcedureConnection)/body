@@ -1,0 +1,30 @@
+{
+  Pair<Integer,ByteBuffer> rejoinWork=firstWork.get();
+  REJOINLOG.debug(m_whoami + " executing first snapshot transfer for community rejoin.");
+  firstWork.set(null);
+  while (rejoinWork != null) {
+    restoreBlock(rejoinWork,siteConnection);
+    try {
+      rejoinWork=m_rejoinSiteProcessor.take();
+    }
+ catch (    InterruptedException e) {
+      HOSTLOG.warn("RejoinProducer interrupted at take()");
+      rejoinWork=null;
+    }
+  }
+  REJOINLOG.debug(m_whoami + "Rejoin snapshot transfer is finished");
+  m_rejoinSiteProcessor.close();
+  try {
+    REJOINLOG.debug(m_whoami + "waiting on snapshot completion monitor.");
+    m_completionMonitorAwait.await();
+    REJOINLOG.debug(m_whoami + "waiting on snapshot response adapter.");
+    m_snapshotAdapterAwait.await();
+    REJOINLOG.debug(m_whoami + "snapshot monitor and adapter complete. Handing off to site.");
+    RejoinMessage snap_complete=new RejoinMessage(m_rejoinCoordinatorHsId,Type.SNAPSHOT_FINISHED);
+    m_mailbox.send(m_rejoinCoordinatorHsId,snap_complete);
+  }
+ catch (  InterruptedException crashme) {
+    VoltDB.crashLocalVoltDB("Interrupted awaiting snapshot completion.",true,crashme);
+  }
+  siteConnection.setRejoinComplete(m_replayCompleteAction);
+}
