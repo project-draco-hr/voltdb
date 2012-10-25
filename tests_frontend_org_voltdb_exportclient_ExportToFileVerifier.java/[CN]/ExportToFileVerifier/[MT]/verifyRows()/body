@@ -1,32 +1,43 @@
 {
+  TreeMap<Long,List<File>> generations=new TreeMap<Long,List<File>>();
   for (  File f : m_paths) {
     for (    File f2 : f.listFiles()) {
       if (f2.getName().endsWith("csv")) {
         Long generation;
-        String tableName;
         if (f2.getName().startsWith("active")) {
           generation=Long.valueOf(f2.getName().split("-")[2]);
-          tableName=f2.getName().split("-")[1];
         }
  else {
           generation=Long.valueOf(f2.getName().split("-")[1]);
-          tableName=f2.getName().split("-")[0];
         }
-        FileInputStream fis=new FileInputStream(f2);
-        BufferedInputStream bis=new BufferedInputStream(fis);
-        InputStreamReader isr=new InputStreamReader(bis,VoltDB.UTF8ENCODING);
-        CSVReader csvreader=new CSVReader(isr);
-        String next[]=null;
-        HashMap<String,ExportTestVerifier> tableToVerifier=m_verifiers.get(generation);
-        if (tableToVerifier == null) {
-          System.out.println("No verifiers at all for generation for generation " + generation);
+        if (!generations.containsKey(generation))         generations.put(generation,new ArrayList<File>());
+        List<File> generationFiles=generations.get(generation);
+        generationFiles.add(f2);
+      }
+    }
+  }
+  for (  List<File> generationFiles : generations.values()) {
+    for (    File f : generationFiles) {
+      String tableName;
+      if (f.getName().startsWith("active")) {
+        tableName=f.getName().split("-")[1];
+      }
+ else {
+        tableName=f.getName().split("-")[0];
+      }
+      FileInputStream fis=new FileInputStream(f);
+      BufferedInputStream bis=new BufferedInputStream(fis);
+      InputStreamReader isr=new InputStreamReader(bis,VoltDB.UTF8ENCODING);
+      CSVReader csvreader=new CSVReader(isr);
+      String next[]=null;
+      while ((next=csvreader.readNext()) != null) {
+        final int partitionId=Integer.valueOf(next[3]);
+        StringBuilder sb=new StringBuilder();
+        for (        String s : next) {
+          sb.append(s).append(", ");
         }
-        while ((next=csvreader.readNext()) != null) {
-          StringBuilder sb=new StringBuilder();
-          for (          String s : next) {
-            sb.append(s).append(", ");
-          }
-        }
+        System.out.println(sb);
+        m_verifiers.get(tableName + partitionId).processRow(next);
       }
     }
   }
