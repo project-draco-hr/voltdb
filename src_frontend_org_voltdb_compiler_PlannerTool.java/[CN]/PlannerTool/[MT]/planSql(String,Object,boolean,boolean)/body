@@ -25,21 +25,34 @@
     PartitioningForStatement partitioning=new PartitioningForStatement(partitionParam,inferSP,inferSP);
     QueryPlanner planner=new QueryPlanner(sql,"PlannerTool","PlannerToolProc",m_cluster,m_database,partitioning,m_hsql,new DatabaseEstimates(),true,AD_HOC_JOINED_TABLE_LIMIT,costModel,null,null);
     CompiledPlan plan=null;
+    String[] extractedLiterals=null;
     String parsedToken=null;
     try {
       planner.parse();
       parsedToken=planner.parameterize();
-      if (parsedToken != null) {
-        if (cacheable) {
-          CorePlan core=m_cache.getWithParsedToken(parsedToken);
-          if (core != null) {
+      if (cacheable) {
+        assert(parsedToken != null);
+        extractedLiterals=planner.extractedParamLiteralValues();
+        List<BoundPlan> boundVariants=m_cache.getWithParsedToken(parsedToken);
+        if (boundVariants != null) {
+          assert(!boundVariants.isEmpty());
+          BoundPlan matched=null;
+          for (          BoundPlan boundPlan : boundVariants) {
+            if (boundPlan.allowsParams(extractedLiterals)) {
+              matched=boundPlan;
+              break;
+            }
+          }
+          if (matched != null) {
+            CorePlan core=matched.core;
             ParameterSet params=new ParameterSet();
-            planner.buildParameterSetFromExtractedLiteralsAndReturnPartitionIndex(core.parameterTypes,params);
+            planner.buildParameterSetFromExtractedLiteralsAndReturnPartitionIndex(boundVariants.get(0).core.parameterTypes,params);
+            Object[] paramArray=params.toArray();
             Object partitionKey=null;
             if (core.partitioningParamIndex >= 0) {
-              partitionKey=params.toArray()[core.partitioningParamIndex];
+              partitionKey=paramArray[core.partitioningParamIndex];
             }
-            AdHocPlannedStatement ahps=new AdHocPlannedStatement(sql.getBytes(VoltDB.UTF8ENCODING),core,params,partitionKey);
+            AdHocPlannedStatement ahps=new AdHocPlannedStatement(sql.getBytes(VoltDB.UTF8ENCODING),core,params,extractedLiterals,matched.constants,partitionKey);
             m_cache.put(sql,parsedToken,ahps);
             cacheUse=CacheUse.HIT2;
             return ahps;
@@ -50,7 +63,7 @@
       }
     }
  catch (    Exception e) {
-      throw new RuntimeException("Error compiling query: " + e.getMessage(),e);
+      throw new RuntimeException("Error compiling query: " + e.toString(),e);
     }
     if (plan == null) {
       throw new RuntimeException("Null plan received in PlannerTool.planSql");
@@ -62,7 +75,7 @@
       String potentialErrMsg="Statement has a non-deterministic result - statement: \"" + sql + "\" , reason: "+ plan.nondeterminismDetail();
       hostLog.warn(potentialErrMsg);
     }
-    AdHocPlannedStatement ahps=new AdHocPlannedStatement(plan,m_catalogVersion);
+    AdHocPlannedStatement ahps=new AdHocPlannedStatement(plan,m_catalogVersion,extractedLiterals);
     if (cacheable && planner.compiledAsParameterizedPlan()) {
       assert(parsedToken != null);
       assert(((ahps.partitionParam == null) && (ahps.core.partitioningParamIndex == -1)) || ((ahps.partitionParam != null) && (ahps.core.partitioningParamIndex >= 0)));
