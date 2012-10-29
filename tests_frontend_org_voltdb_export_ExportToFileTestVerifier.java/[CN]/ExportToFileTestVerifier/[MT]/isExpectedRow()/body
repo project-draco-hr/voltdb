@@ -1,11 +1,13 @@
 {
   return new TypeSafeDiagnosingMatcher<String[]>(){
-    String[] expected=m_data.peek();
+    String[] expected=(m_data.peek() == null ? null : m_data.poll());
+    Matcher<Integer> seqMatcher=equalTo(m_sequenceNumber);
     @Override public void describeTo(    Description d){
-      d.appendText("row [");
+      d.appendText("row [ {sequence ").appendValue(m_sequenceNumber).appendText("}");
       if (expected != null) {
-        d.appendValueList("",", ","",Arrays.<String>asList(expected));
+        d.appendValueList(", ",", ","",Arrays.<String>asList(expected));
       }
+      d.appendText("]");
     }
     @Override protected boolean matchesSafely(    String[] gotten,    Description d){
       d.appendText(" row [");
@@ -14,13 +16,19 @@
         d.appendText("{ EOD exhausted expected rows }");
       }
       if (match) {
-        String[] atHead=m_data.poll();
-        Assert.assertEquals("Sequence number mismatch",new Integer(m_sequenceNumber),Integer.valueOf(gotten[2]));
+        int rowSeq=Integer.valueOf(gotten[2]);
+        if (!(match=seqMatcher.matches(rowSeq))) {
+          d.appendText("{ expected sequence ").appendDescriptionOf(seqMatcher);
+          seqMatcher.describeMismatch(rowSeq,d);
+          d.appendText(" }");
+        }
         m_sequenceNumber++;
+      }
+      if (match) {
         String[] toBeMatched=Arrays.copyOfRange(gotten,ExportToFileClient.INTERNAL_FIELD_COUNT - 1,gotten.length);
-        match=arrayContaining(atHead).matches(toBeMatched);
-        if (!match) {
-          d.appendValueList("",", ","",Arrays.asList(toBeMatched));
+        Matcher<String[]> rowMatcher=arrayContaining(expected);
+        if (!(match=rowMatcher.matches(toBeMatched))) {
+          rowMatcher.describeMismatch(toBeMatched,d);
         }
       }
       d.appendText("]");
