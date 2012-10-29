@@ -1,0 +1,23 @@
+{
+  String schemaDDL="create table books (cash integer default 23 NOT NULL, title varbinary(10) default NULL, PRIMARY KEY(cash)); " + "partition table books on column cash;" + StringUtils.join(ddl," ");
+  File schemaFile=VoltProjectBuilder.writeStringToTempFile(schemaDDL.toString());
+  String schemaPath=schemaFile.getPath();
+  String projectXML="<?xml version=\"1.0\"?>\n" + "<project>" + "<database name='database'>"+ "<schemas><schema path='" + schemaPath + "' /></schemas>"+ "</database>"+ "</project>";
+  File projectFile=VoltProjectBuilder.writeStringToTempFile(projectXML);
+  String projectPath=projectFile.getPath();
+  VoltCompiler compiler=new VoltCompiler();
+  boolean success=compiler.compile(projectPath,testout_jar);
+  String error=(success || compiler.m_errors.size() == 0 ? "" : compiler.m_errors.get(compiler.m_errors.size() - 1).message);
+  if (errorRegex == null) {
+    assertTrue(String.format("Expected success\nDDL: %s\n%s",ddl,error),success);
+    Catalog cat=compiler.getCatalog();
+    return cat.getClusters().get("cluster").getDatabases().get("database");
+  }
+ else {
+    assertFalse(String.format("Expected error (\"%s\")\nDDL: %s",errorRegex,ddl),success);
+    assertFalse("Expected at least one error message.",error.isEmpty());
+    Matcher m=Pattern.compile(errorRegex).matcher(error);
+    assertTrue(String.format("%s\nEXPECTED: %s",error,errorRegex),m.matches());
+    return null;
+  }
+}

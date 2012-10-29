@@ -5,10 +5,23 @@
   }
   if (suspect instanceof Index) {
     Index index=(Index)suspect;
-    if (index.m_unique) {
-      m_errors.append("May not dynamically add/drop unique indexes.\n");
-      m_supported=false;
-      return false;
+    if (!index.m_unique) {
+      return true;
+    }
+    if (changeType == ChangeType.DELETION) {
+      return true;
+    }
+    if (checkNewUniqueIndex(index)) {
+      return true;
+    }
+    m_errors.append("May not dynamically add unique indexes that don't cover existing unique indexes.\n");
+    m_supported=false;
+    return false;
+  }
+  if (suspect instanceof Constraint) {
+    Constraint constraint=(Constraint)suspect;
+    if (constraint.getType() == ConstraintType.NOT_NULL.getValue()) {
+      return changeType == ChangeType.ADDITION;
     }
     return true;
   }
@@ -18,6 +31,8 @@
     if (suspect instanceof Procedure)     return true;
     if (suspect instanceof Connector)     return true;
     if (suspect instanceof SnapshotSchedule)     return true;
+    if (suspect instanceof ConstraintRef)     return true;
+    if (suspect instanceof ColumnRef)     return true;
   }
  while ((suspect=suspect.m_parent) != null);
   m_errors.append("May not dynamically add/drop: " + orig + "\n");

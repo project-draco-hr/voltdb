@@ -1,0 +1,36 @@
+{
+  final long txnId=getTransactionId();
+  final long ts=getTransactionTime().getTime();
+  voltQueueSQL(insertTxnid,txnId,ts,cid,getRid(rid),value);
+  voltQueueSQL(deleteOldTxns,cid,getRid(oldestRid));
+  voltExecuteSQL();
+  voltQueueSQL(getLastTxnId,cid);
+  voltQueueSQL(getReplicated);
+  VoltTable[] results=voltExecuteSQL();
+  if (results[0].getRowCount() == 2) {
+    results[0].advanceRow();
+    long insertedTxnId=results[0].getLong("txnid");
+    long insertedrid=getRid(results[0].getLong("rid"));
+    if (insertedTxnId != txnId || insertedrid != rid) {
+      throw new VoltAbortException("Failed to insert into partitioned");
+    }
+    results[0].advanceRow();
+    long previousRid=getRid(results[0].getLong("rid"));
+    if (previousRid >= rid) {
+      throw new VoltAbortException("doTxn previous rid " + previousRid + " larger than current rid "+ rid+ " for cid "+ cid);
+    }
+  }
+ else   if (results[0].getRowCount() == 1) {
+    results[0].advanceRow();
+    long insertedTxnId=results[0].getLong("txnid");
+    long insertedrid=getRid(results[0].getLong("rid"));
+    if (insertedTxnId != txnId || insertedrid != rid) {
+      throw new VoltAbortException("Failed to insert into partitioned");
+    }
+  }
+ else {
+    throw new VoltAbortException("Unpossible");
+  }
+  results[0].resetRowPosition();
+  return results;
+}

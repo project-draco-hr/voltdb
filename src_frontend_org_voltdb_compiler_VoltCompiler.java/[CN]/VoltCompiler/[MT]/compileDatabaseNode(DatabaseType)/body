@@ -3,7 +3,7 @@
   final ArrayList<String> schemas=new ArrayList<String>();
   final ArrayList<ProcedureDescriptor> procedures=new ArrayList<ProcedureDescriptor>();
   final ArrayList<Class<?>> classDependencies=new ArrayList<Class<?>>();
-  final PartitionMap partitionMap=new PartitionMap(this);
+  final VoltDDLElementTracker voltDdlTracker=new VoltDDLElementTracker(this);
   final String databaseName=database.getName();
   if (databaseName.equals("database") == false) {
     final String msg="VoltDB currently requires all database elements to be named " + "\"database\" (found: \"" + databaseName + "\")";
@@ -23,9 +23,17 @@
       catGroup.setDefaultproc(group.isDefaultproc());
     }
   }
+  if (database.getRoles() != null) {
+    for (    RolesType.Role role : database.getRoles().getRole()) {
+      org.voltdb.catalog.Group catGroup=db.getGroups().add(role.getName());
+      catGroup.setAdhoc(role.isAdhoc());
+      catGroup.setSysproc(role.isSysproc());
+      catGroup.setDefaultproc(role.isDefaultproc());
+    }
+  }
   if (database.getProcedures() != null) {
     for (    ProceduresType.Procedure proc : database.getProcedures().getProcedure()) {
-      partitionMap.add(getProcedure(proc));
+      voltDdlTracker.add(getProcedure(proc));
     }
   }
   if (database.getClassdependencies() != null) {
@@ -35,14 +43,14 @@
   }
   if (database.getPartitions() != null) {
     for (    org.voltdb.compiler.projectfile.PartitionsType.Partition table : database.getPartitions().getPartition()) {
-      partitionMap.put(table.getTable(),table.getColumn());
+      voltDdlTracker.put(table.getTable(),table.getColumn());
     }
   }
   m_hsql=HSQLInterface.loadHsqldb();
   for (  final String programName : programs) {
     m_catalog.execute("add " + db.getPath() + " programs "+ programName);
   }
-  final DDLCompiler ddlcompiler=new DDLCompiler(this,m_hsql,partitionMap);
+  final DDLCompiler ddlcompiler=new DDLCompiler(this,m_hsql,voltDdlTracker,db);
   for (  final String schemaPath : schemas) {
     File schemaFile=null;
     if (schemaPath.contains(".jar!")) {
@@ -67,8 +75,8 @@
   ddlcompiler.compileToCatalog(m_catalog,db);
   String msg="In database \"" + databaseName + "\", ";
   final CatalogMap<Table> tables=db.getTables();
-  for (  String tableName : partitionMap.m_map.keySet()) {
-    String colName=partitionMap.m_map.get(tableName);
+  for (  String tableName : voltDdlTracker.m_partitionMap.keySet()) {
+    String colName=voltDdlTracker.m_partitionMap.get(tableName);
     if (colName != null) {
       final Table t=tables.getIgnoreCase(tableName);
       if (t == null) {
@@ -111,13 +119,16 @@ m_catalog=new Catalog();
 m_catalog.execute(catData);
 db=m_catalog.getClusters().get("cluster").getDatabases().get(databaseName);
 addDatabaseEstimatesInfo(m_estimates,db);
+for (String exportedTableName : voltDdlTracker.getExportedTables()) {
+addExportTableToConnector(exportedTableName,db);
+}
 if (database.getExport() != null) {
 ExportType export=database.getExport();
 compileExport(export,db);
 }
 List<ProcedureDescriptor> autoCrudProcedures=generateCrud(m_catalog);
 procedures.addAll(autoCrudProcedures);
-procedures.addAll(partitionMap.getProcedureDescriptors());
+procedures.addAll(voltDdlTracker.getProcedureDescriptors());
 for (final ProcedureDescriptor procedureDescriptor : procedures) {
 final String procedureName=procedureDescriptor.m_className;
 if (procedureDescriptor.m_singleStmt == null) {

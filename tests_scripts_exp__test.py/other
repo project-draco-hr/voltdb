@@ -1,0 +1,114 @@
+import sys
+import os.path
+import shutil
+import fnmatch
+import subprocess
+import time
+import filecmp
+import socket
+import getpass
+from collections import defaultdict
+from optparse import OptionParser
+from subprocess import call
+from xml.etree import ElementTree
+from xml.etree.ElementTree import Element, SubElement
+sys.path.append('../../src/py_client')
+try:
+    from voltdbclient import *
+except ImportError:
+    sys.path.append('./src/py_client')
+    from voltdbclient import *
+from Query import VoltQueryClient
+from XMLUtils import prettify
+hostname = socket.gethostname()
+pkgName = {'comm': 'LINUX-voltdb', 'voltkv': 'LINUX-voltdb-voltkv', 'voltcache': 'LINUX-voltdb-voltcache', 'pro': 'LINUX-voltdb-ent', }
+pkgDict = {'comm': 'Community', 'pro': 'Enterprise', 'voltkv': 'Voltkv', 'voltcache': 'Voltcache', 'all': 'Community, Pro, Voltkv, Voltcache', }
+suiteDict = {'helloworld': 'HelloWorld', 'voltcache': 'Voltcache', 'voltkv': 'Voltkv', 'voter': 'Voter', 'all': 'HelloWorld, Voter, Voltcache, Voltkv', }
+tail = 'tar.gz'
+root = 'http://volt0/kits/candidate/'
+testname = os.path.basename(os.path.abspath(__file__)).replace('.py', '')
+destDir = '/tmp/'
+logDir = ((((destDir + getpass.getuser()) + '_') + testname) + '_log/')
+elem2Test = {'helloworld': './run.sh', 'voltcache': './run.sh', 'voltkv': './run.sh', 'voter': './run.sh', }
+defaultHost = 'localhost'
+defaultPort = 21212
+'\n Voting Results\n --------------------------------------------------------------------------------\n\n A total of 8166781 votes were received...\n  - 7,816,923 Accepted\n   -    79,031 Rejected (Invalid Contestant)\n     -        12 Rejected (Maximum Vote Count Reached)\n     -         0 Failed (Transaction Error)\n\n    Contestant Name     Votes Received\n    Edwina Burnam            2,156,993\n    Jessie Eichman           1,652,654\n    Alana Bregman            1,189,909\n    Kelly Clauss             1,084,995\n    Jessie Alloway           1,060,892\n    Tabatha Gehling            939,604\n\n    The Winner is: Edwina Burnam\n'
+if (__name__ == '__main__'):
+    start = time.time()
+    usage = 'Usage: %prog [options]'
+    parser = OptionParser(usage='%prog [-r <release #>] [-p <comm|pro|voltkv|voltcache|all> <-s all|helloworld|voter|voltkv|voltcache>]', version='%prog 1.0')
+    parser.add_option('-r', '--release', dest='release', help='VoltDB release number. If omitted, will be read from version.txt.')
+    parser.add_option('-p', '--package', dest='pkg', help='VoltDB package type: comm, pro, voltkv or voltcache. Default is comm. If not set, then this framework will take all packages.')
+    parser.add_option('-s', '--suite', dest='suite', help="Test suite name, if not set, then this framework will take all suites. If an incorrect suite name is passed in, then the test suite name is set to 'all' as a default value.")
+    parser.set_defaults(pkg='all')
+    parser.set_defaults(suite='all')
+    (options, args) = parser.parse_args()
+    workDir = (((destDir + getpass.getuser()) + '_') + testname)
+    if (not os.path.exists(logDir)):
+        os.makedirs(logDir)
+    suite = options.suite
+    if ((suite not in elem2Test.keys()) and (suite != 'all')):
+        print ("Warning: unknown suite name - '%s'" % suite)
+        suite = 'all'
+        print ("Info: So we're going to cover all test suites '%s' in this run" % suiteDict[suite])
+    origDir = os.getcwd()
+    releaseNum = options.release
+    if (releaseNum == None):
+        releaseNum = getReleaseNum()
+    list = None
+    if (options.pkg in pkgDict):
+        print '############################################'
+        print ('Testing Version in this RUN: %s' % releaseNum)
+        print '--------------------------------------'
+        if (options.pkg == 'all'):
+            list = pkgName.keys()
+            print 'Testing all packages in this RUN:'
+            print '---------------------------------'
+            for item in pkgName:
+                pkgFullName = ((((pkgName[item] + '-') + releaseNum) + '.') + tail)
+                print ('%s - %s' % (pkgDict[item], pkgFullName))
+        else:
+            list = [options.pkg]
+            pkgFullName = ((((pkgName[options.pkg] + '-') + releaseNum) + '.') + tail)
+            print 'Testing this package only in this RUN:'
+            print '--------------------------------------'
+            print ('%s - %s' % (pkgDict[options.pkg], pkgFullName))
+        print '############################################'
+    else:
+        print ('Unknown package name passed in from cmdline: %s' % options.pkg)
+        exit(1)
+    tf = msg = keys = None
+    tfD = defaultdict(dict)
+    msgD = defaultdict(dict)
+    keysD = defaultdict(dict)
+    for p in list:
+        ret = installVoltDB(p, releaseNum)
+        if (not ret['ok']):
+            print ('Error!! %s' % ret['err'])
+            exit(1)
+        testSuiteList = setTestSuite(ret['workDir'], suite)
+        (tf, msg, keys) = startTest(testSuiteList)
+        tfD[p] = tf
+        msgD[p] = msg
+        keysD[p] = keys
+    sepLineD = '================================================='
+    status = True
+    for (module, suiteNameDict) in tfD.iteritems():
+        for (suitename, status4ThisSuite) in suiteNameDict.iteritems():
+            if (not status4ThisSuite):
+                status = False
+                print  >> sys.stderr, ("The test suite '%s' in '%s' package is FAILED                     \n'%s'\n%s" % (suitename, module, msgD[module][suitename], sepLineD))
+    elapsed = (time.time() - start)
+    reportXML = create_rpt(ret, tfD, msgD, keysD, elapsed)
+    print ("Refer to the final report '%s' for details." % reportXML)
+    print ("Total time consumed in this run: '%.2f'" % elapsed)
+    if (status == False):
+        print '\nAt least one test suite is Failed!!\n'
+        exit(1)
+    print '######################'
+    print 'All tests are PASSED!!'
+    print '######################'
+    for p in msgD:
+        for suitename in msgD[p]:
+            print ('%s - %s -> %s' % (pkgDict[p], suiteDict[suitename], msgD[p][suitename]))
+    exit(0)
