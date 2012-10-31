@@ -3,9 +3,9 @@
     return;
   }
   boolean adminstate=exportType.isEnabled();
-  String connector="org.voltdb.export.processors.RawProcessor";
-  if (exportType.getClazz() != null) {
-    connector=exportType.getClazz();
+  String connector=RawProcessor.class.getName();
+  if (exportType.getOnserver() != null) {
+    connector=GuestProcessor.class.getName();
   }
   Database db=catalog.getClusters().get("cluster").getDatabases().get("database");
   org.voltdb.catalog.Connector catconn=db.getConnectors().get("0");
@@ -17,7 +17,28 @@
   }
   catconn.setLoaderclass(connector);
   catconn.setEnabled(adminstate);
-  if (!adminstate) {
-    hostLog.info("Export configuration is present and is " + "configured to be disabled. Export will be disabled.");
+  ExportOnServerType exportOnServer=exportType.getOnserver();
+  if (exportOnServer != null) {
+    ConnectorProperty prop=catconn.getConfig().add(GuestProcessor.EXPORT_TO_TYPE);
+    prop.setName(GuestProcessor.EXPORT_TO_TYPE);
+switch (exportOnServer.getExportto()) {
+case FILE:
+      prop.setValue(ExportToFileClient.class.getName());
+    break;
+}
+ExportConfigurationType exportConfiguration=exportOnServer.getConfiguration();
+if (exportConfiguration != null) {
+  List<PropertyType> configProperties=exportConfiguration.getProperty();
+  if (configProperties != null && !configProperties.isEmpty()) {
+    for (    PropertyType configProp : configProperties) {
+      prop=catconn.getConfig().add(configProp.getName());
+      prop.setName(configProp.getName());
+      prop.setValue(configProp.getValue());
+    }
   }
+}
+}
+if (!adminstate) {
+hostLog.info("Export configuration is present and is " + "configured to be disabled. Export will be disabled.");
+}
 }
