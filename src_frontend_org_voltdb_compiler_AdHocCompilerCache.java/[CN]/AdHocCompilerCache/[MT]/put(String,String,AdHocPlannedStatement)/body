@@ -4,17 +4,29 @@
   assert(planIn != null);
   AdHocPlannedStatement plan=planIn;
   assert(new String(plan.sql,VoltDB.UTF8ENCODING).equals(sql));
-  CorePlan core=m_coreCache.get(parsedToken);
-  if (core == null) {
-    core=plan.core;
-    m_coreCache.put(parsedToken,core);
+  BoundPlan matched=null;
+  BoundPlan unmatched=new BoundPlan(planIn.core,planIn.parameterBindings());
+  List<BoundPlan> boundVariants=m_coreCache.get(parsedToken);
+  if (boundVariants == null) {
+    boundVariants=new ArrayList<BoundPlan>();
+    m_coreCache.put(parsedToken,boundVariants);
     ++m_planInsertions;
   }
  else {
-    assert(core.equals(plan.core));
-    if (plan.core != core) {
-      plan=new AdHocPlannedStatement(plan.sql,core,plan.extractedParamValues,plan.partitionParam);
+    for (    BoundPlan boundPlan : boundVariants) {
+      if (boundPlan.equals(unmatched)) {
+        matched=boundPlan;
+        break;
+      }
     }
+    if (matched != null) {
+      if (unmatched.core != matched.core) {
+        plan=new AdHocPlannedStatement(planIn.sql,matched.core,planIn.extractedParamValues,planIn.extractedParamStrings,matched.constants,planIn.partitionParam);
+      }
+    }
+  }
+  if (matched == null) {
+    boundVariants.add(unmatched);
   }
   AdHocPlannedStatement cachedPlan=m_literalCache.get(sql);
   if (cachedPlan == null) {
