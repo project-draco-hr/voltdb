@@ -13,9 +13,9 @@
     m_recentErrorMsg=e.getMessage();
     return null;
   }
-  PlanProcessor planProcessor=new PlanProcessor(m_cluster,m_db,m_estimates,stmtName,procName,sql,costModel,paramHints,m_quietPlanner,m_fullDebug);
-  planProcessor.outputCompiledStatement(xmlSQL);
-  PlanAssembler assembler=new PlanAssembler(m_cluster,m_db,m_partitioning,planProcessor);
+  PlanSelector planSelector=new PlanSelector(m_cluster,m_db,m_estimates,stmtName,procName,sql,costModel,paramHints,m_quietPlanner,m_fullDebug);
+  planSelector.outputCompiledStatement(xmlSQL);
+  PlanAssembler assembler=new PlanAssembler(m_cluster,m_db,m_partitioning,planSelector);
   AbstractParsedStmt parsedStmt=AbstractParsedStmt.parse(sql,xmlSQL,m_db,joinOrder);
   if (parsedStmt == null) {
     m_recentErrorMsg="Failed to parse SQL statement: " + sql;
@@ -25,9 +25,8 @@
     m_recentErrorMsg="Failed to parse SQL statement: " + sql + " because a join of > 5 tables was requested"+ " without specifying a join order. See documentation for instructions on manually"+ " specifying a join order";
     return null;
   }
-  planProcessor.outputParsedStatement(parsedStmt);
-  boolean isTopPlan=true;
-  CompiledPlan bestPlan=assembler.getBestCostPlan(parsedStmt,isTopPlan);
+  planSelector.outputParsedStatement(parsedStmt);
+  CompiledPlan bestPlan=assembler.getBestCostPlan(parsedStmt);
   if (bestPlan == null) {
     m_recentErrorMsg=assembler.getErrorMessage();
     if (m_recentErrorMsg == null) {
@@ -35,6 +34,13 @@
     }
     return null;
   }
+  if (bestPlan.readOnly) {
+    SendPlanNode sendNode=new SendPlanNode();
+    sendNode.addAndLinkChild(bestPlan.rootPlanGraph);
+    sendNode.generateOutputSchema(m_db);
+    bestPlan.rootPlanGraph=sendNode;
+  }
+  planSelector.finalizeOutput(bestPlan,planSelector.m_bestFilename,planSelector.m_stats);
   bestPlan.resetPlanNodeIds();
   Fragmentizer.fragmentize(bestPlan,m_db);
   return bestPlan;
