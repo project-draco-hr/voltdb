@@ -17,8 +17,17 @@
     for (int col=0; col < m_colCount; col++) {
       Object value=values[col];
       VoltType columnType=VoltType.get(m_buffer.get(typePos + col));
+      boolean allowNulls=true;
+      int maxColSize=VoltType.MAX_VALUE_LENGTH;
+      if (m_originalColumnInfos != null) {
+        allowNulls=m_originalColumnInfos[col].nullable;
+        maxColSize=m_originalColumnInfos[col].size;
+      }
       try {
         if (VoltType.isNullVoltType(value)) {
+          if (allowNulls == false) {
+            throw new IllegalArgumentException(String.format("Column %s at index %d doesn't allow NULL values.",getColumnName(col),col));
+          }
 switch (columnType) {
 case TINYINT:
             m_buffer.put(VoltType.NULL_TINYINT);
@@ -96,12 +105,12 @@ break;
 case STRING:
 {
 if (value instanceof byte[]) {
-if (((byte[])value).length > VoltType.MAX_VALUE_LENGTH) throw new VoltOverflowException("Value in VoltTable.addRow(...) larger than allowed max " + VoltType.MAX_VALUE_LENGTH_STR);
+if (((byte[])value).length > maxColSize) throw new VoltOverflowException("Value in VoltTable.addRow(...) larger than allowed max " + VoltType.humanReadableSize(maxColSize));
 assert(testForUTF8Encoding((byte[])value));
 writeStringOrVarbinaryToBuffer((byte[])value,m_buffer);
 }
  else {
-if (((String)value).length() > VoltType.MAX_VALUE_LENGTH) throw new VoltOverflowException("Value in VoltTable.addRow(...) larger than allowed max " + VoltType.MAX_VALUE_LENGTH_STR);
+if (((String)value).length() > maxColSize) throw new VoltOverflowException("Value in VoltTable.addRow(...) larger than allowed max " + VoltType.humanReadableSize(maxColSize));
 writeStringToBuffer((String)value,ROWDATA_ENCODING,m_buffer);
 }
 break;
@@ -112,7 +121,7 @@ if (value instanceof String) {
 value=Encoder.hexDecode((String)value);
 }
 if (value instanceof byte[]) {
-if (((byte[])value).length > VoltType.MAX_VALUE_LENGTH) throw new VoltOverflowException("Value in VoltTable.addRow(...) larger than allowed max " + VoltType.MAX_VALUE_LENGTH_STR);
+if (((byte[])value).length > VoltType.MAX_VALUE_LENGTH) throw new VoltOverflowException("Value in VoltTable.addRow(...) larger than allowed max " + VoltType.humanReadableSize(maxColSize));
 writeStringOrVarbinaryToBuffer((byte[])value,m_buffer);
 }
 break;
