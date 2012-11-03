@@ -15,7 +15,7 @@
     PlanSelector processor=(PlanSelector)m_planSelector.clone();
     processor.m_planId=planId;
     PlanAssembler assembler=new PlanAssembler(m_catalogCluster,m_catalogDb,partitioning,processor);
-    CompiledPlan bestChildPlan=assembler.getBestCostPlan(parsedChildStmt);
+    CompiledPlan bestChildPlan=assembler.getBestCostPlan(parsedChildStmt,isPlanFinal);
     if (bestChildPlan == null) {
       if (m_recentErrorMsg == null) {
         m_recentErrorMsg="Unable to plan for statement. Error unknown.";
@@ -33,7 +33,15 @@
     subUnionRoot.addAndLinkChild(selectPlan.rootPlanGraph);
   }
   CompiledPlan retval=new CompiledPlan();
-  retval.rootPlanGraph=subUnionRoot;
+  if (isTopPlan) {
+    SendPlanNode sendNode=new SendPlanNode();
+    sendNode.addAndLinkChild(subUnionRoot);
+    sendNode.generateOutputSchema(m_catalogDb);
+    retval.rootPlanGraph=sendNode;
+  }
+ else {
+    retval.rootPlanGraph=subUnionRoot;
+  }
   retval.readOnly=true;
   retval.sql=m_planSelector.m_sql;
   retval.statementGuaranteesDeterminism(contentIsDeterministic,orderIsDeterministic);
