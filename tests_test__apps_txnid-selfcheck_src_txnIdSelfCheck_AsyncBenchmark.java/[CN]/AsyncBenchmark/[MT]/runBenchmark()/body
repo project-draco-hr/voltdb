@@ -3,14 +3,31 @@
   System.out.println(" Setup & Initialization");
   System.out.println(HORIZONTAL_RULE);
   connect();
-  Client initClient=clients.get(0);
-  initClient.callProcedure("Initialize");
-  ClientResponse rowResp=initClient.callProcedure("getLastRow");
-  VoltTable[] rowResults=rowResp.getResults();
-  assert(rowResp.getStatus() == ClientResponse.SUCCESS);
-  ClientResponse replicatedRowResp=initClient.callProcedure("getLastReplicatedRow");
-  VoltTable[] replicatedResults=replicatedRowResp.getResults();
-  assert(replicatedRowResp.getStatus() == ClientResponse.SUCCESS);
+  VoltTable[] rowResults=null;
+  VoltTable[] replicatedResults=null;
+  boolean succeeded=false;
+  while (!succeeded) {
+    try {
+      Client initClient=clients.get(0);
+      initClient.callProcedure("Initialize");
+      ClientResponse rowResp=initClient.callProcedure("getLastRow");
+      rowResults=rowResp.getResults();
+      assert(rowResp.getStatus() == ClientResponse.SUCCESS);
+      System.err.println("start");
+      Thread.sleep(3000);
+      System.err.println("end");
+      ClientResponse replicatedRowResp=initClient.callProcedure("getLastReplicatedRow");
+      replicatedResults=replicatedRowResp.getResults();
+      assert(replicatedRowResp.getStatus() == ClientResponse.SUCCESS);
+      succeeded=true;
+    }
+ catch (    ProcCallException e) {
+      System.err.println(e.getMessage());
+    }
+catch (    NoConnectionsException e) {
+      System.err.println("Failed to initialize, will retry: " + e.getMessage());
+    }
+  }
   final int cidCount=127;
   final long windowPerCid=config.windowsize / cidCount;
   final Map<Integer,Long> rids=new HashMap<Integer,Long>();

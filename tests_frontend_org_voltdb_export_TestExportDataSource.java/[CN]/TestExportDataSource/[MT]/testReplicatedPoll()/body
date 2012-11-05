@@ -1,0 +1,59 @@
+{
+  VoltDB.replaceVoltDBInstanceForTest(m_mockVoltDB);
+  Table table=m_mockVoltDB.getCatalogContext().database.getTables().get("TableName");
+  ExportDataSource s=new ExportDataSource(Mockito.mock(Runnable.class),"database",table.getTypeName(),m_part,m_site,table.getSignature(),0,table.getColumns(),"/tmp");
+  final CountDownLatch cdl=new CountDownLatch(1);
+  Runnable cdlWaiter=new Runnable(){
+    @Override public void run(){
+      cdl.countDown();
+    }
+  }
+;
+  Mailbox mockedMbox=Mockito.mock(Mailbox.class);
+  final AtomicReference<CountDownLatch> refSendCdl=new AtomicReference<CountDownLatch>(new CountDownLatch(1));
+  doAnswer(new Answer<Void>(){
+    @Override public Void answer(    InvocationOnMock invocation) throws Throwable {
+      refSendCdl.get().countDown();
+      return null;
+    }
+  }
+).when(mockedMbox).send(eq(42L),any(BinaryPayloadMessage.class));
+  s.updateAckMailboxes(Pair.<Mailbox,ImmutableList<Long>>of(mockedMbox,ImmutableList.<Long>of(42L)));
+  s.setOnMastership(cdlWaiter);
+  s.acceptMastership();
+  cdl.await();
+  ByteBuffer foo=ByteBuffer.allocate(20);
+  s.pushExportBuffer(23,0,foo.duplicate(),false,false);
+  assertEquals(s.sizeInBytes(),20);
+  s.pushExportBuffer(43,0,foo.duplicate(),false,false);
+  assertEquals(s.sizeInBytes(),40);
+  s.pushExportBuffer(63,0,foo.duplicate(),false,false);
+  assertEquals(s.sizeInBytes(),72);
+  s.pushExportBuffer(63,0,null,true,false);
+  assertEquals(96,s.sizeInBytes());
+  AckingContainer cont=(AckingContainer)s.poll().get();
+  assertEquals(96,s.sizeInBytes());
+  assertEquals(43,cont.m_uso);
+  foo=ByteBuffer.allocate(20);
+  foo.order(ByteOrder.LITTLE_ENDIAN);
+  assertEquals(foo,cont.b);
+  cont.discard();
+  assertTrue("timeout while wating for ack to be sent",refSendCdl.get().await(5,TimeUnit.SECONDS));
+  verify(mockedMbox,times(1)).send(eq(42L),argThat(ackPayloadIs(m_part,table.getSignature(),43)));
+  s.ack(63);
+  int i=1000;
+  while (i > 0 && s.sizeInBytes() > 32) {
+    --i;
+    Thread.sleep(2);
+  }
+  assertEquals(32,s.sizeInBytes());
+  cont=(AckingContainer)s.poll().get();
+  assertEquals(s.sizeInBytes(),32);
+  assertEquals(83,cont.m_uso);
+  s.pushExportBuffer(83,0,null,false,true);
+  refSendCdl.set(new CountDownLatch(1));
+  cont.discard();
+  assertTrue("timeout while wating for ack to be sent",refSendCdl.get().await(5,TimeUnit.SECONDS));
+  verify(mockedMbox,times(1)).send(eq(42L),argThat(ackPayloadIs(m_part,table.getSignature(),83)));
+  assertNull(s.poll().get());
+}

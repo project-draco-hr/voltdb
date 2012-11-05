@@ -1,18 +1,7 @@
 {
   System.out.println("STARTING testAbs");
   Client client=getClient();
-  ProcedureCallback callback=new ProcedureCallback(){
-    @Override public void clientCallback(    ClientResponse clientResponse) throws Exception {
-      if (clientResponse.getStatus() != ClientResponse.SUCCESS) {
-        throw new RuntimeException("Failed with response: " + clientResponse.getStatusString());
-      }
-    }
-  }
-;
-  for (int id=7; id < 15; id++) {
-    client.callProcedure(callback,"P1.insert",-id,"X" + String.valueOf(id),10,1.1,new Timestamp(100000000L));
-    client.drain();
-  }
+  initialLoad(client,"P1");
   ClientResponse cr=null;
   VoltTable r=null;
   cr=client.callProcedure("WHERE_ABS");
@@ -158,4 +147,15 @@
     caught=true;
   }
   assertTrue(caught);
+  cr=client.callProcedure("@AdHoc","insert into R1 values (1, null, null, null, null)");
+  caught=false;
+  try {
+    cr=client.callProcedure("@AdHoc","insert into R1 values (-1, null, null, null, null)");
+  }
+ catch (  ProcCallException e) {
+    String msg=e.getMessage();
+    assertTrue(msg.indexOf("violation of constraint") != -1);
+    caught=true;
+  }
+  assertEquals(!isHSQL(),caught);
 }
