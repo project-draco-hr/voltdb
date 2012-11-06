@@ -1,6 +1,15 @@
 {
   hostLog.debug("STARTING: " + this);
   MpTransactionState txn=(MpTransactionState)m_txn;
+  if (m_isRestart && (txn.m_task.getStoredProcedureName().startsWith("@") && !txn.m_task.getStoredProcedureName().startsWith("@AdHoc"))) {
+    InitiateResponseMessage errorResp=new InitiateResponseMessage(txn.m_task);
+    errorResp.setResults(new ClientResponseImpl(ClientResponse.UNEXPECTED_FAILURE,new VoltTable[]{},"Failure while running system procedure " + txn.m_task.getStoredProcedureName() + ", and system procedures can not be restarted."));
+    txn.setNeedsRollback();
+    completeInitiateTask(siteConnection);
+    errorResp.m_sourceHSId=m_initiator.getHSId();
+    m_initiator.deliver(errorResp);
+    hostLog.debug("SYSPROCFAIL: " + this);
+  }
   final InitiateResponseMessage response=processInitiateTask(txn.m_task,siteConnection);
   if (response.getClientResponseData().getStatus() != ClientResponse.TXN_RESTART) {
     if (!response.shouldCommit()) {
