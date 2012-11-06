@@ -1,0 +1,74 @@
+{
+  FileInputStream fis=null;
+  try {
+    boolean ptimestamp=true;
+    String command="scp " + (ptimestamp ? "-p" : "") + " -t "+ remote_file;
+    JSch jsch=new JSch();
+    if (null != key)     jsch.addIdentity(key);
+    Session session=jsch.getSession(user,host,22);
+    java.util.Properties config=new java.util.Properties();
+    config.put("StrictHostKeyChecking","no");
+    session.setConfig(config);
+    session.connect(5000);
+    Channel channel=session.openChannel("exec");
+    ((ChannelExec)channel).setCommand(command);
+    OutputStream out=channel.getOutputStream();
+    InputStream in=channel.getInputStream();
+    channel.connect();
+    if (checkAck(in) != 0) {
+      return false;
+    }
+    File _lfile=new File(local_file);
+    if (ptimestamp) {
+      command="T " + (_lfile.lastModified() / 1000) + " 0";
+      command+=(" " + (_lfile.lastModified() / 1000) + " 0\n");
+      out.write(command.getBytes());
+      out.flush();
+      if (checkAck(in) != 0) {
+        return false;
+      }
+    }
+    long filesize=_lfile.length();
+    command="C0644 " + filesize + " ";
+    if (local_file.lastIndexOf('/') > 0) {
+      command+=local_file.substring(local_file.lastIndexOf('/') + 1);
+    }
+ else {
+      command+=local_file;
+    }
+    command+="\n";
+    out.write(command.getBytes());
+    out.flush();
+    if (checkAck(in) != 0) {
+      return false;
+    }
+    fis=new FileInputStream(local_file);
+    byte[] buf=new byte[1024];
+    while (true) {
+      int len=fis.read(buf,0,buf.length);
+      if (len <= 0)       break;
+      out.write(buf,0,len);
+    }
+    fis.close();
+    fis=null;
+    buf[0]=0;
+    out.write(buf,0,1);
+    out.flush();
+    if (checkAck(in) != 0) {
+      return false;
+    }
+    out.close();
+    channel.disconnect();
+    session.disconnect();
+  }
+ catch (  Exception e) {
+    System.out.println(e);
+    try {
+      if (fis != null)       fis.close();
+    }
+ catch (    Exception ee) {
+    }
+    return false;
+  }
+  return true;
+}

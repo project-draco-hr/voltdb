@@ -1,10 +1,24 @@
 {
   Thread.currentThread().setName("Iv2ExecutionSite: " + CoreUtils.hsIdToString(m_siteId));
-  initialize(m_startupConfig.m_serializedCatalog,m_startupConfig.m_txnId);
+  initialize(m_startupConfig.m_serializedCatalog,m_startupConfig.m_timestamp);
   m_startupConfig=null;
   try {
     while (m_shouldContinue) {
-      runLoop();
+      if (m_rejoinState == kStateRunning) {
+        SiteTasker task=m_scheduler.take();
+        if (task instanceof TransactionTask) {
+          m_currentTxnId=((TransactionTask)task).getTxnId();
+          m_lastTxnTime=EstTime.currentTimeMillis();
+        }
+        task.run(getSiteProcedureConnection());
+      }
+ else {
+        SiteTasker task=m_scheduler.poll();
+        if (task != null) {
+          task.runForRejoin(getSiteProcedureConnection(),m_rejoinTaskLog);
+        }
+        replayFromTaskLog();
+      }
     }
   }
  catch (  final InterruptedException e) {

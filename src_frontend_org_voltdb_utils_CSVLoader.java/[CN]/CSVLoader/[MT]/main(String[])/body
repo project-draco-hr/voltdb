@@ -1,11 +1,12 @@
 {
-  long start=System.currentTimeMillis();
+  start=System.currentTimeMillis();
   int waits=0;
   int shortWaits=0;
   CSVConfig cfg=new CSVConfig();
   cfg.parse(CSVLoader.class.getName(),args);
   config=cfg;
   configuration();
+  CSVReader csvReader=null;
   try {
     if (CSVLoader.standin)     csvReader=new CSVReader(new BufferedReader(new InputStreamReader(System.in)),config.separator,config.quotechar,config.escape,config.skip,config.strictquotes,config.nowhitespace);
  else     csvReader=new CSVReader(new FileReader(config.file),config.separator,config.quotechar,config.escape,config.skip,config.strictquotes,config.nowhitespace);
@@ -14,16 +15,20 @@
     m_log.error("CSV file '" + config.file + "' could not be found.");
     System.exit(-1);
   }
+  assert(csvReader != null);
   String[] serverlist=config.servers.split(",");
   ClientConfig c_config=new ClientConfig(config.user,config.password);
   c_config.setProcedureCallTimeout(0);
+  Client csvClient=null;
   try {
     csvClient=CSVLoader.getClient(c_config,serverlist,config.port);
   }
  catch (  Exception e) {
     m_log.error("Error to connect to the servers:" + config.servers);
+    close_cleanup();
     System.exit(-1);
   }
+  assert(csvClient != null);
   try {
     ProcedureCallback cb=null;
     boolean lastOK=true;
@@ -37,11 +42,14 @@
         if (insertProcedure.matches((String)procInfo.get("PROCEDURE_NAME",VoltType.STRING))) {
           columnCnt++;
           isProcExist=true;
+          String typeStr=(String)procInfo.get("TYPE_NAME",VoltType.STRING);
+          typeList.add(VoltType.typeFromString(typeStr));
         }
       }
     }
  catch (    Exception e) {
       m_log.error(e.getMessage(),e);
+      close_cleanup();
       System.exit(-1);
     }
     if (isProcExist == false) {
@@ -69,6 +77,7 @@ synchronized (errorInfo) {
             }
             if (errorInfo.size() >= config.maxerrors) {
               m_log.error("The number of Failure row data exceeds " + config.maxerrors);
+              produceFiles();
               close_cleanup();
               System.exit(-1);
             }
@@ -98,8 +107,8 @@ synchronized (errorInfo) {
       m_log.info("Waited too briefly? " + shortWaits + " times");
     }
   }
-  latency=System.currentTimeMillis() - start;
-  m_log.info("CSVLoader elaspsed: " + latency / 1000F + " seconds");
   produceFiles();
   close_cleanup();
+  csvReader.close();
+  csvClient.close();
 }

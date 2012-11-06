@@ -1,23 +1,28 @@
 {
-  if (message instanceof Iv2InitiateTaskMessage) {
-    handleIv2InitiateTaskMessage((Iv2InitiateTaskMessage)message);
+  long sequenceWithTxnId=Long.MIN_VALUE;
+  boolean sequenceForCommandLog=(m_isLeader && message instanceof TransactionInfoBaseMessage && (((TransactionInfoBaseMessage)message).isForReplay()));
+  boolean sequenceForDR=m_isLeader && ((message instanceof TransactionInfoBaseMessage && ((TransactionInfoBaseMessage)message).isForDR()));
+  boolean sequenceForSentinel=m_isLeader && (message instanceof MultiPartitionParticipantMessage);
+  assert(!(sequenceForCommandLog && sequenceForDR));
+  if (sequenceForCommandLog || sequenceForSentinel) {
+    sequenceWithTxnId=((TransactionInfoBaseMessage)message).getTxnId();
   }
- else   if (message instanceof InitiateResponseMessage) {
-    handleInitiateResponseMessage((InitiateResponseMessage)message);
+ else   if (sequenceForDR) {
+    sequenceWithTxnId=((TransactionInfoBaseMessage)message).getOriginalTxnId();
   }
- else   if (message instanceof FragmentTaskMessage) {
-    handleFragmentTaskMessage((FragmentTaskMessage)message);
-  }
- else   if (message instanceof FragmentResponseMessage) {
-    handleFragmentResponseMessage((FragmentResponseMessage)message);
-  }
- else   if (message instanceof CompleteTransactionMessage) {
-    handleCompleteTransactionMessage((CompleteTransactionMessage)message);
-  }
- else   if (message instanceof BorrowTaskMessage) {
-    handleBorrowTaskMessage((BorrowTaskMessage)message);
+  if (sequenceWithTxnId != Long.MIN_VALUE) {
+    if (!m_replaySequencer.offer(sequenceWithTxnId,(TransactionInfoBaseMessage)message)) {
+      deliver2(message);
+    }
+ else {
+      VoltMessage m=m_replaySequencer.poll();
+      while (m != null) {
+        deliver2(m);
+        m=m_replaySequencer.poll();
+      }
+    }
   }
  else {
-    throw new RuntimeException("UNKNOWN MESSAGE TYPE, BOOM!");
+    deliver2(message);
   }
 }

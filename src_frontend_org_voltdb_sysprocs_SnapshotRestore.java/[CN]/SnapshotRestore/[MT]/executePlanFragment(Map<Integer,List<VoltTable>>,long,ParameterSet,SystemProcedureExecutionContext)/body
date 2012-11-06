@@ -1,12 +1,15 @@
 {
-  if (fragmentId == SysProcFragmentId.PF_restoreDistributeExportSequenceNumbers) {
+  if (fragmentId == SysProcFragmentId.PF_restoreDistributeExportAndPartitionSequenceNumbers) {
     assert(params.toArray()[0] != null);
-    assert(params.toArray().length == 2);
+    assert(params.toArray().length == 3);
     assert(params.toArray()[0] instanceof byte[]);
+    assert(params.toArray()[2] instanceof long[]);
     VoltTable result=new VoltTable(new VoltTable.ColumnInfo("RESULT",VoltType.STRING));
     long snapshotTxnId=((Long)params.toArray()[1]).longValue();
+    long perPartitionTxnIds[]=(long[])params.toArray()[2];
+    context.getSiteProcedureConnection().setPerPartitionTxnIds(perPartitionTxnIds);
     if (context.isLowestSiteId()) {
-      ExportManager.instance().truncateExportToTxnId(snapshotTxnId);
+      ExportManager.instance().truncateExportToTxnId(snapshotTxnId,perPartitionTxnIds);
     }
     try {
       ByteArrayInputStream bais=new ByteArrayInputStream((byte[])params.toArray()[0]);
@@ -28,7 +31,7 @@
           HOST_LOG.warn("Could not find an export sequence number for table " + name + " partition "+ myPartitionId+ ". This warning is safe to ignore if you are loading a pre 1.3 snapshot "+ " which would not contain these sequence numbers (added in 1.3)."+ " If this is a post 1.3 snapshot then the restore has failed and export sequence "+ " are reset to 0");
           continue;
         }
-        context.getSiteProcedureConnection().exportAction(false,0,sequenceNumber,myPartitionId,signature);
+        context.getSiteProcedureConnection().exportAction(true,0,sequenceNumber,myPartitionId,signature);
       }
     }
  catch (    Exception e) {
@@ -36,19 +39,19 @@
       HOST_LOG.error(e);
       result.addRow("FAILURE");
     }
-    return new DependencyPair(DEP_restoreDistributeExportSequenceNumbers,result);
+    return new DependencyPair(DEP_restoreDistributeExportAndPartitionSequenceNumbers,result);
   }
- else   if (fragmentId == SysProcFragmentId.PF_restoreDistributeExportSequenceNumbersResults) {
+ else   if (fragmentId == SysProcFragmentId.PF_restoreDistributeExportAndPartitionSequenceNumbersResults) {
     TRACE_LOG.trace("Aggregating digest scan state");
     assert(dependencies.size() > 0);
-    List<VoltTable> dep=dependencies.get(DEP_restoreDistributeExportSequenceNumbers);
+    List<VoltTable> dep=dependencies.get(DEP_restoreDistributeExportAndPartitionSequenceNumbers);
     VoltTable result=new VoltTable(new VoltTable.ColumnInfo("RESULT",VoltType.STRING));
     for (    VoltTable table : dep) {
       while (table.advanceRow()) {
         result.add(table);
       }
     }
-    return new DependencyPair(DEP_restoreDistributeExportSequenceNumbersResults,result);
+    return new DependencyPair(DEP_restoreDistributeExportAndPartitionSequenceNumbersResults,result);
   }
  else   if (fragmentId == SysProcFragmentId.PF_restoreDigestScan) {
     VoltTable result=new VoltTable(new VoltTable.ColumnInfo("DIGEST",VoltType.STRING),new VoltTable.ColumnInfo("RESULT",VoltType.STRING),new VoltTable.ColumnInfo("ERR_MSG",VoltType.STRING));

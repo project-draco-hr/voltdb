@@ -21,7 +21,12 @@
     partitions=m_allPartitions;
   }
   ByteBuffer buf=ByteBuffer.allocate(plannedStmtBatch.getPlanArraySerializedSize());
-  plannedStmtBatch.flattenPlanArrayToBuffer(buf);
+  try {
+    plannedStmtBatch.flattenPlanArrayToBuffer(buf);
+  }
+ catch (  Exception e) {
+    VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
+  }
   assert(buf.hasArray());
   task.setParams(buf.array());
   task.clientHandle=plannedStmtBatch.clientHandle;
@@ -44,15 +49,11 @@
   boolean allowMismatchedResults=false;
   if (plannedStmtBatch.isReadOnly()) {
     for (    AdHocPlannedStatement stmt : plannedStmtBatch.plannedStatements) {
-      if (stmt.isNonDeterministic) {
+      if (stmt.core.isNonDeterministic) {
         allowMismatchedResults=true;
         break;
       }
     }
   }
   createTransaction(plannedStmtBatch.connectionId,plannedStmtBatch.hostname,plannedStmtBatch.adminConnection,task,plannedStmtBatch.isReadOnly(),isSinglePartition,false,partitions,partitions.length,plannedStmtBatch.clientData,serializedSize,EstTime.currentTimeMillis(),allowMismatchedResults);
-  plannedStmtBatch.clientData=null;
-  for (int index=0; index < plannedStmtBatch.getPlannedStatementCount(); index++) {
-    m_adhocCache.put(plannedStmtBatch.getPlannedStatement(index));
-  }
 }

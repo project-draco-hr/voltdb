@@ -3,7 +3,7 @@
   MultiConfigSuiteBuilder builder=new MultiConfigSuiteBuilder(TestFunctionsSuite.class);
   boolean success;
   VoltProjectBuilder project=new VoltProjectBuilder();
-  final String literalSchema="CREATE TABLE P1 ( " + "ID INTEGER DEFAULT '0' NOT NULL, " + "DESC VARCHAR(300), "+ "NUM INTEGER, "+ "RATIO FLOAT, "+ "PRIMARY KEY (ID) ); ";
+  final String literalSchema="CREATE TABLE P1 ( " + "ID INTEGER DEFAULT '0' NOT NULL, " + "DESC VARCHAR(300), "+ "NUM INTEGER, "+ "RATIO FLOAT, "+ "PAST TIMESTAMP DEFAULT NULL, "+ "PRIMARY KEY (ID) ); "+ "CREATE INDEX P1_ABS_NUM ON P1 ( ABS(NUM) ); "+ "CREATE INDEX P1_ABS_ID_PLUS_NUM ON P1 ( ABS(ID) + NUM ); "+ "CREATE TABLE R1 ( "+ "ID INTEGER DEFAULT '0' NOT NULL, "+ "DESC VARCHAR(300), "+ "NUM INTEGER, "+ "RATIO FLOAT, "+ "PAST TIMESTAMP DEFAULT NULL, "+ "PRIMARY KEY (ID) ); "+ "CREATE UNIQUE INDEX R1_ABS_ID ON R1 ( ABS(ID) ); "+ "CREATE INDEX R1_ABS_ID_SCALED ON R1 ( ID / 3 ); "+ "";
   try {
     project.addLiteralSchema(literalSchema);
   }
@@ -24,8 +24,15 @@
   project.addStmtProcedure("DISPLAY_SUBSTRING","select SUBSTRING (DESC FROM 2) from P1 where ID = -12");
   project.addStmtProcedure("ORDER_SUBSTRING","select ID+15 from P1 order by SUBSTRING (DESC FROM 2)");
   project.addStmtProcedure("AGG_OF_SUBSTRING","select MIN(SUBSTRING (DESC FROM 2)) from P1 where ID < -7");
-  project.addStmtProcedure("INSERT_NULL","insert into P1 values (?, null, null, null)");
-  config=new LocalCluster("fixedsql-threesite.jar",3,1,0,BackendTarget.NATIVE_EE_JNI);
+  project.addStmtProcedure("PARAM_ABS","select ABS(? + NUM) from P1");
+  project.addStmtProcedure("LEFT","select id, LEFT(DESC,?) from P1 where id = ?");
+  project.addStmtProcedure("RIGHT","select id, RIGHT(DESC,?) from P1 where id = ?");
+  project.addStmtProcedure("SPACE","select id, SPACE(?) from P1 where id = ?");
+  project.addStmtProcedure("REPEAT","select id, REPEAT(DESC,?) from P1 where id = ?");
+  project.addStmtProcedure("CONCAT","select id, CONCAT(DESC,?) from P1 where id = ?");
+  project.addStmtProcedure("ConcatOpt","select id, DESC || ? from P1 where id = ?");
+  project.addStmtProcedure("INSERT_NULL","insert into P1 values (?, null, null, null, null)");
+  config=new LocalCluster("fixedsql-onesite.jar",1,1,0,BackendTarget.NATIVE_EE_JNI);
   success=config.compile(project);
   assertTrue(success);
   builder.addServerConfig(config);

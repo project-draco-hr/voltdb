@@ -1,0 +1,48 @@
+{
+  List<Long> updatedHSIds=VoltZK.childrenToReplicaHSIds(children);
+  Set<Long> newHSIds=new HashSet<Long>(updatedHSIds);
+  newHSIds.removeAll(m_replicas);
+  tmLog.debug("Newly seen replicas: " + CoreUtils.hsIdCollectionToString(newHSIds));
+  Set<Long> missingHSIds=new HashSet<Long>(m_replicas);
+  missingHSIds.removeAll(updatedHSIds);
+  tmLog.debug("Newly dead replicas: " + CoreUtils.hsIdCollectionToString(missingHSIds));
+  tmLog.debug("Handling babysitter callback for partition " + m_partitionId + ": children: "+ CoreUtils.hsIdCollectionToString(updatedHSIds));
+  if (m_state.get() == AppointerState.CLUSTER_START) {
+    if (missingHSIds.size() > 0) {
+      VoltDB.crashGlobalVoltDB("Node failure detected during startup.",false,null);
+    }
+    int replicaCount=m_kfactor + 1;
+    JSONArray parts;
+    try {
+      parts=m_topo.getJSONArray("partitions");
+      for (int p=0; p < parts.length(); p++) {
+        JSONObject aPartition=parts.getJSONObject(p);
+        int pid=aPartition.getInt("partition_id");
+        if (pid == m_partitionId) {
+          replicaCount=aPartition.getJSONArray("replicas").length();
+        }
+      }
+    }
+ catch (    JSONException e) {
+    }
+    if (children.size() == replicaCount) {
+      m_currentLeader=assignLeader(m_partitionId,updatedHSIds);
+    }
+ else {
+      tmLog.info("Waiting on " + ((m_kfactor + 1) - children.size()) + " more nodes "+ "for k-safety before startup");
+    }
+  }
+ else {
+    if (!isClusterKSafe()) {
+      VoltDB.crashGlobalVoltDB("Some partitions have no replicas.  Cluster has become unviable.",false,null);
+    }
+ else     if (missingHSIds.contains(m_currentLeader)) {
+      m_currentLeader=assignLeader(m_partitionId,updatedHSIds);
+    }
+    if (m_partitionDetectionEnabled) {
+      doPartitionDetectionActivities();
+    }
+  }
+  m_replicas.clear();
+  m_replicas.addAll(updatedHSIds);
+}

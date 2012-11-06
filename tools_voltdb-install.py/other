@@ -1,0 +1,81 @@
+import sys
+import os
+from glob import glob
+from optparse import OptionParser
+from zipfile import ZipFile
+import tempfile
+import shutil
+import subprocess
+import pwd
+import grp
+import re
+from copy import copy
+myname = os.path.splitext(os.path.basename(__file__))[0]
+mydir = os.path.dirname(os.path.realpath(__file__))
+meta = None
+actions = (Action('doc', 'usr/share/voltdb/doc'), Action('examples', 'usr/share/voltdb/examples'), Action('tools', 'usr/share/voltdb/tools'), Action('bin/*', 'usr/share/voltdb/bin', link_dir='usr/bin'), Action('lib/*', 'usr/lib/voltdb'), Action('management/*.jar', 'usr/lib/voltdb'), Action('management/*.sh', 'usr/share/voltdb/management'), Action('management/*.xml', 'usr/share/voltdb/management'), Action('management/*.properties', 'usr/share/voltdb/management'), Action('voltdb/log4j*', 'usr/share/voltdb/voltdb'), Action('voltdb/*', 'usr/lib/voltdb'), Action('*', 'usr/share/voltdb', recursive=False))
+if (__name__ == '__main__'):
+    parser = OptionParser(description='This script can install, uninstall, validate an installation, and create\npackages for VoltDB. It uses the working directory to determine the active\nsource tree. When creating a package it detects whether the source tree is for\nthe pro or the community edition and adjusts the package accordingly. If a\ndistribution tarball is provided this script uses the distribution tree from\nthat tarball instead of the working directory.')
+    parser.set_usage('%prog [OPTIONS] [DISTRIBUTION_TARBALL]')
+    parser.add_option('-C', '--clean', action='store_true', dest='clean', help='clean package building output')
+    parser.add_option('-c', '--check', action='store_true', dest='check', help='check VoltDB installation')
+    parser.add_option('-D', '--debian', action='store_true', dest='debian', help='create debian package')
+    parser.add_option('-d', '--debug', action='store_true', dest='debug', help='display debug messages')
+    parser.add_option('-i', '--install', action='store_true', dest='install', help='install VoltDB directly (without creating package)')
+    parser.add_option('-k', '--keep', action='store_true', dest='keep', help="keep (don't delete) temporary directories")
+    parser.add_option('-n', '--dry-run', action='store_true', dest='dryrun', help='perform dry run without executing actions')
+    parser.add_option('-o', '--output', type='string', dest='output', help='create package in the specified output directory')
+    parser.add_option('-p', '--prefix', type='string', dest='prefix', default='/', help='specify prefix directory for installation target (default=/)')
+    parser.add_option('-u', '--uninstall', action='store_true', dest='uninstall', help='uninstall VoltDB')
+    parser.add_option('-v', '--verbose', action='store_true', dest='verbose', help='display verbose messages')
+    (options, args) = parser.parse_args()
+    if (len(args) > 1):
+        error('Bad arguments to command line.')
+        parser.print_help()
+        abort()
+    meta = Metadata(options, args)
+    clean_up_items = []
+    version = None
+    if (len(args) == 1):
+        (tmpdir, volt_root) = extract_distribution(args[0])
+        output_root = get_output_root()
+        version = get_distribution_version(volt_root)
+        clean_up_items.append(tmpdir)
+        if meta.options.debian:
+            build_root = tempfile.mkdtemp(prefix=('%s_' % myname), suffix='_deb')
+            clean_up_items.append(build_root)
+        else:
+            build_root = None
+    else:
+        source_root = find_volt_root(os.path.realpath(__file__))
+        version = get_source_version(source_root)
+        volt_root = find_volt_root(os.getcwd())
+        build_root = os.path.join(volt_root, 'obj', 'debian')
+        output_root = build_root
+    meta.initialize(version, volt_root, build_root, output_root, clean_up_items)
+    try:
+        acted = False
+        if meta.options.check:
+            check()
+            acted = True
+        if meta.options.uninstall:
+            uninstall()
+            acted = True
+        if meta.options.clean:
+            clean()
+            acted = True
+        if meta.options.debian:
+            debian()
+            acted = True
+        if meta.options.install:
+            install()
+            acted = True
+        if (not acted):
+            error('No action was selected')
+            parser.print_help()
+    finally:
+        if (not meta.options.keep):
+            for clean_up_item in meta.clean_up_items:
+                info(('Delete temporary: %s' % clean_up_item))
+                if os.path.exists(clean_up_item):
+                    shutil.rmtree(clean_up_item)

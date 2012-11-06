@@ -1,76 +1,9 @@
 {
-  ServerSocketChannel ssc=ServerSocketChannel.open();
-  ssc.configureBlocking(false);
-  InetSocketAddress sockAddr=null;
-  boolean allInterfaces=false;
-  String internalInterface=VoltDB.instance().getConfig().m_internalInterface;
-  if (internalInterface != null && !internalInterface.isEmpty()) {
-    recoveryLog.debug("An internal interface was specified (" + internalInterface + ")"+ " binding to an ephemeral port to receive recovery connection");
-    sockAddr=new InetSocketAddress(internalInterface,0);
-  }
- else {
-    recoveryLog.debug("No internal interface was specified. " + "Binding to all interfaces with an ephemeral port to receive recovery connection");
-    allInterfaces=true;
-    sockAddr=new InetSocketAddress(0);
-  }
-  ssc.socket().bind(sockAddr);
-  final int port=ssc.socket().getLocalPort();
-  List<byte[]> addresses=new ArrayList<byte[]>();
-  List<InetAddress> inetAddresses=new ArrayList<InetAddress>();
-  List<byte[]> loopbackInterfaces=new ArrayList<byte[]>();
-  List<InetAddress> loopbackAddresses=new ArrayList<InetAddress>();
-  if (allInterfaces) {
-    Enumeration<NetworkInterface> interfaces=NetworkInterface.getNetworkInterfaces();
-    while (interfaces.hasMoreElements()) {
-      NetworkInterface intf=interfaces.nextElement();
-      if (!intf.isUp()) {
-        continue;
-      }
-      Enumeration<InetAddress> addressesEnum=intf.getInetAddresses();
-      while (addressesEnum.hasMoreElements()) {
-        InetAddress address=addressesEnum.nextElement();
-        if (intf.isLoopback()) {
-          loopbackAddresses.add(address);
-          loopbackInterfaces.add(address.getAddress());
-        }
- else {
-          inetAddresses.add(address);
-          addresses.add(address.getAddress());
-        }
-      }
-    }
-  }
- else {
-    addresses.add(ssc.socket().getInetAddress().getAddress());
-  }
-  inetAddresses.addAll(loopbackAddresses);
-  addresses.addAll(loopbackInterfaces);
-  recoveryLog.debug("Advertising interfaces " + inetAddresses);
-  RecoveryMessage recoveryMessage=new RecoveryMessage(m_HSId,txnId,addresses,port);
+  RecoveryMessage recoveryMessage=new RecoveryMessage(m_HSId,txnId,m_mb.getHSId());
   recoveryLog.trace("Sending recovery initiate request before txnid " + txnId + " from site "+ CoreUtils.hsIdToString(m_HSId)+ " to "+ CoreUtils.hsIdToString(m_sourceHSId));
   m_mailbox.send(m_sourceHSId,recoveryMessage);
-  final long startTime=System.currentTimeMillis();
-  while (System.currentTimeMillis() - startTime < 5000) {
-    try {
-      m_sc=ssc.accept();
-      if (m_sc != null) {
-        break;
-      }
-      checkMailbox(false,txnId);
-    }
- catch (    IOException e) {
-      recoveryLog.error("Exception while attempting to accept recovery connection",e);
-      ssc.close();
-    }
-    Thread.yield();
-  }
-  if (m_sc == null) {
-    VoltDB.crashLocalVoltDB("Timed out waiting for connection from source partition",false,null);
-  }
-  ssc.close();
-  m_sc.configureBlocking(true);
-  m_sc.socket().setTcpNoDelay(true);
-  m_iodaemon=new IODaemon(m_sc);
+  checkMailbox(false,txnId);
+  m_iodaemon=new IODaemon();
   processNextInitiateResponse(txnId);
   return;
 }

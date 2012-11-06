@@ -1,0 +1,38 @@
+{
+  fut.addListener(new Runnable(){
+    @Override public void run(){
+      try {
+        BBContainer cont=fut.get();
+        if (cont == null) {
+synchronized (ads) {
+            edb.sourceNoLongerAdvertised(ads);
+          }
+          return;
+        }
+        try {
+          edb.onBlockStart();
+          try {
+            cont.b.order(ByteOrder.LITTLE_ENDIAN);
+            while (cont.b.hasRemaining()) {
+              int length=cont.b.getInt();
+              byte[] rowdata=new byte[length];
+              cont.b.get(rowdata,0,length);
+              edb.processRow(length,rowdata);
+            }
+          }
+  finally {
+            edb.onBlockCompletion();
+          }
+        }
+  finally {
+          cont.discard();
+        }
+      }
+ catch (      Exception e) {
+        m_logger.error("Error processing export block",e);
+      }
+      constructListener(source,source.poll(),edb,ads);
+    }
+  }
+,MoreExecutors.sameThreadExecutor());
+}

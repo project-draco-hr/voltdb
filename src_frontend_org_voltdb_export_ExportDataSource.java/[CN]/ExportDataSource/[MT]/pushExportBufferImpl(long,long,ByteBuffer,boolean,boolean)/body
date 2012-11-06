@@ -1,0 +1,57 @@
+{
+  final java.util.concurrent.atomic.AtomicBoolean deleted=new java.util.concurrent.atomic.AtomicBoolean(false);
+  if (endOfStream) {
+    assert(!m_endOfStream);
+    assert(bufferPtr == 0);
+    assert(buffer == null);
+    assert(!sync);
+    m_endOfStream=endOfStream;
+    if (m_committedBuffers.sizeInBytes() == 0) {
+      exportLog.info("Pushed EOS buffer with 0 bytes remaining");
+      try {
+        if (m_pollFuture != null) {
+          m_pollFuture.set(null);
+          m_pollFuture=null;
+        }
+        m_onDrain.run();
+      }
+  finally {
+        m_onDrain=null;
+      }
+    }
+    return;
+  }
+  assert(!m_endOfStream);
+  if (buffer != null) {
+    if (buffer.capacity() > 0) {
+      try {
+        m_committedBuffers.offer(new StreamBlock(new BBContainer(buffer,bufferPtr){
+          @Override public void discard(){
+            DBBPool.deleteCharArrayMemory(address);
+            deleted.set(true);
+          }
+        }
+,uso,false));
+      }
+ catch (      IOException e) {
+        exportLog.error(e);
+        if (!deleted.get()) {
+          DBBPool.deleteCharArrayMemory(bufferPtr);
+        }
+      }
+    }
+ else {
+      exportLog.info("Syncing first unpolled USO to " + uso + " for table "+ m_tableName+ " partition "+ m_partitionId);
+      m_firstUnpolledUso=uso;
+    }
+  }
+  if (sync) {
+    try {
+      m_committedBuffers.sync(true);
+    }
+ catch (    IOException e) {
+      exportLog.error(e);
+    }
+  }
+  pollImpl(m_pollFuture);
+}

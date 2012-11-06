@@ -1,8 +1,18 @@
 {
-synchronized (m_batchLock) {
-    m_logger.trace("Rolling batch.");
+  m_batchLock.writeLock().lock();
+  final PeriodicExportContext previous=m_current;
+  try {
     m_current.end=rollTime;
-    if (m_current.m_decoders.size() == 0)     m_current.closeAllWriters();
     m_current=new PeriodicExportContext(rollTime);
+    m_logger.trace("Rolling batch.");
+    for (    Map<String,ExportToFileDecoder> genDecoders : m_tableDecoders.values()) {
+      for (      ExportToFileDecoder decoder : genDecoders.values()) {
+        decoder.resetWriter();
+      }
+    }
   }
+  finally {
+    m_batchLock.writeLock().unlock();
+  }
+  previous.closeAllWriters();
 }

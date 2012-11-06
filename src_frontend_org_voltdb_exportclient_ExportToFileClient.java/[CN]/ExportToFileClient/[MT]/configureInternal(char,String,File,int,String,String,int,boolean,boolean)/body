@@ -1,0 +1,49 @@
+{
+  m_delimiter=delimiter;
+  m_extension=(delimiter == ',') ? ".csv" : ".tsv";
+  m_nonce=nonce;
+  m_outDir=outdir;
+  m_tableDecoders=new HashMap<Long,HashMap<String,ExportToFileDecoder>>();
+  m_period=period;
+  m_dateFormatOriginalString=dateformatString;
+  m_dateformat=new ThreadLocal<SimpleDateFormat>(){
+    @Override protected SimpleDateFormat initialValue(){
+      return new SimpleDateFormat(m_dateFormatOriginalString);
+    }
+  }
+;
+  m_ODBCDateformat=new ThreadLocal<SimpleDateFormat>(){
+    @Override protected SimpleDateFormat initialValue(){
+      return new SimpleDateFormat(ODBC_DATE_FORMAT_STRING);
+    }
+  }
+;
+  m_firstfield=firstfield;
+  m_batched=batched;
+  m_withSchema=withSchema;
+  if (fullDelimiters != null) {
+    fullDelimiters=StringEscapeUtils.unescapeHtml4(fullDelimiters);
+    m_fullDelimiters=new char[4];
+    for (int i=0; i < 4; i++) {
+      m_fullDelimiters[i]=fullDelimiters.charAt(i);
+    }
+  }
+ else {
+    m_fullDelimiters=null;
+  }
+  assert(m_current == null);
+  m_current=new PeriodicExportContext(new Date());
+  Runnable rotator=new Runnable(){
+    @Override public void run(){
+      try {
+        roll(new Date());
+      }
+ catch (      Throwable t) {
+        t.printStackTrace();
+      }
+    }
+  }
+;
+  m_ses=CoreUtils.getScheduledThreadPoolExecutor("Export file rotate timer for nonce " + nonce,1,131072);
+  m_ses.scheduleWithFixedDelay(rotator,m_period,m_period,TimeUnit.MINUTES);
+}

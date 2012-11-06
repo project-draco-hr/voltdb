@@ -3,20 +3,30 @@
   byte version=(byte)0;
   responseBuffer.putInt(2);
   responseBuffer.put(version);
-  socket.configureBlocking(false);
+  socket.configureBlocking(true);
   socket.socket().setTcpNoDelay(true);
   final ByteBuffer lengthBuffer=ByteBuffer.allocate(4);
-  for (int ii=0; ii < 4; ii++) {
-    socket.read(lengthBuffer);
-    if (!lengthBuffer.hasRemaining()) {
-      break;
+  ScheduledFuture<?> timeoutFuture=VoltDB.instance().scheduleWork(new Runnable(){
+    @Override public void run(){
+      try {
+        socket.close();
+      }
+ catch (      IOException e) {
+      }
     }
-    try {
-      Thread.sleep(400);
+  }
+,1600,0,TimeUnit.MILLISECONDS);
+  try {
+    while (lengthBuffer.hasRemaining()) {
+      int read=socket.read(lengthBuffer);
+      if (read == -1) {
+        socket.close();
+        timeoutFuture.cancel(false);
+        return null;
+      }
     }
- catch (    InterruptedException e) {
-      throw new IOException(e);
-    }
+  }
+ catch (  AsynchronousCloseException e) {
   }
   if (lengthBuffer.hasRemaining()) {
     authLog.debug("Failure to authenticate connection(" + socket.socket().getRemoteSocketAddress() + "): wire protocol violation (timeout reading message length).");
@@ -42,23 +52,26 @@
     return null;
   }
   final ByteBuffer message=ByteBuffer.allocate(messageLength);
-  for (int ii=0; ii < 4; ii++) {
-    socket.read(message);
-    if (!message.hasRemaining()) {
-      break;
-    }
-    try {
-      Thread.sleep(20);
-    }
- catch (    InterruptedException e) {
-      throw new IOException(e);
+  try {
+    while (message.hasRemaining()) {
+      int read=socket.read(message);
+      if (read == -1) {
+        socket.close();
+        timeoutFuture.cancel(false);
+        return null;
+      }
     }
   }
-  if (lengthBuffer.hasRemaining()) {
+ catch (  AsynchronousCloseException e) {
+  }
+  if (message.hasRemaining()) {
     authLog.warn("Failure to authenticate connection(" + socket.socket().getRemoteSocketAddress() + "): wire protocol violation (timeout reading authentication strings).");
     responseBuffer.put(WIRE_PROTOCOL_TIMEOUT_ERROR).flip();
     socket.write(responseBuffer);
     socket.close();
+    return null;
+  }
+  if (!timeoutFuture.cancel(false)) {
     return null;
   }
   message.flip().position(1);

@@ -10,6 +10,10 @@ synchronized (m_startAndStopLock) {
       m_periodicWorkThread.shutdown();
       heartbeatThread.interrupt();
       heartbeatThread.join();
+      if (m_leaderAppointer != null) {
+        m_leaderAppointer.shutdown();
+      }
+      m_globalServiceElector.shutdown();
       if (m_hasStartedSampler.get()) {
         m_sampler.setShouldStop();
         m_sampler.join();
@@ -18,7 +22,6 @@ synchronized (m_startAndStopLock) {
       for (      ClientInterface ci : m_clientInterfaces) {
         ci.shutdown();
       }
-      ExportManager.instance().shutdown();
       if (!isIV2Enabled()) {
         if (m_localSites != null) {
           for (          ExecutionSite site : m_localSites.values())           site.startShutdown();
@@ -44,7 +47,15 @@ synchronized (m_startAndStopLock) {
           }
         }
       }
-      PartitionDRGateway.shutdown();
+      ExportManager.instance().shutdown();
+      if (m_nodeDRGateway != null) {
+        try {
+          m_nodeDRGateway.shutdown();
+        }
+ catch (        InterruptedException e) {
+          log.warn("Interrupted shutting down invocation buffer server",e);
+        }
+      }
       m_localSites=null;
       m_currentThreadSite=null;
       m_siteThreads=null;
@@ -69,6 +80,7 @@ synchronized (m_startAndStopLock) {
       m_siteTracker=null;
       m_catalogContext=null;
       m_mailboxPublisher=null;
+      AdHocCompilerCache.clearVersionCache();
       System.gc();
       m_isRunning=false;
     }
