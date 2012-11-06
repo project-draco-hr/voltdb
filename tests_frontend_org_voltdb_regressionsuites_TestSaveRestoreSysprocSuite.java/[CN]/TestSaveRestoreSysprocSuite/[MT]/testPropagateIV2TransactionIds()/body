@@ -9,19 +9,21 @@
   loadTable(client,"REPLICATED_TESTER",true,repl_table);
   loadTable(client,"PARTITION_TESTER",false,partition_table);
   saveTablesWithDefaultOptions(client);
-  Map<Integer,Long> expectedTransactionIds=new HashMap<Integer,Long>();
-  expectedTransactionIds.put(0,3619631924101120L);
-  expectedTransactionIds.put(1,3619631924084737L);
-  expectedTransactionIds.put(MpInitiator.MP_INIT_PID,3619631923249151L);
-  expectedTransactionIds.put(2,3619631924084738L);
   JSONObject digest=SnapshotUtil.CRCCheck(new VoltFile(TMPDIR,TESTNONCE + "-host_0.digest"));
   JSONObject transactionIds=digest.getJSONObject("partitionTransactionIds");
   System.out.println("TRANSACTION IDS: " + transactionIds.toString());
-  assertEquals(expectedTransactionIds.size(),transactionIds.length());
-  for (  Map.Entry<Integer,Long> expectedValues : expectedTransactionIds.entrySet()) {
-    final long foundTxnId=transactionIds.getLong(expectedValues.getKey().toString());
-    assertEquals(expectedValues.getValue().longValue(),foundTxnId);
+  assertEquals(4,transactionIds.length());
+  Set<Integer> partitions=new HashSet<Integer>();
+  Iterator<String> keys=transactionIds.keys();
+  while (keys.hasNext()) {
+    final long foundTxnId=transactionIds.getLong(keys.next());
+    partitions.add(TxnEgo.getPartitionId(foundTxnId));
+    assertTrue(foundTxnId > TxnEgo.makeZero(TxnEgo.getPartitionId(foundTxnId)).getTxnId());
   }
+  assertTrue(partitions.contains(0));
+  assertTrue(partitions.contains(1));
+  assertTrue(partitions.contains(2));
+  assertTrue(partitions.contains(MpInitiator.MP_INIT_PID));
   m_config.shutDown();
   CatalogChangeSingleProcessServer config=(CatalogChangeSingleProcessServer)m_config;
   config.recompile(1);
@@ -31,16 +33,17 @@
     client.callProcedure("@SnapshotRestore",TMPDIR,TESTNONCE).getResults();
     saveTables(client,TMPDIR,TESTNONCE + 2,true,false);
     digest=SnapshotUtil.CRCCheck(new VoltFile(TMPDIR,TESTNONCE + "2-host_0.digest"));
-    transactionIds=digest.getJSONObject("partitionTransactionIds");
-    assertEquals(expectedTransactionIds.size(),transactionIds.length());
-    for (    Map.Entry<Integer,Long> expectedValues : expectedTransactionIds.entrySet()) {
-      final long txnid=transactionIds.getLong(expectedValues.getKey().toString());
-      final int partitionId=expectedValues.getKey();
-      if (partitionId == 2 || partitionId == 1) {
-        assertEquals(txnid,expectedValues.getValue().longValue());
+    JSONObject newTransactionIds=digest.getJSONObject("partitionTransactionIds");
+    assertEquals(transactionIds.length(),newTransactionIds.length());
+    keys=transactionIds.keys();
+    while (keys.hasNext()) {
+      String partitionId=keys.next();
+      final long txnid=newTransactionIds.getLong(partitionId);
+      if (partitionId.equals("2") || partitionId.equals("1")) {
+        assertEquals(txnid,transactionIds.getLong(partitionId));
       }
- else       if (partitionId == MpInitiator.MP_INIT_PID || partitionId == 1) {
-        assertTrue(txnid > expectedValues.getValue().longValue());
+ else       if (partitionId.equals(Integer.toString(MpInitiator.MP_INIT_PID)) || partitionId.equals(1)) {
+        assertTrue(txnid > transactionIds.getLong(partitionId));
       }
     }
   }
