@@ -1,17 +1,81 @@
 {
-  m_partitions=Integer.parseInt(args[0]);
+  String remoteHosts[]=args[0].split(",");
+  final String homeDir="/home/" + System.getProperty("user.name");
+  final String sshDir=homeDir + "/.ssh";
+  final String sshConfigPath=sshDir + "/config";
+  loadAllPrivateKeys(new File(sshDir));
+  OpenSshConfig sshConfig=null;
+  if (new File(sshConfigPath).exists()) {
+    sshConfig=new OpenSshConfig(new File(sshConfigPath));
+  }
+  final String defaultKnownHosts=sshDir + "/known_hosts";
+  if (new File(defaultKnownHosts).exists()) {
+    m_jsch.setKnownHosts(defaultKnownHosts);
+  }
+  for (  String hostString : remoteHosts) {
+    String split[]=hostString.split(":");
+    String host=split[0];
+    RemoteHost rh=new RemoteHost();
+    rh.path=split[1];
+    String user=System.getProperty("user.name");
+    int port=22;
+    File identityFile=null;
+    if (sshConfig != null) {
+      OpenSshConfig.Host hostConfig=sshConfig.lookup(host);
+      if (hostConfig.getUser() != null) {
+        user=hostConfig.getUser();
+      }
+      if (hostConfig.getPort() != -1) {
+        port=hostConfig.getPort();
+      }
+      if (hostConfig.getIdentityFile() != null) {
+        identityFile=hostConfig.getIdentityFile();
+      }
+    }
+    Session session=null;
+    if (identityFile != null) {
+      JSch jsch=new JSch();
+      jsch.addIdentity(identityFile.getAbsolutePath());
+      session=jsch.getSession(user,host,port);
+    }
+ else {
+      session=m_jsch.getSession(user,host,port);
+    }
+    rh.session=session;
+    session.setConfig("StrictHostKeyChecking","no");
+    session.connect();
+    final ChannelSftp channel=(ChannelSftp)session.openChannel("sftp");
+    rh.channel=channel;
+    channel.connect();
+    m_hosts.add(rh);
+  }
+  m_partitions=Integer.parseInt(args[1]);
   for (int i=0; i < m_partitions; i++) {
     m_rowTxnIds.put(i,new HashSet<Long>());
   }
-  String[] row;
   long ttlVerified=0;
-  m_dataPath=new File(args[1]);
-  if (!m_dataPath.exists() || !m_dataPath.isDirectory()) {
-    if (!m_dataPath.mkdir()) {
-      throw new IOException("Issue with export data path");
+  for (  RemoteHost rh : m_hosts) {
+    boolean existsOrIsDir=true;
+    try {
+      SftpATTRS stat=rh.channel.stat(rh.path);
+      if (!stat.isDir()) {
+        existsOrIsDir=false;
+      }
+    }
+ catch (    SftpException e) {
+      if (e.id == ChannelSftp.SSH_FX_NO_SUCH_FILE) {
+        existsOrIsDir=false;
+      }
+ else {
+        Throwables.propagate(e);
+      }
+    }
+    if (!existsOrIsDir) {
+      rh.channel.mkdir(rh.path);
     }
   }
-  CSVReader csv=openNextExportFile();
+  Pair<CSVReader,Runnable> csvPair=openNextExportFile();
+  CSVReader csv=csvPair.getFirst();
   m_clientPath=new File(args[2]);
   if (!m_clientPath.exists() || !m_clientPath.isDirectory()) {
     if (!m_clientPath.mkdir()) {
@@ -19,21 +83,25 @@
     }
   }
   BufferedReader txnIdReader=openNextClientFile();
+  String[] row;
   boolean quit=false;
   boolean more_rows=true;
   boolean more_txnids=true;
+  long lastReportTime=System.currentTimeMillis();
   while (!quit) {
     more_rows=true;
     while (!canCheckClient() && more_rows) {
       row=csv.readNext();
       if (row == null) {
-        csv=openNextExportFile();
-        if (csv == null) {
+        csvPair.getSecond().run();
+        csvPair=openNextExportFile();
+        if (csvPair == null) {
           System.out.println("No more export rows");
           more_rows=false;
           break;
         }
  else {
+          csv=csvPair.getFirst();
           row=csv.readNext();
         }
       }
@@ -80,6 +148,15 @@
     }
     if (!more_rows || !more_txnids) {
       quit=true;
+    }
+    if (System.currentTimeMillis() - lastReportTime > 5000) {
+      StringBuilder sb=new StringBuilder();
+      sb.append(m_clientTxnIds.size()).append(' ');
+      for (      HashSet<Long> txnids : m_rowTxnIds.values()) {
+        sb.append(txnids.size()).append(' ');
+      }
+      System.out.println(sb);
+      lastReportTime=System.currentTimeMillis();
     }
   }
   if (more_rows || more_txnids) {
