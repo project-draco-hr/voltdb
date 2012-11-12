@@ -10,8 +10,7 @@
   }
   m_planSelector.outputParsedStatement(parsedStmt);
   PlanAssembler assembler=new PlanAssembler(m_cluster,m_db,m_partitioning,(PlanSelector)m_planSelector.clone());
-  boolean isTopPlan=true;
-  CompiledPlan bestPlan=assembler.getBestCostPlan(parsedStmt,isTopPlan);
+  CompiledPlan bestPlan=assembler.getBestCostPlan(parsedStmt);
   if (bestPlan == null) {
     m_recentErrorMsg=assembler.getErrorMessage();
     if (m_recentErrorMsg == null) {
@@ -19,6 +18,15 @@
     }
     return null;
   }
+  if (bestPlan.readOnly == true) {
+    SendPlanNode sendNode=new SendPlanNode();
+    sendNode.addAndLinkChild(bestPlan.rootPlanGraph);
+    sendNode.generateOutputSchema(m_db);
+    sendNode.resolveColumnIndexes();
+    bestPlan.rootPlanGraph=sendNode;
+  }
+  assembler.finalizeBestCostPlan(bestPlan);
+  bestPlan.resetPlanNodeIds();
   Fragmentizer.fragmentize(bestPlan,m_db);
   return bestPlan;
 }
