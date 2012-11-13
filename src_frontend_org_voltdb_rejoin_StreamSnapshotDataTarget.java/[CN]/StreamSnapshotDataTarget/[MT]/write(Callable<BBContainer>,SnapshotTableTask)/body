@@ -1,38 +1,54 @@
 {
   assert(context != null);
-  BBContainer chunk=null;
+  rejoinLog.info("Starting write");
   try {
-    chunk=tupleData.call();
-  }
- catch (  Exception e) {
-    return Futures.immediateFailedFuture(e);
-  }
-  if (m_writeFailed) {
+    BBContainer chunk=null;
+    try {
+      chunk=tupleData.call();
+    }
+ catch (    Exception e) {
+      return Futures.immediateFailedFuture(e);
+    }
+    if (m_writeFailed) {
+      if (chunk != null) {
+        chunk.discard();
+      }
+      return null;
+    }
+    if (m_closed) {
+      if (chunk != null) {
+        chunk.discard();
+      }
+      m_writeFailed=true;
+      IOException e=new IOException("Trying to write snapshot data " + "after the stream is closed");
+      return Futures.immediateFailedFuture(e);
+    }
     if (chunk != null) {
-      chunk.discard();
+      BBContainer schemaContainer=null;
+      if (m_schemas.containsKey(context.getTableId())) {
+        byte[] schema=m_schemas.remove(context.getTableId());
+        rejoinLog.debug("Sending schema for table " + context.getTableId());
+        ByteBuffer buf=ByteBuffer.allocate(schema.length + 1);
+        buf.put((byte)StreamSnapshotMessageType.SCHEMA.ordinal());
+        buf.put(schema);
+        buf.flip();
+        schemaContainer=DBBPool.wrapBB(buf);
+        rejoinLog.info("Writing schema as part of this write");
+      }
+      chunk.b.put((byte)StreamSnapshotMessageType.DATA.ordinal());
+      chunk.b.putInt(m_blockIndex);
+      chunk.b.putInt(context.getTableId());
+      chunk.b.position(0);
+      SendWork sendWork=new SendWork(m_blockIndex,schemaContainer,chunk);
+      m_outstandingWork.put(m_blockIndex,sendWork);
+      m_outstandingWorkCount.incrementAndGet();
+      m_es.submit(sendWork);
+      rejoinLog.info("Submitted write with index " + String.valueOf(m_blockIndex));
+      m_blockIndex++;
     }
     return null;
   }
-  if (!m_outThread.isAlive()) {
-    if (chunk != null) {
-      chunk.discard();
-    }
-    m_writeFailed=true;
-    IOException e=new IOException("Trying to write snapshot data " + "after the stream is closed");
-    return Futures.immediateFailedFuture(e);
+  finally {
+    rejoinLog.info("Finished call to write");
   }
-  if (chunk != null) {
-    if (m_schemas.containsKey(context.getTableId())) {
-      byte[] schema=m_schemas.remove(context.getTableId());
-      rejoinLog.debug("Sending schema for table " + context.getTableId());
-      sendSchema(schema);
-    }
-    chunk.b.put((byte)StreamSnapshotMessageType.DATA.ordinal());
-    chunk.b.putInt(m_blockIndex++);
-    chunk.b.putInt(context.getTableId());
-    chunk.b.position(0);
-    m_ackTracker.waitForAcks(m_blockIndex - 1,1);
-    m_out.offer(chunk);
-  }
-  return null;
 }
