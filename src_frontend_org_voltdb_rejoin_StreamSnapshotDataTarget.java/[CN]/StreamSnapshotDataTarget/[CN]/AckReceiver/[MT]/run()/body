@@ -1,20 +1,19 @@
 {
   rejoinLog.info("Starting ack receiver thread");
   try {
-    while (!m_closed) {
+    while (!m_closed.get()) {
       rejoinLog.info("Blocking on receiving mailbox");
       VoltMessage msg=m_mb.recvBlocking();
       assert(msg instanceof RejoinDataAckMessage);
       RejoinDataAckMessage ackMsg=(RejoinDataAckMessage)msg;
       final int blockIndex=ackMsg.getBlockIndex();
-      rejoinLog.info("Recieved block ack for index " + String.valueOf(blockIndex));
-      m_outstandingWorkCount.decrementAndGet();
-      SendWork work=m_outstandingWork.remove(blockIndex);
-      assert(work != null);
-      work.discard();
+      receiveAck(blockIndex);
     }
   }
  catch (  Exception e) {
+    if (m_closed.get()) {
+      return;
+    }
     m_lastAckReceiverException=e;
     rejoinLog.error("Error reading a message from a recovery stream",e);
   }

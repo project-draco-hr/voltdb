@@ -1,9 +1,10 @@
 {
-  if (!m_closed) {
+  if (!m_closed.get()) {
     rejoinLog.debug("Closing stream snapshot target");
-    while (!m_writeFailed && m_outstandingWorkCount.get() > 0) {
+    while (!m_writeFailed.get() && (m_outstandingWorkCount.get() > 0)) {
       Thread.yield();
     }
+    clearOutstanding();
     ByteBuffer buf=ByteBuffer.allocate(1);
     buf.put((byte)StreamSnapshotMessageType.END.ordinal());
     buf.flip();
@@ -11,12 +12,16 @@
     RejoinDataMessage msg=new RejoinDataMessage(compressedBytes);
     m_mb.send(m_destHSId,msg);
     m_bytesSent.addAndGet(compressedBytes.length);
-    VoltDB.instance().getHostMessenger().removeMailbox(m_mb.getHSId());
-    m_mb=null;
-    m_closed=true;
+synchronized (this) {
+      VoltDB.instance().getHostMessenger().removeMailbox(m_mb.getHSId());
+      m_mb=null;
+      m_closed.set(true);
+      assert(m_outstandingWork.size() == 0);
+    }
     rejoinLog.debug("Closed stream snapshot target");
   }
-  if (m_onCloseHandler != null) {
-    m_onCloseHandler.run();
+  Runnable closeHandle=m_onCloseHandler.get();
+  if (closeHandle != null) {
+    closeHandle.run();
   }
 }
