@@ -2,16 +2,17 @@
   m_taskQueue.offer(task);
   Iterator<TransactionTask> iter=m_backlog.iterator();
   if (iter.hasNext()) {
-    TransactionTask next=iter.next();
+    MpProcedureTask next=(MpProcedureTask)iter.next();
+    next.doRestart(masters);
     MpTransactionState txn=(MpTransactionState)next.getTransactionState();
     FragmentTaskMessage dummy=new FragmentTaskMessage(0L,0L,0L,0L,false,false,false);
     FragmentResponseMessage poison=new FragmentResponseMessage(dummy,0L);
-    SerializableException forcedTermination=new SerializableException("Transaction rolled back by fault recovery or shutdown.");
-    poison.setStatus(FragmentResponseMessage.UNEXPECTED_ERROR,forcedTermination);
+    TransactionRestartException restart=new TransactionRestartException("Transaction being restarted due to fault recovery or shutdown.",next.getTxnId());
+    poison.setStatus(FragmentResponseMessage.UNEXPECTED_ERROR,restart);
     txn.offerReceivedFragmentResponse(poison);
     while (iter.hasNext()) {
-      next=iter.next();
-      ((MpProcedureTask)next).updateMasters(masters);
+      next=(MpProcedureTask)iter.next();
+      next.updateMasters(masters);
     }
   }
 }
