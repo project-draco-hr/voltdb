@@ -1,0 +1,19 @@
+{
+  try {
+    final String reqId=new Long(System.currentTimeMillis()).toString();
+    m_zk.create(VoltZK.request_truncation_snapshot,reqId.getBytes(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+    SnapshotCompletionMonitor completionMonitor=VoltDB.instance().getSnapshotCompletionMonitor();
+    completionMonitor.addInterest(new SnapshotCompletionInterest(){
+      @Override public CountDownLatch snapshotCompleted(      String nonce,      long multipartTxnId,      long[] partitionTxnIds,      boolean truncationSnapshot,      String reqIdCmp){
+        if (truncationSnapshot && reqId.equals(reqIdCmp)) {
+          promote();
+        }
+        return null;
+      }
+    }
+);
+  }
+ catch (  Exception e) {
+    VoltDB.crashGlobalVoltDB("ZK truncation snapshot request failed",false,e);
+  }
+}
