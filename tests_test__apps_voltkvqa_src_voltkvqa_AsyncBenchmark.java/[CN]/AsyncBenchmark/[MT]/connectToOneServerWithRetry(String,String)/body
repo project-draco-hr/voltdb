@@ -1,0 +1,47 @@
+{
+  int sleep=1000;
+  boolean flag=true;
+  String msg;
+  if (fatalLevel.get() > 0) {
+    System.err.printf("In connectToOneServerWithRetry, don't bother to try reconnecting to this host: %s\n",server);
+    flag=false;
+  }
+  while (flag) {
+    try {
+      client.createConnection(server);
+      totalConnections.incrementAndGet();
+      msg="Connected to VoltDB node at: " + server + ", IDs: "+ client.getInstanceId()[0]+ " - "+ client.getInstanceId()[1]+ ", totalConnections = "+ totalConnections.get();
+      prt(msg);
+      break;
+    }
+ catch (    Exception e) {
+      if (debug) {
+        msg="\n---------------\n" + info + "\n---------------\n"+ "Failed to connect server: "+ server+ ", remaining totalConnections = '"+ totalConnections.get()+ "'\nReason for connection failed: '"+ e.getMessage()+ "'";
+        prt(msg);
+      }
+      msg="Connection to " + server + " failed - retrying in "+ sleep / 1000 + " second(s)";
+      prt(msg);
+      try {
+        Thread.sleep(sleep);
+      }
+ catch (      Exception interruted) {
+        msg="A possible hiccup, seriously?? Exception: '" + interruted.getMessage() + "'.\nStop trying to reconnect to this host: "+ server;
+        prt(msg);
+        fatalLevel.incrementAndGet();
+        flag=false;
+      }
+      if (sleep < 8000)       sleep+=sleep;
+      if ((e.getMessage().contains("Cluster instance id mismatch"))) {
+        msg="A possible bug? Could be a serious exception:" + e.getMessage() + "\nStop trying to reconnect to this host: "+ server;
+        prt(msg);
+        fatalLevel.incrementAndGet();
+        flag=false;
+      }
+ else       if ((e.getMessage().contains("Client instance is shutdown"))) {
+        msg="Dangling client is detected. Stop trying to connect to this host: " + server;
+        prt(msg);
+        flag=false;
+      }
+    }
+  }
+}
