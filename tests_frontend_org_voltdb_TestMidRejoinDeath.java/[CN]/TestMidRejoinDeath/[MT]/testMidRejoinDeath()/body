@@ -1,0 +1,53 @@
+{
+  LocalCluster cluster=null;
+  Client client=null;
+  try {
+    System.out.println("testMidRejoinDeath");
+    VoltProjectBuilder builder=getBuilderForTest();
+    builder.setSecurityEnabled(true);
+    cluster=new LocalCluster("rejoin.jar",1,2,1,BackendTarget.NATIVE_EE_JNI,false,false);
+    cluster.setJavaProperty("rejoindeathtest",null);
+    cluster.overrideAnyRequestForValgrind();
+    cluster.setMaxHeap(256);
+    boolean success=cluster.compile(builder);
+    assertTrue(success);
+    MiscUtils.copyFile(builder.getPathToDeployment(),Configuration.getPathToCatalogForTest("rejoin.xml"));
+    cluster.setHasLocalServer(false);
+    cluster.startUp();
+    ClientResponse response;
+    client=ClientFactory.createClient(m_cconfig);
+    client.createConnection("localhost",cluster.port(0));
+    response=client.callProcedure("InsertSinglePartition",0);
+    assertEquals(ClientResponse.SUCCESS,response.getStatus());
+    response=client.callProcedure("Insert",1);
+    assertEquals(ClientResponse.SUCCESS,response.getStatus());
+    response=client.callProcedure("InsertReplicated",0);
+    assertEquals(ClientResponse.SUCCESS,response.getStatus());
+    cluster.shutDownSingleHost(1);
+    Thread.sleep(3000);
+    cluster.recoverOne(1,0,"",MiscUtils.isPro());
+    response=client.callProcedure("SelectBlahSinglePartition",0);
+    assertEquals(ClientResponse.SUCCESS,response.getStatus());
+    assertEquals(response.getResults()[0].fetchRow(0).getLong(0),0);
+    response=client.callProcedure("SelectBlah",1);
+    assertEquals(ClientResponse.SUCCESS,response.getStatus());
+    assertEquals(response.getResults()[0].fetchRow(0).getLong(0),1);
+    response=client.callProcedure("SelectBlahReplicated",0);
+    assertEquals(ClientResponse.SUCCESS,response.getStatus());
+    assertEquals(response.getResults()[0].fetchRow(0).getLong(0),0);
+    response=client.callProcedure("InsertSinglePartition",2);
+    assertEquals(ClientResponse.SUCCESS,response.getStatus());
+    response=client.callProcedure("Insert",3);
+    assertEquals(ClientResponse.SUCCESS,response.getStatus());
+    response=client.callProcedure("InsertReplicated",1);
+    assertEquals(ClientResponse.SUCCESS,response.getStatus());
+    client.callProcedure("@SnapshotSave","{uripath:\"file:///tmp\",nonce:\"mydb\",block:true,format:\"csv\"}");
+    if (MiscUtils.isPro()) {
+      assertEquals(1,cluster.getLiveNodeCount());
+    }
+  }
+  finally {
+    if (client != null)     client.close();
+    if (cluster != null)     cluster.shutDown();
+  }
+}
