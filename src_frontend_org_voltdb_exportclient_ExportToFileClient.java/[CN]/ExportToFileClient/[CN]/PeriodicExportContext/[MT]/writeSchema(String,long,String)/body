@@ -2,33 +2,36 @@
   if (!m_withSchema)   return;
   FileHandle handle=new FileHandle(tableName,generation);
   String path=handle.getPathForSchema();
-  if (m_batched) {
-    if (m_batchSchemasWritten.contains(path)) {
-      return;
-    }
-  }
- else {
-    if (m_globalSchemasWritten.contains(path)) {
-      return;
-    }
-  }
-  File newFile=new File(path);
-  try {
-    OutputStreamWriter osw=new OutputStreamWriter(new FileOutputStream(newFile,false),"UTF-8");
-    BufferedWriter writer=new BufferedWriter(osw,1048576);
-    writer.write(schema);
-    writer.flush();
-    writer.close();
+  Set<String> targetSet=m_batched ? m_batchSchemasWritten : m_globalSchemasWritten;
+synchronized (targetSet) {
     if (m_batched) {
-      m_batchSchemasWritten.add(path);
+      if (m_batchSchemasWritten.contains(path)) {
+        return;
+      }
     }
  else {
-      m_globalSchemasWritten.add(path);
+      if (m_globalSchemasWritten.contains(path)) {
+        return;
+      }
     }
-  }
- catch (  Exception e) {
-    m_logger.error(e.getMessage());
-    m_logger.error("Error: Failed to create output file: " + path);
-    throw new RuntimeException();
+    File newFile=new VoltFile(path);
+    try {
+      OutputStreamWriter osw=new OutputStreamWriter(new FileOutputStream(newFile,false),"UTF-8");
+      BufferedWriter writer=new BufferedWriter(osw);
+      writer.write(schema);
+      writer.flush();
+      writer.close();
+      if (m_batched) {
+        m_batchSchemasWritten.add(path);
+      }
+ else {
+        m_globalSchemasWritten.add(path);
+      }
+    }
+ catch (    Exception e) {
+      m_logger.error(e.getMessage());
+      m_logger.error("Error: Failed to create output file: " + path);
+      throw new RuntimeException();
+    }
   }
 }
