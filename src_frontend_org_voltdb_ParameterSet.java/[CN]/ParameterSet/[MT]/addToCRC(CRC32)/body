@@ -1,0 +1,80 @@
+{
+  ByteArrayOutputStream bos=new ByteArrayOutputStream(8);
+  DataOutputStream dos=new DataOutputStream(bos);
+  byte[] b;
+  for (int i=0; i < m_params.length; i++) {
+    Object obj=m_params[i];
+    if ((obj == null) || (obj == JSONObject.NULL)) {
+      crc.update(new byte[]{0});
+      continue;
+    }
+    Class<?> cls=obj.getClass();
+    if (obj == VoltType.NULL_TIMESTAMP) {
+      crc.update(new byte[]{0});
+      continue;
+    }
+ else     if (obj == VoltType.NULL_STRING_OR_VARBINARY) {
+      crc.update(new byte[]{0});
+      continue;
+    }
+ else     if (obj == VoltType.NULL_DECIMAL) {
+      crc.update(new byte[]{0});
+      continue;
+    }
+    bos.reset();
+    VoltType type=VoltType.typeFromClass(cls);
+switch (type) {
+case TINYINT:
+      dos.writeLong((Byte)obj);
+    b=bos.toByteArray();
+  crc.update(b);
+break;
+case SMALLINT:
+dos.writeLong((Short)obj);
+b=bos.toByteArray();
+crc.update(b);
+break;
+case INTEGER:
+dos.writeLong((Integer)obj);
+b=bos.toByteArray();
+crc.update(b);
+break;
+case BIGINT:
+dos.writeLong((Long)obj);
+b=bos.toByteArray();
+crc.update(b);
+break;
+case FLOAT:
+if (cls == Float.class) {
+dos.writeInt(0);
+dos.writeFloat((Float)obj);
+}
+ else if (cls == Double.class) {
+dos.writeDouble((Double)obj);
+}
+ else {
+throw new RuntimeException("Can't cast parameter type to Double");
+}
+b=bos.toByteArray();
+crc.update(b);
+break;
+case STRING:
+if (m_encodedStrings[i] == null) {
+throw new IOException("String not encoded: " + (String)obj);
+}
+crc.update(m_encodedStrings[i]);
+break;
+case TIMESTAMP:
+long micros=timestampToMicroseconds(obj);
+dos.writeLong(micros);
+b=bos.toByteArray();
+crc.update(b);
+break;
+case DECIMAL:
+crc.update(VoltDecimalHelper.getUnscaledBytes((BigDecimal)obj));
+break;
+default :
+throw new RuntimeException("FIXME: Unsupported type " + type);
+}
+}
+}
