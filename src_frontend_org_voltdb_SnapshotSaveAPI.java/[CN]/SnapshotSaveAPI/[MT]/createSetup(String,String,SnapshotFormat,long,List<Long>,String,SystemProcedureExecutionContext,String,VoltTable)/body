@@ -3,6 +3,15 @@
     SiteTracker tracker=context.getSiteTrackerForSnapshot();
     final int numLocalSites=(tracker.getLocalSites().length - recoveringSiteCount.get());
     Long targetHSid=null;
+    JSONObject jsData=null;
+    if (data != null) {
+      try {
+        jsData=new JSONObject(data);
+      }
+ catch (      JSONException e) {
+        HOST_LOG.error(String.format("JSON exception on snapshot data \"%s\".",data),e);
+      }
+    }
     MessageDigest digest;
     try {
       digest=MessageDigest.getInstance("SHA-1");
@@ -50,11 +59,10 @@
           VoltTable schemaTable=CatalogUtil.getVoltTable(table);
           schemas.put(table.getRelativeIndex(),schemaTable.getSchemaBytes());
         }
-        if (format == SnapshotFormat.STREAM && data != null) {
-          JSONObject jsObj=new JSONObject(data);
-          long hsId=jsObj.getLong("hsId");
+        if (format == SnapshotFormat.STREAM && jsData != null) {
+          long hsId=jsData.getLong("hsId");
           try {
-            targetHSid=jsObj.getLong("target_hsid");
+            targetHSid=jsData.getLong("target_hsid");
           }
  catch (          JSONException e) {
           }
@@ -180,6 +188,10 @@ synchronized (SnapshotSiteProcessor.m_taskListsForSites) {
         }
         if (!aborted) {
           VoltDB.instance().getSnapshotCompletionMonitor().registerPartitionTxnIdsForSnapshot(txnId,partitionTransactionIds);
+          String truncReqId="";
+          if (jsData != null && jsData.has("truncReqId")) {
+            truncReqId=jsData.getString("truncReqId");
+          }
           logSnapshotStartToZK(txnId,context,file_nonce,truncReqId);
         }
       }
