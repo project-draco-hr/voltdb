@@ -10,18 +10,31 @@ synchronized (ads) {
           return;
         }
         try {
-          edb.onBlockStart();
-          try {
-            cont.b.order(ByteOrder.LITTLE_ENDIAN);
-            while (cont.b.hasRemaining()) {
-              int length=cont.b.getInt();
-              byte[] rowdata=new byte[length];
-              cont.b.get(rowdata,0,length);
-              edb.processRow(length,rowdata);
+          final int startPosition=cont.b.position();
+          int backoffQuantity=10 + (int)(10 * ThreadLocalRandom.current().nextDouble());
+          while (true) {
+            cont.b.position(startPosition);
+            try {
+              edb.onBlockStart();
+              cont.b.order(ByteOrder.LITTLE_ENDIAN);
+              while (cont.b.hasRemaining()) {
+                int length=cont.b.getInt();
+                byte[] rowdata=new byte[length];
+                cont.b.get(rowdata,0,length);
+                edb.processRow(length,rowdata);
+              }
+              edb.onBlockCompletion();
+              break;
             }
-          }
-  finally {
-            edb.onBlockCompletion();
+ catch (            RestartBlockException e) {
+              if (e.requestBackoff) {
+                Thread.sleep(backoffQuantity);
+                if (backoffQuantity < 8000) {
+                  backoffQuantity+=(backoffQuantity * .5);
+                  backoffQuantity+=(backoffQuantity * .5 * ThreadLocalRandom.current().nextDouble());
+                }
+              }
+            }
           }
         }
   finally {
@@ -34,5 +47,5 @@ synchronized (ads) {
       constructListener(source,source.poll(),edb,ads);
     }
   }
-,MoreExecutors.sameThreadExecutor());
+,edb.getExecutor());
 }
