@@ -1,0 +1,42 @@
+{
+  LocalCluster cluster=null;
+  Client client=null;
+  try {
+    System.out.println("testMidRejoinDeath");
+    VoltProjectBuilder builder=getBuilderForTest();
+    builder.setSecurityEnabled(true);
+    cluster=new LocalCluster("rejoin.jar",3,2,1,BackendTarget.NATIVE_EE_JNI,false,false);
+    cluster.setJavaProperty("rejoindeathtest",null);
+    cluster.overrideAnyRequestForValgrind();
+    cluster.setMaxHeap(256);
+    boolean success=cluster.compile(builder);
+    assertTrue(success);
+    MiscUtils.copyFile(builder.getPathToDeployment(),Configuration.getPathToCatalogForTest("rejoin.xml"));
+    cluster.setHasLocalServer(false);
+    cluster.startUp();
+    client=ClientFactory.createClient(m_cconfig);
+    client.createConnection("localhost",cluster.port(0));
+    cluster.shutDownSingleHost(1);
+    Thread.sleep(3000);
+    VoltTable t=TableHelper.quickTable("TEST_INLINED_STRING (PKEY:INTEGER, VALUE:VARCHAR36-N, VALUE1:VARCHAR17700-N) P(0)");
+    TableHelper.fillTableWithFirstColIntegerPkey(t,512,client,new Random(0));
+    cluster.recoverOne(1,0,"",MiscUtils.isPro());
+    client.callProcedure("@SnapshotSave","{uripath:\"file:///tmp\",nonce:\"mydb\",block:true,format:\"csv\"}");
+    if (MiscUtils.isPro()) {
+      assertEquals(1,cluster.getLiveNodeCount());
+      cluster.recoverOne(1,0,"",MiscUtils.isPro());
+      assertEquals(2,cluster.getLiveNodeCount());
+      cluster.shutDownSingleHost(1);
+      cluster.setJavaProperty("rejoindeathtestonrejoinside",null);
+      cluster.recoverOne(1,0,"",MiscUtils.isPro());
+      assertEquals(1,cluster.getLiveNodeCount());
+      cluster.setJavaProperty("rejoindeathtestcancel",null);
+      cluster.recoverOne(1,0,"",MiscUtils.isPro());
+      assertEquals(2,cluster.getLiveNodeCount());
+    }
+  }
+  finally {
+    if (client != null)     client.close();
+    if (cluster != null)     cluster.shutDown();
+  }
+}
