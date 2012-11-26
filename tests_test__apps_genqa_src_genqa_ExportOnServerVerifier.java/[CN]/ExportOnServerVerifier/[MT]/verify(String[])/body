@@ -93,10 +93,9 @@
   long lastReportTime=System.currentTimeMillis();
   int emptyRemovalCycles=0;
   while (!quit) {
-    more_rows=true;
     markCheckedUpTo();
     int dcount=0;
-    while (dcount < 10000 && more_rows) {
+    while ((dcount < 10000 || !more_txnids) && more_rows) {
       row=csv.readNext();
       if (row == null) {
         csvPair.getSecond().run();
@@ -134,7 +133,6 @@
     System.out.println("!_!_! DEBUG !_!_! processed " + (dcount - m_clientOverFlow.size()) + " client overflow txid records");
     System.out.println("!_!_! DEBUG !_!_! overflow size is now " + m_clientOverFlow.size());
     dcount=0;
-    more_txnids=true;
     while ((!reachedReadUpTo() || !more_rows) && more_txnids) {
       String trace=txnIdReader.readLine();
       if (trace == null) {
@@ -171,10 +169,15 @@
       System.err.println("ERROR: 10 check cycles failed to match client tx ids with exported tx id -- bailing out");
       System.exit(1);
     }
-    if (!more_rows || !more_txnids) {
-      quit=true;
-    }
     printTxCountByPartition();
+    if (!more_rows || !more_txnids) {
+      if (more_rows && !m_clientTxnIds.isEmpty()) {
+        quit=false;
+      }
+ else {
+        quit=true;
+      }
+    }
     if (System.currentTimeMillis() - lastReportTime > 5000) {
       StringBuilder sb=new StringBuilder();
       sb.append(m_clientTxnIds.size()).append(' ');
