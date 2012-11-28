@@ -1,0 +1,46 @@
+{
+  int onDoneRetries=6;
+  long start_time=System.currentTimeMillis();
+  while (m_exportFiles.isEmpty()) {
+    int activeFound=0;
+    List<Pair<ChannelSftp,List<String>>> pathsFromAllNodes=new ArrayList<Pair<ChannelSftp,List<String>>>();
+    for (    RemoteHost rh : m_hosts) {
+      Vector<LsEntry> files=rh.channel.ls(rh.path);
+      List<String> paths=new ArrayList<String>();
+      boolean activeInRemote=false;
+      for (      LsEntry entry : files) {
+        activeInRemote=activeInRemote || entry.getFilename().contains("active");
+        if (!entry.getFilename().contains("active") && !entry.getFilename().equals(".") && !entry.getFilename().equals("..")&& !entry.getAttrs().isDir())         paths.add(rh.path + "/" + entry.getFilename());
+      }
+      rh.activeSeen=rh.activeSeen || activeInRemote;
+      if (activeInRemote)       activeFound++;
+      Collections.sort(paths);
+      if (!paths.isEmpty())       pathsFromAllNodes.add(Pair.of(rh.channel,paths));
+    }
+    if (pathsFromAllNodes.isEmpty() && activeFound == 0 && allActiveSeen()) {
+      if (--onDoneRetries <= 0)       return;
+      Thread.sleep(5000);
+    }
+    boolean hadOne;
+    do {
+      hadOne=false;
+      for (      Pair<ChannelSftp,List<String>> p : pathsFromAllNodes) {
+        final ChannelSftp c=p.getFirst();
+        final List<String> paths=p.getSecond();
+        if (!paths.isEmpty()) {
+          hadOne=true;
+          final String filePath=paths.remove(0);
+          m_exportFiles.offer(Pair.of(c,filePath));
+        }
+      }
+    }
+ while (hadOne);
+    long now=System.currentTimeMillis();
+    if ((now - start_time) > FILE_TIMEOUT_MS) {
+      throw new ValidationErr("Timed out waiting on new files.\n" + "This indicates a mismatch in the transaction streams between the client logs and the export data or the death of something important.",null,null);
+    }
+ else     if (!hadOne) {
+      Thread.sleep(1200);
+    }
+  }
+}
