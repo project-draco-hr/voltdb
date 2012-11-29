@@ -24,29 +24,47 @@
   m_HSId=HSId;
   m_columnNames.add("VOLT_TRANSACTION_ID");
   m_columnTypes.add(((int)VoltType.BIGINT.getValue()));
+  m_columnLengths.add(8);
   m_columnNames.add("VOLT_EXPORT_TIMESTAMP");
   m_columnTypes.add(((int)VoltType.BIGINT.getValue()));
+  m_columnLengths.add(8);
   m_columnNames.add("VOLT_EXPORT_SEQUENCE_NUMBER");
   m_columnTypes.add(((int)VoltType.BIGINT.getValue()));
+  m_columnLengths.add(8);
   m_columnNames.add("VOLT_PARTITION_ID");
   m_columnTypes.add(((int)VoltType.BIGINT.getValue()));
+  m_columnLengths.add(8);
   m_columnNames.add("VOLT_SITE_ID");
   m_columnTypes.add(((int)VoltType.BIGINT.getValue()));
+  m_columnLengths.add(8);
   m_columnNames.add("VOLT_EXPORT_OPERATION");
   m_columnTypes.add(((int)VoltType.TINYINT.getValue()));
+  m_columnLengths.add(1);
   for (  Column c : CatalogUtil.getSortedCatalogItems(catalogMap,"index")) {
     m_columnNames.add(c.getName());
     m_columnTypes.add(c.getType());
+    m_columnLengths.add(c.getSize());
   }
   File adFile=new VoltFile(overflowPath,nonce + ".ad");
   exportLog.info("Creating ad for " + nonce);
   assert(!adFile.exists());
+  byte jsonBytes[]=null;
   FastSerializer fs=new FastSerializer();
-  fs.writeLong(m_HSId);
-  fs.writeString(m_database);
-  writeAdvertisementTo(fs);
+  try {
+    JSONStringer stringer=new JSONStringer();
+    stringer.object();
+    stringer.key("hsId").value(m_HSId);
+    stringer.key("database").value(m_database);
+    writeAdvertisementTo(stringer);
+    stringer.endObject();
+    JSONObject jsObj=new JSONObject(stringer.toString());
+    jsonBytes=jsObj.toString(4).getBytes(Charsets.UTF_8);
+  }
+ catch (  JSONException e) {
+    Throwables.propagate(e);
+  }
   FileOutputStream fos=new FileOutputStream(adFile);
-  fos.write(fs.getBytes());
+  fos.write(jsonBytes);
   fos.getFD().sync();
   fos.close();
   m_nullArrayLength=((m_columnTypes.size() + 7) & -8) >> 3;
