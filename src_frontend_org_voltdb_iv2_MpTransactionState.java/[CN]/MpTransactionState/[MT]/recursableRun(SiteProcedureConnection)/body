@@ -1,4 +1,21 @@
 {
+  boolean usedNullFragment=false;
+  if (m_isRestart && m_remoteWork == null) {
+    usedNullFragment=true;
+    m_remoteWork=new FragmentTaskMessage(m_localWork.getInitiatorHSId(),m_localWork.getCoordinatorHSId(),m_localWork.getTxnId(),m_localWork.getTimestamp(),m_localWork.isReadOnly(),false,false);
+    m_remoteWork.setEmptyForRestart(getNextDependencyId());
+    if (!m_haveDistributedInitTask && !isForReplay() && !isReadOnly()) {
+      m_haveDistributedInitTask=true;
+      m_remoteWork.setInitiateTask((Iv2InitiateTaskMessage)getNotice());
+    }
+    long[] non_local_hsids=new long[m_useHSIds.size()];
+    for (int i=0; i < m_useHSIds.size(); i++) {
+      non_local_hsids[i]=m_useHSIds.get(i);
+    }
+    if (non_local_hsids.length > 0) {
+      m_mbox.send(non_local_hsids,m_remoteWork);
+    }
+  }
   if (m_remoteWork != null) {
     m_remoteDeps=createTrackedDependenciesFromTask(m_remoteWork,m_useHSIds);
     while (!checkDoneReceivingFragResponses()) {
@@ -14,7 +31,9 @@
   m_remoteWork=null;
   BorrowTaskMessage borrowmsg=new BorrowTaskMessage(m_localWork);
   m_localWork.m_sourceHSId=m_mbox.getHSId();
-  borrowmsg.addInputDepMap(m_remoteDepTables);
+  if (!usedNullFragment) {
+    borrowmsg.addInputDepMap(m_remoteDepTables);
+  }
   m_mbox.send(m_buddyHSId,borrowmsg);
   FragmentResponseMessage msg=null;
   try {

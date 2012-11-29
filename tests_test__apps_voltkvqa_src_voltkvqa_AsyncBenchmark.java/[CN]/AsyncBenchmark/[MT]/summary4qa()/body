@@ -1,0 +1,49 @@
+{
+  System.out.printf("Checking put count in the database against expected data");
+  Iterator<String> it=hashMap.keySet().iterator();
+  if (debug) {
+    System.out.printf("HashMap Size: %10d\n",hashMap.size());
+    System.out.println("poolsize = " + config.poolsize);
+  }
+  try {
+    int printInterval=(int)hashMap.size() / 5;
+    if (hashMap.size() > 10000)     if (slow)     printInterval=(int)config.poolsize / 200;
+    int c=0;
+    String lastkey="error";
+    while (it.hasNext()) {
+      String key=it.next().toString();
+      if (debug && c % printInterval == 0)       System.out.printf("in summary4qa() count = %d, key = '%s'\n",c,key);
+      client.callProcedure(new SumCallback(key,c,printInterval),"Get",key);
+      lastkey=key;
+      c++;
+    }
+    if (debug)     System.out.printf("In summary4qa, count = %d, Last Key = '%s'\n",c,lastkey);
+  }
+ catch (  Exception x) {
+    System.out.println("This is not working: " + x + "\n");
+    x.printStackTrace();
+    System.exit(1);
+  }
+  try {
+    client.drain();
+  }
+ catch (  NoConnectionsException e) {
+    e.printStackTrace();
+  }
+catch (  InterruptedException e) {
+    e.printStackTrace();
+  }
+  System.out.println("\n-------------------\nTest Results:\n-------------------\n");
+  System.out.printf("\n\t%10d\tKV Rows Checked\n",hashMap.size());
+  System.out.printf("\t%10d\tKV Rows Found in database\n",successfulPutCount.get());
+  System.out.printf("\t%10d\tKV Rows Missing in database\n",hashMap.size() - successfulPutCount.get());
+  System.out.printf("\n\t%10d\tKV Rows are Correct\n",successfulPutCount.get() - missingPutCount.get());
+  System.out.printf("\t%10d\tKV Rows are Incorrect (off by %d Puts)\n",missingPutCount.get(),incorrectPutCount.get());
+  if (successfulPutCount.get() == hashMap.size() && missingPutCount.get() == 0) {
+    System.out.println("\n-------------------\nGood News:  Database Put counts match\n");
+  }
+ else {
+    System.out.println("\n-------------------\nError! Database Put counts don't match!!\n");
+    System.exit(1);
+  }
+}
