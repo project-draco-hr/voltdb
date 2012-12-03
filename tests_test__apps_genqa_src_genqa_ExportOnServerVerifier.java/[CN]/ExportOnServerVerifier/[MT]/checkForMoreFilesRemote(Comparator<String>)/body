@@ -7,11 +7,26 @@
     for (    RemoteHost rh : m_hosts) {
       Vector<LsEntry> files=rh.channel.ls(rh.path);
       List<String> paths=new ArrayList<String>();
+      int trackerModifyTime=rh.channel.stat(rh.path + "/" + TRACKER_FILENAME).getMTime();
       boolean activeInRemote=false;
       for (      LsEntry entry : files) {
-        activeInRemote=activeInRemote || entry.getFilename().contains("active");
-        if (!entry.getFilename().contains("active") && !entry.getFilename().equals(".") && !entry.getFilename().equals("..")&& !entry.getAttrs().isDir())         paths.add(rh.path + "/" + entry.getFilename());
+        activeInRemote=activeInRemote || entry.getFilename().startsWith("active");
+        if (!entry.getFilename().equals(".") && !entry.getFilename().equals("..") && !entry.getAttrs().isDir()) {
+          final String entryFileName=rh.path + "/" + entry.getFilename();
+          if (!entry.getFilename().contains("active")) {
+            paths.add(entryFileName);
+          }
+ else           if (entry.getFilename().startsWith("active-")) {
+            int activeModifyTime=entry.getAttrs().getMTime();
+            if ((trackerModifyTime - activeModifyTime) > 120) {
+              final String renamed=rh.path + "/" + entry.getFilename().substring("active-".length());
+              rh.channel.rename(entryFileName,renamed);
+              paths.add(renamed);
+            }
+          }
+        }
       }
+      touchActiveTracker(rh);
       rh.activeSeen=rh.activeSeen || activeInRemote;
       if (activeInRemote)       activeFound++;
       Collections.sort(paths);
