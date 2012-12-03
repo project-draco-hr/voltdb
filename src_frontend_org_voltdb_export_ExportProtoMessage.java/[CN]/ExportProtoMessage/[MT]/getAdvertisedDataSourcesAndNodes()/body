@@ -5,27 +5,42 @@
   ArrayList<AdvertisedDataSource> sources=new ArrayList<AdvertisedDataSource>();
   ArrayList<String> nodes=new ArrayList<String>();
   Pair<ArrayList<AdvertisedDataSource>,ArrayList<String>> retval=new Pair<ArrayList<AdvertisedDataSource>,ArrayList<String>>(sources,nodes);
-  FastDeserializer fds=new FastDeserializer(m_data);
-  int count=m_data.getInt();
-  for (int i=0; i < count; i++) {
-    ArrayList<VoltType> types=new ArrayList<VoltType>();
-    ArrayList<String> names=new ArrayList<String>();
-    long generation=fds.readLong();
-    int p_id=fds.readInt();
-    String t_signature=fds.readString();
-    String t_name=fds.readString();
-    long sysStartTimestamp=fds.readLong();
-    int colcnt=fds.readInt();
-    for (int jj=0; jj < colcnt; jj++) {
-      names.add(fds.readString());
-      types.add(VoltType.get((byte)fds.readInt()));
+  byte stringBytes[]=new byte[m_data.remaining()];
+  m_data.get(stringBytes);
+  try {
+    JSONObject jsObj=new JSONObject(new String(stringBytes,Charsets.UTF_8));
+    JSONArray sourcesArray=jsObj.getJSONArray("sources");
+    for (int i=0; i < sourcesArray.length(); i++) {
+      JSONObject source=sourcesArray.getJSONObject(i);
+      long version=source.getLong("adVersion");
+      if (version != 0) {
+        throw new IOException("Unexpected ad version " + version);
+      }
+      JSONArray columns=source.getJSONArray("columns");
+      ArrayList<VoltType> types=new ArrayList<VoltType>(columns.length());
+      ArrayList<String> names=new ArrayList<String>(columns.length());
+      ArrayList<Integer> lengths=new ArrayList<Integer>(columns.length());
+      long generation=source.getLong("generation");
+      int p_id=source.getInt("partitionId");
+      String t_signature=source.getString("signature");
+      String t_name=source.getString("tableName");
+      long sysStartTimestamp=source.getLong("startTime");
+      for (int jj=0; jj < columns.length(); jj++) {
+        JSONObject column=columns.getJSONObject(jj);
+        names.add(column.getString("name"));
+        types.add(VoltType.get((byte)column.getInt("type")));
+        lengths.add(column.getInt("length"));
+      }
+      sources.add(new AdvertisedDataSource(p_id,t_signature,t_name,sysStartTimestamp,generation,names,types,lengths));
     }
-    sources.add(new AdvertisedDataSource(p_id,t_signature,t_name,sysStartTimestamp,generation,names,types));
+    JSONArray hostsArray=jsObj.getJSONArray("clusterMetadata");
+    for (int i=0; i < hostsArray.length(); i++) {
+      String hostname=hostsArray.getString(i);
+      nodes.add(hostname);
+    }
   }
-  count=m_data.getInt();
-  for (int i=0; i < count; i++) {
-    String hostname=fds.readString();
-    nodes.add(hostname);
+ catch (  JSONException e) {
+    throw new IOException(e);
   }
   return retval;
 }
