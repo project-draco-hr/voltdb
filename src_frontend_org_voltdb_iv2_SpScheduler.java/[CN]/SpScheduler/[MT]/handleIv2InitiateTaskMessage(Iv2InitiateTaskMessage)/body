@@ -2,7 +2,7 @@
   final String procedureName=message.getStoredProcedureName();
   if (message.isSinglePartition()) {
     long newSpHandle;
-    long timestamp;
+    long uniqueId;
     Iv2InitiateTaskMessage msg=message;
     if (m_isLeader || message.isReadOnly()) {
       if (!m_isLeader && CoreUtils.getHostIdFromHSId(msg.getInitiatorHSId()) != CoreUtils.getHostIdFromHSId(m_mailbox.getHSId())) {
@@ -10,26 +10,27 @@
       }
       if (message.isForReplay()) {
         newSpHandle=message.getTxnId();
-        timestamp=message.getTimestamp();
+        uniqueId=message.getUniqueId();
         setMaxSeenTxnId(newSpHandle);
+        m_uniqueIdGenerator.updateMostRecentlyGeneratedTransactionId(uniqueId);
       }
  else       if (m_isLeader) {
         TxnEgo ego=advanceTxnEgo();
         newSpHandle=ego.getTxnId();
-        timestamp=ego.getWallClock();
+        uniqueId=m_uniqueIdGenerator.getNextUniqueTransactionId();
       }
  else {
-        timestamp=System.currentTimeMillis();
+        uniqueId=UniqueIdGenerator.makeIdFromComponents(Math.max(System.currentTimeMillis(),m_uniqueIdGenerator.lastUsedTime),0,m_uniqueIdGenerator.initiatorId);
         newSpHandle=getCurrentTxnId();
       }
-      msg=new Iv2InitiateTaskMessage(message.getInitiatorHSId(),message.getCoordinatorHSId(),m_repairLogTruncationHandle,message.getTxnId(),message.getTimestamp(),message.isReadOnly(),message.isSinglePartition(),message.getStoredProcedureInvocation(),message.getClientInterfaceHandle(),message.getConnectionId(),message.isForReplay());
+      msg=new Iv2InitiateTaskMessage(message.getInitiatorHSId(),message.getCoordinatorHSId(),m_repairLogTruncationHandle,message.getTxnId(),message.getUniqueId(),message.isReadOnly(),message.isSinglePartition(),message.getStoredProcedureInvocation(),message.getClientInterfaceHandle(),message.getConnectionId(),message.isForReplay());
       msg.setSpHandle(newSpHandle);
       if (SystemProcedureCatalog.listing.get(procedureName) == null || !SystemProcedureCatalog.listing.get(procedureName).getEverysite()) {
         msg.setTxnId(newSpHandle);
-        msg.setTimestamp(timestamp);
+        msg.setUniqueId(uniqueId);
       }
       if (m_isLeader && !msg.isReadOnly() && m_sendToHSIds.size() > 0) {
-        Iv2InitiateTaskMessage replmsg=new Iv2InitiateTaskMessage(m_mailbox.getHSId(),m_mailbox.getHSId(),m_repairLogTruncationHandle,msg.getTxnId(),msg.getTimestamp(),msg.isReadOnly(),msg.isSinglePartition(),msg.getStoredProcedureInvocation(),msg.getClientInterfaceHandle(),msg.getConnectionId(),msg.isForReplay());
+        Iv2InitiateTaskMessage replmsg=new Iv2InitiateTaskMessage(m_mailbox.getHSId(),m_mailbox.getHSId(),m_repairLogTruncationHandle,msg.getTxnId(),msg.getUniqueId(),msg.isReadOnly(),msg.isSinglePartition(),msg.getStoredProcedureInvocation(),msg.getClientInterfaceHandle(),msg.getConnectionId(),msg.isForReplay());
         replmsg.setSpHandle(newSpHandle);
         m_mailbox.send(com.google.common.primitives.Longs.toArray(m_sendToHSIds),replmsg);
         DuplicateCounter counter=new DuplicateCounter(msg.getInitiatorHSId(),msg.getTxnId(),m_replicaHSIds);
@@ -39,7 +40,7 @@
  else {
       setMaxSeenTxnId(msg.getSpHandle());
       newSpHandle=msg.getSpHandle();
-      timestamp=msg.getTimestamp();
+      uniqueId=msg.getUniqueId();
     }
     Iv2Trace.logIv2InitiateTaskMessage(message,m_mailbox.getHSId(),msg.getTxnId(),newSpHandle);
     final SpProcedureTask task=new SpProcedureTask(m_mailbox,procedureName,m_pendingTasks,msg,m_drGateway);
