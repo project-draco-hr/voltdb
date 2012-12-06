@@ -1,0 +1,43 @@
+{
+  JSONObject tableSequenceMap;
+  if (jsonObj.has("exportSequenceNumbers")) {
+    tableSequenceMap=jsonObj.getJSONObject("exportSequenceNumbers");
+  }
+ else {
+    tableSequenceMap=new JSONObject();
+    jsonObj.put("exportSequenceNumbers",tableSequenceMap);
+  }
+  for (  Map.Entry<String,Map<Integer,Pair<Long,Long>>> tableEntry : exportSequenceNumbers.entrySet()) {
+    JSONObject sequenceNumbers;
+    final String tableName=tableEntry.getKey();
+    if (tableSequenceMap.has(tableName)) {
+      sequenceNumbers=tableSequenceMap.getJSONObject(tableName);
+    }
+ else {
+      sequenceNumbers=new JSONObject();
+      tableSequenceMap.put(tableName,sequenceNumbers);
+    }
+    for (    Map.Entry<Integer,Pair<Long,Long>> partitionEntry : tableEntry.getValue().entrySet()) {
+      final Integer partitionId=partitionEntry.getKey();
+      final String partitionIdString=partitionId.toString();
+      final Long ackOffset=partitionEntry.getValue().getFirst();
+      final Long partitionSequenceNumber=partitionEntry.getValue().getSecond();
+      if (sequenceNumbers.has(partitionIdString)) {
+        JSONObject existingEntry=sequenceNumbers.getJSONObject(partitionIdString);
+        Long existingSequenceNumber=existingEntry.getLong("sequenceNumber");
+        if (!existingSequenceNumber.equals(partitionSequenceNumber)) {
+          hostLog.error("Found a mismatch in export sequence numbers while recording snapshot metadata " + " for partition " + partitionId + " the sequence number should be the same at all replicas, but one had "+ existingSequenceNumber+ " and another had "+ partitionSequenceNumber);
+        }
+        existingEntry.put(partitionIdString,Math.max(existingSequenceNumber,partitionSequenceNumber));
+        Long existingAckOffset=existingEntry.getLong("ackOffset");
+        existingEntry.put("ackOffset",Math.max(ackOffset,existingAckOffset));
+      }
+ else {
+        JSONObject newObj=new JSONObject();
+        newObj.put("sequenceNumber",partitionSequenceNumber);
+        newObj.put("ackOffset",ackOffset);
+        sequenceNumbers.put(partitionIdString,newObj);
+      }
+    }
+  }
+}
