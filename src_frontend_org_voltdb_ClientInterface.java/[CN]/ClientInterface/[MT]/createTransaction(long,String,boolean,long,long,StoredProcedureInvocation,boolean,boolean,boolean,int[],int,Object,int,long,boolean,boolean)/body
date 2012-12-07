@@ -1,9 +1,12 @@
 {
   if (m_isIV2Enabled) {
     final ClientInterfaceHandleManager cihm=m_cihm.get(connectionId);
+    boolean t=invocation.getProcName().equals("InsertSP");
+    if (t)     log.info("CI: " + invocation.toString());
     Long initiatorHSId=null;
     boolean isShortCircuitRead=false;
     if (invocation.getType() == ProcedureInvocationType.REPLICATED) {
+      if (t)       log.info("Insert SP Replicated");
       int partitionId;
       if (isSinglePartition) {
         partitionId=partitions[0];
@@ -14,12 +17,13 @@
       Long lastTxnId=m_partitionTxnIds.get(partitionId);
       if (lastTxnId != null) {
         if (!(invocation.getProcName().equalsIgnoreCase("@LoadSinglepartitionTable") || invocation.getProcName().equalsIgnoreCase("@LoadMultipartitionTable")) && invocation.getOriginalTxnId() <= lastTxnId) {
-          hostLog.debug("Dropping duplicate replicated transaction, txnid: " + invocation.getOriginalTxnId() + ", last seen: "+ lastTxnId);
+          hostLog.info("Dropping duplicate replicated transaction " + invocation.getProcName() + ", txnid: "+ invocation.getOriginalTxnId()+ ", last seen: "+ lastTxnId);
           return false;
         }
       }
       m_partitionTxnIds.put(partitionId,invocation.getOriginalTxnId());
     }
+    if (t)     log.info("A1");
     if (isSinglePartition && !isEveryPartition) {
       if (isReadOnly) {
         initiatorHSId=m_localReplicas.get(partitions[0]);
@@ -34,14 +38,19 @@
  else {
       initiatorHSId=m_cartographer.getHSIdForMultiPartitionInitiator();
     }
+    if (t)     log.info("A2");
     if (initiatorHSId == null) {
       hostLog.error("Failed to find master initiator for partition: " + Integer.toString(partitions[0]) + ". Transaction not initiated.");
       return false;
     }
+    if (t)     log.info("A3");
     long handle=cihm.getHandle(isSinglePartition,partitions[0],invocation.getClientHandle(),messageSize,now,invocation.getProcName(),initiatorHSId,isReadOnly,isShortCircuitRead);
+    if (t)     log.info("A4");
     Iv2InitiateTaskMessage workRequest=new Iv2InitiateTaskMessage(m_siteId,initiatorHSId,Iv2InitiateTaskMessage.UNUSED_TRUNC_HANDLE,txnId,timestamp,isReadOnly,isSinglePartition,invocation,handle,connectionId,isForReplay);
+    if (t)     log.info("A5");
     Iv2Trace.logCreateTransaction(workRequest);
     m_mailbox.send(initiatorHSId,workRequest);
+    if (t)     log.info("A6");
     return true;
   }
  else {
