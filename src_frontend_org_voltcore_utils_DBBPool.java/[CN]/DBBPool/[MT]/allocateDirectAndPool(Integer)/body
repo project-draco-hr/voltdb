@@ -1,0 +1,33 @@
+{
+  ConcurrentLinkedQueue<BBContainer> pooledBuffers=m_pooledBuffers.get(capacity);
+  if (pooledBuffers == null) {
+    pooledBuffers=new ConcurrentLinkedQueue<BBContainer>();
+    if (m_pooledBuffers.putIfAbsent(capacity,pooledBuffers) == null) {
+      pooledBuffers=m_pooledBuffers.get(capacity);
+    }
+  }
+  BBContainer cont=pooledBuffers.poll();
+  if (cont == null) {
+    ByteBuffer b=ByteBuffer.allocateDirect(capacity);
+    cont=new BBContainer(b,DBBPool.getBufferAddress(b)){
+      @Override public void discard(){
+        try {
+          DirectMemoryUtils.destroyDirectByteBuffer(b);
+        }
+ catch (        Throwable e) {
+          VoltDB.crashLocalVoltDB("Failed to deallocate direct byte buffer",false,e);
+        }
+      }
+    }
+;
+  }
+  final BBContainer origin=cont;
+  cont=new BBContainer(origin.b,origin.address){
+    @Override public void discard(){
+      m_pooledBuffers.get(b.capacity()).offer(origin);
+    }
+  }
+;
+  cont.b.clear();
+  return cont;
+}
