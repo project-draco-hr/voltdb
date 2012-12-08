@@ -1,0 +1,200 @@
+{
+  String remoteHosts[]=args[0].split(",");
+  final String homeDir=System.getProperty("user.home");
+  final String sshDir=homeDir + File.separator + ".ssh";
+  final String sshConfigPath=sshDir + File.separator + "config";
+  loadAllPrivateKeys(new File(sshDir));
+  OpenSshConfig sshConfig=null;
+  if (new File(sshConfigPath).exists()) {
+    sshConfig=new OpenSshConfig(new File(sshConfigPath));
+  }
+  final String defaultKnownHosts=sshDir + "/known_hosts";
+  if (new File(defaultKnownHosts).exists()) {
+    m_jsch.setKnownHosts(defaultKnownHosts);
+  }
+  for (  String hostString : remoteHosts) {
+    String split[]=hostString.split(":");
+    String host=split[0];
+    RemoteHost rh=new RemoteHost();
+    rh.path=split[1];
+    String user=System.getProperty("user.name");
+    int port=22;
+    File identityFile=null;
+    String configHost=host;
+    if (sshConfig != null) {
+      OpenSshConfig.Host hostConfig=sshConfig.lookup(host);
+      if (hostConfig.getUser() != null) {
+        user=hostConfig.getUser();
+      }
+      if (hostConfig.getPort() != -1) {
+        port=hostConfig.getPort();
+      }
+      if (hostConfig.getIdentityFile() != null) {
+        identityFile=hostConfig.getIdentityFile();
+      }
+      if (hostConfig.getHostName() != null) {
+        configHost=hostConfig.getHostName();
+      }
+    }
+    Session session=null;
+    if (identityFile != null) {
+      JSch jsch=new JSch();
+      jsch.addIdentity(identityFile.getAbsolutePath());
+      session=jsch.getSession(user,configHost,port);
+    }
+ else {
+      session=m_jsch.getSession(user,configHost,port);
+    }
+    rh.session=session;
+    session.setConfig("StrictHostKeyChecking","no");
+    session.setDaemonThread(true);
+    session.connect();
+    final ChannelSftp channel=(ChannelSftp)session.openChannel("sftp");
+    rh.channel=channel;
+    channel.connect();
+    touchActiveTracker(rh);
+    m_hosts.add(rh);
+  }
+  m_partitions=Integer.parseInt(args[1]);
+  for (int i=0; i < m_partitions; i++) {
+    m_rowTxnIds.put(i,new TreeMap<Long,Long>());
+    m_maxPartTxId.put(i,Long.MIN_VALUE);
+    m_checkedUpTo.put(i,0);
+    m_readUpTo.put(i,new AtomicLong(0));
+  }
+  long ttlVerified=0;
+  for (  RemoteHost rh : m_hosts) {
+    boolean existsOrIsDir=true;
+    try {
+      SftpATTRS stat=rh.channel.stat(rh.path);
+      if (!stat.isDir()) {
+        existsOrIsDir=false;
+      }
+    }
+ catch (    SftpException e) {
+      if (e.id == ChannelSftp.SSH_FX_NO_SUCH_FILE) {
+        existsOrIsDir=false;
+      }
+ else {
+        Throwables.propagate(e);
+      }
+    }
+    if (!existsOrIsDir) {
+      rh.channel.mkdir(rh.path);
+    }
+  }
+  Pair<CSVReader,Runnable> csvPair=openNextExportFile();
+  CSVReader csv=csvPair.getFirst();
+  m_clientPath=new File(args[2]);
+  if (!m_clientPath.exists() || !m_clientPath.isDirectory()) {
+    if (!m_clientPath.mkdir()) {
+      throw new IOException("Issue with transaction ID path");
+    }
+  }
+  BufferedReader txnIdReader=openNextClientFile();
+  String[] row;
+  boolean quit=false;
+  boolean more_rows=true;
+  boolean more_txnids=true;
+  int emptyRemovalCycles=0;
+  while (!quit) {
+    markCheckedUpTo();
+    int dcount=0;
+    while ((dcount < 10000 || !more_txnids) && more_rows) {
+      row=csv.readNext();
+      if (row == null) {
+        csvPair.getSecond().run();
+        csvPair=openNextExportFile();
+        if (csvPair == null) {
+          System.out.println("No more export rows");
+          more_rows=false;
+          break;
+        }
+ else {
+          csv=csvPair.getFirst();
+          row=csv.readNext();
+        }
+      }
+      verifyRow(row);
+      dcount++;
+      if (++ttlVerified % VALIDATION_REPORT_INTERVAL == 0) {
+        System.out.println("Verified " + ttlVerified + " rows.");
+      }
+      Integer partition=Integer.parseInt(row[3]);
+      Long rowTxnId=Long.parseLong(row[6]);
+      Long rowId=Long.parseLong(row[7]);
+      Long previous=m_rowTxnIds.get(partition).put(rowTxnId,rowId);
+      if (previous != null) {
+        System.out.println("Duplicate TXN ID in export stream: " + rowTxnId);
+        System.exit(-1);
+      }
+ else {
+      }
+    }
+    System.out.println("\n!_!_! DEBUG !_!_! read " + dcount + " exported records");
+    determineReadUpToCounters();
+    dcount=m_clientOverFlow.size();
+    processClientIdOverFlow();
+    System.out.println("!_!_! DEBUG !_!_! processed " + (dcount - m_clientOverFlow.size()) + " client overflow txid records");
+    System.out.println("!_!_! DEBUG !_!_! overflow size is now " + m_clientOverFlow.size());
+    dcount=0;
+    while ((!reachedReadUpTo() || !more_rows) && more_txnids) {
+      String trace=txnIdReader.readLine();
+      if (trace == null) {
+        txnIdReader=openNextClientFile();
+        if (txnIdReader == null) {
+          System.out.println("No more client txn IDs");
+          more_txnids=false;
+        }
+ else {
+          trace=txnIdReader.readLine();
+        }
+      }
+      if (trace != null && trace.length() > 17) {
+        long rowid=Long.parseLong(trace.substring(0,16));
+        long txid=Long.parseLong(trace.substring(17));
+        if (txid >= 0) {
+          m_clientTxnIds.add(txid);
+          countDownReadUpTo(txid);
+        }
+ else {
+          m_clientTxnIdOrphans.add(rowid);
+        }
+        dcount++;
+      }
+ else       if (trace != null) {
+        System.out.println("WARN read malformed trace " + trace);
+      }
+    }
+    System.out.println("!_!_! DEBUG !_!_! read " + dcount + " client txid records");
+    if (matchClientTxnIds()) {
+      emptyRemovalCycles=0;
+    }
+ else     if (++emptyRemovalCycles >= 10) {
+      System.err.println("ERROR: 10 check cycles failed to match client tx ids with exported tx id -- bailing out");
+      System.exit(1);
+    }
+    printTxCountByPartition();
+    if (!more_rows || !more_txnids) {
+      if (more_rows && !m_clientTxnIds.isEmpty()) {
+        quit=false;
+      }
+ else {
+        quit=true;
+      }
+    }
+  }
+  if (more_rows || more_txnids) {
+    System.out.println("Something wasn't drained");
+    System.out.println("client txns remaining: " + m_clientTxnIds.size());
+    System.out.println("Export rows remaining: ");
+    int total=0;
+    for (int i=0; i < m_partitions; i++) {
+      total+=m_rowTxnIds.get(i).size();
+      System.out.println("\tpartition: " + i + ", size: "+ m_rowTxnIds.get(i).size());
+    }
+    if (total != 0 && m_clientTxnIds.size() != 0) {
+      System.out.println("THIS IS A REAL ERROR?!");
+    }
+  }
+}

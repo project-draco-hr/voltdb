@@ -13,14 +13,36 @@
       poll();
       return;
     }
-    m_decoder.onBlockStart();
-    while (m.getData().hasRemaining()) {
-      int length=m.getData().getInt();
-      byte[] rowdata=new byte[length];
-      m.getData().get(rowdata,0,length);
-      m_decoder.processRow(length,rowdata);
+    final int startPosition=m.getData().position();
+    int backoffQuantity=10 + (int)(10 * ThreadLocalRandom.current().nextDouble());
+    while (true) {
+      m.getData().position(startPosition);
+      try {
+        m_decoder.onBlockStart();
+        while (m.getData().hasRemaining()) {
+          int length=m.getData().getInt();
+          byte[] rowdata=new byte[length];
+          m.getData().get(rowdata,0,length);
+          m_decoder.processRow(length,rowdata);
+        }
+        m_decoder.onBlockCompletion();
+        break;
+      }
+ catch (      RestartBlockException e) {
+        if (e.requestBackoff) {
+          try {
+            Thread.sleep(backoffQuantity);
+          }
+ catch (          InterruptedException e2) {
+            Throwables.propagate(e2);
+          }
+          if (backoffQuantity < 8000) {
+            backoffQuantity+=(backoffQuantity * .5);
+            backoffQuantity+=(backoffQuantity * .5 * ThreadLocalRandom.current().nextDouble());
+          }
+        }
+      }
     }
-    m_decoder.onBlockCompletion();
     pollAndAck(m);
   }
   finally {
