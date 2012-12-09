@@ -6,29 +6,10 @@
   b.getInt();
   int headerLength=b.getInt();
   b.position(b.position() + headerLength);
-  final int rowCount=b.getInt();
-  ByteBuffer chunkBuffer=ByteBuffer.allocateDirect(b.remaining() + 16 + target.getHeaderSize());
-  chunkBuffer.position(target.getHeaderSize());
-  chunkBuffer.mark();
-  final PureJavaCrc32C partitionIdCRC=new PureJavaCrc32C();
-  chunkBuffer.putInt(partitionId);
-  chunkBuffer.reset();
-  byte partitionIdBytes[]=new byte[4];
-  chunkBuffer.get(partitionIdBytes);
-  partitionIdCRC.update(partitionIdBytes);
-  chunkBuffer.putInt((int)partitionIdCRC.getValue());
-  final int crcPosition=chunkBuffer.position();
-  chunkBuffer.position(chunkBuffer.position() + 4);
-  chunkBuffer.put(b);
-  chunkBuffer.putInt(rowCount);
-  chunkBuffer.position(crcPosition + 4);
-  final int crc=DBBPool.getBufferCRC32C(chunkBuffer,chunkBuffer.position(),chunkBuffer.remaining());
-  chunkBuffer.position(crcPosition);
-  chunkBuffer.putInt(crc);
-  chunkBuffer.position(0);
-  target.write(Callables.returning((BBContainer)new BBContainer(chunkBuffer,0){
-    @Override public void discard(){
-    }
-  }
-),null);
+  BBContainer container=DBBPool.allocateDirectWithAddress(b.remaining() + 4);
+  ByteBuffer payload=container.b;
+  payload.putInt(partitionId);
+  payload.put(b);
+  payload.flip();
+  target.write(Callables.returning(container),null);
 }
