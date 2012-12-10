@@ -1,11 +1,32 @@
 {
-  if (m_mb != null) {
-    closeIO();
-    m_outThread.join();
-    VoltDB.instance().getHostMessenger().removeMailbox(m_mb.getHSId());
-    m_mb=null;
+  if (!m_closed.get()) {
+    rejoinLog.trace("Closing stream snapshot target");
+    while (!m_writeFailed.get() && (m_outstandingWorkCount.get() > 0)) {
+      Thread.yield();
+    }
+    clearOutstanding();
+    ByteBuffer buf=ByteBuffer.allocate(1);
+    if (m_writeFailed.get()) {
+      buf.put((byte)StreamSnapshotMessageType.FAILURE.ordinal());
+    }
+ else {
+      buf.put((byte)StreamSnapshotMessageType.END.ordinal());
+    }
+    buf.flip();
+    byte compressedBytes[]=CompressionService.compressBytes(buf.array(),buf.position(),buf.remaining());
+    RejoinDataMessage msg=new RejoinDataMessage(compressedBytes);
+    m_mb.send(m_destHSId,msg);
+    m_bytesSent.addAndGet(compressedBytes.length);
+synchronized (this) {
+      VoltDB.instance().getHostMessenger().removeMailbox(m_mb.getHSId());
+      m_mb=null;
+      m_closed.set(true);
+      assert(m_outstandingWork.size() == 0);
+    }
+    rejoinLog.trace("Closed stream snapshot target");
   }
-  if (m_onCloseHandler != null) {
-    m_onCloseHandler.run();
+  Runnable closeHandle=m_onCloseHandler.get();
+  if (closeHandle != null) {
+    closeHandle.run();
   }
 }

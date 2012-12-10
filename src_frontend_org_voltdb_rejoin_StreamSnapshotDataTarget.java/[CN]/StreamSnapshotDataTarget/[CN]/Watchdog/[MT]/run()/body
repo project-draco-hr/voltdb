@@ -1,0 +1,20 @@
+{
+  if (m_closed.get()) {
+    return;
+  }
+  long bytesWritten=m_bytesSent.get();
+  rejoinLog.info(String.format("While sending rejoin data to site %s, %d bytes have been sent in the past %s seconds.",CoreUtils.hsIdToString(m_destHSId),bytesWritten - m_bytesWrittenSinceConstruction,WATCHDOG_PERIOS_S));
+  long now=System.currentTimeMillis();
+  for (  Entry<Integer,SendWork> e : m_outstandingWork.entrySet()) {
+    SendWork work=e.getValue();
+    if ((now - work.m_ts) > WRITE_TIMEOUT_MS) {
+      rejoinLog.error(String.format("A snapshot write task failed after a timeout (currently %d seconds outstanding).",(now - work.m_ts) / 1000));
+      m_writeFailed.set(true);
+      break;
+    }
+  }
+  if (m_writeFailed.get()) {
+    clearOutstanding();
+  }
+  VoltDB.instance().scheduleWork(new Watchdog(bytesWritten),WATCHDOG_PERIOS_S,-1,TimeUnit.SECONDS);
+}

@@ -8,6 +8,27 @@
   int totalNodesFinished=jsonObj.getInt("finishedHosts");
   String nonce=jsonObj.getString("nonce");
   boolean truncation=jsonObj.getBoolean("isTruncation");
+  String truncReqId=jsonObj.optString("truncReqId");
+  Map<String,Map<Integer,Pair<Long,Long>>> exportSequenceNumbers=null;
+  final JSONObject exportSequenceJSON=jsonObj.getJSONObject("exportSequenceNumbers");
+  final ImmutableMap.Builder<String,Map<Integer,Pair<Long,Long>>> builder=ImmutableMap.builder();
+  @SuppressWarnings("unchecked") final Iterator<String> tableKeys=exportSequenceJSON.keys();
+  while (tableKeys.hasNext()) {
+    final String tableName=tableKeys.next();
+    final JSONObject tableSequenceNumbers=exportSequenceJSON.getJSONObject(tableName);
+    ImmutableMap.Builder<Integer,Pair<Long,Long>> tableBuilder=ImmutableMap.builder();
+    @SuppressWarnings("unchecked") final Iterator<String> partitionKeys=tableSequenceNumbers.keys();
+    while (partitionKeys.hasNext()) {
+      final String partitionString=partitionKeys.next();
+      final Integer partitionId=Integer.valueOf(partitionString);
+      JSONObject sequenceNumbers=tableSequenceNumbers.getJSONObject(partitionString);
+      final Long ackOffset=sequenceNumbers.getLong("ackOffset");
+      final Long sequenceNumber=sequenceNumbers.getLong("sequenceNumber");
+      tableBuilder.put(partitionId,Pair.of(ackOffset,sequenceNumber));
+    }
+    builder.put(tableName,tableBuilder.build());
+  }
+  exportSequenceNumbers=builder.build();
   if (hosts.length() == totalNodesFinished) {
     long partitionTxnIds[]=null;
 synchronized (m_snapshotTxnIdsToPartitionTxnIds) {
@@ -22,7 +43,7 @@ synchronized (m_snapshotTxnIdsToPartitionTxnIds) {
     Iterator<SnapshotCompletionInterest> iter=m_interests.iterator();
     while (iter.hasNext()) {
       SnapshotCompletionInterest interest=iter.next();
-      interest.snapshotCompleted(nonce,txnId,Arrays.copyOf(partitionTxnIds,partitionTxnIds.length),truncation);
+      interest.snapshotCompleted(new SnapshotCompletionEvent(nonce,txnId,Arrays.copyOf(partitionTxnIds,partitionTxnIds.length),truncation,truncReqId,exportSequenceNumbers));
     }
   }
 }
