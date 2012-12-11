@@ -1,0 +1,31 @@
+{
+  TheHashinator.initialize(2);
+  LocalCluster config;
+  final MultiConfigSuiteBuilder builder=new MultiConfigSuiteBuilder(TestExportSnapshotPreservesSequenceNumber.class);
+  VoltProjectBuilder project=new VoltProjectBuilder();
+  project.setSecurityEnabled(true);
+  project.addGroups(GROUPS);
+  project.addUsers(USERS);
+  project.addSchema(TestSQLTypesSuite.class.getResource("sqltypessuite-export-ddl.sql"));
+  project.addSchema(TestSQLTypesSuite.class.getResource("sqltypessuite-nonulls-export-ddl.sql"));
+  Properties props=new Properties();
+  props.putAll(ImmutableMap.<String,String>of("type","csv","batched","false","with-schema","true","nonce","zorag","outdir","/tmp/" + System.getProperty("user.name")));
+  project.addOnServerExport(true,java.util.Arrays.asList(new String[]{"export"}),"file",props);
+  project.setTableAsExportOnly("ALLOW_NULLS");
+  project.setTableAsExportOnly("NO_NULLS");
+  project.addPartitionInfo("NO_NULLS","PKEY");
+  project.addPartitionInfo("ALLOW_NULLS","PKEY");
+  project.addPartitionInfo("WITH_DEFAULTS","PKEY");
+  project.addPartitionInfo("WITH_NULL_DEFAULTS","PKEY");
+  project.addPartitionInfo("EXPRESSIONS_WITH_NULLS","PKEY");
+  project.addPartitionInfo("EXPRESSIONS_NO_NULLS","PKEY");
+  project.addPartitionInfo("JUMBO_ROW","PKEY");
+  project.addProcedures(PROCEDURES);
+  config=new LocalCluster("export-ddl-cluster-rep.jar",2,1,0,BackendTarget.NATIVE_EE_JNI,LocalCluster.FailureState.ALL_RUNNING,true,false,true);
+  boolean compile=config.compile(project);
+  assertTrue(compile);
+  config.setHasLocalServer(false);
+  config.setMaxHeap(256);
+  builder.addServerConfig(config);
+  return builder;
+}

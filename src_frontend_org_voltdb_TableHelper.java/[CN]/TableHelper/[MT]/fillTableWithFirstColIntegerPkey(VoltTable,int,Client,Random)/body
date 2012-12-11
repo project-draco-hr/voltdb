@@ -1,0 +1,23 @@
+{
+  final AtomicInteger outstanding=new AtomicInteger(0);
+  ProcedureCallback callback=new ProcedureCallback(){
+    @Override public void clientCallback(    ClientResponse clientResponse) throws Exception {
+      outstanding.decrementAndGet();
+      assert(clientResponse.getStatus() == ClientResponse.SUCCESS);
+    }
+  }
+;
+  int i=0;
+  while (MiscUtils.getMBRss(client) < mb) {
+    System.out.println("Loading 10000 rows");
+    for (int j=0; j < 10000; j++) {
+      Object[] row=randomRow(t,Integer.MAX_VALUE,rand);
+      row[0]=i++;
+      outstanding.incrementAndGet();
+      client.callProcedure(callback,t.m_name.toUpperCase() + ".insert",row);
+    }
+    while (outstanding.get() > 0) {
+      Thread.yield();
+    }
+  }
+}

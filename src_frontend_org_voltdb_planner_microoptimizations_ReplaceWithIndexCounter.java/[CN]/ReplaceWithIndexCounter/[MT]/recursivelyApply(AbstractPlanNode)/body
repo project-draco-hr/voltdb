@@ -4,29 +4,43 @@
   for (int i=0; i < plan.getChildCount(); i++)   children.add(plan.getChild(i));
   for (  AbstractPlanNode child : children) {
     AbstractPlanNode newChild=recursivelyApply(child);
-    if (!newChild.equals(child)) {
-      child.removeFromGraph();
-      plan.addAndLinkChild(newChild);
+    if (newChild == child) {
+      continue;
     }
+    child.removeFromGraph();
+    plan.addAndLinkChild(newChild);
   }
   if ((plan instanceof AggregatePlanNode) == false)   return plan;
-  if (plan.getChildCount() != 1)   return plan;
-  if (((AggregatePlanNode)plan).isTableCountStar() == false)   return plan;
+  assert(plan.getChildCount() == 1);
+  AggregatePlanNode aggplan=(AggregatePlanNode)plan;
+  if (aggplan.isTableCountStar() == false) {
+    return plan;
+  }
   AbstractPlanNode child=plan.getChild(0);
   if (child instanceof SeqScanPlanNode) {
-    if (((SeqScanPlanNode)child).getPredicate() == null) {
-      return new TableCountPlanNode((SeqScanPlanNode)child,(AggregatePlanNode)plan);
+    if (((SeqScanPlanNode)child).getPredicate() != null) {
+      return plan;
     }
+    return new TableCountPlanNode((AbstractScanPlanNode)child,aggplan);
   }
   if ((child instanceof IndexScanPlanNode) == false)   return plan;
   IndexScanPlanNode isp=(IndexScanPlanNode)child;
-  if (isp.getPredicate() == null && isp.getEndExpression() == null && isp.getSearchKeyExpressions().size() == 0)   return plan;
-  IndexScanPlanNode ispnChild=(IndexScanPlanNode)child;
-  Index idx=ispnChild.getCatalogIndex();
-  if (idx.getCountable() == false)   return plan;
-  if (hasNoPostExpression(ispnChild)) {
-    if (hasValidEndExpr(ispnChild.getEndExpression()) == false)     return plan;
-    return new IndexCountPlanNode(ispnChild,(AggregatePlanNode)plan);
+  if (isp.getPredicate() != null) {
+    return plan;
   }
-  return plan;
+  if (isp.getEndExpression() == null && isp.getSearchKeyExpressions().size() == 0) {
+    return new TableCountPlanNode(isp,aggplan);
+  }
+  if (isp.getSortDirection() == SortDirectionType.DESC) {
+    return plan;
+  }
+  Index idx=isp.getCatalogIndex();
+  if (!idx.getCountable()) {
+    return plan;
+  }
+  IndexCountPlanNode countingPlan=IndexCountPlanNode.createOrNull(isp,aggplan);
+  if (countingPlan == null) {
+    return plan;
+  }
+  return countingPlan;
 }

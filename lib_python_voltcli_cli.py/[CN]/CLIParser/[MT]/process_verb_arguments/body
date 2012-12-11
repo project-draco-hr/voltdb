@@ -1,0 +1,30 @@
+def process_verb_arguments(self, verb, verb_args, verb_opts):
+    '\n        Validate the verb arguments. Check that required arguments are present\n        and populate verb_opts attributes with scalar values or lists (for\n        trailing arguments with max_count > 1).\n        '
+    args = (copy.copy(verb_args) + verb.command_arguments)
+    missing = []
+    iarg = 0
+    nargs = verb.get_argument_count()
+    for arg in verb.iter_arguments():
+        if ((iarg > len(args)) or ((iarg == len(args)) and (arg.min_count > 0))):
+            missing.append((arg.name, arg.help))
+        else:
+            if ((iarg == (nargs - 1)) and (arg.max_count > 1)):
+                value = list(args[iarg:])
+                if (len(value) < arg.min_count):
+                    utility.abort(('A minimum of %d %s arguments are required.' % (arg.min_count, arg.name.upper())))
+                if (len(value) > arg.max_count):
+                    utility.abort(('A maximum of %d %s arguments are allowed.' % (arg.max_count, arg.name.upper())))
+                iarg += len(value)
+            else:
+                value = args[iarg]
+                iarg += 1
+            setattr(verb_opts, arg.name, value)
+    if (iarg < len(args)):
+        utility.abort('Extra arguments were provided:', args[iarg:])
+    if missing:
+        if (len(missing) > 1):
+            plural = 's'
+        else:
+            plural = ''
+        fmt = ('%%-%ds  %%s' % max([len(o) for (o, h) in missing]))
+        self._abort(('Missing required argument%s:' % plural), ((fmt % (o.upper(), h)) for (o, h) in missing))
