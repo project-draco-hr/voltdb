@@ -1,4 +1,8 @@
 {
+  if (!coreList.isEmpty()) {
+    threadsTemp=coreList.size();
+  }
+  final int threads=threadsTemp;
   if (threads < 1) {
     throw new IllegalArgumentException("Must specify > 0 threads");
   }
@@ -9,6 +13,18 @@
     private int threadIndex=0;
     @Override public synchronized Thread newThread(    Runnable r){
       String nameToUse=threads == 1 ? name : name + " - " + threadIndex++;
+      if (!coreList.isEmpty()) {
+        final Runnable original=r;
+        r=new Runnable(){
+          @Override public void run(){
+            Integer core=coreList.poll();
+            System.out.println("Binding computation thread(" + Thread.currentThread() + ") to "+ core);
+            PosixJNAAffinity.INSTANCE.setAffinity(1L << core);
+            original.run();
+          }
+        }
+;
+      }
       Thread t=new Thread(null,r,nameToUse,131072);
       t.setDaemon(true);
       return t;
