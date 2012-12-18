@@ -1,0 +1,37 @@
+{
+  ThreadGroup group=null;
+  if (groupName != null) {
+    group=new ThreadGroup(Thread.currentThread().getThreadGroup(),groupName);
+  }
+  final ThreadGroup finalGroup=group;
+  return new ThreadFactory(){
+    private final AtomicLong m_createdThreadCount=new AtomicLong(0);
+    private final ThreadGroup m_group=finalGroup;
+    @Override public synchronized Thread newThread(    final Runnable r){
+      final String threadName=name + (incrementThreadNames ? " - " + m_createdThreadCount.getAndIncrement() : "");
+      String coreTemp=null;
+      if (coreList != null && !coreList.isEmpty()) {
+        coreTemp=coreList.poll();
+      }
+      final String core=coreTemp;
+      Runnable runnable=new Runnable(){
+        @Override public void run(){
+          if (core != null) {
+            PosixJNAAffinity.INSTANCE.setAffinity(core);
+          }
+          try {
+            r.run();
+          }
+ catch (          Throwable t) {
+            hostLog.error("Exception thrown in thread " + threadName,t);
+          }
+        }
+      }
+;
+      Thread t=new Thread(m_group,runnable,threadName,stackSize);
+      t.setDaemon(true);
+      return t;
+    }
+  }
+;
+}
