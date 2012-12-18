@@ -18,6 +18,14 @@
     }
     socket.socket().setTcpNoDelay(true);
     socket.socket().setPerformancePreferences(0,2,1);
+    ByteBuffer currentTime=ByteBuffer.allocate(8);
+    while (currentTime.hasRemaining()) {
+      socket.read(currentTime);
+    }
+    currentTime.flip();
+    long skew=System.currentTimeMillis() - currentTime.getLong();
+    List<Long> skews=new ArrayList<Long>();
+    skews.add(skew);
     JSONObject jsObj=new JSONObject();
     jsObj.put("type","REQUEST_HOSTID");
     jsObj.put("port",m_internalPort);
@@ -82,6 +90,13 @@
           }
         }
       }
+      currentTime.clear();
+      while (currentTime.hasRemaining()) {
+        hostSocket.read(currentTime);
+      }
+      currentTime.flip();
+      skew=System.currentTimeMillis() - currentTime.getLong();
+      skews.add(skew);
       jsObj=new JSONObject();
       jsObj.put("type","PUBLISH_HOSTID");
       jsObj.put("hostId",m_localHostId);
@@ -97,6 +112,26 @@
       hostIds[ii]=hostId;
       hostSockets[ii]=hostSocket;
       listeningAddresses[ii]=hostAddr;
+    }
+    long maxSkew=Collections.max(skews);
+    long minSkew=Collections.min(skews);
+    long overallSkew=maxSkew - minSkew;
+    if (maxSkew > 0 && minSkew > 0) {
+      overallSkew=maxSkew;
+    }
+ else     if (maxSkew < 0 && minSkew < 0) {
+      overallSkew=Math.abs(minSkew);
+    }
+    if (overallSkew > 100) {
+      VoltDB.crashLocalVoltDB("Clock skew is " + overallSkew + " which is > than the 100 millisecond limit. Make sure NTP is running.",false,null);
+    }
+ else     if (overallSkew > 10) {
+      final String msg="Clock skew is " + overallSkew + " which is high. Ideally it should be sub-millisecond. Make sure NTP is running.";
+      hostLog.warn(msg);
+      consoleLog.warn(msg);
+    }
+ else {
+      hostLog.info("Clock skew to across all nodes in the cluster is " + overallSkew);
     }
     ByteBuffer joinCompleteBuffer=ByteBuffer.allocate(1);
     while (joinCompleteBuffer.hasRemaining()) {
