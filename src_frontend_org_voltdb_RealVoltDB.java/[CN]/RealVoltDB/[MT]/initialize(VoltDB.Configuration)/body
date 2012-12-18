@@ -46,6 +46,7 @@ synchronized (m_startAndStopLock) {
     m_hostIdWithStartupCatalog=0;
     m_pathToStartupCatalog=m_config.m_pathToCatalog;
     m_replicationActive=false;
+    m_heartbeatThread=null;
     m_localSites=new COWMap<Long,ExecutionSite>();
     m_siteThreads=new HashMap<Long,Thread>();
     m_runners=new ArrayList<ExecutionSiteRunner>();
@@ -79,7 +80,8 @@ synchronized (m_startAndStopLock) {
     if (!m_faultManager.testPartitionDetectionDirectory(m_catalogContext.cluster.getFaultsnapshots().get("CLUSTER_PARTITION"))) {
       VoltDB.crashLocalVoltDB("Unable to create partition detection snapshot directory at" + m_catalogContext.cluster.getFaultsnapshots().get("CLUSTER_PARTITION"),false,null);
     }
-    m_periodicWorkThread=CoreUtils.getScheduledThreadPoolExecutor("Periodic Work",1,1024 * 128);
+    m_periodicWorkThread=CoreUtils.getScheduledThreadPoolExecutor("Periodic Work",1,CoreUtils.SMALL_STACK_SIZE);
+    m_periodicPriorityWorkThread=CoreUtils.getScheduledThreadPoolExecutor("Periodic Priority Work",1,CoreUtils.SMALL_STACK_SIZE);
     m_licenseApi=MiscUtils.licenseApiFactory(m_config.m_pathToLicense);
     if (m_licenseApi == null) {
       VoltDB.crashLocalVoltDB("Failed to initialize license verifier. " + "See previous log message for details.",false,null);
@@ -379,9 +381,12 @@ catch (    ExecutionException e) {
       }
       VoltDB.crashGlobalVoltDB("Mismatch between configured number of partitions (" + m_configuredNumberOfPartitions + ") and actual ("+ m_siteTracker.m_numberOfPartitions+ ")",true,null);
     }
-    heartbeatThread=new HeartbeatThread(m_clientInterfaces);
-    heartbeatThread.start();
+    if (!isIV2Enabled()) {
+      m_heartbeatThread=new HeartbeatThread(m_clientInterfaces);
+      m_heartbeatThread.start();
+    }
     schedulePeriodicWorks();
+    m_clientInterfaces.get(0).schedulePeriodicWorks();
     logDebuggingInfo(m_config.m_adminPort,m_config.m_httpPort,m_httpPortExtraLogMessage,m_jsonEnabled);
     if (clusterConfig.getReplicationFactor() == 0) {
       hostLog.warn("Running without redundancy (k=0) is not recommended for production use.");
