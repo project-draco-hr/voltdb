@@ -1,0 +1,22 @@
+{
+  assert(m_rejoinState == kStateRejoining);
+  if (replayComplete == null) {
+    throw new RuntimeException("Null Replay Complete Action.");
+  }
+  for (  Map.Entry<String,Map<Integer,Pair<Long,Long>>> tableEntry : exportSequenceNumbers.entrySet()) {
+    final Table catalogTable=m_context.tables.get(tableEntry.getKey());
+    if (catalogTable == null) {
+      VoltDB.crashLocalVoltDB("Unable to find catalog entry for table named " + tableEntry.getKey(),true,null);
+    }
+    Pair<Long,Long> sequenceNumbers=tableEntry.getValue().get(m_partitionId);
+    if (sequenceNumbers == null) {
+      VoltDB.crashLocalVoltDB("Could not find export sequence numbers for partition " + m_partitionId + " table "+ tableEntry.getKey()+ " have "+ exportSequenceNumbers,false,null);
+    }
+    exportAction(true,sequenceNumbers.getFirst().intValue(),sequenceNumbers.getSecond(),m_partitionId,catalogTable.getSignature());
+  }
+  m_rejoinState=kStateReplayingRejoin;
+  m_replayCompletionAction=replayComplete;
+  if (m_rejoinTaskLog != null) {
+    m_rejoinTaskLog.setEarliestTxnId(m_replayCompletionAction.getSnapshotTxnId());
+  }
+}

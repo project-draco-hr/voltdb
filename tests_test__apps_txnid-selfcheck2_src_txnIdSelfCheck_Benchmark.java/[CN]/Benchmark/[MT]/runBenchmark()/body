@@ -1,0 +1,38 @@
+{
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println(" Setup & Initialization");
+  System.out.println(HORIZONTAL_RULE);
+  final int cidCount=128;
+  final long[] lastRid=new long[cidCount];
+  for (int i=0; i < lastRid.length; i++) {
+    lastRid[i]=0;
+  }
+  connect();
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println("Starting Benchmark");
+  System.out.println(HORIZONTAL_RULE);
+  benchmarkStartTS=System.currentTimeMillis();
+  schedulePeriodicStats();
+  System.out.println("\nRunning benchmark...");
+  List<ClientThread> clientThreads=new ArrayList<ClientThread>();
+  for (byte cid=(byte)config.threadoffset; cid < config.threadoffset + config.threads; cid++) {
+    ClientThread clientThread=new ClientThread(cid,c,client,processor);
+    clientThread.start();
+    clientThreads.add(clientThread);
+  }
+  final long benchmarkEndTime=System.currentTimeMillis() + (1000l * config.duration);
+  while (benchmarkEndTime > System.currentTimeMillis()) {
+    Thread.yield();
+  }
+  for (  ClientThread clientThread : clientThreads) {
+    clientThread.shutdown();
+  }
+  for (  ClientThread clientThread : clientThreads) {
+    clientThread.join();
+  }
+  timer.cancel();
+  shutdown.set(true);
+  es.shutdownNow();
+  client.drain();
+  client.close();
+}

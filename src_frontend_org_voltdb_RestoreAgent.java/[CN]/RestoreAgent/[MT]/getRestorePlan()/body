@@ -3,21 +3,22 @@
   if (m_action == START_ACTION.CREATE) {
     return null;
   }
-  TreeMap<Long,Set<SnapshotInfo>> snapshotFragments=new TreeMap<Long,Set<SnapshotInfo>>();
+  Map<String,Set<SnapshotInfo>> snapshotFragments=new HashMap<String,Set<SnapshotInfo>>();
   Long clStartTxnId=deserializeRestoreInformation(children,snapshotFragments);
   if (clStartTxnId != null && clStartTxnId == Long.MIN_VALUE) {
     snapshotFragments.clear();
   }
   LOG.debug("There are " + snapshotFragments.size() + " restore candidate snapshots available in the cluster");
-  HashMap<Long,Map<String,Set<Integer>>> snapshotTablePartitions=new HashMap<Long,Map<String,Set<Integer>>>();
-  Iterator<Entry<Long,Set<SnapshotInfo>>> it=snapshotFragments.entrySet().iterator();
+  HashMap<String,Map<String,Set<Integer>>> snapshotTablePartitions=new HashMap<String,Map<String,Set<Integer>>>();
+  Iterator<Entry<String,Set<SnapshotInfo>>> it=snapshotFragments.entrySet().iterator();
+  SnapshotInfo newest=null;
   while (it.hasNext()) {
-    Entry<Long,Set<SnapshotInfo>> e=it.next();
-    long txnId=e.getKey();
-    Map<String,Set<Integer>> tablePartitions=snapshotTablePartitions.get(txnId);
+    Entry<String,Set<SnapshotInfo>> e=it.next();
+    String nonce=e.getKey();
+    Map<String,Set<Integer>> tablePartitions=snapshotTablePartitions.get(nonce);
     if (tablePartitions == null) {
       tablePartitions=new HashMap<String,Set<Integer>>();
-      snapshotTablePartitions.put(txnId,tablePartitions);
+      snapshotTablePartitions.put(nonce,tablePartitions);
     }
     int totalPartitions=-1;
     boolean inconsistent=false;
@@ -52,6 +53,12 @@
     if (inconsistent) {
       it.remove();
     }
+ else {
+      SnapshotInfo current=consolidateSnapshotInfos(fragments);
+      if (newest == null || current.isNewerThan(newest)) {
+        newest=current;
+      }
+    }
   }
   if (clStartTxnId != null && clStartTxnId != Long.MIN_VALUE && snapshotFragments.size() == 0) {
     throw new RuntimeException("No viable snapshots to restore");
@@ -60,6 +67,6 @@
     return null;
   }
  else {
-    return snapshotFragments.lastEntry().getValue();
+    return newest;
   }
 }

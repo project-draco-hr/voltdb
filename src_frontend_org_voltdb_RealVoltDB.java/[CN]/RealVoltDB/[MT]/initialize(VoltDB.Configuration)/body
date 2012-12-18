@@ -46,6 +46,7 @@ synchronized (m_startAndStopLock) {
     m_hostIdWithStartupCatalog=0;
     m_pathToStartupCatalog=m_config.m_pathToCatalog;
     m_replicationActive=false;
+    m_heartbeatThread=null;
     m_localSites=new COWMap<Long,ExecutionSite>();
     m_siteThreads=new HashMap<Long,Thread>();
     m_runners=new ArrayList<ExecutionSiteRunner>();
@@ -79,7 +80,8 @@ synchronized (m_startAndStopLock) {
     if (!m_faultManager.testPartitionDetectionDirectory(m_catalogContext.cluster.getFaultsnapshots().get("CLUSTER_PARTITION"))) {
       VoltDB.crashLocalVoltDB("Unable to create partition detection snapshot directory at" + m_catalogContext.cluster.getFaultsnapshots().get("CLUSTER_PARTITION"),false,null);
     }
-    m_periodicWorkThread=CoreUtils.getScheduledThreadPoolExecutor("Periodic Work",1,1024 * 128);
+    m_periodicWorkThread=CoreUtils.getScheduledThreadPoolExecutor("Periodic Work",1,CoreUtils.SMALL_STACK_SIZE);
+    m_periodicPriorityWorkThread=CoreUtils.getScheduledThreadPoolExecutor("Periodic Priority Work",1,CoreUtils.SMALL_STACK_SIZE);
     m_licenseApi=MiscUtils.licenseApiFactory(m_config.m_pathToLicense);
     if (m_licenseApi == null) {
       VoltDB.crashLocalVoltDB("Failed to initialize license verifier. " + "See previous log message for details.",false,null);
@@ -96,6 +98,9 @@ synchronized (m_startAndStopLock) {
         m_cartographer=new Cartographer(m_messenger.getZK(),iv2config.getPartitionCount());
         if (isRejoin) {
           List<Integer> partitionsToReplace=m_cartographer.getIv2PartitionsToReplace(topo);
+          if (partitionsToReplace.size() == 0) {
+            VoltDB.crashLocalVoltDB("The VoltDB cluster already has enough nodes to satisfy " + "the requested k-safety factor of " + iv2config.getReplicationFactor() + ".\n"+ "No more nodes can join.",false,null);
+          }
           m_iv2InitiatorStartingTxnIds=new long[partitionsToReplace.size()];
           for (int ii=0; ii < partitionsToReplace.size(); ii++) {
             m_iv2InitiatorStartingTxnIds[ii]=TxnEgo.makeZero(partitionsToReplace.get(ii)).getTxnId();
@@ -143,7 +148,12 @@ synchronized (m_startAndStopLock) {
         hostLog.info("Set recovering site count to " + hsidsToRejoin.size());
         m_rejoinCoordinator=new SequentialRejoinCoordinator(m_messenger,hsidsToRejoin,m_catalogContext.cluster.getVoltroot(),m_config.m_startAction == START_ACTION.LIVE_REJOIN);
         m_messenger.registerMailbox(m_rejoinCoordinator);
-        hostLog.info("Using iv2 community rejoin");
+        if (m_config.m_startAction == START_ACTION.LIVE_REJOIN) {
+          hostLog.info("Using live rejoin.");
+        }
+ else {
+          hostLog.info("Using blocking rejoin.");
+        }
       }
  else       if (isRejoin && m_config.m_startAction == START_ACTION.LIVE_REJOIN) {
         SnapshotSaveAPI.recoveringSiteCount.set(siteMailboxes.size());
@@ -371,9 +381,12 @@ catch (    ExecutionException e) {
       }
       VoltDB.crashGlobalVoltDB("Mismatch between configured number of partitions (" + m_configuredNumberOfPartitions + ") and actual ("+ m_siteTracker.m_numberOfPartitions+ ")",true,null);
     }
-    heartbeatThread=new HeartbeatThread(m_clientInterfaces);
-    heartbeatThread.start();
+    if (!isIV2Enabled()) {
+      m_heartbeatThread=new HeartbeatThread(m_clientInterfaces);
+      m_heartbeatThread.start();
+    }
     schedulePeriodicWorks();
+    m_clientInterfaces.get(0).schedulePeriodicWorks();
     logDebuggingInfo(m_config.m_adminPort,m_config.m_httpPort,m_httpPortExtraLogMessage,m_jsonEnabled);
     if (clusterConfig.getReplicationFactor() == 0) {
       hostLog.warn("Running without redundancy (k=0) is not recommended for production use.");
