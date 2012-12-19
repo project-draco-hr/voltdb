@@ -3,6 +3,7 @@
   boolean sequenceForCommandLog=(m_isLeader && message instanceof TransactionInfoBaseMessage && (((TransactionInfoBaseMessage)message).isForReplay()));
   boolean sequenceForDR=m_isLeader && ((message instanceof TransactionInfoBaseMessage && ((TransactionInfoBaseMessage)message).isForDR()));
   boolean sequenceForSentinel=m_isLeader && (message instanceof MultiPartitionParticipantMessage);
+  boolean sequenceForReplay=sequenceForCommandLog || sequenceForSentinel || sequenceForDR;
   assert(!(sequenceForCommandLog && sequenceForDR));
   if (sequenceForCommandLog || sequenceForSentinel) {
     sequenceWithTxnId=((TransactionInfoBaseMessage)message).getTxnId();
@@ -10,17 +11,16 @@
  else   if (sequenceForDR) {
     sequenceWithTxnId=((TransactionInfoBaseMessage)message).getOriginalTxnId();
   }
-  if (sequenceWithTxnId != Long.MIN_VALUE) {
+  if (sequenceForReplay) {
     if (!m_replaySequencer.offer(sequenceWithTxnId,(TransactionInfoBaseMessage)message)) {
       deliver2(message);
+    }
+ else     if (m_replaySequencer.isMPIEOLReached()) {
+      drainReplaySequencer();
     }
  else {
       deliverReadyTxns();
     }
-  }
- else   if (message instanceof Iv2EndOfLogMessage) {
-    m_replaySequencer.setEOLReached();
-    deliverReadyTxns();
   }
  else {
     deliver2(message);
