@@ -1,0 +1,25 @@
+{
+  byte[] data=new byte[rowSize];
+  r.nextBytes(data);
+  try {
+    long currentRowCount=getRowCount();
+    while ((currentRowCount < targetCount) && (m_shouldContinue.get())) {
+      CountDownLatch latch=new CountDownLatch(25);
+      for (int i=0; i < 25; i++) {
+        long id=Math.abs(r.nextLong());
+        client.callProcedure(new InsertCallback(latch),tableName.toUpperCase() + ".insert",id,data);
+      }
+      latch.await(10,TimeUnit.SECONDS);
+      long nextRowCount=getRowCount();
+      if (nextRowCount == currentRowCount) {
+        Thread.sleep(1000);
+      }
+      currentRowCount=nextRowCount;
+    }
+  }
+ catch (  Exception e) {
+    System.err.println("BigTableLoader failed a procedure call for table " + tableName + " and will now die.");
+    e.printStackTrace();
+    return;
+  }
+}
