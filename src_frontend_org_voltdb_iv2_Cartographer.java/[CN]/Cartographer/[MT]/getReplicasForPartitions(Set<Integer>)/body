@@ -1,0 +1,28 @@
+{
+  Map<Integer,List<Long>> retval=new HashMap<Integer,List<Long>>();
+  List<Pair<Integer,ZKUtil.ChildrenCallback>> callbacks=new ArrayList<Pair<Integer,ZKUtil.ChildrenCallback>>();
+  for (  Integer partition : partitions) {
+    String zkpath=LeaderElector.electionDirForPartition(partition);
+    ZKUtil.ChildrenCallback cb=new ZKUtil.ChildrenCallback();
+    callbacks.add(Pair.of(partition,cb));
+    m_zk.getChildren(zkpath,false,cb,null);
+  }
+  for (  Pair<Integer,ZKUtil.ChildrenCallback> p : callbacks) {
+    final Integer partition=p.getFirst();
+    try {
+      List<String> children=p.getSecond().getChildren();
+      List<Long> sites=new ArrayList<Long>();
+      for (      String child : children) {
+        sites.add(Long.valueOf(child.split("_")[0]));
+      }
+      retval.put(partition,sites);
+    }
+ catch (    KeeperException ke) {
+      org.voltdb.VoltDB.crashLocalVoltDB("KeeperException getting replicas for partition: " + partition,true,ke);
+    }
+catch (    InterruptedException ie) {
+      org.voltdb.VoltDB.crashLocalVoltDB("InterruptedException getting replicas for partition: " + partition,true,ie);
+    }
+  }
+  return retval;
+}
