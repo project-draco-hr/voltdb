@@ -1,17 +1,8 @@
 {
-  byte[] catalogBytes=null;
-  int version=0;
-  long catalogUniqueId=0;
-  long catalogTxnId=0;
+  CatalogAndIds catalogStuff=null;
   do {
     try {
-      ByteBuffer versionAndBytes=ByteBuffer.wrap(m_rvdb.getHostMessenger().getZK().getData(VoltZK.catalogbytes,false,null));
-      version=versionAndBytes.getInt();
-      catalogTxnId=versionAndBytes.getLong();
-      catalogUniqueId=versionAndBytes.getLong();
-      catalogBytes=new byte[versionAndBytes.remaining()];
-      versionAndBytes.get(catalogBytes);
-      versionAndBytes=null;
+      catalogStuff=CatalogUtil.getCatalogFromZK(m_rvdb.getHostMessenger().getZK());
     }
  catch (    org.apache.zookeeper_voltpatches.KeeperException.NoNodeException e) {
     }
@@ -19,9 +10,9 @@ catch (    Exception e) {
       VoltDB.crashLocalVoltDB("System was interrupted while waiting for a catalog.",false,null);
     }
   }
- while (catalogBytes == null);
+ while (catalogStuff == null);
   try {
-    m_rvdb.m_serializedCatalog=CatalogUtil.loadCatalogFromJar(catalogBytes,hostLog);
+    m_rvdb.m_serializedCatalog=CatalogUtil.loadCatalogFromJar(catalogStuff.bytes,hostLog);
   }
  catch (  IOException e) {
     VoltDB.crashLocalVoltDB("Unable to load catalog: " + e.getMessage(),false,null);
@@ -38,13 +29,8 @@ catch (    Exception e) {
     System.exit(-1);
   }
   try {
-    ZooKeeper zk=m_rvdb.getHostMessenger().getZK();
-    zk.create(VoltZK.initial_catalog_txnid,String.valueOf(catalogTxnId).getBytes("UTF-8"),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT,new ZKUtil.StringCallback(),null);
-    ZKUtil.ByteArrayCallback cb=new ZKUtil.ByteArrayCallback();
-    zk.getData(VoltZK.initial_catalog_txnid,false,cb,null);
-    catalogTxnId=Long.valueOf(new String(cb.getData(),"UTF-8"));
     m_rvdb.m_serializedCatalog=catalog.serialize();
-    m_rvdb.m_catalogContext=new CatalogContext(catalogTxnId,catalogUniqueId,catalog,catalogBytes,m_rvdb.m_depCRC,version,-1);
+    m_rvdb.m_catalogContext=new CatalogContext(catalogStuff.txnId,catalogStuff.uniqueId,catalog,catalogStuff.bytes,m_rvdb.m_depCRC,catalogStuff.version,-1);
   }
  catch (  Exception e) {
     VoltDB.crashLocalVoltDB("Error agreeing on starting catalog version",false,e);
