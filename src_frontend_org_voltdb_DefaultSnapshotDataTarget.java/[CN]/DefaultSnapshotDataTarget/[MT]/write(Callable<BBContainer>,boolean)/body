@@ -15,12 +15,14 @@
     return null;
   }
   m_outstandingWriteTasks.incrementAndGet();
-  Future<byte[]> compressionTask=null;
+  Future<BBContainer> compressionTask=null;
   if (prependLength) {
-    tupleData.b.position(tupleData.b.position() + 12);
-    compressionTask=CompressionService.compressBufferAsync(tupleData.b);
+    BBContainer cont=DBBPool.allocateDirectAndPool(CompressionService.maxCompressedLength(SnapshotSiteProcessor.m_snapshotBufferLength));
+    tupleData.b.position(tupleData.b.position() + 4);
+    cont.b.position(12);
+    compressionTask=CompressionService.compressAndCRC32cBufferAsync(tupleData.b,cont);
   }
-  final Future<byte[]> compressionTaskFinal=compressionTask;
+  final Future<BBContainer> compressionTaskFinal=compressionTask;
   ListenableFuture<?> writeTask=m_es.submit(new Callable<Object>(){
     @Override public Object call() throws Exception {
       try {
@@ -37,19 +39,26 @@
         }
         int totalWritten=0;
         if (prependLength) {
-          final ByteBuffer payloadBuffer=ByteBuffer.wrap(compressionTaskFinal.get());
-          ByteBuffer lengthPrefix=ByteBuffer.allocate(16);
-          m_bytesAllowedBeforeSync.acquire(payloadBuffer.remaining() + 16);
-          lengthPrefix.putInt(payloadBuffer.remaining());
-          lengthPrefix.putInt(tupleData.b.getInt(0));
-          lengthPrefix.putInt(tupleData.b.getInt(4));
-          lengthPrefix.putInt(tupleData.b.getInt(8));
-          lengthPrefix.flip();
-          while (lengthPrefix.hasRemaining()) {
-            totalWritten+=m_channel.write(lengthPrefix);
+          BBContainer payloadContainer=compressionTaskFinal.get();
+          try {
+            final ByteBuffer payloadBuffer=payloadContainer.b;
+            payloadBuffer.position(0);
+            ByteBuffer lengthPrefix=ByteBuffer.allocate(12);
+            m_bytesAllowedBeforeSync.acquire(payloadBuffer.remaining());
+            lengthPrefix.putInt(payloadBuffer.remaining() - 16);
+            lengthPrefix.putInt(tupleData.b.getInt(0));
+            PureJavaCrc32C crc=new PureJavaCrc32C();
+            crc.update(lengthPrefix.array(),0,8);
+            lengthPrefix.putInt((int)crc.getValue());
+            lengthPrefix.flip();
+            payloadBuffer.put(lengthPrefix);
+            payloadBuffer.position(0);
+            while (payloadBuffer.hasRemaining()) {
+              totalWritten+=m_channel.write(payloadBuffer);
+            }
           }
-          while (payloadBuffer.hasRemaining()) {
-            totalWritten+=m_channel.write(payloadBuffer);
+  finally {
+            payloadContainer.discard();
           }
         }
  else {
@@ -67,15 +76,19 @@
         throw e;
       }
  finally {
-        tupleData.discard();
-        m_outstandingWriteTasksLock.lock();
         try {
-          if (m_outstandingWriteTasks.decrementAndGet() == 0) {
-            m_noMoreOutstandingWriteTasksCondition.signalAll();
-          }
+          tupleData.discard();
         }
   finally {
-          m_outstandingWriteTasksLock.unlock();
+          m_outstandingWriteTasksLock.lock();
+          try {
+            if (m_outstandingWriteTasks.decrementAndGet() == 0) {
+              m_noMoreOutstandingWriteTasksCondition.signalAll();
+            }
+          }
+  finally {
+            m_outstandingWriteTasksLock.unlock();
+          }
         }
       }
       return null;

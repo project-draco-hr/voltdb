@@ -1,0 +1,69 @@
+{
+  StringBuffer sb=new StringBuffer();
+  int columnCount=this.getColumnCount();
+  int[] padding=new int[columnCount];
+  String[] fmt=new String[columnCount];
+  for (int i=0; i < columnCount; i++) {
+    padding[i]=this.getColumnName(i).length();
+  }
+  this.resetRowPosition();
+  while (this.advanceRow()) {
+    for (int i=0; i < columnCount; i++) {
+      Object v=this.get(i,this.getColumnType(i));
+      if (this.wasNull()) {
+        v="NULL";
+      }
+      int len=0;
+      if (this.getColumnType(i) == VoltType.VARBINARY && !this.wasNull()) {
+        len=((byte[])v).length * 2;
+      }
+ else {
+        len=v.toString().length();
+      }
+      if (padding[i] < len) {
+        padding[i]=len;
+      }
+    }
+  }
+  for (int i=0; i < columnCount; i++) {
+    padding[i]+=1;
+    fmt[i]="%1$" + ((this.getColumnType(i) == VoltType.STRING || this.getColumnType(i) == VoltType.TIMESTAMP || this.getColumnType(i) == VoltType.VARBINARY) ? "-" : "") + padding[i]+ "s";
+  }
+  for (int i=0; i < columnCount; i++) {
+    sb.append(String.format("%1$-" + padding[i] + "s",this.getColumnName(i)));
+    if (i < columnCount - 1) {
+      sb.append(" ");
+    }
+  }
+  sb.append("\n");
+  for (int i=0; i < columnCount; i++) {
+    char[] underline_array=new char[padding[i]];
+    Arrays.fill(underline_array,'-');
+    sb.append(new String(underline_array));
+    if (i < columnCount - 1) {
+      sb.append(" ");
+    }
+  }
+  sb.append("\n");
+  this.resetRowPosition();
+  while (this.advanceRow()) {
+    for (int i=0; i < columnCount; i++) {
+      Object value=this.get(i,this.getColumnType(i));
+      if (this.wasNull()) {
+        value="NULL";
+      }
+ else       if (this.getColumnType(i) == VoltType.VARBINARY) {
+        value=Encoder.hexEncode((byte[])value);
+      }
+ else {
+        value=value.toString();
+      }
+      sb.append(String.format(fmt[i],value));
+      if (i < columnCount - 1) {
+        sb.append(" ");
+      }
+    }
+    sb.append("\n");
+  }
+  return sb.toString();
+}

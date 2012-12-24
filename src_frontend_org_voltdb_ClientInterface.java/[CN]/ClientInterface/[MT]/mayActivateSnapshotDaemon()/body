@@ -1,16 +1,21 @@
 {
   SnapshotSchedule schedule=m_catalogContext.get().database.getSnapshotschedule().get("default");
   if (VoltDB.instance().getSiteTracker().isFirstHost() && schedule != null && schedule.getEnabled()) {
-    Future<Void> future=m_snapshotDaemon.makeActive(schedule);
-    try {
-      future.get();
+    final ListenableFuture<Void> future=m_snapshotDaemon.makeActive(schedule);
+    future.addListener(new Runnable(){
+      @Override public void run(){
+        try {
+          future.get();
+        }
+ catch (        InterruptedException e) {
+          VoltDB.crashLocalVoltDB("Failed to make SnapshotDaemon active",false,e);
+        }
+catch (        ExecutionException e) {
+          VoltDB.crashLocalVoltDB("Failed to make SnapshotDaemon active",false,e);
+        }
+      }
     }
- catch (    InterruptedException e) {
-      throw new RuntimeException(e);
-    }
-catch (    ExecutionException e) {
-      throw new RuntimeException(e.getCause());
-    }
+,MoreExecutors.sameThreadExecutor());
   }
  else {
     m_snapshotDaemon.makeInactive();
