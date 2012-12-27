@@ -11,7 +11,7 @@ synchronized (SnapshotSiteProcessor.m_snapshotCreateLock) {
       SnapshotSiteProcessor.populateExportSequenceNumbersForExecutionSite(context);
       SnapshotSiteProcessor.m_snapshotCreateSetupPermit.acquire();
       if (VoltDB.instance().isIV2Enabled()) {
-        SnapshotSiteProcessor.m_partitionLastSeenTransactionIds.add(partitionTxnId);
+        SnapshotSiteProcessor.m_partitionLastSeenTransactionIds.put(TxnEgo.getPartitionId(partitionTxnId),partitionTxnId);
       }
     }
  catch (    InterruptedException e) {
@@ -19,23 +19,18 @@ synchronized (SnapshotSiteProcessor.m_snapshotCreateLock) {
       return result;
     }
     if (SnapshotSiteProcessor.m_snapshotCreateSetupPermit.availablePermits() == 0) {
-      List<Long> partitionTransactionIds=new ArrayList<Long>();
+      Map<Integer,Long> partitionTransactionIds=new HashMap<Integer,Long>();
       if (VoltDB.instance().isIV2Enabled()) {
         partitionTransactionIds=SnapshotSiteProcessor.m_partitionLastSeenTransactionIds;
-        SnapshotSiteProcessor.m_partitionLastSeenTransactionIds=new ArrayList<Long>();
-        partitionTransactionIds.add(multiPartTxnId);
+        SnapshotSiteProcessor.m_partitionLastSeenTransactionIds=new HashMap<Integer,Long>();
+        partitionTransactionIds.put(TxnEgo.getPartitionId(multiPartTxnId),multiPartTxnId);
         for (        long txnId : legacyPerPartitionTxnIds) {
           final int legacyPartition=TxnEgo.getPartitionId(txnId);
-          boolean isDup=false;
-          for (          long existingId : partitionTransactionIds) {
-            final int existingPartition=TxnEgo.getPartitionId(existingId);
-            if (existingPartition == legacyPartition) {
-              HOST_LOG.warn("While saving a snapshot and propagating legacy " + "transaction ids found an id that matches currently active partition" + existingPartition);
-              isDup=true;
-            }
+          if (partitionTransactionIds.containsKey(legacyPartition)) {
+            HOST_LOG.warn("While saving a snapshot and propagating legacy " + "transaction ids found an id that matches currently active partition" + partitionTransactionIds.get(legacyPartition));
           }
-          if (!isDup) {
-            partitionTransactionIds.add(txnId);
+ else {
+            partitionTransactionIds.put(legacyPartition,txnId);
           }
         }
       }

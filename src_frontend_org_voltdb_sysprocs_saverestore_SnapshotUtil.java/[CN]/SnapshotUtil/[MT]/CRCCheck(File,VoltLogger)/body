@@ -4,7 +4,8 @@
     final BufferedInputStream bis=new BufferedInputStream(fis);
     ByteBuffer crcBuffer=ByteBuffer.allocate(4);
     if (4 != bis.read(crcBuffer.array())) {
-      throw new EOFException("EOF while attempting to read CRC from snapshot digest " + f + " on host "+ CoreUtils.getHostnameOrAddress());
+      logger.warn("EOF while attempting to read CRC from snapshot digest " + f + " on host "+ CoreUtils.getHostnameOrAddress());
+      return null;
     }
     final int crc=crcBuffer.getInt();
     final InputStreamReader isr=new InputStreamReader(bis,"UTF-8");
@@ -33,7 +34,8 @@
       tableListCRC.update("\n".getBytes("UTF-8"));
       final int calculatedValue=(int)tableListCRC.getValue();
       if (crc != calculatedValue) {
-        throw new IOException("CRC of snapshot digest did not match digest contents");
+        logger.warn("CRC of snapshot digest " + f + " did not match digest contents");
+        return null;
       }
       String tableNames[]=tableList.split(",");
       long txnId=Long.valueOf(tableNames[0]);
@@ -46,7 +48,8 @@
         }
       }
  catch (      JSONException e) {
-        throw new IOException(e);
+        logger.warn("Exception parsing JSON of digest " + f,e);
+        return null;
       }
       return obj;
     }
@@ -57,12 +60,17 @@
       tableListCRC.update(tableListBytes);
       final int calculatedValue=(int)tableListCRC.getValue();
       if (crc != calculatedValue) {
-        throw new IOException("CRC of snapshot digest did not match digest contents");
+        logger.warn("CRC of snapshot digest " + f + " did not match digest contents");
+        return null;
       }
       return obj;
     }
   }
-  finally {
+ catch (  Exception e) {
+    logger.warn("Exception while parsing snapshot digest " + f,e);
+    return null;
+  }
+ finally {
     try {
       if (fis != null)       fis.close();
     }
