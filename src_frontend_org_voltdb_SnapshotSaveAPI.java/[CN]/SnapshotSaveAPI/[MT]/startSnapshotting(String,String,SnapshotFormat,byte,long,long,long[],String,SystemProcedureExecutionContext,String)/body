@@ -28,10 +28,12 @@ synchronized (SnapshotSiteProcessor.m_snapshotCreateLock) {
     }
 );
     if (SnapshotSiteProcessor.m_snapshotCreateSetupBarrier == null) {
+      SnapshotSiteProcessor.m_snapshotCreateFinishBarrier=new CyclicBarrier(numLocalSites);
       SnapshotSiteProcessor.m_snapshotCreateSetupBarrier=new CyclicBarrier(numLocalSites,SnapshotSiteProcessor.m_snapshotCreateSetupBarrierAction);
     }
  else     if (SnapshotSiteProcessor.m_snapshotCreateSetupBarrier.isBroken()) {
       SnapshotSiteProcessor.m_snapshotCreateSetupBarrier.reset();
+      SnapshotSiteProcessor.m_snapshotCreateFinishBarrier.reset();
     }
     SnapshotSiteProcessor.populateExportSequenceNumbersForExecutionSite(context);
     if (VoltDB.instance().isIV2Enabled()) {
@@ -40,7 +42,21 @@ synchronized (SnapshotSiteProcessor.m_snapshotCreateLock) {
     }
   }
   try {
-    SnapshotSiteProcessor.m_snapshotCreateSetupBarrier.await(120,TimeUnit.SECONDS);
+    SnapshotSiteProcessor.m_snapshotCreateSetupBarrier.await();
+    try {
+synchronized (SnapshotSiteProcessor.m_taskListsForSites) {
+        final Deque<SnapshotTableTask> m_taskList=SnapshotSiteProcessor.m_taskListsForSites.poll();
+        if (m_taskList == null) {
+          return result;
+        }
+ else {
+          context.getSiteSnapshotConnection().initiateSnapshots(m_taskList,multiPartTxnId,context.getSiteTrackerForSnapshot().getAllHosts().size(),exportSequenceNumbers);
+        }
+      }
+    }
+  finally {
+      SnapshotSiteProcessor.m_snapshotCreateFinishBarrier.await(120,TimeUnit.SECONDS);
+    }
   }
  catch (  TimeoutException e) {
     VoltDB.crashLocalVoltDB("Timed out waiting 120 seconds for all threads to arrive and start snapshot",true,null);
@@ -52,16 +68,6 @@ catch (  InterruptedException e) {
 catch (  BrokenBarrierException e) {
     result.addRow(context.getHostId(),hostname,"","FAILURE",CoreUtils.throwableToString(e));
     return result;
-  }
-synchronized (SnapshotSiteProcessor.m_taskListsForSites) {
-    final Deque<SnapshotTableTask> m_taskList=SnapshotSiteProcessor.m_taskListsForSites.poll();
-    if (m_taskList == null) {
-      return result;
-    }
- else {
-      assert(SnapshotSiteProcessor.ExecutionSitesCurrentlySnapshotting.get() > 0);
-      context.getSiteSnapshotConnection().initiateSnapshots(m_taskList,multiPartTxnId,context.getSiteTrackerForSnapshot().getAllHosts().size(),exportSequenceNumbers);
-    }
   }
   if (block != 0) {
     HashSet<Exception> failures=null;

@@ -72,8 +72,17 @@ catch (            InterruptedException e) {
     final ArrayList<SnapshotDataTarget> snapshotTargets=m_snapshotTargets;
     m_snapshotTargets=null;
     m_snapshotTableTasks=null;
-    final int result=ExecutionSitesCurrentlySnapshotting.decrementAndGet();
-    if (result == 0) {
+    boolean IamLast=false;
+synchronized (ExecutionSitesCurrentlySnapshotting) {
+      if (!ExecutionSitesCurrentlySnapshotting.contains(this)) {
+        VoltDB.crashLocalVoltDB("Currently snapshotting site didn't find itself in set of snapshotting sites",true,null);
+      }
+      IamLast=ExecutionSitesCurrentlySnapshotting.size() == 1;
+      if (!IamLast) {
+        ExecutionSitesCurrentlySnapshotting.remove(this);
+      }
+    }
+    if (IamLast) {
       final long txnId=m_lastSnapshotTxnId;
       final int numHosts=m_lastSnapshotNumHosts;
       final Map<String,Map<Integer,Pair<Long,Long>>> exportSequenceNumbers=m_exportSequenceNumbersToLogOnCompletion;
@@ -120,7 +129,7 @@ catch (              InterruptedException e) {
               logSnapshotCompleteToZK(txnId,numHosts,m_lastSnapshotSucceded,exportSequenceNumbers);
             }
   finally {
-              ExecutionSitesCurrentlySnapshotting.decrementAndGet();
+              ExecutionSitesCurrentlySnapshotting.remove(SnapshotSiteProcessor.this);
             }
           }
         }

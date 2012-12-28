@@ -37,7 +37,7 @@
     try {
       final ArrayDeque<SnapshotTableTask> partitionedSnapshotTasks=new ArrayDeque<SnapshotTableTask>();
       final ArrayList<SnapshotTableTask> replicatedSnapshotTasks=new ArrayList<SnapshotTableTask>();
-      assert(SnapshotSiteProcessor.ExecutionSitesCurrentlySnapshotting.get() == -1);
+      assert(SnapshotSiteProcessor.ExecutionSitesCurrentlySnapshotting.isEmpty());
       final List<Table> tables=SnapshotUtil.getTablesToSave(context.getDatabase());
       if (format.isFileBased()) {
         Runnable completionTask=SnapshotUtil.writeSnapshotDigest(txnId,context.getCatalogCRC(),file_path,file_nonce,tables,context.getHostId(),exportSequenceNumbers,partitionTransactionIds,VoltDB.instance().getHostMessenger().getInstanceId());
@@ -162,9 +162,12 @@
         result.addRow(context.getHostId(),hostname,table.getTypeName(),canSnapshot,err_msg);
       }
 synchronized (SnapshotSiteProcessor.m_taskListsForSites) {
+        if (!SnapshotSiteProcessor.m_taskListsForSites.isEmpty()) {
+          HOST_LOG.warn("Found lingering snapshot tasks while setting up a snapshot");
+          SnapshotSiteProcessor.m_taskListsForSites.clear();
+        }
         boolean aborted=false;
         if (!partitionedSnapshotTasks.isEmpty() || !replicatedSnapshotTasks.isEmpty()) {
-          SnapshotSiteProcessor.ExecutionSitesCurrentlySnapshotting.set(numLocalSites);
           for (int ii=0; ii < numLocalSites; ii++) {
             SnapshotSiteProcessor.m_taskListsForSites.add(new ArrayDeque<SnapshotTableTask>());
           }
