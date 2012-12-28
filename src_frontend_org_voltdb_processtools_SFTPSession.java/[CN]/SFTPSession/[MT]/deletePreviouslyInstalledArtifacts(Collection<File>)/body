@@ -1,0 +1,43 @@
+{
+  Preconditions.checkArgument(files != null,"null file collection");
+  Preconditions.checkState(m_channel != null,"stale session");
+  TreeSet<File> directories=new TreeSet<File>();
+  for (  File f : files) {
+    directories.add(f.getParentFile());
+  }
+  for (  File d : directories) {
+    final ArrayList<String> toBeDeleted=new ArrayList<String>();
+    LsEntrySelector selector=new LsEntrySelector(){
+      @Override public int select(      LsEntry entry){
+        Matcher mtc=ARTIFACT_REGEXP.matcher(entry.getFilename());
+        SftpATTRS attr=entry.getAttrs();
+        if (mtc.find() && !attr.isDir() && !attr.isLink()) {
+          toBeDeleted.add(entry.getFilename());
+        }
+        return CONTINUE;
+      }
+    }
+;
+    try {
+      m_channel.ls(d.getAbsolutePath(),selector);
+      if (cmdLog.isDebugEnabled()) {
+        cmdLog.debug("ls " + d.getAbsolutePath());
+      }
+    }
+ catch (    SftpException sfex) {
+      throw new SFTPException("list directory " + d,sfex);
+    }
+    for (    String f : toBeDeleted) {
+      File artifact=new File(d,f);
+      try {
+        m_channel.rm(artifact.getAbsolutePath());
+        if (cmdLog.isDebugEnabled()) {
+          cmdLog.debug("rm " + artifact.getAbsolutePath());
+        }
+      }
+ catch (      SftpException sfex) {
+        throw new SFTPException("remove artifact " + artifact,sfex);
+      }
+    }
+  }
+}
