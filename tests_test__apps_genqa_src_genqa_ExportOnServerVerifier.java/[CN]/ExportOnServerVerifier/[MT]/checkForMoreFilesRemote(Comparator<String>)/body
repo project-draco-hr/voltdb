@@ -14,7 +14,13 @@
         if (!entry.getFilename().equals(".") && !entry.getFilename().equals("..") && !entry.getAttrs().isDir()) {
           final String entryFileName=rh.path + "/" + entry.getFilename();
           if (!entry.getFilename().contains("active")) {
-            paths.add(entryFileName);
+            Matcher mtc=EXPORT_FILENAME_REGEXP.matcher(entry.getFilename());
+            if (mtc.matches()) {
+              paths.add(entryFileName);
+            }
+ else {
+              System.err.println("ERROR: " + entryFileName + " does not match expected export file name pattern");
+            }
           }
  else           if (entry.getFilename().startsWith("active-")) {
             int activeModifyTime=entry.getAttrs().getMTime();
@@ -29,27 +35,27 @@
       touchActiveTracker(rh);
       rh.activeSeen=rh.activeSeen || activeInRemote;
       if (activeInRemote)       activeFound++;
-      Collections.sort(paths);
+      Collections.sort(paths,comparator);
       if (!paths.isEmpty())       pathsFromAllNodes.add(Pair.of(rh.channel,paths));
     }
     if (pathsFromAllNodes.isEmpty() && activeFound == 0 && allActiveSeen()) {
       if (--onDoneRetries <= 0)       return;
       Thread.sleep(5000);
     }
-    boolean hadOne;
-    do {
-      hadOne=false;
-      for (      Pair<ChannelSftp,List<String>> p : pathsFromAllNodes) {
-        final ChannelSftp c=p.getFirst();
-        final List<String> paths=p.getSecond();
-        if (!paths.isEmpty()) {
-          hadOne=true;
-          final String filePath=paths.remove(0);
-          m_exportFiles.offer(Pair.of(c,filePath));
-        }
+    TreeMap<String,Pair<ChannelSftp,String>> hadPaths=new TreeMap<String,Pair<ChannelSftp,String>>(comparator);
+    for (    Pair<ChannelSftp,List<String>> p : pathsFromAllNodes) {
+      final ChannelSftp c=p.getFirst();
+      for (      String path : p.getSecond()) {
+        hadPaths.put(path,Pair.of(c,path));
       }
     }
- while (hadOne);
+    boolean hadOne=!hadPaths.isEmpty();
+    Iterator<Map.Entry<String,Pair<ChannelSftp,String>>> itr=hadPaths.entrySet().iterator();
+    while (itr.hasNext()) {
+      Map.Entry<String,Pair<ChannelSftp,String>> entry=itr.next();
+      m_exportFiles.offer(entry.getValue());
+      itr.remove();
+    }
     long now=System.currentTimeMillis();
     if ((now - start_time) > FILE_TIMEOUT_MS) {
       throw new ValidationErr("Timed out waiting on new files.\n" + "This indicates a mismatch in the transaction streams between the client logs and the export data or the death of something important.",null,null);
