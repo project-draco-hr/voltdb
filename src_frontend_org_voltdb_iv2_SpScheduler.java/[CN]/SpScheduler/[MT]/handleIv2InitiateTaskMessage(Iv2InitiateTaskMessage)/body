@@ -2,17 +2,25 @@
   final String procedureName=message.getStoredProcedureName();
   if (message.isSinglePartition()) {
     long newSpHandle;
-    long uniqueId;
+    long uniqueId=Long.MIN_VALUE;
     Iv2InitiateTaskMessage msg=message;
     if (m_isLeader || message.isReadOnly()) {
       if (!m_isLeader && CoreUtils.getHostIdFromHSId(msg.getInitiatorHSId()) != CoreUtils.getHostIdFromHSId(m_mailbox.getHSId())) {
         VoltDB.crashLocalVoltDB("Only allowed to do short circuit reads locally",true,null);
       }
       if (message.isForReplay()) {
-        newSpHandle=message.getTxnId();
         uniqueId=message.getUniqueId();
-        setMaxSeenTxnId(newSpHandle);
         m_uniqueIdGenerator.updateMostRecentlyGeneratedUniqueId(uniqueId);
+      }
+ else       if (message.isForDR()) {
+        uniqueId=message.getStoredProcedureInvocation().getOriginalUniqueId();
+        if (UniqueIdGenerator.getPartitionIdFromUniqueId(uniqueId) == m_partitionId) {
+          m_uniqueIdGenerator.updateMostRecentlyGeneratedUniqueId(uniqueId);
+        }
+      }
+      if (message.isForReplay()) {
+        newSpHandle=message.getTxnId();
+        setMaxSeenTxnId(newSpHandle);
       }
  else       if (m_isLeader) {
         TxnEgo ego=advanceTxnEgo();
