@@ -3,7 +3,7 @@
   Client client=getClient();
   for (int i=0; i < 40; i++) {
     final Object[] rowdata=TestSQLTypesSuite.m_midValues;
-    m_tester.addRow(m_tester.m_generationsSeen.first(),"NO_NULLS",i,convertValsToRow(i,'I',rowdata));
+    m_tester.addRow("NO_NULLS",i,convertValsToRow(i,'I',rowdata));
     final Object[] params=convertValsToParams("NO_NULLS",i,rowdata);
     client.callProcedure("Insert",params);
   }
@@ -39,24 +39,36 @@
   client=getClient();
   client.callProcedure("@SnapshotRestore","/tmp/" + System.getProperty("user.name"),"testnonce");
   quiesceAndVerifyRetryWorkOnIOException(client,m_tester);
-  stats=client.callProcedure("@Statistics","table",(byte)0).getResults()[0];
-  while (stats.advanceRow()) {
-    if (stats.getString("TABLE_NAME").equals("NO_NULLS")) {
-      if (stats.getLong("PARTITION_ID") == 0) {
-        assertEquals(0,stats.getLong("TUPLE_COUNT"));
-        assertEquals(0,stats.getLong("TUPLE_ALLOCATED_MEMORY"));
-      }
- else       if (stats.getLong("PARTITION_ID") == 1) {
-        assertEquals(0,stats.getLong("TUPLE_COUNT"));
-        assertEquals(0,stats.getLong("TUPLE_ALLOCATED_MEMORY"));
-      }
- else       if (stats.getLong("PARTITION_ID") == 2) {
-        assertEquals(0,stats.getLong("TUPLE_COUNT"));
-        assertEquals(0,stats.getLong("TUPLE_ALLOCATED_MEMORY"));
-      }
+  for (int ii=0; ii < 1000; ii++) {
+    boolean success=true;
+    stats=client.callProcedure("@Statistics","table",(byte)0).getResults()[0];
+    try {
+      while (stats.advanceRow()) {
+        if (stats.getString("TABLE_NAME").equals("NO_NULLS")) {
+          if (stats.getLong("PARTITION_ID") == 0) {
+            if (14 != stats.getLong("TUPLE_COUNT"))             throw new StupidException();
+            if (0 != stats.getLong("TUPLE_ALLOCATED_MEMORY"))             throw new StupidException();
+          }
+ else           if (stats.getLong("PARTITION_ID") == 1) {
+            if (13 != stats.getLong("TUPLE_COUNT"))             throw new StupidException();
+            if (0 != stats.getLong("TUPLE_ALLOCATED_MEMORY"))             throw new StupidException();
+          }
+ else           if (stats.getLong("PARTITION_ID") == 2) {
+            if (13 != stats.getLong("TUPLE_COUNT"))             throw new StupidException();
+            if (0 != stats.getLong("TUPLE_ALLOCATED_MEMORY"))             throw new StupidException();
+          }
  else {
-        fail();
+            fail();
+          }
+        }
       }
     }
+ catch (    StupidException e) {
+      success=false;
+    }
+    if (success)     return;
+    Thread.sleep(1);
   }
+  System.out.println(stats);
+  fail("Allocated tuple memory didn't go to zero for export tables " + "even though all data should have been drained");
 }
