@@ -1,96 +1,7 @@
 {
-  String remoteHosts[]=args[0].split(",");
-  final String homeDir=System.getProperty("user.home");
-  final String sshDir=homeDir + File.separator + ".ssh";
-  final String sshConfigPath=sshDir + File.separator + "config";
-  loadAllPrivateKeys(new File(sshDir));
-  OpenSshConfig sshConfig=null;
-  if (new File(sshConfigPath).exists()) {
-    sshConfig=new OpenSshConfig(new File(sshConfigPath));
-  }
-  final String defaultKnownHosts=sshDir + "/known_hosts";
-  if (new File(defaultKnownHosts).exists()) {
-    m_jsch.setKnownHosts(defaultKnownHosts);
-  }
-  for (  String hostString : remoteHosts) {
-    String split[]=hostString.split(":");
-    String host=split[0];
-    RemoteHost rh=new RemoteHost();
-    rh.path=split[1];
-    String user=System.getProperty("user.name");
-    int port=22;
-    File identityFile=null;
-    String configHost=host;
-    if (sshConfig != null) {
-      OpenSshConfig.Host hostConfig=sshConfig.lookup(host);
-      if (hostConfig.getUser() != null) {
-        user=hostConfig.getUser();
-      }
-      if (hostConfig.getPort() != -1) {
-        port=hostConfig.getPort();
-      }
-      if (hostConfig.getIdentityFile() != null) {
-        identityFile=hostConfig.getIdentityFile();
-      }
-      if (hostConfig.getHostName() != null) {
-        configHost=hostConfig.getHostName();
-      }
-    }
-    Session session=null;
-    if (identityFile != null) {
-      JSch jsch=new JSch();
-      jsch.addIdentity(identityFile.getAbsolutePath());
-      session=jsch.getSession(user,configHost,port);
-    }
- else {
-      session=m_jsch.getSession(user,configHost,port);
-    }
-    rh.session=session;
-    session.setConfig("StrictHostKeyChecking","no");
-    session.setDaemonThread(true);
-    session.connect();
-    final ChannelSftp channel=(ChannelSftp)session.openChannel("sftp");
-    rh.channel=channel;
-    channel.connect();
-    touchActiveTracker(rh);
-    m_hosts.add(rh);
-  }
-  m_partitions=Integer.parseInt(args[1]);
-  for (int i=0; i < m_partitions; i++) {
-    m_rowTxnIds.put(i,new TreeMap<Long,Long>());
-    m_maxPartTxId.put(i,Long.MIN_VALUE);
-    m_checkedUpTo.put(i,0);
-    m_readUpTo.put(i,new AtomicLong(0));
-  }
   long ttlVerified=0;
-  for (  RemoteHost rh : m_hosts) {
-    boolean existsOrIsDir=true;
-    try {
-      SftpATTRS stat=rh.channel.stat(rh.path);
-      if (!stat.isDir()) {
-        existsOrIsDir=false;
-      }
-    }
- catch (    SftpException e) {
-      if (e.id == ChannelSftp.SSH_FX_NO_SUCH_FILE) {
-        existsOrIsDir=false;
-      }
- else {
-        Throwables.propagate(e);
-      }
-    }
-    if (!existsOrIsDir) {
-      rh.channel.mkdir(rh.path);
-    }
-  }
   Pair<CSVReader,Runnable> csvPair=openNextExportFile();
   CSVReader csv=csvPair.getFirst();
-  m_clientPath=new File(args[2]);
-  if (!m_clientPath.exists() || !m_clientPath.isDirectory()) {
-    if (!m_clientPath.mkdir()) {
-      throw new IOException("Issue with transaction ID path");
-    }
-  }
   BufferedReader txnIdReader=openNextClientFile();
   String[] row;
   boolean quit=false;
@@ -131,8 +42,7 @@
       Long rowId=Long.parseLong(row[7]);
       Long previous=m_rowTxnIds.get(partition).put(rowTxnId,rowId);
       if (previous != null) {
-        System.out.println("Duplicate TXN ID in export stream: " + rowTxnId);
-        System.exit(-1);
+        System.out.println("WARN Duplicate TXN ID in export stream: " + rowTxnId);
       }
  else {
       }
@@ -144,6 +54,7 @@
     System.out.println("!_!_! DEBUG !_!_! processed " + (dcount - m_clientOverFlow.size()) + " client overflow txid records");
     System.out.println("!_!_! DEBUG !_!_! overflow size is now " + m_clientOverFlow.size());
     dcount=0;
+    long[] rec=new long[3];
     while ((!reachedReadUpTo() || !more_rows) && more_txnids) {
       String trace=txnIdReader.readLine();
       if (trace == null) {
@@ -156,11 +67,13 @@
           trace=txnIdReader.readLine();
         }
       }
-      if (trace != null && trace.length() > 17) {
-        long rowid=Long.parseLong(trace.substring(0,16));
-        long txid=Long.parseLong(trace.substring(17));
+      int recColumns=splitClientTrace(trace,rec);
+      if (recColumns == rec.length) {
+        long rowid=rec[0];
+        long txid=rec[1];
+        long ts=rec[2];
         if (txid >= 0) {
-          m_clientTxnIds.add(txid);
+          m_clientTxnIds.put(txid,ts);
           countDownReadUpTo(txid);
         }
  else {
@@ -173,7 +86,7 @@
       }
     }
     System.out.println("!_!_! DEBUG !_!_! read " + dcount + " client txid records");
-    if (matchClientTxnIds()) {
+    if (matchClientTxnIds(null)) {
       emptyRemovalCycles=0;
     }
  else     if (++emptyRemovalCycles >= 10) {
