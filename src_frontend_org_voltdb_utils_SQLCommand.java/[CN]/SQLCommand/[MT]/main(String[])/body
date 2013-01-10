@@ -46,10 +46,15 @@
     VoltDB=getClient(config,servers,port);
     loadStoredProcedures(Procedures);
     in=new FileInputStream(FileDescriptor.in);
-    out=new PrintWriter(new OutputStreamWriter(System.out,System.getProperty("jline.WindowsTerminal.output.encoding",System.getProperty("file.encoding"))));
-    Input=new ConsoleReader(in,out);
-    Input.setBellEnabled(false);
-    Input.addCompletor(new SimpleCompletor(new String[]{"select","update","insert","delete","exec","file","recall","SELECT","UPDATE","INSERT","DELETE","EXEC","FILE","RECALL"}));
+    out=System.out;
+    lineInputReader=new SQLConsoleReader(in,out);
+    lineInputReader.setBellEnabled(false);
+    Completer completer=new SQLCompleter(m_commandPrefixes);
+    lineInputReader.addCompleter(completer);
+    historyFile=new FileHistory(new File(System.getProperty("user.home"),".sqlcmd_history"));
+    lineInputReader.setHistory(historyFile);
+    KeyMap keyMap=lineInputReader.getKeys();
+    keyMap.bind(new Character(KeyMap.CTRL_D).toString(),"exit\r");
     boolean interactive=true;
     if (queries != null && !queries.isEmpty()) {
       interactive=false;
@@ -84,6 +89,18 @@
       VoltDB.close();
     }
  catch (    Exception _) {
+    }
+    if (historyFile != null) {
+      try {
+        historyFile.flush();
+      }
+ catch (      IOException e) {
+        System.err.printf("* Unable to write history to \"%s\" *\n",historyFile.getFile().getPath());
+        e.printStackTrace();
+      }
+    }
+    if (lineInputReader != null) {
+      lineInputReader.shutdown();
     }
   }
 }
