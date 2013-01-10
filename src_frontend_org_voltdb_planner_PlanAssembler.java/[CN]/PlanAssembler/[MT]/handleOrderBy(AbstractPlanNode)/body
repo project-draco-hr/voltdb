@@ -18,14 +18,24 @@
   orderByNode.addAndLinkChild(root);
   orderByNode.generateOutputSchema(m_catalogDb);
   if (m_parsedSelect.tableList.size() == 1) {
-    List<AbstractPlanNode> indexScans=root.findAllNodesOfType(PlanNodeType.INDEXSCAN);
-    if (indexScans.size() == 1) {
-      IndexScanPlanNode ixnode=(IndexScanPlanNode)(indexScans.get(0));
-      if (ixnode.getSortDirection() != SortDirectionType.INVALID) {
-        Index index=ixnode.getCatalogIndex();
-        if (index.getUnique()) {
-          orderByNode.setOrderingByUniqueColumns();
-        }
+    Table table=m_parsedSelect.tableList.get(0);
+    ArrayList<String> orderColNames=new ArrayList<String>();
+    for (    AbstractExpression e : orderByNode.getSortExpressions()) {
+      if (e instanceof TupleValueExpression) {
+        TupleValueExpression tve=(TupleValueExpression)e;
+        orderColNames.add(tve.getColumnName());
+      }
+    }
+    for (    Index index : table.getIndexes()) {
+      if (!index.getUnique()) {
+        continue;
+      }
+      ArrayList<String> indexColNames=new ArrayList<String>();
+      for (      ColumnRef cref : index.getColumns()) {
+        indexColNames.add(cref.getColumn().getTypeName());
+      }
+      if (orderColNames.containsAll(indexColNames)) {
+        orderByNode.setOrderingByUniqueColumns();
       }
     }
   }

@@ -1,0 +1,214 @@
+{
+  VoltXMLElement query=new VoltXMLElement("select");
+  if (select.isDistinctSelect)   query.attributes.put("distinct","true");
+  if (select.isGrouped)   query.attributes.put("grouped","true");
+  if (select.isAggregated)   query.attributes.put("aggregated","true");
+  if ((select.sortAndSlice != null) && (select.sortAndSlice.limitCondition != null)) {
+    Expression limitCondition=select.sortAndSlice.limitCondition;
+    if (limitCondition.nodes.length != 2) {
+      throw new HSQLParseException("Parser did not create limit and offset expression for LIMIT.");
+    }
+    try {
+      if (limitCondition.nodes[0].isParam() == false) {
+        Integer offset=(Integer)limitCondition.nodes[0].getValue(session);
+        if (offset > 0) {
+          query.attributes.put("offset",offset.toString());
+        }
+      }
+ else {
+        query.attributes.put("offset_paramid",limitCondition.nodes[0].getUniqueId(session));
+      }
+      if (limitCondition.nodes[1].isParam() == false) {
+        Integer limit=(Integer)limitCondition.nodes[1].getValue(session);
+        query.attributes.put("limit",limit.toString());
+      }
+ else {
+        query.attributes.put("limit_paramid",limitCondition.nodes[1].getUniqueId(session));
+      }
+    }
+ catch (    HsqlException ex) {
+      ex.printStackTrace();
+    }
+  }
+  VoltXMLElement scanCols=new VoltXMLElement("scan_columns");
+  query.children.add(scanCols);
+  assert(scanCols != null);
+  HsqlList col_list=new HsqlArrayList();
+  select.collectAllExpressions(col_list,Expression.columnExpressionSet,Expression.emptyExpressionSet);
+  if (select.queryCondition != null) {
+    Expression.collectAllExpressions(col_list,select.queryCondition,Expression.columnExpressionSet,Expression.emptyExpressionSet);
+  }
+  for (int i=0; i < select.exprColumns.length; i++) {
+    Expression.collectAllExpressions(col_list,select.exprColumns[i],Expression.columnExpressionSet,Expression.emptyExpressionSet);
+  }
+  for (  RangeVariable rv : select.rangeVariables) {
+    if (rv.indexCondition != null) {
+      Expression.collectAllExpressions(col_list,rv.indexCondition,Expression.columnExpressionSet,Expression.emptyExpressionSet);
+    }
+    if (rv.indexEndCondition != null) {
+      Expression.collectAllExpressions(col_list,rv.indexEndCondition,Expression.columnExpressionSet,Expression.emptyExpressionSet);
+    }
+    if (rv.nonIndexJoinCondition != null) {
+      Expression.collectAllExpressions(col_list,rv.nonIndexJoinCondition,Expression.columnExpressionSet,Expression.emptyExpressionSet);
+    }
+  }
+  HsqlList uniq_col_list=new HsqlArrayList();
+  for (int i=0; i < col_list.size(); i++) {
+    Expression orig=(Expression)col_list.get(i);
+    if (!uniq_col_list.contains(orig)) {
+      uniq_col_list.add(orig);
+    }
+  }
+  for (int i=0; i < uniq_col_list.size(); i++) {
+    VoltXMLElement xml=((Expression)uniq_col_list.get(i)).voltGetXML(session);
+    scanCols.children.add(xml);
+    assert(xml != null);
+  }
+  VoltXMLElement cols=new VoltXMLElement("columns");
+  query.children.add(cols);
+  assert(cols != null);
+  ArrayList<Expression> orderByCols=new ArrayList<Expression>();
+  ArrayList<Expression> groupByCols=new ArrayList<Expression>();
+  ArrayList<Expression> displayCols=new ArrayList<Expression>();
+  ArrayList<Pair<Integer,SimpleName>> aliases=new ArrayList<Pair<Integer,SimpleName>>();
+  for (int i=0; i < select.exprColumns.length; i++) {
+    final Expression expr=select.exprColumns[i];
+    if (expr.alias != null) {
+      if (expr instanceof ExpressionColumn) {
+        ExpressionColumn exprColumn=(ExpressionColumn)expr;
+        if (exprColumn.alias != null && exprColumn.columnName == null) {
+          aliases.add(Pair.of(expr.columnIndex,expr.alias));
+        }
+      }
+ else       if (expr.columnIndex > -1) {
+        aliases.add(Pair.of(expr.columnIndex,expr.alias));
+      }
+    }
+    if (expr.columnIndex == -1) {
+      expr.columnIndex=i;
+    }
+    if (isGroupByColumn(select,i)) {
+      groupByCols.add(expr);
+    }
+ else     if (expr.opType == OpTypes.ORDER_BY) {
+      orderByCols.add(expr);
+    }
+ else     if (expr.opType == OpTypes.SIMPLE_COLUMN && expr.isAggregate && expr.alias != null) {
+      displayCols.add(expr);
+    }
+ else     if (expr.opType == OpTypes.SIMPLE_COLUMN) {
+    }
+ else {
+      displayCols.add(expr);
+    }
+  }
+  for (  Pair<Integer,SimpleName> alias : aliases) {
+    select.exprColumns[alias.getFirst()].alias=alias.getSecond();
+  }
+  for (int jj=0; jj < displayCols.size(); ++jj) {
+    Expression expr=displayCols.get(jj);
+    if (expr == null) {
+      continue;
+    }
+ else     if (expr.opType == OpTypes.SIMPLE_COLUMN) {
+      for (int ii=jj; ii < displayCols.size(); ++ii) {
+        Expression otherCol=displayCols.get(ii);
+        if (otherCol == null) {
+          continue;
+        }
+ else         if ((otherCol.opType != OpTypes.SIMPLE_COLUMN) && (otherCol.columnIndex == expr.columnIndex)) {
+          VoltXMLElement xml=otherCol.voltGetXML(session);
+          cols.children.add(xml);
+          assert(xml != null);
+          displayCols.set(ii,null);
+          break;
+        }
+      }
+    }
+ else {
+      VoltXMLElement xml=expr.voltGetXML(session);
+      cols.children.add(xml);
+      assert(xml != null);
+    }
+  }
+  VoltXMLElement params=new VoltXMLElement("parameters");
+  query.children.add(params);
+  assert(params != null);
+  for (int i=0; i < parameters.length; i++) {
+    VoltXMLElement parameter=new VoltXMLElement("parameter");
+    params.children.add(parameter);
+    assert(parameter != null);
+    parameter.attributes.put("index",String.valueOf(i));
+    ExpressionColumn param=parameters[i];
+    parameter.attributes.put("id",param.getUniqueId(session));
+    Type paramType=param.getDataType();
+    if (paramType != null) {
+      parameter.attributes.put("type",Types.getTypeName(paramType.typeCode));
+    }
+  }
+  VoltXMLElement scans=new VoltXMLElement("tablescans");
+  query.children.add(scans);
+  assert(scans != null);
+  for (  RangeVariable rangeVariable : rangeVariables)   scans.children.add(rangeVariable.voltGetXML(session));
+  if (select.queryCondition != null) {
+    VoltXMLElement condition=new VoltXMLElement("querycondition");
+    query.children.add(condition);
+    assert(condition != null);
+    condition.children.add(select.queryCondition.voltGetXML(session));
+  }
+ else {
+    Expression cond=null;
+    for (int rvi=0; rvi < select.rangeVariables.length; ++rvi) {
+      RangeVariable rv=rangeVariables[rvi];
+      if (rv.nonIndexJoinCondition != null) {
+        if (cond != null) {
+          cond=new ExpressionLogical(OpTypes.AND,cond,rv.nonIndexJoinCondition);
+        }
+ else {
+          cond=rv.nonIndexJoinCondition;
+        }
+      }
+ else       if (rv.isJoinIndex) {
+        if (rv.indexCondition != null) {
+          if (cond != null) {
+            cond=new ExpressionLogical(OpTypes.AND,cond,rv.indexCondition);
+          }
+ else {
+            cond=rv.indexCondition;
+          }
+        }
+        if (rv.indexEndCondition != null) {
+          if (cond != null) {
+            cond=new ExpressionLogical(OpTypes.AND,cond,rv.indexCondition);
+          }
+ else {
+            cond=rv.indexCondition;
+          }
+        }
+      }
+    }
+    if (cond != null) {
+      VoltXMLElement condition=new VoltXMLElement("querycondition");
+      query.children.add(condition);
+      condition.children.add(cond.voltGetXML(session));
+    }
+  }
+  if (select.havingCondition != null) {
+    throw new HSQLParseException("VoltDB does not yet support the HAVING clause");
+  }
+  if (select.isGrouped) {
+    VoltXMLElement groupCols=new VoltXMLElement("groupcolumns");
+    query.children.add(groupCols);
+    for (    Expression groupByCol : groupByCols) {
+      groupCols.children.add(groupByCol.voltGetXML(session));
+    }
+  }
+  if (orderByCols.size() > 0) {
+    VoltXMLElement orderCols=new VoltXMLElement("ordercolumns");
+    query.children.add(orderCols);
+    for (    Expression orderByCol : orderByCols) {
+      orderCols.children.add(orderByCol.voltGetXML(session));
+    }
+  }
+  return query;
+}

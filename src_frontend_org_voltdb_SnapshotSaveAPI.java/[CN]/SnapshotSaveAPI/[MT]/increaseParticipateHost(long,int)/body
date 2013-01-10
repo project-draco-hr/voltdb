@@ -1,0 +1,43 @@
+{
+  ZooKeeper zk=VoltDB.instance().getHostMessenger().getZK();
+  final String snapshotPath=VoltZK.completed_snapshots + "/" + txnId;
+  boolean success=false;
+  while (!success) {
+    Stat stat=new Stat();
+    byte data[]=null;
+    try {
+      data=zk.getData(snapshotPath,false,stat);
+    }
+ catch (    Exception e) {
+      VoltDB.crashLocalVoltDB("This ZK get should never fail",true,e);
+    }
+    if (data == null) {
+      VoltDB.crashLocalVoltDB("Data should not be null if the node exists",false,null);
+    }
+    try {
+      JSONObject jsonObj=new JSONObject(new String(data,Charsets.UTF_8));
+      if (jsonObj.getLong("txnId") != txnId) {
+        VoltDB.crashLocalVoltDB("TxnId should match",false,null);
+      }
+      boolean hasLocalhost=false;
+      JSONArray hosts=jsonObj.getJSONArray("hosts");
+      for (int i=0; i < hosts.length(); i++) {
+        if (hosts.getInt(i) == hostId) {
+          hasLocalhost=true;
+          break;
+        }
+      }
+      if (!hasLocalhost) {
+        hosts.put(hostId);
+      }
+      zk.setData(snapshotPath,jsonObj.toString(4).getBytes(Charsets.UTF_8),stat.getVersion());
+    }
+ catch (    KeeperException.BadVersionException e) {
+      continue;
+    }
+catch (    Exception e) {
+      VoltDB.crashLocalVoltDB("This ZK call should never fail",true,e);
+    }
+    success=true;
+  }
+}
