@@ -1,6 +1,6 @@
 {
-  voltQueueSQL(getCIDData,cid);
-  voltQueueSQL(getAdHocData);
+  voltQueueSQLExperimental("SELECT * FROM replicated WHERE cid = ? ORDER BY cid, rid desc;",cid);
+  voltQueueSQLExperimental("SELECT * FROM adhocr ORDER BY ts DESC, id LIMIT 1");
   VoltTable[] results=voltExecuteSQL();
   VoltTable data=results[0];
   VoltTable adhoc=results[1];
@@ -23,8 +23,12 @@
   if (prevrid >= rid) {
     throw new VoltAbortException(getClass().getName() + " previous rid " + prevrid+ " >= than current rid "+ rid+ " for cid "+ cid);
   }
-  voltQueueSQL(insert,txnid,prevtxnid,ts,cid,cidallhash,rid,cnt,adhocInc,adhocJmp,new byte[0]);
-  voltQueueSQL(cleanUp,cid,cnt - 10);
-  voltQueueSQL(getCIDData,cid);
-  return voltExecuteSQL();
+  voltQueueSQLExperimental("INSERT INTO replicated VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",txnid,prevtxnid,ts,cid,cidallhash,rid,cnt,adhocInc,adhocJmp,new byte[0]);
+  voltQueueSQLExperimental("DELETE FROM replicated WHERE cid = ? and cnt < ?;",cid,cnt - 10);
+  voltQueueSQLExperimental("SELECT * FROM replicated WHERE cid = ? ORDER BY cid, rid desc;",cid);
+  VoltTable[] retval=voltExecuteSQL();
+  if (shouldRollback != 0) {
+    throw new VoltAbortException("EXPECTED ROLLBACK");
+  }
+  return retval;
 }
