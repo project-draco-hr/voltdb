@@ -8,7 +8,7 @@
   boolean quit=false;
   boolean more_rows=true;
   boolean more_txnids=true;
-  boolean expect_export_eof=false;
+  ValidationErr expect_export_eof=null;
   int emptyRemovalCycles=0;
   PrintWriter txout=gzipWriterTo("read-exported-transactions.gz");
   PrintWriter vfout=gzipWriterTo("verified-exported-transactions.gz");
@@ -18,7 +18,7 @@
     while ((dcount < 10000 || !more_txnids) && more_rows) {
       exportLine=csv.readLine();
       if (exportLine == null) {
-        expect_export_eof=false;
+        expect_export_eof=null;
         csvPair.getSecond().run();
         csvPair=openNextExportFile();
         if (csvPair == null) {
@@ -31,12 +31,11 @@
           exportLine=csv.readLine();
         }
       }
- else       if (expect_export_eof) {
-        throw new ValidationErr("previously logged row had unexpected number of columns");
+ else       if (expect_export_eof != null) {
+        throw expect_export_eof;
       }
       row=RoughCSVTokenizer.tokenize(exportLine);
-      verifyRow(row);
-      expect_export_eof=row.length < 29;
+      expect_export_eof=verifyRow(row);
       if (row.length < 8)       continue;
       dcount++;
       if (++ttlVerified % VALIDATION_REPORT_INTERVAL == 0) {
