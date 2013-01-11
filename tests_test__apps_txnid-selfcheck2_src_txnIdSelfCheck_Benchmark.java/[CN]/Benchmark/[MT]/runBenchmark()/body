@@ -13,6 +13,7 @@
     if (cr.getStatus() != ClientResponse.SUCCESS) {
       log.error("Failed to call Summarize proc at startup. Exiting.");
       log.error(((ClientResponseImpl)cr).toJSONString());
+      printJStack();
       System.exit(-1);
     }
     VoltTable t=cr.getResults()[0];
@@ -25,12 +26,14 @@
  catch (  ProcCallException e) {
     log.error("Failed to call Summarize proc at startup. Exiting.",e);
     log.error(((ClientResponseImpl)e.getClientResponse()).toJSONString());
+    printJStack();
     System.exit(-1);
   }
   log.info(HORIZONTAL_RULE);
   log.info("Starting Benchmark");
   log.info(HORIZONTAL_RULE);
   benchmarkStartTS=System.currentTimeMillis();
+  lastProgressTimestamp=System.currentTimeMillis();
   schedulePeriodicStats();
   log.info("Running benchmark...");
   BigTableLoader partitionedLoader=new BigTableLoader(client,"bigp",(config.partfillerrowmb * 1024 * 1024) / config.fillerrowsize,config.fillerrowsize);
@@ -43,7 +46,7 @@
   adHocMayhemThread.start();
   List<ClientThread> clientThreads=new ArrayList<ClientThread>();
   for (byte cid=(byte)config.threadoffset; cid < config.threadoffset + config.threads; cid++) {
-    ClientThread clientThread=new ClientThread(cid,c,client,processor);
+    ClientThread clientThread=new ClientThread(cid,txnCount,client,processor);
     clientThread.start();
     clientThreads.add(clientThread);
   }
@@ -70,4 +73,6 @@
   es.shutdownNow();
   client.drain();
   client.close();
+  log.info(HORIZONTAL_RULE);
+  log.info("Benchmark Complete");
 }

@@ -1,0 +1,119 @@
+{
+  if (recursion == 32) {
+    return;
+  }
+  if (!directory.exists()) {
+    System.err.println("Error: Directory " + directory.getPath() + " doesn't exist");
+    return;
+  }
+  if (!directory.canRead()) {
+    System.err.println("Error: Directory " + directory.getPath() + " is not readable");
+    return;
+  }
+  if (!directory.canExecute()) {
+    System.err.println("Error: Directory " + directory.getPath() + " is not executable");
+    return;
+  }
+  for (  File f : directory.listFiles(filter)) {
+    if (f.isDirectory()) {
+      if (!f.canRead() || !f.canExecute()) {
+        System.err.println("Warning: Skipping directory " + f.getPath() + " due to lack of read permission");
+      }
+ else {
+        retrieveSnapshotFiles(f,namedSnapshots,filter,recursion++,validate,logger);
+      }
+      continue;
+    }
+    if (!f.canRead()) {
+      System.err.println("Warning: " + f.getPath() + " is not readable");
+      continue;
+    }
+    FileInputStream fis=null;
+    try {
+      fis=new FileInputStream(f);
+    }
+ catch (    FileNotFoundException e1) {
+      System.err.println(e1.getMessage());
+      continue;
+    }
+    try {
+      if (f.getName().endsWith(".digest")) {
+        JSONObject digest=CRCCheck(f,logger);
+        if (digest == null)         continue;
+        Long snapshotTxnId=digest.getLong("txnId");
+        String nonce=parseNonceFromSnapshotFilename(f.getName());
+        Snapshot named_s=namedSnapshots.get(nonce);
+        if (named_s == null) {
+          named_s=new Snapshot(nonce,snapshotTxnId);
+          namedSnapshots.put(nonce,named_s);
+        }
+        InstanceId iid=new InstanceId(0,0);
+        if (digest.has("instanceId")) {
+          iid=new InstanceId(digest.getJSONObject("instanceId"));
+        }
+        named_s.setInstanceId(iid);
+        TreeSet<String> tableSet=new TreeSet<String>();
+        JSONArray tables=digest.getJSONArray("tables");
+        for (int ii=0; ii < tables.length(); ii++) {
+          tableSet.add(tables.getString(ii));
+        }
+        named_s.m_digestTables.add(tableSet);
+        named_s.m_digests.add(f);
+      }
+ else {
+        HashSet<Integer> partitionIds=new HashSet<Integer>();
+        TableSaveFile saveFile=new TableSaveFile(fis.getChannel(),1,null,true);
+        try {
+          for (          Integer partitionId : saveFile.getPartitionIds()) {
+            partitionIds.add(partitionId);
+          }
+          if (validate && saveFile.getCompleted()) {
+            while (saveFile.hasMoreChunks()) {
+              BBContainer cont=saveFile.getNextChunk();
+              if (cont != null) {
+                cont.discard();
+              }
+            }
+          }
+          partitionIds.removeAll(saveFile.getCorruptedPartitionIds());
+          String nonce=parseNonceFromSnapshotFilename(f.getName());
+          Snapshot named_s=namedSnapshots.get(nonce);
+          if (named_s == null) {
+            named_s=new Snapshot(nonce,saveFile.getTxnId());
+            namedSnapshots.put(nonce,named_s);
+          }
+          TableFiles namedTableFiles=named_s.m_tableFiles.get(saveFile.getTableName());
+          if (namedTableFiles == null) {
+            namedTableFiles=new TableFiles(saveFile.isReplicated());
+            named_s.m_tableFiles.put(saveFile.getTableName(),namedTableFiles);
+          }
+          namedTableFiles.m_files.add(f);
+          namedTableFiles.m_completed.add(saveFile.getCompleted());
+          namedTableFiles.m_validPartitionIds.add(partitionIds);
+          namedTableFiles.m_corruptParititionIds.add(saveFile.getCorruptedPartitionIds());
+          namedTableFiles.m_totalPartitionCounts.add(saveFile.getTotalPartitions());
+        }
+  finally {
+          saveFile.close();
+        }
+      }
+    }
+ catch (    IOException e) {
+      System.err.println(e.getMessage());
+      System.err.println("Error: Unable to process " + f.getPath());
+    }
+catch (    JSONException e) {
+      System.err.println(e.getMessage());
+      System.err.println("Error: Unable to process " + f.getPath());
+    }
+ finally {
+      try {
+        if (fis != null) {
+          fis.close();
+        }
+      }
+ catch (      IOException e) {
+      }
+    }
+  }
+}

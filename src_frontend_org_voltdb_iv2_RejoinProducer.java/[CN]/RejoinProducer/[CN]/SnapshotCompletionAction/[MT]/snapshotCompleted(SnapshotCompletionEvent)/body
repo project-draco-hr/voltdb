@@ -1,12 +1,22 @@
 {
   if (event.nonce.equals(m_snapshotNonce)) {
-    REJOINLOG.debug(m_whoami + "counting down snapshot monitor completion.");
+    REJOINLOG.debug(m_whoami + "counting down snapshot monitor completion. " + "Snapshot txnId is: "+ event.multipartTxnId);
+    Runnable action=new Runnable(){
+      @Override public void run(){
+        REJOINLOG.debug(m_whoami + "informing rejoinCoordinator " + CoreUtils.hsIdToString(m_rejoinCoordinatorHsId)+ " of REPLAY_FINISHED");
+        RejoinMessage replay_complete=new RejoinMessage(m_rejoinCoordinatorHsId,Type.REPLAY_FINISHED);
+        m_mailbox.send(m_rejoinCoordinatorHsId,replay_complete);
+        m_currentlyRejoining.set(false);
+      }
+    }
+;
+    m_replayCompleteAction.set(new ReplayCompletionAction(event.multipartTxnId,action));
     deregister();
     kickWatchdog(true);
     m_completionMonitorAwait.set(event);
   }
  else {
-    REJOINLOG.debug(m_whoami + " observed completion of irrelevant nonce: " + event.nonce);
+    REJOINLOG.debug(m_whoami + " observed completion of irrelevant snapshot nonce: " + event.nonce);
   }
   return null;
 }
