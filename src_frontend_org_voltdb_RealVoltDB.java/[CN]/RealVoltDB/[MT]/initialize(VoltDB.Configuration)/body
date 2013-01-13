@@ -5,11 +5,8 @@ synchronized (m_startAndStopLock) {
       System.exit(-1);
     }
     consoleLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_StartupString.name(),null);
-    if (config.m_enableIV2) {
-      consoleLog.warn("Running 3.0 preview (iv2 mode). NOT SUPPORTED IN PRODUCTION.");
-    }
- else {
-      consoleLog.warn("Running 3.0 preview (legacy mode). NOT SUPPORTED IN PRODUCTION.");
+    if (!config.m_enableIV2) {
+      consoleLog.warn("Running 3.0 preview (legacy mode).  THIS MODE IS DEPRECATED.");
     }
     if (config.m_pathToDeployment == null) {
       try {
@@ -57,6 +54,7 @@ synchronized (m_startAndStopLock) {
       isRejoin=true;
     }
     m_rejoining=isRejoin;
+    m_rejoinDataPending=isRejoin;
     try {
       System.setOut(new PrintStream(System.out,true,"UTF-8"));
       System.setErr(new PrintStream(System.err,true,"UTF-8"));
@@ -96,25 +94,21 @@ synchronized (m_startAndStopLock) {
       if (isIV2Enabled()) {
         ClusterConfig iv2config=new ClusterConfig(topo);
         m_cartographer=new Cartographer(m_messenger.getZK(),iv2config.getPartitionCount());
+        List<Integer> partitions=null;
         if (isRejoin) {
-          List<Integer> partitionsToReplace=m_cartographer.getIv2PartitionsToReplace(topo);
-          if (partitionsToReplace.size() == 0) {
+          partitions=m_cartographer.getIv2PartitionsToReplace(topo);
+          if (partitions.size() == 0) {
             VoltDB.crashLocalVoltDB("The VoltDB cluster already has enough nodes to satisfy " + "the requested k-safety factor of " + iv2config.getReplicationFactor() + ".\n"+ "No more nodes can join.",false,null);
           }
-          for (int ii=0; ii < partitionsToReplace.size(); ii++) {
-            Integer partition=partitionsToReplace.get(ii);
-            m_iv2InitiatorStartingTxnIds.put(partition,TxnEgo.makeZero(partition).getTxnId());
-          }
-          m_iv2Initiators=createIv2Initiators(partitionsToReplace,true);
         }
  else {
-          List<Integer> partitions=ClusterConfig.partitionsForHost(topo,m_messenger.getHostId());
-          for (int ii=0; ii < partitions.size(); ii++) {
-            Integer partition=partitions.get(ii);
-            m_iv2InitiatorStartingTxnIds.put(partition,TxnEgo.makeZero(partitions.get(ii)).getTxnId());
-          }
-          m_iv2Initiators=createIv2Initiators(partitions,false);
+          partitions=ClusterConfig.partitionsForHost(topo,m_messenger.getHostId());
         }
+        for (int ii=0; ii < partitions.size(); ii++) {
+          Integer partition=partitions.get(ii);
+          m_iv2InitiatorStartingTxnIds.put(partition,TxnEgo.makeZero(partition).getTxnId());
+        }
+        m_iv2Initiators=createIv2Initiators(partitions,isRejoin);
         m_iv2InitiatorStartingTxnIds.put(MpInitiator.MP_INIT_PID,TxnEgo.makeZero(MpInitiator.MP_INIT_PID).getTxnId());
         long mpiBuddyHSId=m_iv2Initiators.get(0).getInitiatorHSId();
         m_MPI=new MpInitiator(m_messenger,mpiBuddyHSId,m_statsAgent);
@@ -236,6 +230,9 @@ synchronized (m_startAndStopLock) {
     if (isIV2Enabled()) {
       m_statsAgent.registerStatsSource(SysProcSelector.TOPO,0,m_cartographer);
     }
+    if (m_commandLog != null && isRejoin) {
+      m_commandLog.initForRejoin(m_catalogContext,Long.MIN_VALUE,m_iv2InitiatorStartingTxnIds,true,m_config.m_commandLogBinding);
+    }
     if (isIV2Enabled()) {
       try {
         boolean usingCommandLog=m_config.m_isEnterprise && m_catalogContext.cluster.getLogconfig().get("log").getEnabled();
@@ -356,9 +353,6 @@ catch (    ExecutionException e) {
  catch (    Exception e) {
       hostLog.fatal("Error initializing snapshot completion monitor",e);
       VoltDB.crashLocalVoltDB("Error initializing snapshot completion monitor",true,e);
-    }
-    if (m_commandLog != null && isRejoin) {
-      m_commandLog.initForRejoin(m_catalogContext,Long.MIN_VALUE,m_iv2InitiatorStartingTxnIds,true,m_config.m_commandLogBinding);
     }
     try {
       buildStringValidation.get();
