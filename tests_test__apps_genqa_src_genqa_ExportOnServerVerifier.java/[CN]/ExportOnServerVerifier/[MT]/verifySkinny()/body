@@ -1,6 +1,6 @@
 {
   long ttlVerified=0;
-  Pair<BufferedReader,Runnable> csvPair=openNextSkinnyExportFile();
+  Pair<BufferedReader,Runnable> csvPair=openNextExportFile();
   BufferedReader csv=csvPair.getFirst();
   BufferedReader txnIdReader=openNextClientFile();
   String row;
@@ -10,16 +10,8 @@
   boolean more_txnids=true;
   boolean expect_export_eof=false;
   int emptyRemovalCycles=0;
-  File transactionsReadFH=new File("read-exported-transactions.gz");
-  if (transactionsReadFH.exists() && transactionsReadFH.isFile() && transactionsReadFH.canRead()&& transactionsReadFH.canWrite()) {
-    transactionsReadFH.delete();
-  }
-  File verifiedTransactionsdFH=new File("verified-exported-transactions.gz");
-  if (verifiedTransactionsdFH.exists() && verifiedTransactionsdFH.isFile() && verifiedTransactionsdFH.canRead()&& verifiedTransactionsdFH.canWrite()) {
-    verifiedTransactionsdFH.delete();
-  }
-  PrintWriter txout=new PrintWriter(new OutputStreamWriter(new GZIPOutputStream(new FileOutputStream(transactionsReadFH),16384)));
-  PrintWriter vfout=new PrintWriter(new OutputStreamWriter(new GZIPOutputStream(new FileOutputStream(verifiedTransactionsdFH),16384)));
+  PrintWriter txout=gzipWriterTo("read-exported-transactions.gz");
+  PrintWriter vfout=gzipWriterTo("verified-exported-transactions.gz");
   while (!quit) {
     markCheckedUpTo();
     int dcount=0;
@@ -28,7 +20,7 @@
       if (row == null) {
         expect_export_eof=false;
         csvPair.getSecond().run();
-        csvPair=openNextSkinnyExportFile();
+        csvPair=openNextExportFile();
         if (csvPair == null) {
           System.out.println("No more export rows");
           try {
@@ -68,7 +60,7 @@
       if (TxnEgo.getPartitionId(rowTxnId) != partition) {
         System.err.println("ERROR: mismatched exported partition for txid " + rowTxnId + ", tx says it belongs to "+ TxnEgo.getPartitionId(rowTxnId)+ ", while export record says "+ partition);
       }
-      txout.printf("%d:%d\n",rowValues[0],rowValues[1]);
+      txout.printf("%d:%d\n",rowTxnId,rowId);
       if (!m_rowTxnIds.containsKey(partition)) {
         System.err.println("ERROR: unknow partition " + partition + " in txnid "+ rowTxnId);
         continue;

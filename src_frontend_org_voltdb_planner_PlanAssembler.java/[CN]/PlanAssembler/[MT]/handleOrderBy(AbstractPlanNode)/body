@@ -19,22 +19,38 @@
   orderByNode.generateOutputSchema(m_catalogDb);
   if (m_parsedSelect.tableList.size() == 1) {
     Table table=m_parsedSelect.tableList.get(0);
-    ArrayList<String> orderColNames=new ArrayList<String>();
-    for (    AbstractExpression e : orderByNode.getSortExpressions()) {
-      if (e instanceof TupleValueExpression) {
-        TupleValueExpression tve=(TupleValueExpression)e;
-        orderColNames.add(tve.getColumnName());
-      }
-    }
+    List<AbstractExpression> orderExpressions=orderByNode.getSortExpressions();
     for (    Index index : table.getIndexes()) {
       if (!index.getUnique()) {
         continue;
       }
-      ArrayList<String> indexColNames=new ArrayList<String>();
-      for (      ColumnRef cref : index.getColumns()) {
-        indexColNames.add(cref.getColumn().getTypeName());
+      List<AbstractExpression> indexExpressions=new ArrayList<AbstractExpression>();
+      String jsonExpr=index.getExpressionsjson();
+      if (jsonExpr.isEmpty()) {
+        for (        ColumnRef cref : index.getColumns()) {
+          Column col=cref.getColumn();
+          TupleValueExpression tve=new TupleValueExpression();
+          tve.setColumnIndex(col.getIndex());
+          tve.setColumnName(col.getName());
+          tve.setExpressionType(ExpressionType.VALUE_TUPLE);
+          tve.setHasAggregate(false);
+          tve.setTableName(table.getTypeName());
+          tve.setValueSize(col.getSize());
+          tve.setValueType(VoltType.get((byte)col.getType()));
+          indexExpressions.add(tve);
+        }
       }
-      if (orderColNames.containsAll(indexColNames)) {
+ else {
+        try {
+          indexExpressions=AbstractExpression.fromJSONArrayString(jsonExpr,null);
+        }
+ catch (        JSONException e) {
+          e.printStackTrace();
+          assert(false);
+          return null;
+        }
+      }
+      if (orderExpressions.containsAll(indexExpressions)) {
         orderByNode.setOrderingByUniqueColumns();
       }
     }
