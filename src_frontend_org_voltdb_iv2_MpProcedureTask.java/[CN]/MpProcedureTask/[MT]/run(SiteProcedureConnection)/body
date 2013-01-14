@@ -11,8 +11,15 @@
     hostLog.debug("SYSPROCFAIL: " + this);
     return;
   }
+  if (m_isRestart) {
+    CompleteTransactionMessage restart=new CompleteTransactionMessage(m_initiator.getHSId(),m_initiator.getHSId(),m_txn.txnId,m_txn.isReadOnly(),0,true,false,!m_txn.isReadOnly(),m_msg.isForReplay());
+    restart.setTruncationHandle(m_msg.getTruncationHandle());
+    restart.setOriginalTxnId(m_msg.getOriginalTxnId());
+    m_initiator.send(com.google.common.primitives.Longs.toArray(m_initiatorHSIds),restart);
+  }
   final InitiateResponseMessage response=processInitiateTask(txn.m_task,siteConnection);
-  if (response.getClientResponseData().getStatus() != ClientResponse.TXN_RESTART) {
+  int status=response.getClientResponseData().getStatus();
+  if (status != ClientResponse.TXN_RESTART || (status == ClientResponse.TXN_RESTART && m_msg.isReadOnly())) {
     if (!response.shouldCommit()) {
       txn.setNeedsRollback();
     }

@@ -1,0 +1,78 @@
+{
+  log.info(HORIZONTAL_RULE);
+  log.info(" Setup & Initialization");
+  log.info(HORIZONTAL_RULE);
+  final int cidCount=128;
+  final long[] lastRid=new long[cidCount];
+  for (int i=0; i < lastRid.length; i++) {
+    lastRid[i]=0;
+  }
+  connect();
+  try {
+    ClientResponse cr=client.callProcedure("Summarize");
+    if (cr.getStatus() != ClientResponse.SUCCESS) {
+      log.error("Failed to call Summarize proc at startup. Exiting.");
+      log.error(((ClientResponseImpl)cr).toJSONString());
+      printJStack();
+      System.exit(-1);
+    }
+    VoltTable t=cr.getResults()[0];
+    long ts=t.fetchRow(0).getLong("ts");
+    String tsStr=ts == 0 ? "NO TIMESTAMPS" : String.valueOf(ts) + " / " + new Date(ts).toString();
+    long count=t.fetchRow(0).getLong("count");
+    log.info("STARTUP TIMESTAMP OF LAST UPDATE (GMT): " + tsStr);
+    log.info("UPDATES RUN AGAINST THIS DB TO DATE: " + count);
+  }
+ catch (  ProcCallException e) {
+    log.error("Failed to call Summarize proc at startup. Exiting.",e);
+    log.error(((ClientResponseImpl)e.getClientResponse()).toJSONString());
+    printJStack();
+    System.exit(-1);
+  }
+  log.info(HORIZONTAL_RULE);
+  log.info("Starting Benchmark");
+  log.info(HORIZONTAL_RULE);
+  benchmarkStartTS=System.currentTimeMillis();
+  lastProgressTimestamp=System.currentTimeMillis();
+  schedulePeriodicStats();
+  log.info("Running benchmark...");
+  BigTableLoader partitionedLoader=new BigTableLoader(client,"bigp",(config.partfillerrowmb * 1024 * 1024) / config.fillerrowsize,config.fillerrowsize);
+  partitionedLoader.start();
+  BigTableLoader replicatedLoader=new BigTableLoader(client,"bigr",(config.replfillerrowmb * 1024 * 1024) / config.fillerrowsize,config.fillerrowsize);
+  replicatedLoader.start();
+  ReadThread readThread=new ReadThread(client,config.threads,config.threadoffset);
+  readThread.start();
+  AdHocMayhemThread adHocMayhemThread=new AdHocMayhemThread(client);
+  adHocMayhemThread.start();
+  List<ClientThread> clientThreads=new ArrayList<ClientThread>();
+  for (byte cid=(byte)config.threadoffset; cid < config.threadoffset + config.threads; cid++) {
+    ClientThread clientThread=new ClientThread(cid,txnCount,client,processor);
+    clientThread.start();
+    clientThreads.add(clientThread);
+  }
+  final long benchmarkEndTime=System.currentTimeMillis() + (1000l * config.duration);
+  while (benchmarkEndTime > System.currentTimeMillis()) {
+    Thread.yield();
+  }
+  replicatedLoader.shutdown();
+  partitionedLoader.shutdown();
+  readThread.shutdown();
+  adHocMayhemThread.shutdown();
+  for (  ClientThread clientThread : clientThreads) {
+    clientThread.shutdown();
+  }
+  replicatedLoader.join();
+  partitionedLoader.join();
+  readThread.join();
+  adHocMayhemThread.join();
+  for (  ClientThread clientThread : clientThreads) {
+    clientThread.join();
+  }
+  timer.cancel();
+  shutdown.set(true);
+  es.shutdownNow();
+  client.drain();
+  client.close();
+  log.info(HORIZONTAL_RULE);
+  log.info("Benchmark Complete");
+}

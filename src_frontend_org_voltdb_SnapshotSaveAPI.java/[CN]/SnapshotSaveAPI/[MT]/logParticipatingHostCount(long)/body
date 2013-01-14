@@ -1,0 +1,41 @@
+{
+  ZooKeeper zk=VoltDB.instance().getHostMessenger().getZK();
+  final String snapshotPath=VoltZK.completed_snapshots + "/" + txnId;
+  boolean success=false;
+  while (!success) {
+    Stat stat=new Stat();
+    byte data[]=null;
+    try {
+      data=zk.getData(snapshotPath,false,stat);
+    }
+ catch (    KeeperException e) {
+      if (e.code() == KeeperException.Code.NONODE) {
+        return;
+      }
+      VoltDB.crashLocalVoltDB("Failed to get snapshot completion node",true,e);
+    }
+catch (    InterruptedException e) {
+      VoltDB.crashLocalVoltDB("Interrupted getting snapshot completion node",true,e);
+    }
+    if (data == null) {
+      VoltDB.crashLocalVoltDB("Data should not be null if the node exists",false,null);
+    }
+    try {
+      JSONObject jsonObj=new JSONObject(new String(data,Charsets.UTF_8));
+      if (jsonObj.getLong("txnId") != txnId) {
+        VoltDB.crashLocalVoltDB("TxnId should match",false,null);
+      }
+      JSONArray hosts=jsonObj.getJSONArray("hosts");
+      int hostCount=jsonObj.getInt("hostCount");
+      jsonObj.put("hostCount",hostCount + hosts.length() + 1);
+      zk.setData(snapshotPath,jsonObj.toString(4).getBytes(Charsets.UTF_8),stat.getVersion());
+    }
+ catch (    KeeperException.BadVersionException e) {
+      continue;
+    }
+catch (    Exception e) {
+      VoltDB.crashLocalVoltDB("This ZK call should never fail",true,e);
+    }
+    success=true;
+  }
+}

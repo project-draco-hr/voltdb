@@ -1,16 +1,25 @@
 {
   final String procedureName=message.getStoredProcedureName();
   long mpTxnId;
-  long timestamp;
+  long timestamp=Long.MIN_VALUE;
+  if (message.isForReplay()) {
+    timestamp=message.getUniqueId();
+    m_uniqueIdGenerator.updateMostRecentlyGeneratedUniqueId(timestamp);
+  }
+ else   if (message.isForDR()) {
+    timestamp=message.getStoredProcedureInvocation().getOriginalUniqueId();
+    if (UniqueIdGenerator.getPartitionIdFromUniqueId(timestamp) == m_partitionId) {
+      m_uniqueIdGenerator.updateMostRecentlyGeneratedUniqueId(timestamp);
+    }
+  }
   if (message.isForReplay()) {
     mpTxnId=message.getTxnId();
-    timestamp=message.getTimestamp();
     setMaxSeenTxnId(mpTxnId);
   }
  else {
     TxnEgo ego=advanceTxnEgo();
     mpTxnId=ego.getTxnId();
-    timestamp=ego.getWallClock();
+    timestamp=m_uniqueIdGenerator.getNextUniqueId();
   }
   Iv2Trace.logIv2InitiateTaskMessage(message,m_mailbox.getHSId(),mpTxnId,Long.MIN_VALUE);
   final Config sysprocConfig=SystemProcedureCatalog.listing.get(procedureName);
