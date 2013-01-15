@@ -4,7 +4,10 @@
     int result=counter.offer(message);
     if (result == DuplicateCounter.DONE) {
       m_duplicateCounters.remove(message.getTxnId());
-      m_repairLogTruncationHandle=message.getTxnId();
+      if (message.shouldCommit()) {
+        m_repairLogTruncationHandle=m_repairLogAwaitingCommit;
+        m_repairLogAwaitingCommit=message.getTxnId();
+      }
       m_outstandingTxns.remove(message.getTxnId());
       m_mailbox.send(counter.m_destinationId,message);
     }
@@ -13,7 +16,10 @@
     }
   }
  else {
-    m_repairLogTruncationHandle=message.getTxnId();
+    if (message.shouldCommit()) {
+      m_repairLogTruncationHandle=m_repairLogAwaitingCommit;
+      m_repairLogAwaitingCommit=message.getTxnId();
+    }
     m_outstandingTxns.remove(message.getTxnId());
     m_mailbox.send(message.getInitiatorHSId(),message);
   }
