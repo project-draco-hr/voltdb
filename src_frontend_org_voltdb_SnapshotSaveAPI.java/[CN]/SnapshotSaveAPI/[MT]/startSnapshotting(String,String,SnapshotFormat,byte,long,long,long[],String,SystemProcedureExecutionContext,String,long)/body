@@ -1,0 +1,92 @@
+{
+  TRACE_LOG.trace("Creating snapshot target and handing to EEs");
+  final VoltTable result=SnapshotSave.constructNodeResultsTable();
+  final SiteTracker st=context.getSiteTrackerForSnapshot();
+  final int numLocalSites=st.getLocalSites().length;
+synchronized (SnapshotSiteProcessor.m_snapshotCreateLock) {
+    SnapshotSiteProcessor.m_snapshotCreateSetupBarrierActualAction.set(new Runnable(){
+      @Override public void run(){
+        Map<Integer,Long> partitionTransactionIds=new HashMap<Integer,Long>();
+        if (VoltDB.instance().isIV2Enabled()) {
+          partitionTransactionIds=SnapshotSiteProcessor.m_partitionLastSeenTransactionIds;
+          HOST_LOG.debug("Last seen partition transaction ids " + partitionTransactionIds);
+          SnapshotSiteProcessor.m_partitionLastSeenTransactionIds=new HashMap<Integer,Long>();
+          partitionTransactionIds.put(TxnEgo.getPartitionId(multiPartTxnId),multiPartTxnId);
+          for (          long txnId : legacyPerPartitionTxnIds) {
+            final int legacyPartition=TxnEgo.getPartitionId(txnId);
+            if (partitionTransactionIds.containsKey(legacyPartition)) {
+              HOST_LOG.warn("While saving a snapshot and propagating legacy " + "transaction ids found an id that matches currently active partition" + partitionTransactionIds.get(legacyPartition));
+            }
+ else {
+              partitionTransactionIds.put(legacyPartition,txnId);
+            }
+          }
+        }
+        exportSequenceNumbers=SnapshotSiteProcessor.getExportSequenceNumbers();
+        createSetup(file_path,file_nonce,format,multiPartTxnId,partitionTransactionIds,data,context,hostname,result,exportSequenceNumbers,st,timestamp);
+      }
+    }
+);
+    SnapshotSiteProcessor.readySnapshotSetupBarriers(numLocalSites);
+    SnapshotSiteProcessor.populateExportSequenceNumbersForExecutionSite(context);
+    if (VoltDB.instance().isIV2Enabled()) {
+      HOST_LOG.debug("Registering transaction id " + partitionTxnId + " for "+ TxnEgo.getPartitionId(partitionTxnId));
+      SnapshotSiteProcessor.m_partitionLastSeenTransactionIds.put(TxnEgo.getPartitionId(partitionTxnId),partitionTxnId);
+    }
+  }
+  try {
+    SnapshotSiteProcessor.m_snapshotCreateSetupBarrier.await();
+    try {
+synchronized (SnapshotSiteProcessor.m_taskListsForSites) {
+        final Deque<SnapshotTableTask> m_taskList=SnapshotSiteProcessor.m_taskListsForSites.poll();
+        if (m_taskList == null) {
+          return result;
+        }
+ else {
+          context.getSiteSnapshotConnection().initiateSnapshots(m_taskList,multiPartTxnId,context.getSiteTrackerForSnapshot().getAllHosts().size(),exportSequenceNumbers);
+        }
+      }
+    }
+  finally {
+      SnapshotSiteProcessor.m_snapshotCreateFinishBarrier.await(120,TimeUnit.SECONDS);
+    }
+  }
+ catch (  TimeoutException e) {
+    VoltDB.crashLocalVoltDB("Timed out waiting 120 seconds for all threads to arrive and start snapshot",true,null);
+  }
+catch (  InterruptedException e) {
+    result.addRow(context.getHostId(),hostname,"","FAILURE",CoreUtils.throwableToString(e));
+    return result;
+  }
+catch (  BrokenBarrierException e) {
+    result.addRow(context.getHostId(),hostname,"","FAILURE",CoreUtils.throwableToString(e));
+    return result;
+  }
+  if (block != 0) {
+    HashSet<Exception> failures=null;
+    String status="SUCCESS";
+    String err="";
+    try {
+      failures=context.getSiteSnapshotConnection().completeSnapshotWork();
+    }
+ catch (    InterruptedException e) {
+      status="FAILURE";
+      err=e.toString();
+      failures=new HashSet<Exception>();
+      failures.add(e);
+    }
+    final VoltTable blockingResult=SnapshotSave.constructPartitionResultsTable();
+    if (failures.isEmpty()) {
+      blockingResult.addRow(context.getHostId(),hostname,CoreUtils.getSiteIdFromHSId(context.getSiteId()),status,err);
+    }
+ else {
+      status="FAILURE";
+      for (      Exception e : failures) {
+        err=e.toString();
+      }
+      blockingResult.addRow(context.getHostId(),hostname,CoreUtils.getSiteIdFromHSId(context.getSiteId()),status,err);
+    }
+    return blockingResult;
+  }
+  return result;
+}
