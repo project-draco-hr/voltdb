@@ -1,0 +1,53 @@
+{
+  assert(plan != null);
+  ArrayList<AbstractPlanNode> children=new ArrayList<AbstractPlanNode>();
+  for (int i=0; i < plan.getChildCount(); i++)   children.add(plan.getChild(i));
+  for (  AbstractPlanNode child : children) {
+    AbstractPlanNode newChild=recursivelyApply(child,db);
+    if (newChild == child) {
+      continue;
+    }
+    child.removeFromGraph();
+    plan.addAndLinkChild(newChild);
+  }
+  if ((plan instanceof SeqScanPlanNode) == false) {
+    return plan;
+  }
+  assert(plan.getChildCount() == 0);
+  SeqScanPlanNode scanNode=(SeqScanPlanNode)plan;
+  String tableName=scanNode.getTargetTableName();
+  Table table=db.getTables().get(tableName);
+  assert(table != null);
+  Index indexToScan=null;
+  for (  Index index : table.getIndexes()) {
+    if (index.getUnique() == false) {
+      continue;
+    }
+ else     if (index.getType() != IndexType.BALANCED_TREE.getValue()) {
+      continue;
+    }
+ else {
+      indexToScan=index;
+      break;
+    }
+  }
+  if (indexToScan == null) {
+    return plan;
+  }
+  IndexScanPlanNode indexScanNode=new IndexScanPlanNode();
+  indexScanNode.setTargetTableName(scanNode.getTargetTableName());
+  indexScanNode.setTargetTableAlias(scanNode.getTargetTableAlias());
+  indexScanNode.setEndExpression(null);
+  indexScanNode.setScanColumns(new ArrayList<SchemaColumn>());
+  indexScanNode.setCatalogIndex(indexToScan);
+  indexScanNode.setKeyIterate(true);
+  indexScanNode.setTargetIndexName(indexToScan.getTypeName());
+  indexScanNode.setLookupType(IndexLookupType.GTE);
+  indexScanNode.setSortDirection(SortDirectionType.ASC);
+  indexScanNode.setPredicate(scanNode.getPredicate());
+  for (  AbstractPlanNode inlineNode : scanNode.getInlinePlanNodes().values()) {
+    indexScanNode.addInlinePlanNode(inlineNode);
+  }
+  indexScanNode.generateOutputSchema(db);
+  return indexScanNode;
+}
