@@ -1,8 +1,5 @@
 {
-  assert(orderByNode.name.equalsIgnoreCase("operation"));
-  String operationType=orderByNode.attributes.get("optype");
-  assert(operationType != null);
-  assert(operationType.equalsIgnoreCase("orderby"));
+  assert(orderByNode.name.equalsIgnoreCase("orderby"));
   String desc=orderByNode.attributes.get("desc");
   boolean descending=(desc != null) && (desc.equalsIgnoreCase("true"));
   VoltXMLElement child=orderByNode.children.get(0);
@@ -12,61 +9,57 @@
   order_col.ascending=!descending;
   AbstractExpression order_exp=parseExpressionTree(child);
   if (child.name.equals("columnref")) {
-    order_col.columnName=child.attributes.get("column");
-    order_col.tableName=child.attributes.get("table");
-    String alias=child.attributes.get("alias");
-    order_col.alias=alias;
-    if (order_exp instanceof TupleValueExpression) {
-      ParsedColInfo orig_col=null;
-      for (      ParsedColInfo col : displayColumns) {
-        if (col.expression.equals(order_exp)) {
-          orig_col=col;
-          break;
-        }
-      }
-      if (orig_col != null) {
-        orig_col.orderBy=true;
-        orig_col.ascending=order_col.ascending;
+    assert(order_exp instanceof TupleValueExpression);
+    TupleValueExpression tve=(TupleValueExpression)order_exp;
+    order_col.columnName=tve.getColumnName();
+    order_col.tableName=tve.getTableName();
+    order_col.alias=tve.getColumnAlias();
+    ParsedColInfo orig_col=null;
+    for (    ParsedColInfo col : displayColumns) {
+      if (col.expression.equals(order_exp)) {
+        orig_col=col;
+        break;
       }
     }
-  }
- else   if (child.name.equals("operation")) {
-    order_col.columnName="";
-    order_col.tableName="VOLT_TEMP_TABLE";
-    if (order_exp instanceof TupleValueExpression) {
-      String alias=child.attributes.get("alias");
-      order_col.alias=alias;
-      ParsedColInfo orig_col=null;
-      for (      ParsedColInfo col : displayColumns) {
-        if (col.alias.equals(alias)) {
-          orig_col=col;
-          break;
-        }
-      }
-      if (orig_col == null) {
-        throw new PlanningErrorException("Unable to find source " + "column for simplecolumn: " + alias);
-      }
+    if (orig_col != null) {
       orig_col.orderBy=true;
       orig_col.ascending=order_col.ascending;
-      assert(orig_col.tableName.equals("VOLT_TEMP_TABLE"));
-      TupleValueExpression tve=(TupleValueExpression)order_exp;
-      tve.setColumnAlias(alias);
-      tve.setColumnName("");
-      tve.setColumnIndex(-1);
-      tve.setTableName("VOLT_TEMP_TABLE");
-      tve.setValueSize(orig_col.expression.getValueSize());
-      tve.setValueType(orig_col.expression.getValueType());
-      if (orig_col.expression.hasAnySubexpressionOfClass(AggregateExpression.class)) {
-        tve.setHasAggregate(true);
-      }
     }
   }
- else   if (child.name.equals("function") == false) {
+ else   if (child.name.equals("simplecolumn")) {
+    order_col.columnName="";
+    order_col.tableName="VOLT_TEMP_TABLE";
+    assert(order_exp instanceof TupleValueExpression);
+    TupleValueExpression tve=(TupleValueExpression)order_exp;
+    String alias=tve.getColumnAlias();
+    order_col.alias=alias;
+    ParsedColInfo orig_col=null;
+    for (    ParsedColInfo col : displayColumns) {
+      if (col.alias.equals(alias)) {
+        orig_col=col;
+        break;
+      }
+    }
+    if (orig_col == null) {
+      throw new PlanningErrorException("Unable to find source " + "column for simplecolumn: " + alias);
+    }
+    orig_col.orderBy=true;
+    orig_col.ascending=order_col.ascending;
+    assert(orig_col.tableName.equals("VOLT_TEMP_TABLE"));
+    tve.setColumnName("");
+    tve.setColumnIndex(-1);
+    tve.setTableName("VOLT_TEMP_TABLE");
+    tve.setValueSize(orig_col.expression.getValueSize());
+    tve.setValueType(orig_col.expression.getValueType());
+    if (orig_col.expression.hasAnySubexpressionOfClass(AggregateExpression.class)) {
+      tve.setHasAggregate(true);
+    }
+  }
+ else   if ((child.name.equals("operation") == false) && (child.name.equals("aggregation") == false) && (child.name.equals("function") == false)) {
     throw new RuntimeException("ORDER BY parsed with strange child node type: " + child.name);
   }
-  if (order_exp instanceof ConstantValueExpression) {
-    assert(order_exp.getValueType() != VoltType.NUMERIC);
-  }
+  assert(!(order_exp instanceof ConstantValueExpression));
+  assert(!(order_exp instanceof ParameterValueExpression));
   ExpressionUtil.finalizeValueTypes(order_exp);
   order_col.expression=order_exp;
   orderColumns.add(order_col);
