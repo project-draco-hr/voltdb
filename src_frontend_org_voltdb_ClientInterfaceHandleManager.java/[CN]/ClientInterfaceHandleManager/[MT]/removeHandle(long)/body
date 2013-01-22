@@ -1,0 +1,34 @@
+{
+  assert(!shouldCheckThreadIdAssertion() || m_expectedThreadId == Thread.currentThread().getId());
+  final boolean readOnly=getReadBit(ciHandle);
+  ciHandle=unsetReadBit(ciHandle);
+  Iv2InFlight inflight=m_shortCircuitReads.remove(ciHandle);
+  if (inflight != null) {
+    m_acg.reduceBackpressure(inflight.m_messageSize);
+    m_outstandingTxns--;
+    return inflight;
+  }
+  int partitionId=getPartIdFromHandle(ciHandle);
+  PartitionData partitionStuff=m_partitionStuff.get(partitionId);
+  if (partitionStuff == null) {
+    tmLog.error("Unable to find handle list for partition: " + partitionId);
+    return null;
+  }
+  final Deque<Iv2InFlight> perPartDeque=readOnly ? partitionStuff.m_reads : partitionStuff.m_writes;
+  Iterator<Iv2InFlight> iter=perPartDeque.iterator();
+  while (iter.hasNext()) {
+    Iv2InFlight inFlight=iter.next();
+    if (inFlight.m_ciHandle > ciHandle) {
+      tmLog.error("CI clientData lookup for remove missing handle: " + ciHandle + ". Next expected client data handle is: "+ inFlight.m_ciHandle);
+      break;
+    }
+ else     if (inFlight.m_ciHandle == ciHandle) {
+      m_acg.reduceBackpressure(inFlight.m_messageSize);
+      m_outstandingTxns--;
+      iter.remove();
+      return inFlight;
+    }
+  }
+  tmLog.error("Unable to find Client data to remove client interface handle: " + ciHandle);
+  return null;
+}
