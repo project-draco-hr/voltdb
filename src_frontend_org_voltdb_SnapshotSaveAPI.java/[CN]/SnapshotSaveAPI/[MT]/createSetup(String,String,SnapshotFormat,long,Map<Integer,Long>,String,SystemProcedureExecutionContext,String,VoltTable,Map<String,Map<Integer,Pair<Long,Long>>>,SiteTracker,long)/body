@@ -59,20 +59,28 @@
           schemas.put(table.getRelativeIndex(),schemaTable.getSchemaBytes());
         }
         if (format == SnapshotFormat.STREAM && jsData != null) {
-          long hsId=jsData.getLong("hsId");
           try {
-            targetHSid=jsData.getLong("target_hsid");
-          }
- catch (          JSONException e) {
-          }
-          if (targetHSid != null) {
-            List<Long> localHSids=tracker.getSitesForHost(context.getHostId());
-            if (localHSids.contains(targetHSid)) {
-              sdt=new StreamSnapshotDataTarget(hsId,schemas);
+            Map<Integer,Long> streamPairs=new HashMap<Integer,Long>();
+            JSONObject sp=jsData.getJSONObject("streamPairs");
+            @SuppressWarnings("unchecked") Iterator<String> it=sp.keys();
+            while (it.hasNext()) {
+              String key=it.next();
+              long sourceHSId=Long.valueOf(key);
+              List<Long> localHSIds=tracker.getSitesForHost(context.getHostId());
+              if (localHSIds.contains(sourceHSId)) {
+                int partitionId=tracker.getPartitionForSite(sourceHSId);
+                Long destHSId=Long.valueOf(sp.getString(key));
+                streamPairs.put(partitionId,destHSId);
+              }
+            }
+            if (streamPairs.size() > 0) {
+              sdt=new StreamSnapshotDataTarget(streamPairs,schemas);
             }
  else {
               sdt=new DevNullSnapshotTarget();
             }
+          }
+ catch (          JSONException e) {
           }
         }
       }
