@@ -2,6 +2,7 @@
   m_partitionColumns.clear();
   m_baselinePath=(m_fixedBaselinePath != null) ? m_fixedBaselinePath : (config + "/baseline/");
   m_ddlFilePath=null;
+  m_stmts.clear();
   BufferedReader reader=new BufferedReader(new FileReader(config + "/config"));
   String line=null;
   while ((line=reader.readLine()) != null) {
@@ -9,20 +10,34 @@
       continue;
     }
  else     if (line.equalsIgnoreCase("DDL:")) {
-      line=reader.readLine();
+      if ((line=reader.readLine()) == null) {
+        break;
+      }
       m_ddlFilePath=new File(line).getCanonicalPath();
     }
  else     if (line.equalsIgnoreCase("SQL:")) {
-      m_stmts.clear();
-      while ((line=reader.readLine()).length() > 6) {
+      boolean atEof=false;
+      while (true) {
+        if ((line=reader.readLine()) == null) {
+          atEof=true;
+          break;
+        }
         if (line.startsWith("#")) {
           continue;
         }
+        if (line.length() <= 6) {
+          break;
+        }
         m_stmts.add(line);
+      }
+      if (atEof) {
+        break;
       }
     }
  else     if (line.equalsIgnoreCase("Partition Columns:")) {
-      line=reader.readLine();
+      if ((line=reader.readLine()) == null) {
+        break;
+      }
       String[] cols=line.split(",");
       for (      String col : cols) {
         int index=col.indexOf(".");
@@ -36,10 +51,23 @@
       System.err.println("Config file syntax error : ignoring line: " + line);
     }
   }
+  boolean success=true;
+  if (m_ddlFilePath == null) {
+    System.err.println("ERROR: syntax error : config file '" + config + "/config' has no 'DDL:' section");
+    success=false;
+  }
+  if (m_stmts.isEmpty()) {
+    System.err.println("ERROR: syntax error : config file '" + config + "/config' has no 'SQL:' section or SQL statements");
+    success=false;
+  }
   try {
-    setUpSchema(config);
+    if (success) {
+      setUpSchema(config);
+    }
   }
  catch (  Exception e) {
     e.printStackTrace();
+    return false;
   }
+  return success;
 }
