@@ -18,14 +18,40 @@
   orderByNode.addAndLinkChild(root);
   orderByNode.generateOutputSchema(m_catalogDb);
   if (m_parsedSelect.tableList.size() == 1) {
-    List<AbstractPlanNode> indexScans=root.findAllNodesOfType(PlanNodeType.INDEXSCAN);
-    if (indexScans.size() == 1) {
-      IndexScanPlanNode ixnode=(IndexScanPlanNode)(indexScans.get(0));
-      if (ixnode.getSortDirection() != SortDirectionType.INVALID) {
-        Index index=ixnode.getCatalogIndex();
-        if (index.getUnique()) {
-          orderByNode.setOrderingByUniqueColumns();
+    Table table=m_parsedSelect.tableList.get(0);
+    List<AbstractExpression> orderExpressions=orderByNode.getSortExpressions();
+    for (    Index index : table.getIndexes()) {
+      if (!index.getUnique()) {
+        continue;
+      }
+      List<AbstractExpression> indexExpressions=new ArrayList<AbstractExpression>();
+      String jsonExpr=index.getExpressionsjson();
+      if (jsonExpr.isEmpty()) {
+        for (        ColumnRef cref : index.getColumns()) {
+          Column col=cref.getColumn();
+          TupleValueExpression tve=new TupleValueExpression();
+          tve.setColumnIndex(col.getIndex());
+          tve.setColumnName(col.getName());
+          tve.setExpressionType(ExpressionType.VALUE_TUPLE);
+          tve.setHasAggregate(false);
+          tve.setTableName(table.getTypeName());
+          tve.setValueSize(col.getSize());
+          tve.setValueType(VoltType.get((byte)col.getType()));
+          indexExpressions.add(tve);
         }
+      }
+ else {
+        try {
+          indexExpressions=AbstractExpression.fromJSONArrayString(jsonExpr,null);
+        }
+ catch (        JSONException e) {
+          e.printStackTrace();
+          assert(false);
+          return null;
+        }
+      }
+      if (orderExpressions.containsAll(indexExpressions)) {
+        orderByNode.setOrderingByUniqueColumns();
       }
     }
   }

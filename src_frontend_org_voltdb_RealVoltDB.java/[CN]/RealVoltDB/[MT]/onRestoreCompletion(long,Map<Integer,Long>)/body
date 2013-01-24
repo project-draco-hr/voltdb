@@ -1,0 +1,33 @@
+{
+  if ((m_commandLog != null) && (m_commandLog.needsInitialization())) {
+    m_commandLog.init(m_catalogContext,txnId,perPartitionTxnIds,m_config.m_commandLogBinding);
+  }
+  for (  Initiator initiator : m_iv2Initiators) {
+    initiator.enableWritingIv2FaultLog();
+  }
+  if (m_leaderAppointer != null) {
+    m_leaderAppointer.onReplayCompletion();
+  }
+  for (  SimpleDtxnInitiator dtxn : m_dtxns) {
+    dtxn.setSendHeartbeats(true);
+  }
+  if (!m_rejoining) {
+    for (    ClientInterface ci : m_clientInterfaces) {
+      try {
+        ci.startAcceptingConnections();
+      }
+ catch (      IOException e) {
+        hostLog.l7dlog(Level.FATAL,LogKeys.host_VoltDB_ErrorStartAcceptingConnections.name(),e);
+        VoltDB.crashLocalVoltDB("Error starting client interface.",true,e);
+      }
+    }
+  }
+  prepareReplication();
+  if (m_startMode != null) {
+    m_mode=m_startMode;
+  }
+ else {
+    m_mode=OperationMode.RUNNING;
+  }
+  consoleLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_ServerCompletedInitialization.name(),null);
+}

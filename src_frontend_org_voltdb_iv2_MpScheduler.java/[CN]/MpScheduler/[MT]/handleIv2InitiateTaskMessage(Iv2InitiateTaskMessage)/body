@@ -1,12 +1,20 @@
 {
   final String procedureName=message.getStoredProcedureName();
   long mpTxnId;
-  long timestamp;
+  long timestamp=Long.MIN_VALUE;
+  if (message.isForReplay()) {
+    timestamp=message.getUniqueId();
+    m_uniqueIdGenerator.updateMostRecentlyGeneratedUniqueId(timestamp);
+  }
+ else   if (message.isForDR()) {
+    timestamp=message.getStoredProcedureInvocation().getOriginalUniqueId();
+    if (UniqueIdGenerator.getPartitionIdFromUniqueId(timestamp) == m_partitionId) {
+      m_uniqueIdGenerator.updateMostRecentlyGeneratedUniqueId(timestamp);
+    }
+  }
   if (message.isForReplay()) {
     mpTxnId=message.getTxnId();
-    timestamp=message.getUniqueId();
     setMaxSeenTxnId(mpTxnId);
-    m_uniqueIdGenerator.updateMostRecentlyGeneratedUniqueId(timestamp);
   }
  else {
     TxnEgo ego=advanceTxnEgo();

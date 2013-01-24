@@ -2,17 +2,25 @@
   final String procedureName=message.getStoredProcedureName();
   if (message.isSinglePartition()) {
     long newSpHandle;
-    long uniqueId;
+    long uniqueId=Long.MIN_VALUE;
     Iv2InitiateTaskMessage msg=message;
     if (m_isLeader || message.isReadOnly()) {
       if (!m_isLeader && CoreUtils.getHostIdFromHSId(msg.getInitiatorHSId()) != CoreUtils.getHostIdFromHSId(m_mailbox.getHSId())) {
         VoltDB.crashLocalVoltDB("Only allowed to do short circuit reads locally",true,null);
       }
       if (message.isForReplay()) {
-        newSpHandle=message.getTxnId();
         uniqueId=message.getUniqueId();
-        setMaxSeenTxnId(newSpHandle);
         m_uniqueIdGenerator.updateMostRecentlyGeneratedUniqueId(uniqueId);
+      }
+ else       if (message.isForDR()) {
+        uniqueId=message.getStoredProcedureInvocation().getOriginalUniqueId();
+        if (UniqueIdGenerator.getPartitionIdFromUniqueId(uniqueId) == m_partitionId) {
+          m_uniqueIdGenerator.updateMostRecentlyGeneratedUniqueId(uniqueId);
+        }
+      }
+      if (message.isForReplay()) {
+        newSpHandle=message.getTxnId();
+        setMaxSeenTxnId(newSpHandle);
       }
  else       if (m_isLeader) {
         TxnEgo ego=advanceTxnEgo();
@@ -29,10 +37,12 @@
         msg.setTxnId(newSpHandle);
         msg.setUniqueId(uniqueId);
       }
-      if (m_isLeader && !msg.isReadOnly() && m_sendToHSIds.size() > 0) {
+      if (m_isLeader && !msg.isReadOnly() && m_sendToHSIds.length > 0) {
         Iv2InitiateTaskMessage replmsg=new Iv2InitiateTaskMessage(m_mailbox.getHSId(),m_mailbox.getHSId(),m_repairLogTruncationHandle,msg.getTxnId(),msg.getUniqueId(),msg.isReadOnly(),msg.isSinglePartition(),msg.getStoredProcedureInvocation(),msg.getClientInterfaceHandle(),msg.getConnectionId(),msg.isForReplay());
         replmsg.setSpHandle(newSpHandle);
-        m_mailbox.send(com.google.common.primitives.Longs.toArray(m_sendToHSIds),replmsg);
+        for (        long hsId : m_sendToHSIds) {
+          m_mailbox.send(hsId,replmsg);
+        }
         DuplicateCounter counter=new DuplicateCounter(msg.getInitiatorHSId(),msg.getTxnId(),m_replicaHSIds);
         m_duplicateCounters.put(new DuplicateCounterKey(msg.getTxnId(),newSpHandle),counter);
       }
@@ -43,15 +53,7 @@
       uniqueId=msg.getUniqueId();
     }
     Iv2Trace.logIv2InitiateTaskMessage(message,m_mailbox.getHSId(),msg.getTxnId(),newSpHandle);
-    final SpProcedureTask task=new SpProcedureTask(m_mailbox,procedureName,m_pendingTasks,msg,m_drGateway);
-    if (!msg.isReadOnly()) {
-      if (!m_cl.log(msg,newSpHandle,m_durabilityListener,task)) {
-        m_pendingTasks.offer(task);
-      }
-    }
- else {
-      m_pendingTasks.offer(task);
-    }
+    doLocalInitiateOffer(msg);
     return;
   }
  else {

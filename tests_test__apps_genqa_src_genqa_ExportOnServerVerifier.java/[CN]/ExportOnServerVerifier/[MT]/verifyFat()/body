@@ -1,0 +1,122 @@
+{
+  long ttlVerified=0;
+  Pair<BufferedReader,Runnable> csvPair=openNextExportFile();
+  BufferedReader csv=csvPair.getFirst();
+  BufferedReader txnIdReader=openNextClientFile();
+  String exportLine;
+  String[] row;
+  boolean quit=false;
+  boolean more_rows=true;
+  boolean more_txnids=true;
+  ValidationErr expect_export_eof=null;
+  int emptyRemovalCycles=0;
+  PrintWriter txout=gzipWriterTo("read-exported-transactions.gz");
+  PrintWriter vfout=gzipWriterTo("verified-exported-transactions.gz");
+  while (!quit) {
+    markCheckedUpTo();
+    int dcount=0;
+    while ((dcount < 10000 || !more_txnids) && more_rows) {
+      exportLine=csv.readLine();
+      if (exportLine == null) {
+        expect_export_eof=null;
+        csvPair.getSecond().run();
+        csvPair=openNextExportFile();
+        if (csvPair == null) {
+          System.out.println("No more export rows");
+          more_rows=false;
+          break;
+        }
+ else {
+          csv=csvPair.getFirst();
+          exportLine=csv.readLine();
+        }
+      }
+ else       if (expect_export_eof != null) {
+        throw expect_export_eof;
+      }
+      row=RoughCSVTokenizer.tokenize(exportLine);
+      expect_export_eof=verifyRow(row);
+      if (row.length < 8)       continue;
+      dcount++;
+      if (++ttlVerified % VALIDATION_REPORT_INTERVAL == 0) {
+        System.out.println("Verified " + ttlVerified + " rows.");
+      }
+      Integer partition=Integer.parseInt(row[3].trim());
+      Long rowTxnId=Long.parseLong(row[6].trim());
+      Long rowId=Long.parseLong(row[7].trim());
+      txout.printf("%d:%d\n",rowTxnId,rowId);
+      Long previous=m_rowTxnIds.get(partition).put(rowTxnId,rowId);
+      if (previous != null) {
+        System.out.println("WARN Duplicate TXN ID in export stream: " + rowTxnId);
+      }
+    }
+    System.out.println("\n!_!_! DEBUG !_!_! read " + dcount + " exported records");
+    determineReadUpToCounters();
+    dcount=m_clientOverFlow.size();
+    processClientIdOverFlow();
+    System.out.println("!_!_! DEBUG !_!_! processed " + (dcount - m_clientOverFlow.size()) + " client overflow txid records");
+    System.out.println("!_!_! DEBUG !_!_! overflow size is now " + m_clientOverFlow.size());
+    dcount=0;
+    long[] rec=new long[3];
+    while ((!reachedReadUpTo() || !more_rows) && more_txnids) {
+      String trace=txnIdReader.readLine();
+      if (trace == null) {
+        txnIdReader=openNextClientFile();
+        if (txnIdReader == null) {
+          System.out.println("No more client txn IDs");
+          more_txnids=false;
+        }
+ else {
+          trace=txnIdReader.readLine();
+        }
+      }
+      int recColumns=splitClientTrace(trace,rec);
+      if (recColumns == rec.length) {
+        long rowid=rec[0];
+        long txid=rec[1];
+        long ts=rec[2];
+        if (txid >= 0) {
+          m_clientTxnIds.put(txid,ts);
+          countDownReadUpTo(txid);
+        }
+ else {
+          m_clientTxnIdOrphans.add(rowid);
+        }
+        dcount++;
+      }
+ else       if (trace != null) {
+        System.out.println("WARN read malformed trace " + trace);
+      }
+    }
+    System.out.println("!_!_! DEBUG !_!_! read " + dcount + " client txid records");
+    if (matchClientTxnIds(vfout)) {
+      emptyRemovalCycles=0;
+    }
+ else     if (++emptyRemovalCycles >= 10) {
+      System.err.println("ERROR: 10 check cycles failed to match client tx ids with exported tx id -- bailing out");
+      System.exit(1);
+    }
+    printTxCountByPartition();
+    if (!more_rows || !more_txnids) {
+      if (more_rows && !m_clientTxnIds.isEmpty()) {
+        quit=false;
+      }
+ else {
+        quit=true;
+      }
+    }
+  }
+  if (more_rows || more_txnids) {
+    System.out.println("Something wasn't drained");
+    System.out.println("client txns remaining: " + m_clientTxnIds.size());
+    System.out.println("Export rows remaining: ");
+    int total=0;
+    for (int i=0; i < m_partitions; i++) {
+      total+=m_rowTxnIds.get(i).size();
+      System.out.println("\tpartition: " + i + ", size: "+ m_rowTxnIds.get(i).size());
+    }
+    if (total != 0 && m_clientTxnIds.size() != 0) {
+      System.out.println("THIS IS A REAL ERROR?!");
+    }
+  }
+}

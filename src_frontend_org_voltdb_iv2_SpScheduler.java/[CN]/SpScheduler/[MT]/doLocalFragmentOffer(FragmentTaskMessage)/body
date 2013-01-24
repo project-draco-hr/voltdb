@@ -1,0 +1,24 @@
+{
+  TransactionState txn=m_outstandingTxns.get(msg.getTxnId());
+  boolean logThis=false;
+  if (txn == null) {
+    txn=new ParticipantTransactionState(msg.getSpHandle(),msg);
+    m_outstandingTxns.put(msg.getTxnId(),txn);
+    logThis=(msg.getInitiateTask() != null && !msg.getInitiateTask().isReadOnly());
+  }
+  TransactionTask task;
+  if (msg.isSysProcTask()) {
+    task=new SysprocFragmentTask(m_mailbox,(ParticipantTransactionState)txn,m_pendingTasks,msg,null);
+  }
+ else {
+    task=new FragmentTask(m_mailbox,(ParticipantTransactionState)txn,m_pendingTasks,msg,null);
+  }
+  if (logThis) {
+    if (!m_cl.log(msg.getInitiateTask(),msg.getSpHandle(),m_durabilityListener,task)) {
+      m_pendingTasks.offer(task);
+    }
+  }
+ else {
+    m_pendingTasks.offer(task);
+  }
+}

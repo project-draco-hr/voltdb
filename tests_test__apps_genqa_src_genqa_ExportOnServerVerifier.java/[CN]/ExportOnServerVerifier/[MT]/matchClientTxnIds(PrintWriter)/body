@@ -1,0 +1,53 @@
+{
+  Collections.sort(m_clientTxnIdOrphans);
+  int matchCount=0;
+  int staleCount=0;
+  int dupStaleCount=0;
+  Iterator<Long> staleitr=m_staleTxnIds.iterator();
+  while (staleitr.hasNext()) {
+    long staletx=staleitr.next();
+    if (m_clientTxnIds.remove(staletx) != null) {
+      ++matchCount;
+      staleitr.remove();
+      if (writer != null)       writer.println(staletx);
+      System.out.println(" *** Resurfaced stale tx " + staletx + " found in the client tx list");
+    }
+  }
+  for (int i=0; i < m_partitions; ++i) {
+    Iterator<Map.Entry<Long,Long>> txitr=m_rowTxnIds.get(i).entrySet().iterator();
+    while (txitr.hasNext()) {
+      Map.Entry<Long,Long> e=txitr.next();
+      if (m_clientTxnIds.remove(e.getKey()) != null) {
+        txitr.remove();
+        ++matchCount;
+        if (writer != null)         writer.println(e.getKey());
+        m_clientOverFlow.remove(e.getKey());
+        if (e.getKey() > m_maxPartTxId.get(i)) {
+          m_maxPartTxId.put(i,e.getKey());
+        }
+        if (m_staleTxnIds.remove(e.getKey())) {
+          System.out.println(" *** Matched stale tx " + e.getKey() + " found in the client tx list");
+        }
+      }
+ else       if (e.getKey() <= m_maxPartTxId.get(i)) {
+        txitr.remove();
+        if (!m_staleTxnIds.add(e.getKey())) {
+          ++dupStaleCount;
+        }
+        ++staleCount;
+      }
+ else {
+        long bsidx=Collections.binarySearch(m_clientTxnIdOrphans,e.getValue());
+        if (bsidx >= 0) {
+          System.out.println(" *** Found unrecorded txid " + e.getKey() + " for rowId "+ e.getValue());
+          if (writer != null)           writer.println(e.getKey());
+          txitr.remove();
+          m_clientTxnIdOrphans.remove(bsidx);
+          ++matchCount;
+        }
+      }
+    }
+  }
+  System.out.println("!_!_! DEBUG !_!_! *MATCHED* " + matchCount + " exported records, with *STALE* "+ staleCount+ " of which  "+ dupStaleCount+ " are duplicate");
+  return (matchCount + staleCount) > 0;
+}

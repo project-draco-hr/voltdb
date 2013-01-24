@@ -1,46 +1,29 @@
 {
-  final String INSERT_NODE_NAME="insert";
-  final String UPDATE_NODE_NAME="update";
-  final String DELETE_NODE_NAME="delete";
-  final String SELECT_NODE_NAME="select";
   AbstractParsedStmt retval=null;
   if (stmtTypeElement == null) {
     System.err.println("Unexpected error parsing hsql parsed stmt xml");
     throw new RuntimeException("Unexpected error parsing hsql parsed stmt xml");
   }
   if (stmtTypeElement.name.equalsIgnoreCase(INSERT_NODE_NAME)) {
-    retval=new ParsedInsertStmt();
+    retval=new ParsedInsertStmt(paramValues,db);
   }
  else   if (stmtTypeElement.name.equalsIgnoreCase(UPDATE_NODE_NAME)) {
-    retval=new ParsedUpdateStmt();
+    retval=new ParsedUpdateStmt(paramValues,db);
   }
  else   if (stmtTypeElement.name.equalsIgnoreCase(DELETE_NODE_NAME)) {
-    retval=new ParsedDeleteStmt();
+    retval=new ParsedDeleteStmt(paramValues,db);
   }
  else   if (stmtTypeElement.name.equalsIgnoreCase(SELECT_NODE_NAME)) {
-    retval=new ParsedSelectStmt();
+    retval=new ParsedSelectStmt(paramValues,db);
+  }
+ else   if (stmtTypeElement.name.equalsIgnoreCase(UNION_NODE_NAME)) {
+    retval=new ParsedUnionStmt(paramValues,db);
   }
  else {
     throw new RuntimeException("Unexpected Element: " + stmtTypeElement.name);
   }
-  retval.m_paramValues=paramValues;
-  retval.m_db=db;
-  for (  VoltXMLElement node : stmtTypeElement.children) {
-    if (node.name.equalsIgnoreCase("parameters")) {
-      retval.parseParameters(node);
-    }
- else     if (node.name.equalsIgnoreCase("tablescans")) {
-      retval.parseTables(node);
-    }
- else     if (node.name.equalsIgnoreCase("scan_columns")) {
-      retval.parseScanColumns(node);
-    }
-  }
+  retval.parseTablesAndParams(stmtTypeElement);
   retval.parse(stmtTypeElement);
-  retval.analyzeWhereExpression();
-  assert(retval.multiTableSelectionList.size() == 0);
-  assert(retval.noTableSelectionList.size() == 0);
-  retval.sql=sql;
-  retval.joinOrder=joinOrder;
+  retval.postParse(sql,joinOrder);
   return retval;
 }
