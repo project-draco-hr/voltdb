@@ -1,0 +1,18 @@
+{
+  long sequenceWithTxnId=Long.MIN_VALUE;
+  boolean commandLog=(message instanceof TransactionInfoBaseMessage && (((TransactionInfoBaseMessage)message).isForReplay()));
+  boolean dr=((message instanceof TransactionInfoBaseMessage && ((TransactionInfoBaseMessage)message).isForDR()));
+  boolean sentinel=message instanceof MultiPartitionParticipantMessage;
+  boolean replay=commandLog || sentinel || dr;
+  assert(!(commandLog && dr));
+  if (commandLog || sentinel) {
+    sequenceWithTxnId=((TransactionInfoBaseMessage)message).getTxnId();
+  }
+ else   if (dr) {
+    sequenceWithTxnId=((TransactionInfoBaseMessage)message).getOriginalTxnId();
+  }
+  if (replay) {
+    m_replaySequencer.updateLastSeenTxnId(sequenceWithTxnId,(TransactionInfoBaseMessage)message);
+    m_replaySequencer.updateLastPolledTxnId(sequenceWithTxnId,(TransactionInfoBaseMessage)message);
+  }
+}
