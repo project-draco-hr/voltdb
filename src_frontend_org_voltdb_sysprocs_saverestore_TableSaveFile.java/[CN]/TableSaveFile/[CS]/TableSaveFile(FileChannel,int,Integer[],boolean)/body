@@ -13,8 +13,8 @@
     m_chunkReads=new Semaphore(readAheadChunks);
     m_saveFile=dataIn;
     m_continueOnCorruptedChunk=continueOnCorruptedChunk;
-    final CRC32 crc=new CRC32();
-    final CRC32 secondCRC=new CRC32();
+    final PureJavaCrc32 crc=new PureJavaCrc32();
+    final PureJavaCrc32 secondCRC=new PureJavaCrc32();
     final ByteBuffer lengthBuffer=ByteBuffer.allocate(8);
     while (lengthBuffer.hasRemaining()) {
       final int read=m_saveFile.read(lengthBuffer);
@@ -91,6 +91,7 @@
     }
     if (m_versionNum[3] == 0) {
       m_txnId=fd.readLong();
+      m_timestamp=TransactionIdManager.getTimestampFromTransactionId(m_txnId);
       m_hostId=fd.readInt();
       m_hostname=fd.readString();
       m_clusterName=fd.readString();
@@ -98,6 +99,7 @@
       m_tableName=fd.readString();
       m_isReplicated=fd.readBoolean();
       m_isCompressed=false;
+      m_checksumType=ChecksumType.CRC32;
       if (!m_isReplicated) {
         m_partitionIds=(int[])fd.readArray(int.class);
         if (!m_completed) {
@@ -114,15 +116,28 @@
           m_corruptedPartitions.add(0);
         }
       }
+      m_hasVersion2FormatChunks=false;
     }
  else {
-      assert(m_versionNum[3] == 1);
+      assert(m_versionNum[3] == 1 || m_versionNum[3] == 2);
+      if (m_versionNum[3] >= 2) {
+        m_hasVersion2FormatChunks=true;
+      }
+ else {
+        m_hasVersion2FormatChunks=false;
+      }
       int numJSONBytes=fd.readInt();
       byte jsonBytes[]=new byte[numJSONBytes];
       fd.readFully(jsonBytes);
       String jsonString=new String(jsonBytes,"UTF-8");
       JSONObject obj=new JSONObject(jsonString);
       m_txnId=obj.getLong("txnId");
+      if (obj.has("timestamp")) {
+        m_timestamp=obj.getLong("timestamp");
+      }
+ else {
+        m_timestamp=TransactionIdManager.getTimestampFromTransactionId(m_txnId);
+      }
       m_hostId=obj.getInt("hostId");
       m_hostname=obj.getString("hostname");
       m_clusterName=obj.getString("clusterName");
@@ -130,6 +145,7 @@
       m_tableName=obj.getString("tableName");
       m_isReplicated=obj.getBoolean("isReplicated");
       m_isCompressed=obj.optBoolean("isCompressed",false);
+      m_checksumType=ChecksumType.valueOf(obj.optString("checksumType","CRC32"));
       if (!m_isReplicated) {
         JSONArray partitionIds=obj.getJSONArray("partitionIds");
         m_partitionIds=new int[partitionIds.length()];

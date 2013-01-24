@@ -7,13 +7,16 @@
     final SnapshotTableTask currentTask=m_snapshotTableTasks.peek();
     assert(currentTask != null);
     final int headerSize=currentTask.m_target.getHeaderSize();
+    int serialized=0;
     final BBContainer snapshotBuffer=m_availableSnapshotBuffers.poll();
     assert(snapshotBuffer != null);
     snapshotBuffer.b.clear();
     snapshotBuffer.b.position(headerSize);
-    final int serialized=ee.tableStreamSerializeMore(snapshotBuffer,currentTask.m_tableId,TableStreamType.SNAPSHOT);
-    if (serialized < 0) {
-      VoltDB.crashLocalVoltDB("Failure while serialize data from a table for COW snapshot",false,null);
+    if (!currentTask.m_isDevNull) {
+      serialized=ee.tableStreamSerializeMore(snapshotBuffer,currentTask.m_tableId,TableStreamType.SNAPSHOT);
+      if (serialized < 0) {
+        VoltDB.crashLocalVoltDB("Failure while serialize data from a table for COW snapshot",false,null);
+      }
     }
     if (serialized == 0) {
       final SnapshotTableTask t=m_snapshotTableTasks.poll();
@@ -38,7 +41,7 @@ catch (            InterruptedException e) {
       m_availableSnapshotBuffers.offer(snapshotBuffer);
       continue;
     }
-    snapshotBuffer.b.limit(headerSize + serialized);
+    snapshotBuffer.b.limit(serialized + headerSize);
     snapshotBuffer.b.position(0);
     Callable<BBContainer> valueForTarget=Callables.returning(snapshotBuffer);
     for (    SnapshotDataFilter filter : currentTask.m_filters) {
@@ -69,10 +72,21 @@ catch (            InterruptedException e) {
     final ArrayList<SnapshotDataTarget> snapshotTargets=m_snapshotTargets;
     m_snapshotTargets=null;
     m_snapshotTableTasks=null;
-    final int result=ExecutionSitesCurrentlySnapshotting.decrementAndGet();
-    if (result == 0) {
+    boolean IamLast=false;
+synchronized (ExecutionSitesCurrentlySnapshotting) {
+      if (!ExecutionSitesCurrentlySnapshotting.contains(this)) {
+        VoltDB.crashLocalVoltDB("Currently snapshotting site didn't find itself in set of snapshotting sites",true,null);
+      }
+      IamLast=ExecutionSitesCurrentlySnapshotting.size() == 1;
+      if (!IamLast) {
+        ExecutionSitesCurrentlySnapshotting.remove(this);
+      }
+    }
+    if (IamLast) {
       final long txnId=m_lastSnapshotTxnId;
       final int numHosts=m_lastSnapshotNumHosts;
+      final Map<String,Map<Integer,Pair<Long,Long>>> exportSequenceNumbers=m_exportSequenceNumbersToLogOnCompletion;
+      m_exportSequenceNumbersToLogOnCompletion=null;
       final Thread terminatorThread=new Thread("Snapshot terminator"){
         @Override public void run(){
           try {
@@ -112,10 +126,10 @@ catch (              InterruptedException e) {
           }
   finally {
             try {
-              logSnapshotCompleteToZK(txnId,numHosts,m_lastSnapshotSucceded);
+              logSnapshotCompleteToZK(txnId,numHosts,m_lastSnapshotSucceded,exportSequenceNumbers);
             }
   finally {
-              ExecutionSitesCurrentlySnapshotting.decrementAndGet();
+              ExecutionSitesCurrentlySnapshotting.remove(SnapshotSiteProcessor.this);
             }
           }
         }

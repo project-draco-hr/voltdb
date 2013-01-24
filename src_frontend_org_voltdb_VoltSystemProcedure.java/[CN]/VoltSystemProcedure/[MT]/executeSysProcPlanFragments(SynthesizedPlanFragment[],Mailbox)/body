@@ -16,6 +16,7 @@
       }
       parambytes=fs.getBuffer();
     }
+    log.trace("Sending fragment " + pf.fragmentId + " dependency "+ pf.outputDepId+ " from "+ CoreUtils.hsIdToString(m.getHSId())+ "-"+ CoreUtils.hsIdToString(m_site.getCorrespondingSiteId())+ " to "+ CoreUtils.hsIdToString(pf.siteId));
     FragmentTaskMessage ftm=FragmentTaskMessage.createWithOneFragment(0,m.getHSId(),0,0,false,pf.fragmentId,pf.outputDepId,parambytes,false,m_runner.getTxnState().isForReplay());
     m.send(pf.siteId,ftm);
   }
@@ -29,12 +30,31 @@
       FragmentResponseMessage frm=new FragmentResponseMessage(ftm,m.getHSId());
       frm.addDependency(dp.depId,dp.dependency);
       m.send(ftm.getCoordinatorHSId(),frm);
+      if (!m_unexpectedDependencies.isEmpty()) {
+        for (        Integer dependencyId : dependencyIds) {
+          if (m_unexpectedDependencies.containsKey(dependencyId)) {
+            receivedDependencyIds.put(dependencyId,m_unexpectedDependencies.remove(dependencyId));
+          }
+        }
+        if (receivedDependencyIds.size() == dependencyIds.size() && receivedDependencyIds.keySet().equals(dependencyIds)) {
+          break;
+        }
+      }
     }
  else     if (vm instanceof FragmentResponseMessage) {
       FragmentResponseMessage frm=(FragmentResponseMessage)vm;
-      receivedDependencyIds.put(frm.getTableDependencyIdAtIndex(0),Arrays.asList(new VoltTable[]{frm.getTableAtIndex(0)}));
-      if (receivedDependencyIds.size() == dependencyIds.size() && receivedDependencyIds.keySet().equals(dependencyIds)) {
-        break;
+      final int dependencyId=frm.getTableDependencyIdAtIndex(0);
+      if (dependencyIds.contains(dependencyId)) {
+        receivedDependencyIds.put(dependencyId,Arrays.asList(new VoltTable[]{frm.getTableAtIndex(0)}));
+        log.trace("Received dependency at " + CoreUtils.hsIdToString(m.getHSId()) + "-"+ CoreUtils.hsIdToString(m_site.getCorrespondingSiteId())+ " from "+ CoreUtils.hsIdToString(frm.m_sourceHSId)+ " have "+ receivedDependencyIds.size()+ " "+ receivedDependencyIds.keySet()+ " and need "+ dependencyIds.size()+ " "+ dependencyIds);
+        if (receivedDependencyIds.size() == dependencyIds.size() && receivedDependencyIds.keySet().equals(dependencyIds)) {
+          break;
+        }
+      }
+ else {
+        if (m_unexpectedDependencies.put(dependencyId,Arrays.asList(new VoltTable[]{frm.getTableAtIndex(0)})) != null) {
+          VoltDB.crashGlobalVoltDB("Received a duplicate dependency",true,null);
+        }
       }
     }
   }

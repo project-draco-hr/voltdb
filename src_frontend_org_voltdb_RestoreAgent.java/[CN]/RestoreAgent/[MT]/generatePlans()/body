@@ -1,17 +1,17 @@
 {
-  TreeMap<Long,Snapshot> snapshots=new TreeMap<Long,SnapshotUtil.Snapshot>();
-  if (m_action == START_ACTION.RECOVER || m_action == START_ACTION.START) {
+  Map<String,Snapshot> snapshots=new HashMap<String,SnapshotUtil.Snapshot>();
+  if (m_action == START_ACTION.RECOVER) {
     snapshots=getSnapshots();
   }
   final Long maxLastSeenTxn=m_replayAgent.getMaxLastSeenTxn();
   Set<SnapshotInfo> snapshotInfos=new HashSet<SnapshotInfo>();
-  for (  Entry<Long,Snapshot> e : snapshots.entrySet()) {
+  for (  Snapshot e : snapshots.values()) {
     if (!VoltDB.instance().isIV2Enabled()) {
-      if (maxLastSeenTxn != null && e.getKey() < maxLastSeenTxn) {
+      if (maxLastSeenTxn != null && e.getTxnId() < maxLastSeenTxn) {
         continue;
       }
     }
-    SnapshotInfo info=checkSnapshotIsComplete(e.getKey(),e.getValue());
+    SnapshotInfo info=checkSnapshotIsComplete(e.getTxnId(),e);
     if (m_replayAgent.getInstanceId() != null && info != null && !m_replayAgent.getInstanceId().equals(info.instanceId)) {
       LOG.debug("Rejecting snapshot due to mismatching instance IDs.");
       LOG.debug("Command log ID: " + m_replayAgent.getInstanceId().serializeToJSONObject().toString());
@@ -53,9 +53,8 @@
   }
   LOG.debug("Gathered " + snapshotInfos.size() + " snapshot information");
   sendLocalRestoreInformation(maxLastSeenTxn,snapshotInfos);
-  Set<SnapshotInfo> lastSnapshot=getRestorePlan();
-  SnapshotInfo infoWithMinHostId=consolidateSnapshotInfos(lastSnapshot);
-  if (m_action == START_ACTION.RECOVER || m_action == START_ACTION.START) {
+  SnapshotInfo infoWithMinHostId=getRestorePlan();
+  if (m_action == START_ACTION.RECOVER) {
     m_replayAgent.generateReplayPlan();
   }
   m_planned=true;

@@ -1,0 +1,56 @@
+{
+  String nonce=conf.getProperty("nonce");
+  if (nonce == null) {
+    throw new IllegalArgumentException("ExportToFile: must provide a filename nonce");
+  }
+  char delimiter='\0';
+  String type=conf.getProperty("type","").trim();
+  if (type != null) {
+    if (type.equalsIgnoreCase("csv")) {
+      delimiter=',';
+    }
+ else     if (type.equalsIgnoreCase("tsv")) {
+      delimiter='\t';
+    }
+ else {
+      throw new IllegalArgumentException("Error: --type must be one of CSV or TSV");
+    }
+  }
+  if (delimiter == '\0') {
+    throw new IllegalArgumentException("ExportToFile: must provide an output type");
+  }
+  File outdir=new VoltFile(conf.getProperty("outdir","."));
+  if (!outdir.exists()) {
+    if (!outdir.mkdir()) {
+      throw new IllegalArgumentException("Error: " + outdir.getPath() + " cannot be created");
+    }
+  }
+  if (!outdir.canRead()) {
+    throw new IllegalArgumentException("Error: " + outdir.getPath() + " does not have read permission set");
+  }
+  if (!outdir.canExecute()) {
+    throw new IllegalArgumentException("Error: " + outdir.getPath() + " does not have execute permission set");
+  }
+  if (!outdir.canWrite()) {
+    throw new IllegalArgumentException("Error: " + outdir.getPath() + " does not have write permission set");
+  }
+  int firstfield=Boolean.parseBoolean(conf.getProperty("skipinternals","false")) ? INTERNAL_FIELD_COUNT : 0;
+  int period=Integer.parseInt(conf.getProperty("period","60"));
+  if (period < 1) {
+    throw new IllegalArgumentException("Error: Specified value for --period must be >= 1.");
+  }
+  String dateformatString=conf.getProperty("dateformat","yyyyMMddHHmmss").trim();
+  boolean batched=Boolean.parseBoolean(conf.getProperty("batched","false"));
+  boolean withSchema=Boolean.parseBoolean(conf.getProperty("with-schema","false"));
+  String fullDelimiters=conf.getProperty("delimiters");
+  if (fullDelimiters != null) {
+    fullDelimiters=fullDelimiters.trim();
+    String charsAsStr=StringEscapeUtils.unescapeJava(fullDelimiters.trim());
+    if (charsAsStr.length() != 4) {
+      throw new IllegalArgumentException("The delimiter set must contain exactly 4 characters (after any string escaping).");
+    }
+  }
+  TimeZone tz=TimeZone.getTimeZone(conf.getProperty("timezone",VoltDB.GMT_TIMEZONE.getID()));
+  BinaryEncoding encoding=BinaryEncoding.valueOf(conf.getProperty("binaryencoding","HEX").trim().toUpperCase());
+  configureInternal(delimiter,nonce,outdir,period,dateformatString,fullDelimiters,firstfield,batched,withSchema,tz,encoding);
+}

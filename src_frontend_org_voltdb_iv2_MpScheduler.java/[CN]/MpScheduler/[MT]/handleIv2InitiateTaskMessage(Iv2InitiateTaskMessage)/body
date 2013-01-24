@@ -1,16 +1,25 @@
 {
   final String procedureName=message.getStoredProcedureName();
   long mpTxnId;
-  long timestamp;
+  long timestamp=Long.MIN_VALUE;
+  if (message.isForReplay()) {
+    timestamp=message.getUniqueId();
+    m_uniqueIdGenerator.updateMostRecentlyGeneratedUniqueId(timestamp);
+  }
+ else   if (message.isForDR()) {
+    timestamp=message.getStoredProcedureInvocation().getOriginalUniqueId();
+    if (UniqueIdGenerator.getPartitionIdFromUniqueId(timestamp) == m_partitionId) {
+      m_uniqueIdGenerator.updateMostRecentlyGeneratedUniqueId(timestamp);
+    }
+  }
   if (message.isForReplay()) {
     mpTxnId=message.getTxnId();
-    timestamp=message.getTimestamp();
     setMaxSeenTxnId(mpTxnId);
   }
  else {
     TxnEgo ego=advanceTxnEgo();
     mpTxnId=ego.getTxnId();
-    timestamp=ego.getWallClock();
+    timestamp=m_uniqueIdGenerator.getNextUniqueId();
   }
   Iv2Trace.logIv2InitiateTaskMessage(message,m_mailbox.getHSId(),mpTxnId,Long.MIN_VALUE);
   final Config sysprocConfig=SystemProcedureCatalog.listing.get(procedureName);
@@ -24,7 +33,7 @@
     return;
   }
   Iv2InitiateTaskMessage mp=new Iv2InitiateTaskMessage(message.getInitiatorHSId(),message.getCoordinatorHSId(),m_repairLogTruncationHandle,mpTxnId,timestamp,message.isReadOnly(),message.isSinglePartition(),message.getStoredProcedureInvocation(),message.getClientInterfaceHandle(),message.getConnectionId(),message.isForReplay());
-  final MpProcedureTask task=new MpProcedureTask(m_mailbox,procedureName,m_pendingTasks,mp,m_iv2Masters,m_buddyHSId);
+  final MpProcedureTask task=new MpProcedureTask(m_mailbox,procedureName,m_pendingTasks,mp,m_iv2Masters,m_buddyHSId,false);
   m_outstandingTxns.put(task.m_txn.txnId,task.m_txn);
   m_pendingTasks.offer(task);
 }

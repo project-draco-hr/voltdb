@@ -11,7 +11,11 @@ if ((len(sys.argv) > 3) or ((len(sys.argv) == 2) and (sys.argv[1] == '-h'))):
     print '   build-kit.py voltdb-git-SHA pro-git-SHA'
 proTreeish = 'master'
 voltdbTreeish = 'master'
-createCandidate = True
+if ('-o' in sys.argv):
+    oneOff = True
+    sys.argv.remove('-o')
+else:
+    oneOff = False
 if (len(sys.argv) == 2):
     createCandidate = False
     proTreeish = sys.argv[1]
@@ -20,8 +24,8 @@ if (len(sys.argv) == 3):
     createCandidate = False
     voltdbTreeish = sys.argv[1]
     proTreeish = sys.argv[2]
+    oneOff = True
 print ('Building with pro: %s and voltdb: %s' % (proTreeish, voltdbTreeish))
-print ('Create link for releases/candidate = %s' % createCandidate)
 versionVolt5f = 'unknown'
 versionMac = 'unknown'
 releaseDir = 'unknown'
@@ -30,10 +34,10 @@ voltmini = getSSHInfoForHost('voltmini')
 volt12c = getSSHInfoForHost('volt12c')
 with settings(user=username, host_string=volt5f[1], disable_known_hosts=True, key_filename=volt5f[0]):
     versionVolt5f = checkoutCode(voltdbTreeish, proTreeish)
-    if (voltdbTreeish == 'master'):
-        releaseDir = ((os.getenv('HOME') + '/releases/') + versionVolt5f)
-    else:
+    if oneOff:
         releaseDir = ('%s/releases/one-offs/%s-%s-%s' % (os.getenv('HOME'), versionVolt5f, voltdbTreeish, proTreeish))
+    else:
+        releaseDir = ((os.getenv('HOME') + '/releases/') + voltdbTreeish)
     makeReleaseDir(releaseDir)
     print ('VERSION: ' + versionVolt5f)
     buildCommunity()
@@ -62,7 +66,5 @@ with settings(user=username, host_string=volt12c[1], disable_known_hosts=True, k
         run(('sudo python voltdb-install.py -D ' + entbld))
         get(('voltdb-ent_%s-1_amd64.deb' % versionVolt5f), releaseDir)
 computeChecksums(releaseDir)
-if createCandidate:
-    createCandidateSysmlink(releaseDir)
-archiveDir = ((os.getenv('HOME') + '/releases/archive/') + versionVolt5f)
+archiveDir = os.path.join(os.getenv('HOME'), 'releases', 'archive', voltdbTreeish, versionVolt5f)
 backupReleaseDir(releaseDir, archiveDir, versionVolt5f)

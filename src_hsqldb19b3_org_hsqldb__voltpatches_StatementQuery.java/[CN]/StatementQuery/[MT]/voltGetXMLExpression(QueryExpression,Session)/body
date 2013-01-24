@@ -1,0 +1,32 @@
+{
+  int exprType=queryExpr.getUnionType();
+  if (exprType == QueryExpression.NOUNION) {
+    if (!(queryExpr instanceof QuerySpecification)) {
+      throw new HSQLParseException(queryExpr.operatorName() + " is not supported.");
+    }
+    QuerySpecification select=(QuerySpecification)queryExpr;
+    return voltGetXMLSpecification(select,session);
+  }
+ else   if (exprType == QueryExpression.UNION || exprType == QueryExpression.UNION_ALL || exprType == QueryExpression.EXCEPT || exprType == QueryExpression.EXCEPT_ALL || exprType == QueryExpression.INTERSECT || exprType == QueryExpression.INTERSECT_ALL) {
+    VoltXMLElement unionExpr=new VoltXMLElement("union");
+    unionExpr.attributes.put("uniontype",queryExpr.operatorName());
+    VoltXMLElement leftExpr=voltGetXMLExpression(queryExpr.getLeftQueryExpression(),session);
+    VoltXMLElement rightExpr=voltGetXMLExpression(queryExpr.getRightQueryExpression(),session);
+    if ("union".equalsIgnoreCase(leftExpr.name) && queryExpr.operatorName().equalsIgnoreCase(leftExpr.attributes.get("uniontype"))) {
+      unionExpr.children.addAll(leftExpr.children);
+    }
+ else {
+      unionExpr.children.add(leftExpr);
+    }
+    if (exprType != QueryExpression.EXCEPT && exprType != QueryExpression.EXCEPT_ALL && "union".equalsIgnoreCase(rightExpr.name) && queryExpr.operatorName().equalsIgnoreCase(rightExpr.attributes.get("uniontype"))) {
+      unionExpr.children.addAll(rightExpr.children);
+    }
+ else {
+      unionExpr.children.add(rightExpr);
+    }
+    return unionExpr;
+  }
+ else {
+    throw new HSQLParseException(queryExpression.operatorName() + "  tuple set operator is not supported.");
+  }
+}

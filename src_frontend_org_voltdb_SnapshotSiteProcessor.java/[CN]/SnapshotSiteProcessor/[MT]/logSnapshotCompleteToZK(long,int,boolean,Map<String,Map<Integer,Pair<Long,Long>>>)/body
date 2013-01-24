@@ -1,0 +1,65 @@
+{
+  ZooKeeper zk=VoltDB.instance().getHostMessenger().getZK();
+  final String snapshotPath=VoltZK.completed_snapshots + "/" + txnId;
+  boolean success=false;
+  while (!success) {
+    Stat stat=new Stat();
+    byte data[]=null;
+    try {
+      data=zk.getData(snapshotPath,false,stat);
+    }
+ catch (    Exception e) {
+      VoltDB.crashLocalVoltDB("This ZK get should never fail",true,e);
+    }
+    if (data == null) {
+      VoltDB.crashLocalVoltDB("Data should not be null if the node exists",false,null);
+    }
+    try {
+      JSONObject jsonObj=new JSONObject(new String(data,"UTF-8"));
+      if (jsonObj.getLong("txnId") != txnId) {
+        VoltDB.crashLocalVoltDB("TxnId should match",false,null);
+      }
+      int remainingHosts=jsonObj.getInt("hostCount") - 1;
+      jsonObj.put("hostCount",remainingHosts);
+      if (!snapshotSuccess) {
+        hostLog.error("Snapshot failed at this node, snapshot will not be viable for log truncation");
+        jsonObj.put("isTruncation",false);
+      }
+      mergeExportSequenceNumbers(jsonObj,exportSequenceNumbers);
+      zk.setData(snapshotPath,jsonObj.toString(4).getBytes("UTF-8"),stat.getVersion());
+    }
+ catch (    KeeperException.BadVersionException e) {
+      continue;
+    }
+catch (    Exception e) {
+      VoltDB.crashLocalVoltDB("This ZK call should never fail",true,e);
+    }
+    success=true;
+  }
+  try {
+    TreeSet<String> snapshots=new TreeSet<String>(zk.getChildren(VoltZK.completed_snapshots,false));
+    while (snapshots.size() > 30) {
+      try {
+        zk.delete(VoltZK.completed_snapshots + "/" + snapshots.first(),-1);
+      }
+ catch (      NoNodeException e) {
+      }
+catch (      Exception e) {
+        VoltDB.crashLocalVoltDB("Deleting a snapshot completion record from ZK should only fail with NoNodeException",true,e);
+      }
+      snapshots.remove(snapshots.first());
+    }
+  }
+ catch (  Exception e) {
+    VoltDB.crashLocalVoltDB("Retrieving list of completed snapshots from ZK should never fail",true,e);
+  }
+  try {
+    VoltDB.instance().getHostMessenger().getZK().delete(VoltZK.nodes_currently_snapshotting + "/" + VoltDB.instance().getHostMessenger().getHostId(),-1);
+  }
+ catch (  NoNodeException e) {
+    hostLog.warn("Expect the snapshot node to already exist during deletion",e);
+  }
+catch (  Exception e) {
+    VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
+  }
+}

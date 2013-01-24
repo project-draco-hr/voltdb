@@ -1,0 +1,32 @@
+{
+  ExecutionSitesCurrentlySnapshotting.add(this);
+  final long now=System.currentTimeMillis();
+  m_quietUntil=now + 200;
+  m_lastSnapshotSucceded=true;
+  m_lastSnapshotTxnId=txnId;
+  m_lastSnapshotNumHosts=numHosts;
+  m_snapshotTableTasks=new ArrayDeque<SnapshotTableTask>(tasks);
+  m_snapshotTargets=new ArrayList<SnapshotDataTarget>();
+  m_snapshotTargetTerminators=new ArrayList<Thread>();
+  m_exportSequenceNumbersToLogOnCompletion=exportSequenceNumbers;
+  for (  final SnapshotTableTask task : tasks) {
+    if ((!task.m_isReplicated) || (!task.m_target.getFormat().isTableBased())) {
+      assert(task != null);
+      assert(m_snapshotTargets != null);
+      m_snapshotTargets.add(task.m_target);
+    }
+    if (!task.m_isDevNull) {
+      if (!ee.activateTableStream(task.m_tableId,TableStreamType.SNAPSHOT)) {
+        hostLog.error("Attempted to activate copy on write mode for table " + task.m_name + " and failed");
+        hostLog.error(task);
+        VoltDB.crashLocalVoltDB("No additional info",false,null);
+      }
+    }
+  }
+  if (m_isIV2Enabled) {
+    for (int ii=0; ii < m_availableSnapshotBuffers.size(); ii++) {
+      VoltDB.instance().schedulePriorityWork(m_onPotentialSnapshotWork,(m_quietUntil + (5 * m_snapshotPriority) - now),0,TimeUnit.MILLISECONDS);
+      m_quietUntil+=5 * m_snapshotPriority;
+    }
+  }
+}

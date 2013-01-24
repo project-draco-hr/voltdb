@@ -14,6 +14,8 @@
   String fullDelimiters=null;
   int throughputMonitorPeriod=0;
   boolean autodiscoverTopolgy=true;
+  TimeZone tz=VoltDB.GMT_TIMEZONE;
+  BinaryEncoding be=BinaryEncoding.HEX;
   for (int ii=0; ii < args.length; ii++) {
     String arg=args[ii];
     if (arg.equals("--help")) {
@@ -25,7 +27,7 @@
       printHelpAndQuit(-1);
     }
  else     if (arg.equals("--skipinternals")) {
-      firstfield=6;
+      firstfield=INTERNAL_FIELD_COUNT;
     }
  else     if (arg.equals("--connect")) {
       if (args.length < ii + 1) {
@@ -77,7 +79,7 @@
         printHelpAndQuit(-1);
       }
       boolean invalidDir=false;
-      outdir=new File(args[ii + 1]);
+      outdir=new VoltFile(args[ii + 1]);
       if (!outdir.exists()) {
         if (!outdir.mkdir()) {
           System.err.println("Error: " + outdir.getPath() + " cannot be created");
@@ -100,6 +102,15 @@
         System.exit(-1);
       }
       ii++;
+    }
+ else     if (args.equals("--timezone")) {
+      if (args.length < ii + 1) {
+        System.err.println("Error: Not enough args following --timezone");
+        printHelpAndQuit(-1);
+      }
+      String tzId=args[ii + 1];
+      ii++;
+      tz=TimeZone.getTimeZone(tzId);
     }
  else     if (arg.equals("--nonce")) {
       if (args.length < ii + 1) {
@@ -164,6 +175,20 @@
         printHelpAndQuit(-1);
       }
     }
+ else     if (arg.equals("--binaryencoding")) {
+      if (args.length < ii + 1) {
+        System.err.println("Error: Not enough args following --binaryencoding");
+        printHelpAndQuit(-1);
+      }
+      try {
+        be=BinaryEncoding.valueOf(args[ii + 1].trim().toUpperCase());
+      }
+ catch (      IllegalArgumentException e) {
+        System.err.println("The binary encoding \"" + args[ii + 1].trim().toUpperCase() + "\" is unsupported. Must be one of [ HEX | BASE64 ]");
+        printHelpAndQuit(-1);
+      }
+      ii++;
+    }
  else     if (arg.equals("--disable-topology-autodiscovery")) {
       autodiscoverTopolgy=false;
     }
@@ -200,13 +225,13 @@
     printHelpAndQuit(-1);
   }
   if (outdir == null) {
-    outdir=new File(".");
+    outdir=new VoltFile(".");
   }
   if (delimiter == '\0') {
     System.err.println("ExportToFile: must provide an output type");
     printHelpAndQuit(-1);
   }
-  ExportToFileClient client=new ExportToFileClient(delimiter,nonce,outdir,period,dateformatString,fullDelimiters,firstfield,connect == 'a',batched,withSchema,throughputMonitorPeriod,autodiscoverTopolgy);
+  ExportToFileClient client=new ExportToFileClient(delimiter,nonce,outdir,period,dateformatString,fullDelimiters,firstfield,connect == 'a',batched,withSchema,throughputMonitorPeriod,autodiscoverTopolgy,tz,be);
   for (  String server : volt_servers) {
     server=server.trim();
     client.m_commandLineServerArgs.add(server);

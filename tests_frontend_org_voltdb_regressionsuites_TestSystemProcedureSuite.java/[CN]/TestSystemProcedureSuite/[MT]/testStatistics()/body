@@ -54,12 +54,18 @@
   results=client.callProcedure("@Statistics","nodememory",0).getResults();
   assertEquals(1,results.length);
   System.out.println("Node memory statistics table: " + results[0].toString());
-  results=client.callProcedure("GoSleep",3000,0,null).getResults();
+  for (int ii=0; ii < 3; ii++) {
+    results=client.callProcedure("GoSleep",3000,0,null).getResults();
+  }
   results=client.callProcedure("@Statistics","procedure",0).getResults();
   assertEquals(1,results.length);
   System.out.println("Test procedures table: " + results[0].toString());
   VoltTable stats=results[0];
-  stats.advanceRow();
+  String procname="blerg";
+  while (!procname.equals("org.voltdb_testprocs.regressionsuites.malicious.GoSleep")) {
+    stats.advanceRow();
+    procname=(String)stats.get("PROCEDURE",VoltType.STRING);
+  }
   long min_time=(Long)stats.get("MIN_EXECUTION_TIME",VoltType.BIGINT);
   long max_time=(Long)stats.get("MAX_EXECUTION_TIME",VoltType.BIGINT);
   long avg_time=(Long)stats.get("AVG_EXECUTION_TIME",VoltType.BIGINT);
@@ -90,4 +96,17 @@
   results=client.callProcedure("@Statistics","iostats",0).getResults();
   assertEquals(1,results.length);
   System.out.println("Test iostats table: " + results[0].toString());
+  if (VoltDB.checkTestEnvForIv2()) {
+    results=client.callProcedure("@Statistics","TOPO",0).getResults();
+    assertEquals(1,results.length);
+    System.out.println("Test TOPO table: " + results[0].toString());
+    VoltTable topo=results[0];
+    boolean found=false;
+    while (topo.advanceRow()) {
+      if ((int)topo.getLong("Partition") == TxnEgo.MP_PARTITIONID) {
+        found=true;
+      }
+    }
+    assertTrue(found);
+  }
 }

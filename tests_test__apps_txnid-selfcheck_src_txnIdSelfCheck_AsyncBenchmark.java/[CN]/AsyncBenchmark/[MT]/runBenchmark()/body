@@ -1,16 +1,28 @@
 {
-  System.out.print(HORIZONTAL_RULE);
-  System.out.println(" Setup & Initialization");
-  System.out.println(HORIZONTAL_RULE);
+  log.info(HORIZONTAL_RULE);
+  log.info(" Setup & Initialization");
+  log.info(HORIZONTAL_RULE);
   connect();
-  Client initClient=clients.get(0);
-  initClient.callProcedure("Initialize");
-  ClientResponse rowResp=initClient.callProcedure("getLastRow");
-  VoltTable[] rowResults=rowResp.getResults();
-  assert(rowResp.getStatus() == ClientResponse.SUCCESS);
-  ClientResponse replicatedRowResp=initClient.callProcedure("getLastReplicatedRow");
-  VoltTable[] replicatedResults=replicatedRowResp.getResults();
-  assert(replicatedRowResp.getStatus() == ClientResponse.SUCCESS);
+  VoltTable[] rowResults=null;
+  VoltTable[] replicatedResults=null;
+  boolean succeeded=false;
+  while (!succeeded) {
+    Client initClient=clients.get(0);
+    try {
+      initClient.callProcedure("Initialize");
+      ClientResponse rowResp=initClient.callProcedure("getLastRow");
+      rowResults=rowResp.getResults();
+      assert(rowResp.getStatus() == ClientResponse.SUCCESS);
+      ClientResponse replicatedRowResp=initClient.callProcedure("getLastReplicatedRow");
+      replicatedResults=replicatedRowResp.getResults();
+      assert(replicatedRowResp.getStatus() == ClientResponse.SUCCESS);
+      succeeded=true;
+    }
+ catch (    Exception e) {
+      log.error("Exception on init. Will sleep.",e);
+      sleepUntilConnected(initClient,System.currentTimeMillis() + config.duration * 1000);
+    }
+  }
   final int cidCount=127;
   final long windowPerCid=config.windowsize / cidCount;
   final Map<Integer,Long> rids=new HashMap<Integer,Long>();
@@ -23,13 +35,12 @@
     rids.put((int)cid,last_rid + 1);
   }
   rids.put(-1,replicatedResults[0].asScalarLong() + 1);
-  System.out.print(HORIZONTAL_RULE);
-  System.out.println("Starting Benchmark");
-  System.out.println(HORIZONTAL_RULE);
+  log.info(HORIZONTAL_RULE);
+  log.info("Starting Benchmark");
+  log.info(HORIZONTAL_RULE);
   java.util.Random r=new java.util.Random(2);
   benchmarkStartTS=System.currentTimeMillis();
   schedulePeriodicStats();
-  System.out.println("\nRunning benchmark...");
   final long benchmarkEndTime=System.currentTimeMillis() + (1000l * config.duration);
   while (benchmarkEndTime > System.currentTimeMillis()) {
     int cid;
@@ -42,25 +53,34 @@
     long rid=rids.get(cid);
     Client client=null;
     try {
-      if (clients.isEmpty()) {
-        crash("No connection to any server");
-      }
       if (cid == -1) {
         client=clients.get(0);
-        client.callProcedure(new updateReplicatedCallback(),"updateReplicated",rid);
+        if (client.getConnectedHostList().size() == 0) {
+          continue;
+        }
+        try {
+          client.callProcedure(new updateReplicatedCallback(),"updateReplicated",rid);
+        }
+ catch (        NoConnectionsException e) {
+          log.error("ClientThread got NoConnectionsException on updateReplicated proc call.");
+        }
       }
  else {
         client=clients.get(cid % clients.size());
-        client.callProcedure(new doTxnCallback(),"doTxn",cid,rid,rid > windowPerCid ? rid - windowPerCid : 0,processor.generateForStore().getStoreValue());
+        if (client.getConnectedHostList().size() == 0) {
+          continue;
+        }
+        try {
+          client.callProcedure(new doTxnCallback(),"doTxn",cid,rid,rid > windowPerCid ? rid - windowPerCid : 0,processor.generateForStore().getStoreValue());
+        }
+ catch (        NoConnectionsException e) {
+          log.error("ClientThread got NoConnectionsException on doTxn proc call.");
+        }
       }
     }
- catch (    IndexOutOfBoundsException e) {
-      Thread.sleep(1000);
-      continue;
-    }
-catch (    IOException e) {
-      Thread.sleep(1000);
-      continue;
+ catch (    Exception e) {
+      log.error("Benchark had a unexpected exception",e);
+      System.exit(-1);
     }
     rids.put(cid,rid + 1);
   }
@@ -71,6 +91,6 @@ catch (    IOException e) {
     client.drain();
     client.close();
   }
-  clients.clear();
-  printResults();
+  log.info(HORIZONTAL_RULE);
+  log.info("Benchmark Complete");
 }

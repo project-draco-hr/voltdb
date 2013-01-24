@@ -1,15 +1,30 @@
 {
   Thread.currentThread().setName("Iv2ExecutionSite: " + CoreUtils.hsIdToString(m_siteId));
-  initialize(m_startupConfig.m_serializedCatalog,m_startupConfig.m_txnId);
+  if (m_coreBindIds != null) {
+    PosixJNAAffinity.INSTANCE.setAffinity(m_coreBindIds);
+  }
+  initialize(m_startupConfig.m_serializedCatalog,m_startupConfig.m_timestamp);
   m_startupConfig=null;
   try {
     while (m_shouldContinue) {
-      runLoop();
+      if (m_rejoinState == kStateRunning) {
+        SiteTasker task=m_scheduler.take();
+        if (task instanceof TransactionTask) {
+          m_currentTxnId=((TransactionTask)task).getTxnId();
+          m_lastTxnTime=EstTime.currentTimeMillis();
+        }
+        task.run(getSiteProcedureConnection());
+      }
+ else {
+        SiteTasker task=m_scheduler.poll();
+        if (task != null) {
+          task.runForRejoin(getSiteProcedureConnection(),m_rejoinTaskLog);
+        }
+        replayFromTaskLog();
+      }
     }
   }
- catch (  final InterruptedException e) {
-  }
-catch (  OutOfMemoryError e) {
+ catch (  OutOfMemoryError e) {
     String errmsg="Site: " + org.voltcore.utils.CoreUtils.hsIdToString(m_siteId) + " ran out of Java memory. "+ "This node will shut down.";
     VoltDB.crashLocalVoltDB(errmsg,true,e);
   }

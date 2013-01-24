@@ -3,7 +3,7 @@
     throw new IllegalArgumentException("SQL statement '" + sql + "' is null or the empty string");
   }
   try {
-    AdHocPlannedStmtBatch paw=m_csp.plan(sql,!m_catProc.getSinglepartition()).get();
+    AdHocPlannedStmtBatch paw=m_csp.plan(sql,!m_catProc.getSinglepartition(),ProcedureInvocationType.ORIGINAL,0,0).get();
     if (paw.errorMsg != null) {
       throw new VoltAbortException("Failed to plan sql '" + sql + "' error: "+ paw.errorMsg);
     }
@@ -13,7 +13,7 @@
     assert(1 == paw.plannedStatements.size());
     QueuedSQL queuedSQL=new QueuedSQL();
     AdHocPlannedStatement plannedStatement=paw.plannedStatements.get(0);
-    queuedSQL.stmt=SQLStmtAdHocHelper.createWithPlan(plannedStatement.sql,plannedStatement.core.aggregatorFragment,plannedStatement.core.collectorFragment,plannedStatement.core.isReplicatedTableDML,plannedStatement.core.parameterTypes);
+    queuedSQL.stmt=SQLStmtAdHocHelper.createWithPlan(plannedStatement.sql,plannedStatement.core.aggregatorFragment,plannedStatement.core.collectorFragment,plannedStatement.core.isReplicatedTableDML,plannedStatement.core.readOnly,plannedStatement.core.parameterTypes);
     if (plannedStatement.extractedParamValues.size() == 0) {
       queuedSQL.params=getCleanParams(queuedSQL.stmt,args);
     }
@@ -28,6 +28,7 @@
       }
       queuedSQL.params=getCleanParams(queuedSQL.stmt,extractedParams);
     }
+    updateCRC(queuedSQL);
     m_batch.add(queuedSQL);
   }
  catch (  Exception e) {

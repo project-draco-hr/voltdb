@@ -1,17 +1,10 @@
 {
-  File tmpdir=new File("/tmp");
-  assertTrue(tmpdir.exists());
-  assertTrue(tmpdir.isDirectory());
-  FileFilter filter=new FileFilter(){
+  final FileFilter filter=new FileFilter(){
     @Override public boolean accept(    File pathname){
       return pathname.getPath().contains("nadclient") && pathname.getPath().contains(".csv");
     }
   }
 ;
-  File[] filesToDelete=tmpdir.listFiles(filter);
-  for (  File f : filesToDelete) {
-    f.delete();
-  }
   String simpleSchema="create table blah (" + "ival bigint default 0 not null);" + "export table blah;";
   VoltProjectBuilder builder=new VoltProjectBuilder();
   builder.addLiteralSchema(simpleSchema);
@@ -24,13 +17,16 @@
   boolean success=cluster.compile(builder);
   assertTrue(success);
   cluster.startUp(true);
+  File tmpdir=new VoltFile("/tmp");
+  assertTrue(tmpdir.exists());
+  assertTrue(tmpdir.isDirectory());
   final String listener=cluster.getListenerAddresses().get(0);
   final Client client=ClientFactory.createClient();
   client.createConnection(listener);
   client.callProcedure("Insert",5);
   client.close();
-  final ExportToFileClient exportClient1=new ExportToFileClient(',',"nadclient1",new File("/tmp/"),1,"yyyyMMddHHmmss",null,6,false,false,false,0,false);
-  final ExportToFileClient exportClient2=new ExportToFileClient(',',"nadclient2",new File("/tmp/"),1,"yyyyMMddHHmmss",null,6,false,false,false,0,false);
+  final ExportToFileClient exportClient1=new ExportToFileClient(',',"nadclient1",new VoltFile("/tmp/"),1,"yyyyMMddHHmmss",null,6,false,false,false,0,false,TimeZone.getDefault(),ExportToFileClient.BinaryEncoding.HEX);
+  final ExportToFileClient exportClient2=new ExportToFileClient(',',"nadclient2",new VoltFile("/tmp/"),1,"yyyyMMddHHmmss",null,6,false,false,false,0,false,TimeZone.getDefault(),ExportToFileClient.BinaryEncoding.HEX);
   InetSocketAddress inetaddr1=new InetSocketAddress("localhost",cluster.port(0));
   InetSocketAddress inetaddr2=new InetSocketAddress("localhost",cluster.port(1));
   exportClient1.addServerInfo(inetaddr1);
@@ -38,7 +34,7 @@
   Thread other=new Thread(){
     @Override public void run(){
       try {
-        exportClient1.run(5000);
+        exportClient1.run(10000);
       }
  catch (      ExportClientException e) {
         e.printStackTrace();
@@ -47,7 +43,7 @@
   }
 ;
   other.start();
-  exportClient2.run(5000);
+  exportClient2.run(10000);
   other.join();
   cluster.shutDown();
   Thread.sleep(5000);

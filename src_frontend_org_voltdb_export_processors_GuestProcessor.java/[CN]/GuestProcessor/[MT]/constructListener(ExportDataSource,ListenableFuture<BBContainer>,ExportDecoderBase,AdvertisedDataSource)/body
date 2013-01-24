@@ -10,25 +10,42 @@ synchronized (ads) {
           return;
         }
         try {
-          edb.onBlockStart();
-          cont.b.order(ByteOrder.LITTLE_ENDIAN);
-          while (cont.b.hasRemaining()) {
-            int length=cont.b.getInt();
-            byte[] rowdata=new byte[length];
-            cont.b.get(rowdata,0,length);
-            edb.processRow(length,rowdata);
+          final int startPosition=cont.b.position();
+          int backoffQuantity=10 + (int)(10 * ThreadLocalRandom.current().nextDouble());
+          while (true) {
+            cont.b.position(startPosition);
+            try {
+              edb.onBlockStart();
+              cont.b.order(ByteOrder.LITTLE_ENDIAN);
+              while (cont.b.hasRemaining()) {
+                int length=cont.b.getInt();
+                byte[] rowdata=new byte[length];
+                cont.b.get(rowdata,0,length);
+                edb.processRow(length,rowdata);
+              }
+              edb.onBlockCompletion();
+              break;
+            }
+ catch (            RestartBlockException e) {
+              if (e.requestBackoff) {
+                Thread.sleep(backoffQuantity);
+                if (backoffQuantity < 8000) {
+                  backoffQuantity+=(backoffQuantity * .5);
+                  backoffQuantity+=(backoffQuantity * .5 * ThreadLocalRandom.current().nextDouble());
+                }
+              }
+            }
           }
-          edb.onBlockCompletion();
         }
   finally {
           cont.discard();
         }
       }
  catch (      Exception e) {
-        e.printStackTrace();
+        m_logger.error("Error processing export block",e);
       }
       constructListener(source,source.poll(),edb,ads);
     }
   }
-,MoreExecutors.sameThreadExecutor());
+,edb.getExecutor());
 }
