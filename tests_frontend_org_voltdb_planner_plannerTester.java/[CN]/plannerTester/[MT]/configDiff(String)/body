@@ -1,0 +1,74 @@
+{
+  if (!setUp(config)) {
+    return;
+  }
+  m_reportWriter.write("===================================================================Begin " + config + "\n");
+  PlanNodeTree pnt1=null;
+  PlanNodeTree pnt2=null;
+  int size=m_stmts.size();
+  String baseStmt=null;
+  for (int i=0; i < size; i++) {
+    ArrayList<String> getsql=new ArrayList<String>();
+    try {
+      pnt1=loadPlanFromFile(m_baselinePath + config + ".plan"+ i,getsql);
+      baseStmt=getsql.get(0);
+    }
+ catch (    FileNotFoundException e) {
+      String message="ERROR: Plan file " + m_baselinePath + config+ ".plan"+ i+ " doesn't exist. Use -s (the Compile/Save option) or 'ant plannertestrefresh -Dconfig="+ config+ " ' to generate plans to the baseline directory.\n";
+      System.err.print(message);
+      m_reportWriter.write(message);
+      System.exit(1);
+    }
+    if (!baseStmt.equalsIgnoreCase(m_stmts.get(i))) {
+      diffPair strPair=new diffPair(baseStmt,m_stmts.get(i));
+      m_reportWriter.write("Statement " + i + " of "+ config+ "/config:\n SQL statement is not consistent with the one in baseline :"+ "\n"+ strPair.toString()+ "\n");
+      m_numFail++;
+      continue;
+    }
+    try {
+      pnt2=loadPlanFromFile(m_workPath + config + ".plan"+ i,getsql);
+    }
+ catch (    FileNotFoundException e) {
+      String message="ERROR: Temporary plan file " + m_workPath + config+ ".plan"+ i+ " was not generated.\n";
+      System.err.print(message);
+      m_reportWriter.write(message);
+      System.exit(1);
+    }
+    AbstractPlanNode pn1=pnt1.getRootPlanNode();
+    AbstractPlanNode pn2=pnt2.getRootPlanNode();
+    if (diff(pn1,pn2,false)) {
+      m_numPass++;
+    }
+ else {
+      m_numFail++;
+      m_reportWriter.write("Statement " + i + " of "+ config+ ": \n");
+      if (!m_changedSQL) {
+        if (m_treeSizeDiff < 0) {
+          m_reportWriter.write("Old plan might be better\n");
+        }
+ else         if (m_treeSizeDiff > 0) {
+          m_reportWriter.write("New plan might be better\n");
+        }
+      }
+      for (      String msg : m_diffMessages) {
+        boolean isIgnore=false;
+        for (        String filter : m_filters) {
+          if (msg.contains(filter)) {
+            isIgnore=true;
+            break;
+          }
+        }
+        if (!isIgnore)         m_reportWriter.write(msg + "\n\n");
+      }
+      if (m_reportSQLStatement) {
+        m_reportWriter.write("SQL statement:\n" + baseStmt + "\n==>\n"+ m_stmts.get(i)+ "\n");
+      }
+      if (m_reportExplainedPlan) {
+        m_reportWriter.write("\nExplained plan:\n" + pn1.toExplainPlanString() + "\n==>\n"+ pn2.toExplainPlanString()+ "\n");
+      }
+      m_reportWriter.write("Path to the config file :" + config + "\n"+ "Path to the baseline file :"+ m_baselinePath+ config+ ".plan"+ i+ "\n"+ "Path to the current plan file :"+ m_workPath+ config+ ".plan"+ i+ "\n\n----------------------------------------------------------------------\n");
+    }
+  }
+  m_reportWriter.write("===================================================================" + "End " + config + "\n");
+  m_reportWriter.flush();
+}

@@ -1,55 +1,73 @@
 {
-  m_currentConfig=pathConfigFile;
   m_partitionColumns.clear();
-  BufferedReader reader=new BufferedReader(new FileReader(pathConfigFile));
+  m_baselinePath=(m_fixedBaselinePath != null) ? m_fixedBaselinePath : (config + "/baseline/");
+  m_ddlFilePath=null;
+  m_stmts.clear();
+  BufferedReader reader=new BufferedReader(new FileReader(config + "/config"));
   String line=null;
   while ((line=reader.readLine()) != null) {
     if (line.startsWith("#")) {
       continue;
     }
- else     if (line.equalsIgnoreCase("Name:")) {
-      line=reader.readLine();
-      m_testName=line;
-    }
- else     if (line.equalsIgnoreCase("Ref:")) {
-      line=reader.readLine();
-      m_pathRefPlan=new File(line).getCanonicalPath();
-      m_pathRefPlan+="/";
-    }
  else     if (line.equalsIgnoreCase("DDL:")) {
-      line=reader.readLine();
-      m_pathDDL=new File(line).getCanonicalPath();
-    }
- else     if (line.equalsIgnoreCase("Base Name:")) {
-      line=reader.readLine();
-      m_baseName=line;
+      if ((line=reader.readLine()) == null) {
+        break;
+      }
+      m_ddlFilePath=new File(line).getCanonicalPath();
     }
  else     if (line.equalsIgnoreCase("SQL:")) {
-      m_stmts.clear();
-      while ((line=reader.readLine()).length() > 6) {
+      boolean atEof=false;
+      while (true) {
+        if ((line=reader.readLine()) == null) {
+          atEof=true;
+          break;
+        }
         if (line.startsWith("#")) {
           continue;
         }
+        if (line.length() <= 6) {
+          break;
+        }
         m_stmts.add(line);
       }
-    }
- else     if (line.equalsIgnoreCase("Save Path:")) {
-      line=reader.readLine();
-      m_savePlanPath=(new File(line).getCanonicalPath()) + "/";
+      if (atEof) {
+        break;
+      }
     }
  else     if (line.equalsIgnoreCase("Partition Columns:")) {
-      line=reader.readLine();
-      int index=line.indexOf(".");
-      if (index == -1) {
-        System.err.println("Config file syntax error : Partition Columns should be table.column");
+      if ((line=reader.readLine()) == null) {
+        break;
       }
-      m_partitionColumns.put(line.substring(0,index).toLowerCase(),line.substring(index + 1).toLowerCase());
+      String[] cols=line.split(",");
+      for (      String col : cols) {
+        int index=col.indexOf(".");
+        if (index == -1) {
+          System.err.println("Config file syntax error : Partition Columns should be in comma-separated table.column format.");
+        }
+        m_partitionColumns.put(col.substring(0,index).toLowerCase(),col.substring(index + 1).toLowerCase());
+      }
+    }
+ else     if (!line.trim().equals("")) {
+      System.err.println("Config file syntax error : ignoring line: " + line);
     }
   }
+  boolean success=true;
+  if (m_ddlFilePath == null) {
+    System.err.println("ERROR: syntax error : config file '" + config + "/config' has no 'DDL:' section");
+    success=false;
+  }
+  if (m_stmts.isEmpty()) {
+    System.err.println("ERROR: syntax error : config file '" + config + "/config' has no 'SQL:' section or SQL statements");
+    success=false;
+  }
   try {
-    setUpSchema();
+    if (success) {
+      setUpSchema(config);
+    }
   }
  catch (  Exception e) {
     e.printStackTrace();
+    return false;
   }
+  return success;
 }
