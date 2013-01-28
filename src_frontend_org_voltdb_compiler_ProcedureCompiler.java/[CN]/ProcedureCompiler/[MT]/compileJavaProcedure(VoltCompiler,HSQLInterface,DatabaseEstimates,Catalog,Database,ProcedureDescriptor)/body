@@ -22,6 +22,7 @@
   procedure.setSystemproc(false);
   procedure.setDefaultproc(procedureDescriptor.m_builtInStmt);
   procedure.setHasjava(true);
+  DeterminismMode detMode=DeterminismMode.FASTER;
   ProcInfoData info=compiler.getProcInfoOverride(shortName);
   ProcInfoData ddlInfo=null;
   if (procedureDescriptor.m_partitionString != null && !procedureDescriptor.m_partitionString.trim().isEmpty()) {
@@ -69,27 +70,27 @@ catch (  IllegalAccessException e1) {
   AbstractExpression commonPartitionExpression=null;
   String exampleSPstatement=null;
   Object exampleSPvalue=null;
-  Map<String,Field> stmtMap=getValidSQLStmts(compiler,procClass.getSimpleName(),procClass,true);
-  for (  Field f : stmtMap.values()) {
-    SQLStmt stmt=null;
-    try {
-      stmt=(SQLStmt)f.get(procInstance);
+  Map<String,SQLStmt> stmtMap=getValidSQLStmts(compiler,procClass.getSimpleName(),procClass,procInstance,true);
+  boolean readOnly=true;
+  for (  SQLStmt stmt : stmtMap.values()) {
+    QueryType qtype=QueryType.getFromSQL(stmt.getText());
+    if (qtype.isReadOnly() == false) {
+      readOnly=false;
     }
- catch (    IllegalArgumentException e) {
-      e.printStackTrace();
-      continue;
-    }
-catch (    IllegalAccessException e) {
-      e.printStackTrace();
-      continue;
-    }
-    Statement catalogStmt=procedure.getStatements().add(f.getName());
+  }
+  if (readOnly == false) {
+    detMode=DeterminismMode.SAFER;
+  }
+  for (  Entry<String,SQLStmt> entry : stmtMap.entrySet()) {
+    String stmtName=entry.getKey();
+    SQLStmt stmt=entry.getValue();
+    Statement catalogStmt=procedure.getStatements().add(stmtName);
     Object partitionParameter=null;
     if (info.singlePartition) {
       partitionParameter="StatementCompiler dummied up single partitioning for QueryPlanner";
     }
     PartitioningForStatement partitioning=new PartitioningForStatement(partitionParameter,false,true);
-    StatementCompiler.compile(compiler,hsql,catalog,db,estimates,catalogStmt,stmt.getText(),stmt.getJoinOrder(),stmt.getDeterminismMode(),partitioning);
+    StatementCompiler.compile(compiler,hsql,catalog,db,estimates,catalogStmt,stmt.getText(),stmt.getJoinOrder(),detMode,partitioning);
     if (partitioning.wasSpecifiedAsSingle()) {
       procWantsCommonPartitioning=false;
     }
@@ -121,7 +122,9 @@ catch (    IllegalAccessException e) {
         procWantsCommonPartitioning=false;
       }
     }
-    if (catalogStmt.getReadonly() == false)     procHasWriteStmts=true;
+    if (catalogStmt.getReadonly() == false) {
+      procHasWriteStmts=true;
+    }
     if (catalogStmt.getSeqscancount() > 0) {
       procHasSeqScans=true;
     }
