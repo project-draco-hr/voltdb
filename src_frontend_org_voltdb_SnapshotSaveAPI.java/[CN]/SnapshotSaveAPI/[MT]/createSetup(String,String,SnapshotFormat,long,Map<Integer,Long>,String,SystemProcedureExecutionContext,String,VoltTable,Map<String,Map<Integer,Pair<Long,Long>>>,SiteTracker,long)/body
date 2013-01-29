@@ -8,7 +8,7 @@
         jsData=new JSONObject(data);
       }
  catch (      JSONException e) {
-        HOST_LOG.error(String.format("JSON exception on snapshot data \"%s\".",data),e);
+        SNAP_LOG.error(String.format("JSON exception on snapshot data \"%s\".",data),e);
       }
     }
     MessageDigest digest;
@@ -73,7 +73,7 @@
               }
             }
             if (streamPairs.size() > 0) {
-              sdt=new StreamSnapshotDataTarget(streamPairs,schemas);
+              sdt=new StreamSnapshotDataTarget(streamPairs.values().iterator().next(),schemas);
             }
  else {
               sdt=new DevNullSnapshotTarget();
@@ -96,7 +96,7 @@
         }
         try {
           if (format == SnapshotFormat.CSV) {
-            sdt=new SimpleFileSnapshotDataTarget(saveFilePath);
+            sdt=new SimpleFileSnapshotDataTarget(saveFilePath,!table.getIsreplicated());
           }
  else           if (format == SnapshotFormat.NATIVE) {
             sdt=constructSnapshotDataTargetForTable(context,saveFilePath,table,context.getHostId(),tracker.m_numberOfPartitions,txnId,timestamp,tracker.getPartitionsForHost(context.getHostId()));
@@ -118,7 +118,7 @@
               if (tablesLeft == 0) {
                 final SnapshotRegistry.Snapshot completed=SnapshotRegistry.finishSnapshot(snapshotRecord);
                 final double duration=(completed.timeFinished - completed.timeStarted) / 1000.0;
-                HOST_LOG.info("Snapshot " + snapshotRecord.nonce + " finished at "+ completed.timeFinished+ " and took "+ duration+ " seconds ");
+                SNAP_LOG.info("Snapshot " + snapshotRecord.nonce + " finished at "+ completed.timeFinished+ " and took "+ duration+ " seconds ");
               }
             }
           }
@@ -131,11 +131,13 @@
             }
             filters.add(new CSVSnapshotFilter(CatalogUtil.getVoltTable(table),',',null));
           }
-          if (streamPairs.size() > 0) {
-            filters.add(new PartitionProjectionSnapshotFilter(com.google.common.primitives.Ints.toArray(streamPairs.keySet()),sdt.getHeaderSize()));
-          }
+          if (format == SnapshotFormat.STREAM) {
+            if (streamPairs.size() > 0) {
+              filters.add(new PartitionProjectionSnapshotFilter(com.google.common.primitives.Ints.toArray(streamPairs.keySet()),sdt.getHeaderSize()));
+            }
  else {
-            filters.add(new PartitionProjectionSnapshotFilter(new int[0],sdt.getHeaderSize()));
+              filters.add(new PartitionProjectionSnapshotFilter(new int[0],sdt.getHeaderSize()));
+            }
           }
           final SnapshotTableTask task=new SnapshotTableTask(table.getRelativeIndex(),sdt,filters.toArray(new SnapshotDataFilter[filters.size()]),table.getIsreplicated(),table.getTypeName());
           if (table.getIsreplicated()) {
@@ -153,7 +155,7 @@
             }
           }
  catch (          Exception e) {
-            HOST_LOG.error(e);
+            SNAP_LOG.error(e);
           }
           StringWriter sw=new StringWriter();
           PrintWriter pw=new PrintWriter(sw);
@@ -166,7 +168,7 @@
       }
 synchronized (m_taskListsForSites) {
         if (!m_taskListsForSites.isEmpty()) {
-          HOST_LOG.warn("Found lingering snapshot tasks while setting up a snapshot");
+          SNAP_LOG.warn("Found lingering snapshot tasks while setting up a snapshot");
           m_taskListsForSites.clear();
         }
         boolean aborted=false;
@@ -208,7 +210,7 @@ synchronized (m_taskListsForSites) {
           sdt.close();
         }
  catch (        Exception e) {
-          HOST_LOG.error(ex);
+          SNAP_LOG.error(ex);
         }
       }
       StringWriter sw=new StringWriter();
@@ -216,7 +218,7 @@ synchronized (m_taskListsForSites) {
       ex.printStackTrace(pw);
       pw.flush();
       result.addRow(context.getHostId(),hostname,"","FAILURE","SNAPSHOT INITIATION OF " + file_path + file_nonce+ "RESULTED IN Exception: \n"+ sw.toString());
-      HOST_LOG.error(ex);
+      SNAP_LOG.error(ex);
     }
   }
 }
