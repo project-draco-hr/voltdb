@@ -2,29 +2,51 @@ def process_verb_arguments(self, verb, verb_args, verb_opts):
     '\n        Validate the verb arguments. Check that required arguments are present\n        and populate verb_opts attributes with scalar values or lists (for\n        trailing arguments with max_count > 1).\n        '
     args = (copy.copy(verb_args) + verb.command_arguments)
     missing = []
+    exceptions = []
     iarg = 0
     nargs = verb.get_argument_count()
     for arg in verb.iter_arguments():
         if ((iarg > len(args)) or ((iarg == len(args)) and (arg.min_count > 0))):
             missing.append((arg.name, arg.help))
         else:
+            value = None
             if ((iarg == (nargs - 1)) and (arg.max_count > 1)):
-                value = list(args[iarg:])
-                if (len(value) < arg.min_count):
+                if ((len(args) - iarg) < arg.min_count):
                     utility.abort(('A minimum of %d %s arguments are required.' % (arg.min_count, arg.name.upper())))
-                if (len(value) > arg.max_count):
+                if ((len(args) - iarg) > arg.max_count):
                     utility.abort(('A maximum of %d %s arguments are allowed.' % (arg.max_count, arg.name.upper())))
-                iarg += len(value)
+                value = []
+                for v in args[iarg:]:
+                    try:
+                        value.append(arg.get(v))
+                    except ArgumentException as e:
+                        exceptions.append(e)
+                iarg = len(args)
             else:
-                value = args[iarg]
+                try:
+                    value = arg.get(args[iarg])
+                except ArgumentException as e:
+                    exceptions.append(e)
                 iarg += 1
-            setattr(verb_opts, arg.name, arg.get(value))
+            if (value is not None):
+                setattr(verb_opts, arg.name, value)
+    had_errors = 0
+    show_usage = False
+    if exceptions:
+        msg = ('Argument value %s:' % utility.pluralize('error', len(exceptions)))
+        utility.error(msg, [e.message for e in exceptions])
+        had_errors += 1
     if (iarg < len(args)):
-        utility.abort('Extra arguments were provided:', args[iarg:])
+        self._abort('Extra arguments were provided:', args[iarg:])
+        had_errors += 1
+        show_usage = True
     if missing:
-        if (len(missing) > 1):
-            plural = 's'
-        else:
-            plural = ''
         fmt = ('%%-%ds  %%s' % max([len(o) for (o, h) in missing]))
-        self._abort(('Missing required argument%s:' % plural), ((fmt % (o.upper(), h)) for (o, h) in missing))
+        msg = ('Missing required %s:' % utility.pluralize('argument', len(missing)))
+        utility.error(msg, [(fmt % (o.upper(), h)) for (o, h) in missing])
+        had_errors += 1
+        show_usage = True
+    if (had_errors > 0):
+        if show_usage:
+            self._abort()
+        sys.exit(1)
