@@ -5,8 +5,15 @@
     tmLog.debug("LeaderAppointer in startup");
     m_state.set(AppointerState.CLUSTER_START);
   }
- else   if ((m_iv2appointees.pointInTimeCache().size() != m_partitionCount) || (m_iv2masters.pointInTimeCache().size() != m_partitionCount)) {
-    VoltDB.crashGlobalVoltDB("Detected failure during startup, unable to start",false,null);
+ else   if (m_state.get() == AppointerState.CLUSTER_START) {
+    try {
+      if ((m_iv2appointees.pointInTimeCache().size() != getInitialPartitionCount()) || (m_iv2masters.pointInTimeCache().size() != getInitialPartitionCount())) {
+        VoltDB.crashGlobalVoltDB("Detected failure during startup, unable to start",false,null);
+      }
+    }
+ catch (    IllegalAccessException e) {
+      VoltDB.crashLocalVoltDB("Failed to get partition count",true,e);
+    }
   }
  else {
     tmLog.debug("LeaderAppointer in repair");
@@ -15,16 +22,14 @@
   if (m_state.get() == AppointerState.CLUSTER_START) {
     m_startupLatch=new CountDownLatch(1);
     writeKnownLiveNodes(m_hostMessenger.getLiveHostIds());
-    for (int i=0; i < m_partitionCount; i++) {
-      String dir=LeaderElector.electionDirForPartition(i);
-      try {
-        m_zk.create(dir,null,Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+    try {
+      for (int i=0; i < getInitialPartitionCount(); i++) {
+        addPartitionZKNode(m_zk,i);
+        watchPartition(i);
       }
- catch (      KeeperException.NodeExistsException e) {
-      }
-      m_callbacks[i]=new PartitionCallback(i);
-      Pair<BabySitter,List<String>> sitterstuff=BabySitter.blockingFactory(m_zk,dir,m_callbacks[i],m_es);
-      m_partitionWatchers[i]=sitterstuff.getFirst();
+    }
+ catch (    IllegalAccessException e) {
+      VoltDB.crashLocalVoltDB("Failed to get partition count on startup",true,e);
     }
     m_startupLatch.await();
   }
@@ -34,9 +39,9 @@
     for (    Entry<Integer,Long> master : masters.entrySet()) {
       int partId=master.getKey();
       String dir=LeaderElector.electionDirForPartition(partId);
-      m_callbacks[partId]=new PartitionCallback(partId,master.getValue());
-      Pair<BabySitter,List<String>> sitterstuff=BabySitter.blockingFactory(m_zk,dir,m_callbacks[partId],m_es);
-      m_partitionWatchers[partId]=sitterstuff.getFirst();
+      m_callbacks.put(partId,new PartitionCallback(partId,master.getValue()));
+      Pair<BabySitter,List<String>> sitterstuff=BabySitter.blockingFactory(m_zk,dir,m_callbacks.get(partId),m_es);
+      m_partitionWatchers.put(partId,sitterstuff.getFirst());
     }
     m_MPI.acceptPromotion();
   }
