@@ -1,21 +1,24 @@
 {
   long ttlVerified=0;
-  Pair<CSVReader,Runnable> csvPair=openNextExportFile();
-  CSVReader csv=csvPair.getFirst();
+  Pair<BufferedReader,Runnable> csvPair=openNextExportFile();
+  BufferedReader csv=csvPair.getFirst();
   BufferedReader txnIdReader=openNextClientFile();
+  String exportLine;
   String[] row;
   boolean quit=false;
   boolean more_rows=true;
   boolean more_txnids=true;
-  boolean expect_export_eof=false;
+  ValidationErr expect_export_eof=null;
   int emptyRemovalCycles=0;
+  PrintWriter txout=gzipWriterTo("read-exported-transactions.gz");
+  PrintWriter vfout=gzipWriterTo("verified-exported-transactions.gz");
   while (!quit) {
     markCheckedUpTo();
     int dcount=0;
     while ((dcount < 10000 || !more_txnids) && more_rows) {
-      row=csv.readNext();
-      if (row == null) {
-        expect_export_eof=false;
+      exportLine=csv.readLine();
+      if (exportLine == null) {
+        expect_export_eof=null;
         csvPair.getSecond().run();
         csvPair=openNextExportFile();
         if (csvPair == null) {
@@ -25,26 +28,26 @@
         }
  else {
           csv=csvPair.getFirst();
-          row=csv.readNext();
+          exportLine=csv.readLine();
         }
       }
- else       if (expect_export_eof) {
-        throw new ValidationErr("previously logged row had unexpected number of columns");
+ else       if (expect_export_eof != null) {
+        throw expect_export_eof;
       }
-      verifyRow(row);
-      expect_export_eof=row.length < 29;
+      row=RoughCSVTokenizer.tokenize(exportLine);
+      expect_export_eof=verifyRow(row);
+      if (row.length < 8)       continue;
       dcount++;
       if (++ttlVerified % VALIDATION_REPORT_INTERVAL == 0) {
         System.out.println("Verified " + ttlVerified + " rows.");
       }
-      Integer partition=Integer.parseInt(row[3]);
-      Long rowTxnId=Long.parseLong(row[6]);
-      Long rowId=Long.parseLong(row[7]);
+      Integer partition=Integer.parseInt(row[3].trim());
+      Long rowTxnId=Long.parseLong(row[6].trim());
+      Long rowId=Long.parseLong(row[7].trim());
+      txout.printf("%d:%d\n",rowTxnId,rowId);
       Long previous=m_rowTxnIds.get(partition).put(rowTxnId,rowId);
       if (previous != null) {
         System.out.println("WARN Duplicate TXN ID in export stream: " + rowTxnId);
-      }
- else {
       }
     }
     System.out.println("\n!_!_! DEBUG !_!_! read " + dcount + " exported records");
@@ -86,7 +89,7 @@
       }
     }
     System.out.println("!_!_! DEBUG !_!_! read " + dcount + " client txid records");
-    if (matchClientTxnIds(null)) {
+    if (matchClientTxnIds(vfout)) {
       emptyRemovalCycles=0;
     }
  else     if (++emptyRemovalCycles >= 10) {

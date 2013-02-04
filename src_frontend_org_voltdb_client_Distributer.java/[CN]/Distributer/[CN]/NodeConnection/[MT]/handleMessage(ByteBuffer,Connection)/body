@@ -10,6 +10,7 @@
   ProcedureCallback cb=null;
   long callTime=0;
   int delta=0;
+  long handle=response.getClientHandle();
 synchronized (this) {
     m_lastResponseTime=now;
     if (response.getClientHandle() == PING_HANDLE) {
@@ -18,14 +19,17 @@ synchronized (this) {
     }
     CallbackBookeeping stuff=m_callbacks.remove(response.getClientHandle());
     if (stuff == null) {
-      for (      ClientStatusListenerExt listener : m_listeners) {
-        listener.lateProcedureResponse(response,m_hostname,m_port);
+      if (handle >= 0) {
+        for (        ClientStatusListenerExt listener : m_listeners) {
+          listener.lateProcedureResponse(response,m_hostname,m_port);
+        }
       }
     }
  else {
       callTime=stuff.timestamp;
       delta=(int)(now - callTime);
       cb=stuff.callback;
+      assert(cb != null);
       final byte status=response.getStatus();
       boolean abort=false;
       boolean error=false;
@@ -40,31 +44,6 @@ synchronized (this) {
       updateStats(stuff.name,delta,clusterRoundTrip,abort,error);
     }
   }
-  try {
-    if (response.getClientHandle() == TOPOLOGY_HANDLE) {
-      m_callbacksToInvoke.decrementAndGet();
-synchronized (Distributer.this) {
-        VoltTable results[]=response.getResults();
-        if (results != null && results.length == 1) {
-          VoltTable vt=results[0];
-          updateAffinityTopology(vt);
-        }
-      }
-    }
- else     if (response.getClientHandle() == PROCEDURE_HANDLE) {
-      m_callbacksToInvoke.decrementAndGet();
-synchronized (Distributer.this) {
-        VoltTable results[]=response.getResults();
-        if (results != null && results.length == 1) {
-          VoltTable vt=results[0];
-          updateProcedurePartitioning(vt);
-        }
-      }
-    }
-  }
- catch (  Exception e) {
-    e.printStackTrace();
-  }
   if (cb != null) {
     response.setClientRoundtrip(delta);
     assert(response.getHash() == null);
@@ -74,6 +53,7 @@ synchronized (Distributer.this) {
  catch (    Exception e) {
       uncaughtException(cb,response,e);
     }
-    m_callbacksToInvoke.decrementAndGet();
+    int callbacksToInvoke=m_callbacksToInvoke.decrementAndGet();
+    assert(callbacksToInvoke >= 0);
   }
 }

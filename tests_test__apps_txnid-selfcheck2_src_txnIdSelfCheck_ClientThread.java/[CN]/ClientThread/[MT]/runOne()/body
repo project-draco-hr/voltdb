@@ -1,4 +1,5 @@
 {
+  byte shouldRollback=(byte)(m_random.nextInt(10) == 0 ? 1 : 0);
   try {
     String procName=null;
 switch (m_type) {
@@ -19,7 +20,16 @@ procName="UpdateReplicatedMPInProcAdHoc";
 break;
 }
 byte[] payload=m_processor.generateForStore().getStoreValue();
-ClientResponse response=m_client.callProcedure(procName,m_cid,m_nextRid,payload);
+ClientResponse response;
+try {
+response=m_client.callProcedure(procName,m_cid,m_nextRid,payload,shouldRollback);
+}
+ catch (Exception e) {
+if (shouldRollback == 0) {
+log.warn("ClientThread threw after " + m_txnsRun.get() + " calls while calling procedure: "+ procName+ " with args: cid: "+ m_cid+ ", nextRid: "+ m_nextRid+ ", payload: "+ payload+ ", shouldRollback: "+ shouldRollback);
+}
+throw e;
+}
 if (response.getStatus() != ClientResponse.SUCCESS) {
 throw new UserProcCallException(response);
 }
@@ -32,9 +42,17 @@ Benchmark.printJStack();
 System.exit(-1);
 }
 VoltTable data=results[2];
+try {
 UpdateBaseProc.validateCIDData(data,"ClientThread:" + m_cid);
 }
+ catch (VoltAbortException vae) {
+log.error("validateCIDData failed on: " + procName + ", shouldRollback: "+ shouldRollback+ " data: "+ data);
+throw vae;
+}
+}
   finally {
+if (shouldRollback == 0) {
 m_nextRid++;
+}
 }
 }
