@@ -1,0 +1,50 @@
+{
+  LocalCluster cluster=null;
+  Client client=null;
+  VoltTable pTable=TableHelper.quickTable("P (ID:BIGINT-N, VALUE:BIGINT-N) P(ID)");
+  System.out.println("Compiling catalog.");
+  VoltProjectBuilder builder=new VoltProjectBuilder();
+  builder.addLiteralSchema(TableHelper.ddlForTable(pTable));
+  builder.addLiteralSchema("PARTITION TABLE P ON COLUMN ID;\n" + "CREATE PROCEDURE FROM CLASS org.voltdb.planner.ScanPerfTest$ScanTable;\n" + "PARTITION PROCEDURE ScanPerfTest$ScanTable ON TABLE P COLUMN ID;\n");
+  cluster=new LocalCluster("scanperf.jar",8,1,0,BackendTarget.NATIVE_EE_JNI);
+  boolean success=cluster.compile(builder);
+  assertTrue(success);
+  System.out.println("Starting cluster.");
+  cluster.setHasLocalServer(false);
+  cluster.overrideAnyRequestForValgrind();
+  cluster.startUp(true,ReplicationRole.NONE);
+  System.out.println("Getting client connected.");
+  ClientConfig clientConfig=new ClientConfig();
+  client=ClientFactory.createClient(clientConfig);
+  for (  String address : cluster.getListenerAddresses()) {
+    client.createConnection(address);
+  }
+  System.out.println("Loading");
+  Random r=new Random();
+  fillTable(6000,client,r);
+  System.out.println("100% loaded.");
+  client.drain();
+  client.close();
+  System.out.println("Getting client re-connected.");
+  clientConfig=new ClientConfig();
+  clientConfig.setProcedureCallTimeout(Long.MAX_VALUE);
+  clientConfig.setMaxOutstandingTxns(50);
+  client=ClientFactory.createClient(clientConfig);
+  for (  String address : cluster.getListenerAddresses()) {
+    client.createConnection(address);
+  }
+  long start=System.currentTimeMillis();
+  for (int i=0; i < 12; i++) {
+    while ((System.currentTimeMillis() - start) < ((i + 1) * 5000)) {
+      client.callProcedure(new ScanCallback(),"ScanPerfTest$ScanTable",r.nextLong());
+    }
+    System.out.printf("Scanned at %.2f rows/sec when %.0f%% done.\n",rows.get() / (nanos.get() / 1000000000.0),((i + 1) / 12.0) * 100);
+    System.out.printf("%d scans on an average of %d rows/partition\n",scans.get(),rows.get() / scans.get());
+    System.out.printf("%.2f scans per second\n",scans.get() / (nanos.get() / 1000000000.0));
+  }
+  System.out.println("Draining.");
+  client.drain();
+  client.close();
+  System.out.printf("Scanned at %f rows/sec after drain.\n",rows.get() / (nanos.get() / 1000000000.0));
+  cluster.shutDown();
+}
