@@ -1,0 +1,35 @@
+{
+  Map<String,SQLStmt> retval=new HashMap<String,SQLStmt>();
+  Field[] fields=procClass.getDeclaredFields();
+  for (  Field f : fields) {
+    if (f.getType() != SQLStmt.class)     continue;
+    int modifiers=f.getModifiers();
+    if (Modifier.isPrivate(modifiers) && (!withPrivate))     continue;
+    if (Modifier.isFinal(modifiers) == false) {
+      String msg="Procedure " + procName + " contains a non-final SQLStmt field.";
+      if (procClass.getSimpleName().equals(procName) == false) {
+        msg="Superclass " + procClass.getSimpleName() + " of procedure "+ procName+ " contains a non-final SQLStmt field.";
+      }
+      if (compiler != null)       throw compiler.new VoltCompilerException(msg);
+ else       new VoltLogger("HOST").warn(msg);
+    }
+    f.setAccessible(true);
+    SQLStmt stmt=null;
+    try {
+      stmt=(SQLStmt)f.get(procInstance);
+    }
+ catch (    Exception e) {
+      e.printStackTrace();
+      continue;
+    }
+    retval.put(f.getName(),stmt);
+  }
+  Class<?> superClass=procClass.getSuperclass();
+  if (superClass != null) {
+    Map<String,SQLStmt> superStmts=getValidSQLStmts(compiler,procName,superClass,procInstance,false);
+    for (    Entry<String,SQLStmt> e : superStmts.entrySet()) {
+      if (retval.containsKey(e.getKey()) == false)       retval.put(e.getKey(),e.getValue());
+    }
+  }
+  return retval;
+}

@@ -1,0 +1,43 @@
+{
+  boolean canDeliver=false;
+  long sequenceWithTxnId=Long.MIN_VALUE;
+  boolean commandLog=(message instanceof TransactionInfoBaseMessage && (((TransactionInfoBaseMessage)message).isForReplay()));
+  boolean dr=((message instanceof TransactionInfoBaseMessage && ((TransactionInfoBaseMessage)message).isForDR()));
+  boolean sentinel=message instanceof MultiPartitionParticipantMessage;
+  boolean replay=commandLog || sentinel || dr;
+  boolean sequenceForReplay=m_isLeader && replay;
+  assert(!(commandLog && dr));
+  if (commandLog || sentinel) {
+    sequenceWithTxnId=((TransactionInfoBaseMessage)message).getTxnId();
+  }
+ else   if (dr) {
+    sequenceWithTxnId=((TransactionInfoBaseMessage)message).getOriginalTxnId();
+  }
+  if (sequenceForReplay) {
+    InitiateResponseMessage dupe=m_replaySequencer.dedupe(sequenceWithTxnId,(TransactionInfoBaseMessage)message);
+    if (dupe != null) {
+      m_mailbox.send(dupe.getInitiatorHSId(),dupe);
+    }
+ else     if (!m_replaySequencer.offer(sequenceWithTxnId,(TransactionInfoBaseMessage)message)) {
+      canDeliver=true;
+    }
+ else {
+      deliverReadyTxns();
+    }
+    if (sentinel && !commandLog) {
+      MultiPartitionParticipantMessage mppm=(MultiPartitionParticipantMessage)message;
+      final InitiateResponseMessage response=new InitiateResponseMessage(mppm);
+      ClientResponseImpl clientResponse=new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],ClientResponseImpl.DUPE_TRANSACTION);
+      response.setResults(clientResponse);
+      m_mailbox.send(response.getInitiatorHSId(),response);
+    }
+  }
+ else {
+    if (replay) {
+      m_replaySequencer.updateLastSeenTxnId(sequenceWithTxnId,(TransactionInfoBaseMessage)message);
+      m_replaySequencer.updateLastPolledTxnId(sequenceWithTxnId,(TransactionInfoBaseMessage)message);
+    }
+    canDeliver=true;
+  }
+  return canDeliver;
+}
