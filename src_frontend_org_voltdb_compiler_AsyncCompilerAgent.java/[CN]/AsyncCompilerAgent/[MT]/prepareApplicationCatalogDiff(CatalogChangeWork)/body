@@ -15,12 +15,21 @@
     }
     Catalog newCatalog=new Catalog();
     newCatalog.execute(newCatalogCommands);
-    if (work.deploymentString != null) {
-      retval.deploymentCRC=CatalogUtil.compileDeploymentStringAndGetCRC(newCatalog,work.deploymentString,false);
-      if (retval.deploymentCRC < 0) {
-        retval.errorMsg="Unable to read from deployment file string";
+    String deploymentString=work.deploymentString;
+    if (deploymentString == null) {
+      byte[] deploymentBytes=VoltDB.instance().getHostMessenger().getZK().getData(VoltZK.deploymentBytes,false,null);
+      if (deploymentBytes != null) {
+        deploymentString=new String(deploymentBytes,"UTF-8");
+      }
+      if (deploymentBytes == null || deploymentString == null) {
+        retval.errorMsg="No deployment file provided and unable to recover previous " + "deployment settings.";
         return retval;
       }
+    }
+    retval.deploymentCRC=CatalogUtil.compileDeploymentStringAndGetCRC(newCatalog,deploymentString,false);
+    if (retval.deploymentCRC < 0) {
+      retval.errorMsg="Unable to read from deployment file string";
+      return retval;
     }
     CatalogContext context=VoltDB.instance().getCatalogContext();
     retval.expectedCatalogVersion=context.catalogVersion;
