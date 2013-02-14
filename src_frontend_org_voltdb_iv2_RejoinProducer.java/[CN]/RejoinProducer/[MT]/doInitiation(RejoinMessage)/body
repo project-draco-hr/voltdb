@@ -2,13 +2,14 @@
   m_liveRejoin=message.getType() == RejoinMessage.Type.INITIATION;
   m_rejoinCoordinatorHsId=message.m_sourceHSId;
   m_rejoinSiteProcessor=new StreamSnapshotSink();
+  m_snapshotNonce=message.getSnapshotNonce();
   long sourceSite=m_mailbox.getMasterHsId(m_partitionId);
   long hsId=m_rejoinSiteProcessor.initialize();
-  REJOINLOG.debug(m_whoami + "received INITIATION message. Doing liverejoin: " + m_liveRejoin+ ". Source site is: "+ CoreUtils.hsIdToString(sourceSite)+ " and destination rejoin processor is: "+ CoreUtils.hsIdToString(hsId));
-  String data=makeSnapshotRequest(hsId,sourceSite);
+  REJOINLOG.debug(m_whoami + "received INITIATION message. Doing liverejoin: " + m_liveRejoin+ ". Source site is: "+ CoreUtils.hsIdToString(sourceSite)+ " and destination rejoin processor is: "+ CoreUtils.hsIdToString(hsId)+ " and snapshot nonce is: "+ m_snapshotNonce);
   SnapshotCompletionAction interest=new SnapshotCompletionAction();
   interest.register();
-  SnapshotUtil.requestSnapshot(0l,"",m_snapshotNonce,!useLiveRejoin(),SnapshotFormat.STREAM,data,m_handler,true);
+  RejoinMessage initResp=new RejoinMessage(m_mailbox.getHSId(),sourceSite,hsId);
+  m_mailbox.send(m_rejoinCoordinatorHsId,initResp);
   Thread firstSnapshotBlock=new Thread(){
     @Override public void run(){
       Pair<Integer,ByteBuffer> rejoinWork=null;
