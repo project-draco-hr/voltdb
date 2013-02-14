@@ -1,0 +1,35 @@
+def rpm():
+    blddir = os.path.join(meta.build_root, 'rpmbuild')
+    meta.options.prefix = blddir
+    if os.path.exists(meta.build_root):
+        info(('Removing existing output directory "%s"...' % meta.build_root))
+        if (not meta.options.dryrun):
+            fix_ownership(meta.build_root)
+            shutil.rmtree(meta.build_root)
+    for D in ['BUILD', 'SOURCES', 'RPMS', 'SPECS', 'SRPMS', 'tmp']:
+        p = os.path.join(blddir, D)
+        if (not os.path.exists(p)):
+            os.makedirs(os.path.join(blddir, D))
+    with open(os.path.join(os.environ['HOME'], '.rpmmacros'), 'w') as fout:
+        fout.write(('%%_topdir\t%s\n' % blddir))
+        fout.write('%_tmppath\t%{_topdir}/tmp\n')
+    syms = copy(locals())
+    syms.update(meta.rpm_control)
+    with open(os.path.join(blddir, 'SPECS', 'voltdb.spec'), 'w') as fout:
+        fout.write((meta.rpm_control_template % syms))
+    voltdb_dist = ('%(pkgname)s-%(pkgversion)s' % syms)
+    voltdb_build = (voltdb_dist + ('-%(pkgrelease)d' % syms))
+    buildroot = os.path.join(blddir, 'tmp', voltdb_build)
+    shutil.copytree(volt_root, os.path.join(buildroot, 'usr', 'share', voltdb_dist), symlinks=False, ignore=None)
+    with ChDir(buildroot):
+        with open(os.path.join(blddir, 'SPECS', 'myfiles'), 'w') as fout:
+            for l in pipe_cmd('find', '.', '-type', 'f'):
+                fout.write(('"%s"\n' % string.lstrip(l, '.')))
+    rpm_sources = os.path.join(blddir, 'SOURCES')
+    os.mkdir(os.path.join(rpm_sources, voltdb_dist))
+    with ChDir(os.path.join(blddir, 'SOURCES')):
+        run_cmd('tar', '-cf', (voltdb_dist + '.tar.gz'), voltdb_dist)
+        os.rmdir(voltdb_dist)
+    with ChDir(os.path.join(blddir, 'SPECS')):
+        run_cmd('rpmbuild', '-bb', 'voltdb.spec')
+    shutil.copy(os.path.join(blddir, 'RPMS', 'x86_64', ('%(pkgname)s-%(pkgversion)s-%(pkgrelease)d.%(arch)s.rpm' % syms)), meta.output_root)
