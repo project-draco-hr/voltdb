@@ -1,0 +1,49 @@
+{
+  assert(SnapshotSiteProcessor.ExecutionSitesCurrentlySnapshotting.isEmpty());
+  List<Long> sitesToInclude=CSVSnapshotWritePlan.computeDedupedLocalSites(txnId,tracker);
+  if (sitesToInclude.isEmpty() && !tracker.isFirstHost()) {
+    return false;
+  }
+  NativeSnapshotWritePlan.createFileBasedCompletionTasks(file_path,file_nonce,txnId,partitionTransactionIds,context,exportSequenceNumbers,timestamp);
+  final List<Table> tables=SnapshotUtil.getTablesToSave(context.getDatabase());
+  final AtomicInteger numTables=new AtomicInteger(tables.size());
+  final SnapshotRegistry.Snapshot snapshotRecord=SnapshotRegistry.startSnapshot(txnId,context.getHostId(),file_path,file_nonce,SnapshotFormat.CSV,tables.toArray(new Table[0]));
+  SnapshotDataTarget sdt=null;
+  boolean noTargetsCreated=true;
+  final ArrayList<SnapshotTableTask> partitionedSnapshotTasks=new ArrayList<SnapshotTableTask>();
+  final ArrayList<SnapshotTableTask> replicatedSnapshotTasks=new ArrayList<SnapshotTableTask>();
+  for (  final Table table : tables) {
+    if (table.getIsreplicated() && !tracker.isFirstHost()) {
+      snapshotRecord.removeTable(table.getTypeName());
+      continue;
+    }
+    File saveFilePath=null;
+    saveFilePath=SnapshotUtil.constructFileForTable(table,file_path,file_nonce,SnapshotFormat.CSV,context.getHostId());
+    try {
+      sdt=new SimpleFileSnapshotDataTarget(saveFilePath,!table.getIsreplicated());
+      m_targets.add(sdt);
+      final Runnable onClose=new TargetStatsClosure(sdt,table.getTypeName(),numTables,snapshotRecord);
+      sdt.setOnCloseHandler(onClose);
+      List<SnapshotDataFilter> filters=new ArrayList<SnapshotDataFilter>();
+      filters.add(new CSVSnapshotFilter(CatalogUtil.getVoltTable(table),',',null));
+      final SnapshotTableTask task=new SnapshotTableTask(table.getRelativeIndex(),sdt,filters.toArray(new SnapshotDataFilter[filters.size()]),table.getIsreplicated(),table.getTypeName());
+      if (table.getIsreplicated()) {
+        replicatedSnapshotTasks.add(task);
+      }
+ else {
+        partitionedSnapshotTasks.add(task);
+      }
+      noTargetsCreated=false;
+      result.addRow(context.getHostId(),hostname,table.getTypeName(),"SUCCESS","");
+    }
+ catch (    IOException ex) {
+      handleTargetCreationError(sdt,context,file_nonce,hostname,table.getTypeName(),ex,result);
+    }
+  }
+  if (noTargetsCreated) {
+    SnapshotRegistry.discardSnapshot(snapshotRecord);
+  }
+  placePartitionedTasks(partitionedSnapshotTasks,sitesToInclude);
+  placeReplicatedTasks(replicatedSnapshotTasks,tracker.getSitesForHost(context.getHostId()));
+  return noTargetsCreated;
+}

@@ -8,14 +8,14 @@ synchronized (SnapshotSiteProcessor.m_snapshotCreateLock) {
       @Override public void run(){
         Map<Integer,Long> partitionTransactionIds=new HashMap<Integer,Long>();
         if (VoltDB.instance().isIV2Enabled()) {
-          partitionTransactionIds=SnapshotSiteProcessor.m_partitionLastSeenTransactionIds;
-          HOST_LOG.debug("Last seen partition transaction ids " + partitionTransactionIds);
-          SnapshotSiteProcessor.m_partitionLastSeenTransactionIds=new HashMap<Integer,Long>();
+          partitionTransactionIds=m_partitionLastSeenTransactionIds;
+          SNAP_LOG.debug("Last seen partition transaction ids " + partitionTransactionIds);
+          m_partitionLastSeenTransactionIds=new HashMap<Integer,Long>();
           partitionTransactionIds.put(TxnEgo.getPartitionId(multiPartTxnId),multiPartTxnId);
           for (          long txnId : legacyPerPartitionTxnIds) {
             final int legacyPartition=TxnEgo.getPartitionId(txnId);
             if (partitionTransactionIds.containsKey(legacyPartition)) {
-              HOST_LOG.warn("While saving a snapshot and propagating legacy " + "transaction ids found an id that matches currently active partition" + partitionTransactionIds.get(legacyPartition));
+              SNAP_LOG.warn("While saving a snapshot and propagating legacy " + "transaction ids found an id that matches currently active partition" + partitionTransactionIds.get(legacyPartition));
             }
  else {
               partitionTransactionIds.put(legacyPartition,txnId);
@@ -23,27 +23,64 @@ synchronized (SnapshotSiteProcessor.m_snapshotCreateLock) {
           }
         }
         exportSequenceNumbers=SnapshotSiteProcessor.getExportSequenceNumbers();
-        createSetup(file_path,file_nonce,format,multiPartTxnId,partitionTransactionIds,data,context,hostname,result,exportSequenceNumbers,st,timestamp);
+        if (VoltDB.instance().isIV2Enabled()) {
+          createSetupIv2(file_path,file_nonce,format,multiPartTxnId,partitionTransactionIds,data,context,hostname,result,exportSequenceNumbers,st,timestamp);
+        }
+ else {
+          createSetup(file_path,file_nonce,format,multiPartTxnId,partitionTransactionIds,data,context,hostname,result,exportSequenceNumbers,st,timestamp);
+        }
       }
     }
 );
     SnapshotSiteProcessor.readySnapshotSetupBarriers(numLocalSites);
     SnapshotSiteProcessor.populateExportSequenceNumbersForExecutionSite(context);
     if (VoltDB.instance().isIV2Enabled()) {
-      HOST_LOG.debug("Registering transaction id " + partitionTxnId + " for "+ TxnEgo.getPartitionId(partitionTxnId));
-      SnapshotSiteProcessor.m_partitionLastSeenTransactionIds.put(TxnEgo.getPartitionId(partitionTxnId),partitionTxnId);
+      SNAP_LOG.debug("Registering transaction id " + partitionTxnId + " for "+ TxnEgo.getPartitionId(partitionTxnId));
+      m_partitionLastSeenTransactionIds.put(TxnEgo.getPartitionId(partitionTxnId),partitionTxnId);
     }
   }
   try {
     SnapshotSiteProcessor.m_snapshotCreateSetupBarrier.await();
     try {
-synchronized (SnapshotSiteProcessor.m_taskListsForSites) {
-        final Deque<SnapshotTableTask> m_taskList=SnapshotSiteProcessor.m_taskListsForSites.poll();
-        if (m_taskList == null) {
-          return result;
-        }
+      if (VoltDB.instance().isIV2Enabled()) {
+synchronized (m_createLock) {
+          SNAP_LOG.info("Found tasks for HSIds: " + CoreUtils.hsIdCollectionToString(m_taskListsForHSIds.keySet()));
+          SNAP_LOG.info("Looking for local HSID: " + CoreUtils.hsIdToString(context.getSiteId()));
+          Deque<SnapshotTableTask> taskList=m_taskListsForHSIds.remove(context.getSiteId());
+          List<SnapshotDataTarget> targetList=new ArrayList<SnapshotDataTarget>(m_snapshotDataTargets);
+          if (!m_createSuccess.get()) {
+            assert(m_taskListsForHSIds.isEmpty());
+            VoltTable finalresult=m_createResult.get();
+            if (finalresult != null) {
+              m_createResult.set(null);
+              return finalresult;
+            }
  else {
-          context.getSiteSnapshotConnection().initiateSnapshots(m_taskList,multiPartTxnId,context.getSiteTrackerForSnapshot().getAllHosts().size(),exportSequenceNumbers);
+              return SnapshotSave.constructNodeResultsTable();
+            }
+          }
+ else           if (taskList == null) {
+            if (block != 0) {
+              return SnapshotSave.constructPartitionResultsTable();
+            }
+ else {
+              return SnapshotSave.constructNodeResultsTable();
+            }
+          }
+ else {
+            context.getSiteSnapshotConnection().initiateSnapshots(taskList,targetList,multiPartTxnId,context.getSiteTrackerForSnapshot().getAllHosts().size(),exportSequenceNumbers);
+          }
+        }
+      }
+ else {
+synchronized (m_taskListsForSites) {
+          final Deque<SnapshotTableTask> m_taskList=m_taskListsForSites.poll();
+          if (m_taskList == null) {
+            return result;
+          }
+ else {
+            context.getSiteSnapshotConnection().initiateSnapshots(m_taskList,null,multiPartTxnId,context.getSiteTrackerForSnapshot().getAllHosts().size(),exportSequenceNumbers);
+          }
         }
       }
     }
