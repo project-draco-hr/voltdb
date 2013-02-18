@@ -1,32 +1,43 @@
 {
-  Set<Table> visited=new HashSet<Table>(tableList);
-  int tableCount=0;
-  boolean hasOuter=false;
-  for (  VoltXMLElement node : tablesNode.children) {
-    if (node.name.equalsIgnoreCase("tablescan")) {
-      String tableName=node.attributes.get("table");
-      Table table=getTableFromDB(tableName);
-      assert(table != null);
-      if (visited.contains(table)) {
-        throw new PlanningErrorException("VoltDB does not yet support self joins, consider using views instead");
+  if (tablesNode.name.equalsIgnoreCase("tablescans")) {
+    Set<Table> visited=new HashSet<Table>(tableList);
+    int tableCount=0;
+    boolean hasOuter=false;
+    for (    VoltXMLElement node : tablesNode.children) {
+      if (node.name.equalsIgnoreCase("tablescan")) {
+        String tableName=node.attributes.get("table");
+        Table table=getTableFromDB(tableName);
+        assert(table != null);
+        if (visited.contains(table)) {
+          throw new PlanningErrorException("VoltDB does not yet support self joins, consider using views instead");
+        }
+        String joinTypeStr=node.attributes.get("jointype");
+        assert(joinTypeStr != null);
+        JoinType joinType=JoinType.get(joinTypeStr);
+        assert(joinType != JoinType.INVALID);
+        if (joinType == JoinType.FULL) {
+          throw new PlanningErrorException("VoltDB does not yet support full outer joins");
+        }
+        if (joinType != JoinType.INNER) {
+          hasOuter=true;
+        }
+        ++tableCount;
+        if (hasOuter && tableCount > 2) {
+          throw new PlanningErrorException("VoltDB does not yet support outer joins with more than two tables involved");
+        }
+        JoinInfo joinInfo=parseTableConditions(node);
+        visited.add(table);
+        tableList.add(table);
+        tableJoinList.put(table,joinInfo);
       }
-      String joinTypeStr=node.attributes.get("jointype");
-      assert(joinTypeStr != null);
-      JoinType joinType=JoinType.get(joinTypeStr);
-      assert(joinType != JoinType.INVALID);
-      if (joinType == JoinType.FULL) {
-        throw new PlanningErrorException("VoltDB does not yet support full outer joins");
-      }
-      if (joinType != JoinType.INNER) {
-        hasOuter=true;
-      }
-      ++tableCount;
-      if (hasOuter && tableCount > 2) {
-        throw new PlanningErrorException("VoltDB does not yet support outer joins with more than two tables involved");
-      }
-      visited.add(table);
-      tableList.add(table);
-      tableJoinList.put(table,joinType);
     }
+  }
+ else {
+    String tableName=tablesNode.attributes.get("table");
+    Table table=getTableFromDB(tableName);
+    assert(table != null);
+    JoinInfo joinInfo=parseTableConditions(tablesNode);
+    tableList.add(table);
+    tableJoinList.put(table,joinInfo);
   }
 }
