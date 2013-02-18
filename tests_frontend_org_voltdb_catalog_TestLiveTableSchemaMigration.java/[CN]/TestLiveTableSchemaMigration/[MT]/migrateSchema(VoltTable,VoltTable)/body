@@ -1,0 +1,44 @@
+{
+  ServerThread server=null;
+  Client client=null;
+  try {
+    TableHelper.randomFill(t1,1000,1024,new Random(0));
+    String catPath1=catalogPathForTable(t1,"t1.jar");
+    String catPath2=catalogPathForTable(t2,"t2.jar");
+    byte[] catBytes2=CatalogUtil.toBytes(new File(catPath2));
+    DeploymentBuilder depBuilder=new DeploymentBuilder();
+    String deployment=depBuilder.getXML("/tmp/jhugg/foobar");
+    File deploymentFile=VoltProjectBuilder.writeStringToTempFile(deployment);
+    VoltDB.Configuration config=new VoltDB.Configuration();
+    config.m_pathToDeployment=deploymentFile.getAbsolutePath();
+    config.m_pathToCatalog=catPath1;
+    config.m_ipcPorts=new ArrayList<Integer>();
+    config.m_ipcPorts.add(10000);
+    server=new ServerThread(config);
+    server.start();
+    server.waitForInitialization();
+    System.out.printf("PRE:  %s\n",TableHelper.ddlForTable(t1));
+    System.out.printf("POST: %s\n",TableHelper.ddlForTable(t2));
+    TableHelper.migrateTable(t1,t2);
+    ClientConfig clientConfig=new ClientConfig();
+    client=ClientFactory.createClient(clientConfig);
+    client.createConnection("localhost");
+    client.callProcedure("@LoadMultipartitionTable","FOO",t1);
+    client.callProcedure("@UpdateApplicationCatalog",catBytes2,deployment);
+    VoltTable t3=client.callProcedure("@AdHoc","select * from FOO").getResults()[0];
+    if (!t3.hasSameContents(t2)) {
+      System.out.println("Table Mismatch");
+      System.out.printf("PRE:  %s\n",t2.toFormattedString());
+      System.out.printf("POST: %s\n",t3.toFormattedString());
+      fail();
+    }
+  }
+  finally {
+    if (client != null) {
+      client.close();
+    }
+    if (server != null) {
+      server.shutdown();
+    }
+  }
+}

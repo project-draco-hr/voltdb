@@ -1,42 +1,35 @@
 {
+  VoltDB.setDefaultTimezone();
   config=new SchemaChangeConfig();
   config.parse("SchemaChangeClient",args);
-  String deployment=readFileAsString(config.pathtodeployment);
-  byte[] cat1=readFileAsBytes(config.pathtocat1);
-  byte[] cat2=readFileAsBytes(config.pathtocat2);
+  try {
+    deploymentString=readFileAsString(config.pathtodeployment);
+  }
+ catch (  Exception e) {
+    deploymentString="<?xml version=\"1.0\"?><deployment>" + "<cluster hostcount=\"1\" sitesperhost=\"1\" kfactor=\"0\" />" + "<httpd enabled=\"true\"><jsonapi enabled=\"true\" /></httpd></deployment>";
+  }
   ClientConfig clientConfig=new ClientConfig();
+  clientConfig.setProcedureCallTimeout(30 * 60 * 1000);
   client=ClientFactory.createClient(clientConfig);
   String[] servers=config.servers.split(",");
   for (  String server : servers) {
     server=server.trim();
     client.createConnection(server);
   }
-  ClientResponse cr;
-  int growerCount=20;
-  GrowThread[] growers=new GrowThread[growerCount];
-  for (int i=0; i < growerCount; i++) {
-    growers[i]=new GrowThread();
-    growers[i].start();
+  VoltTable t=catalogChange(null);
+  for (int i=0; i < 50; i++) {
+    loadTable(t);
+    String tableName=TableHelper.getTableName(t);
+    VoltTable preT=sample(t);
+    t=catalogChange(t);
+    if (TableHelper.getTableName(t).equals(tableName)) {
+      VoltTable guessT=t.clone(4096 * 1024);
+      TableHelper.migrateTable(preT,guessT);
+      VoltTable postT=sample(t);
+      postT.resetRowPosition();
+      preT.resetRowPosition();
+      assert(postT.hasSameContents(guessT));
+    }
   }
-  while (getRss() < (config.targetrssmb * 1024)) {
-    Thread.sleep(500);
-  }
-  for (int i=0; i < growerCount; i++) {
-    growers[i].shutdown();
-  }
-  for (int i=0; i < growerCount; i++) {
-    growers[i].join();
-  }
-  long start=System.currentTimeMillis();
-  cr=client.callProcedure("@UpdateApplicationCatalog",cat2,deployment);
-  assert(cr.getStatus() == ClientResponse.SUCCESS);
-  long now1=System.currentTimeMillis();
-  System.out.printf("Took %f seconds to add the index\n",(now1 - start) / 1000.0);
-  Thread.sleep(30 * 1000);
-  now1=System.currentTimeMillis();
-  cr=client.callProcedure("@UpdateApplicationCatalog",cat1,deployment);
-  assert(cr.getStatus() == ClientResponse.SUCCESS);
-  long now2=System.currentTimeMillis();
-  System.out.printf("Took %f seconds to drop the index\n",(now2 - now1) / 1000.0);
   client.close();
 }

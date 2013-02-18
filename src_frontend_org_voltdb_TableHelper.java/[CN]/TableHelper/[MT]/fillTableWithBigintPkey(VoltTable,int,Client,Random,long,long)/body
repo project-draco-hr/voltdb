@@ -1,0 +1,64 @@
+{
+  System.out.printf("Filling table %s with rows starting with pkey id %d (every %d rows) until RSS=%dmb\n",t.m_name,offset,jump,mb);
+  int pkeyColIndex=getBigintPrimaryKeyIndexIfExists(t);
+  if (pkeyColIndex == -1) {
+    pkeyColIndex=0;
+    assert(t.getColumnType(0) == VoltType.BIGINT);
+  }
+  final AtomicInteger outstanding=new AtomicInteger(0);
+  final AtomicLong rss=new AtomicLong(0);
+  ProcedureCallback callback=new ProcedureCallback(){
+    @Override public void clientCallback(    ClientResponse clientResponse) throws Exception {
+      outstanding.decrementAndGet();
+      if (clientResponse.getStatus() != ClientResponse.SUCCESS) {
+        System.out.println("Error in loader callback:");
+        System.out.println(((ClientResponseImpl)clientResponse).toJSONString());
+        assert(false);
+      }
+    }
+  }
+;
+  Thread rssThread=new Thread(){
+    @Override public void run(){
+      long tempRss=rss.get();
+      long rssPrev=tempRss;
+      while (true) {
+        tempRss=MiscUtils.getMBRss(client);
+        if (tempRss != rssPrev) {
+          rssPrev=tempRss;
+          rss.set(tempRss);
+          System.out.printf("RSS=%dmb\n",tempRss);
+          if (tempRss > mb) {
+            return;
+          }
+        }
+        try {
+          Thread.sleep(2000);
+        }
+ catch (        Exception e) {
+        }
+      }
+    }
+  }
+;
+  long i=offset;
+  long rows=0;
+  rssThread.start();
+  while (rss.get() < mb) {
+    VoltTable toLoad=fillJavaTableWithBigintPkey(t,rand,1000,i,jump);
+    i+=1000 * jump;
+    while (outstanding.get() == 10) {
+      Thread.yield();
+    }
+    client.callProcedure(callback,"@LoadSinglepartitionTable",t.m_name,toLoad);
+    outstanding.incrementAndGet();
+    rows+=1000;
+    if (rows % 100000 == 0) {
+      System.out.printf("Loading 100000 rows. %d inserts sent (%d max id).\n",rows,i - 1);
+    }
+  }
+  while (outstanding.get() > 0) {
+    Thread.yield();
+  }
+  rssThread.join();
+}
