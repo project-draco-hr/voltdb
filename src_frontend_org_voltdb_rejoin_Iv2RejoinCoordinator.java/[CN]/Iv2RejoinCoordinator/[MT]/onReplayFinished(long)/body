@@ -1,0 +1,25 @@
+{
+  boolean allDone=false;
+synchronized (m_lock) {
+    if (!m_rejoiningSites.remove(HSId)) {
+      VoltDB.crashLocalVoltDB("Unknown site " + CoreUtils.hsIdToString(HSId) + " finished rejoin",false,null);
+    }
+    String msg="Finished rejoining site " + CoreUtils.hsIdToString(HSId);
+    ArrayList<Long> remainingSites=new ArrayList<Long>(m_pendingSites);
+    remainingSites.addAll(m_rejoiningSites);
+    remainingSites.addAll(m_snapshotSites);
+    if (!remainingSites.isEmpty()) {
+      msg+=". Remaining sites to rejoin: " + CoreUtils.hsIdCollectionToString(remainingSites);
+    }
+ else {
+      msg+=". All sites completed rejoin.";
+    }
+    REJOINLOG.info(msg);
+    allDone=m_snapshotSites.isEmpty() && m_rejoiningSites.isEmpty();
+  }
+  if (allDone) {
+    long delta=(System.currentTimeMillis() - m_startTime) / 1000;
+    REJOINLOG.info("" + (m_liveRejoin ? "Live" : "Blocking") + " rejoin data transfer completed in "+ delta+ " seconds.");
+    VoltDB.instance().onExecutionSiteRejoinCompletion(0l);
+  }
+}
