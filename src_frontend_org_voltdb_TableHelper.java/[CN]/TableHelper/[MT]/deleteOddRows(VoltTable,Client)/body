@@ -1,0 +1,43 @@
+{
+  int pkeyColIndex=getBigintPrimaryKeyIndexIfExists(t);
+  if (pkeyColIndex == -1) {
+    pkeyColIndex=0;
+    assert(t.getColumnType(0) == VoltType.BIGINT);
+  }
+  VoltTable result=client.callProcedure("@AdHoc",String.format("select max(pkey) from %s;",TableHelper.getTableName(t))).getResults()[0];
+  long maxId=result.asScalarLong();
+  System.out.printf("Deleting odd rows with pkey ids in the range 0-%d\n",maxId);
+  final AtomicInteger outstanding=new AtomicInteger(0);
+  final AtomicLong deleteCount=new AtomicLong(0);
+  ProcedureCallback callback=new ProcedureCallback(){
+    @Override public void clientCallback(    ClientResponse clientResponse) throws Exception {
+      outstanding.decrementAndGet();
+      if (clientResponse.getStatus() != ClientResponse.SUCCESS) {
+        System.out.println("Error in deleter callback:");
+        System.out.println(((ClientResponseImpl)clientResponse).toJSONString());
+        assert(false);
+      }
+      VoltTable result=clientResponse.getResults()[0];
+      long modified=result.asScalarLong();
+      assert(modified <= 1);
+      deleteCount.addAndGet(modified);
+    }
+  }
+;
+  long deleted=0;
+  for (int i=1; i <= maxId; i+=2) {
+    client.callProcedure(callback,t.m_name.toUpperCase() + ".delete",i);
+    outstanding.incrementAndGet();
+    deleted++;
+    if ((deleted % 100000) == 0) {
+      System.out.printf("Deleting 100000 pkeys. %d total deleted (%.1f%% of range).\n",deleted,(i * 100.0) / maxId);
+    }
+    while (outstanding.get() >= 1000) {
+      Thread.yield();
+    }
+  }
+  while (outstanding.get() > 0) {
+    Thread.yield();
+  }
+  System.out.printf("Deleted %d odd rows\n",deleteCount.get());
+}
