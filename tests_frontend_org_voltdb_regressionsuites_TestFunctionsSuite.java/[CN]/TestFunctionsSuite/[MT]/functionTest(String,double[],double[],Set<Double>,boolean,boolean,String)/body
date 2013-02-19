@@ -1,0 +1,83 @@
+{
+  System.out.println("STARTING test of " + fname);
+  Client client=getClient();
+  insertNumbers(client,rawData,resultValues.length);
+  FunctionTestCase[] results;
+  results=displayFunctionRun(client,fname,resultValues.length / COLUMNCOUNT,expectedFormat);
+  assertEquals(results.length,resultValues.length);
+  Map<String,Integer> valueBag=new HashMap<String,Integer>();
+  int kk=0;
+  for (  FunctionTestCase result : results) {
+    double expected=resultValues[kk++];
+    if (expected != result.m_result) {
+      complain("Failed " + result.m_case + " expected "+ expected+ " got "+ result.m_result);
+    }
+    String asExpected=String.format(formatForFuzziness,expected);
+    String asResulted=String.format(formatForFuzziness,result.m_result);
+    assertEquals(asExpected,asResulted);
+    Integer count=valueBag.get(asExpected);
+    if (count == null) {
+      count=0;
+    }
+    valueBag.put(asExpected,count + 1);
+  }
+  if (monotonic) {
+    results=orderFunctionRun(client,fname,resultValues.length / COLUMNCOUNT);
+    assertEquals(results.length,resultValues.length);
+    int skippedIds=ROWCOUNT - resultValues.length / COLUMNCOUNT;
+    if (ascending) {
+      kk=skippedIds;
+    }
+ else {
+      kk=ROWCOUNT - 1;
+    }
+    for (    FunctionTestCase result : results) {
+      int idIndex;
+      if (ascending) {
+        idIndex=kk++;
+        if (kk == ROWCOUNT) {
+          kk=skippedIds;
+        }
+      }
+ else {
+        idIndex=kk--;
+        if (kk == skippedIds - 1) {
+          kk=ROWCOUNT - 1;
+        }
+      }
+      double expected=orderedIds[idIndex];
+      if (expected != result.m_result) {
+        complain("Failed " + result.m_case + " expected "+ expected+ " got "+ result.m_result);
+      }
+      assertEquals(expected,result.m_result);
+    }
+  }
+  results=whereFunctionRun(client,fname,filters,expectedFormat);
+  assertEquals(results.length,COLUMNCOUNT * filters.size());
+  int coveringCount=resultValues.length;
+  for (  FunctionTestCase result : results) {
+    if (result.m_result == 0.0) {
+      continue;
+    }
+    Integer count=valueBag.get(String.format(formatForFuzziness,result.m_filter));
+    if (count == null) {
+      complain("Function " + fname + " got unexpected result "+ result.m_filter+ ".");
+    }
+    assertNotNull(count);
+    if (count < result.m_result) {
+      complain(result.m_case + " value " + result.m_filter+ " not expected or previously depleted from "+ valueBag+ ".");
+    }
+    assertTrue(count >= result.m_result);
+    valueBag.put(String.format(formatForFuzziness,result.m_filter),count - (int)result.m_result);
+    coveringCount-=(int)result.m_result;
+  }
+  for (  Entry<String,Integer> entry : valueBag.entrySet()) {
+    int count=entry.getValue();
+    if (count != 0) {
+      complain("Function " + fname + " expected result "+ entry.getKey()+ " lacks "+ count+ " matches.");
+    }
+    assertEquals(0,count);
+  }
+  assertEquals(0,coveringCount);
+  System.out.println("ENDING test of " + fname);
+}
