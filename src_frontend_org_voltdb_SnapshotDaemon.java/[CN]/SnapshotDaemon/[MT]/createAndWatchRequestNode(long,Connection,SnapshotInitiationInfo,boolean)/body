@@ -5,11 +5,22 @@
     requestExists=true;
   }
  else {
-    try {
-      registerUserSnapshotResponseWatch(requestId,clientHandle,c,notifyChanges);
+    if (!snapInfo.isTruncationRequest()) {
+      try {
+        registerUserSnapshotResponseWatch(requestId,clientHandle,c,notifyChanges);
+      }
+ catch (      Exception e) {
+        VoltDB.crashLocalVoltDB("Failed to register ZK watch on snapshot response",true,e);
+      }
     }
- catch (    Exception e) {
-      VoltDB.crashLocalVoltDB("Failed to register ZK watch on snapshot response",true,e);
+ else {
+      VoltTable result=SnapshotSave.constructNodeResultsTable();
+      result.addRow(-1,CoreUtils.getHostnameOrAddress(),"","SUCCESS","SNAPSHOT REQUEST QUEUED");
+      final ClientResponseImpl resp=new ClientResponseImpl(ClientResponseImpl.SUCCESS,new VoltTable[]{result},"User-requested truncation snapshot successfully queued for execution.",clientHandle);
+      ByteBuffer buf=ByteBuffer.allocate(resp.getSerializedSize() + 4);
+      buf.putInt(buf.capacity() - 4);
+      resp.flattenToBuffer(buf).flip();
+      c.writeStream().enqueue(buf);
     }
   }
   if (requestExists) {
