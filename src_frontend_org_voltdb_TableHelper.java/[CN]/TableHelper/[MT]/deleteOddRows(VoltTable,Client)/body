@@ -1,10 +1,10 @@
 {
-  int pkeyColIndex=getBigintPrimaryKeyIndexIfExists(t);
+  int pkeyColIndex=getBigintPrimaryKeyIndexIfExists(table);
   if (pkeyColIndex == -1) {
     pkeyColIndex=0;
-    assert(t.getColumnType(0) == VoltType.BIGINT);
+    assert(table.getColumnType(0).isInteger());
   }
-  VoltTable result=client.callProcedure("@AdHoc",String.format("select max(pkey) from %s;",TableHelper.getTableName(t))).getResults()[0];
+  VoltTable result=client.callProcedure("@AdHoc",String.format("select max(pkey) from %s;",TableHelper.getTableName(table))).getResults()[0];
   long maxId=result.asScalarLong();
   System.out.printf("Deleting odd rows with pkey ids in the range 0-%d\n",maxId);
   final AtomicInteger outstanding=new AtomicInteger(0);
@@ -25,12 +25,13 @@
   }
 ;
   long deleted=0;
+  final String deleteProcName=table.m_name.toUpperCase() + ".delete";
   for (int i=1; i <= maxId; i+=2) {
-    client.callProcedure(callback,t.m_name.toUpperCase() + ".delete",i);
+    client.callProcedure(callback,deleteProcName,i);
     outstanding.incrementAndGet();
     deleted++;
     if ((deleted % 100000) == 0) {
-      System.out.printf("Deleting 100000 pkeys. %d total deleted (%.1f%% of range).\n",deleted,(i * 100.0) / maxId);
+      System.out.printf("Sent %d total delete invocations (%.1f%% of range).\n",deleted,(i * 100.0) / maxId);
     }
     while (outstanding.get() >= 1000) {
       Thread.yield();
