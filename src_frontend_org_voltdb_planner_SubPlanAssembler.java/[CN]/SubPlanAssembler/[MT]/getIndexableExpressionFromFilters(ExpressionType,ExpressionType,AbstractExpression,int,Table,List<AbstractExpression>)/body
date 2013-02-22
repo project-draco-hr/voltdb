@@ -8,8 +8,32 @@
       normalizedExpr=(ComparisonExpression)filter;
       indexableExpr=filter.getLeft();
       otherExpr=filter.getRight();
-      binding=bindingForIndexedFilterOperand(table,indexableExpr,otherExpr,coveringExpr,coveringColId);
+      binding=bindingIfValidIndexedFilterOperand(table,indexableExpr,otherExpr,coveringExpr,coveringColId);
       if (binding != null) {
+        if (targetComparator == ExpressionType.COMPARE_LIKE) {
+          if (otherExpr instanceof ParameterValueExpression) {
+            ParameterValueExpression pve=(ParameterValueExpression)otherExpr;
+            ConstantValueExpression cve=pve.getOriginalValue();
+            if (cve == null || !cve.isPrefixPatternString()) {
+              binding=null;
+              continue;
+            }
+            List<AbstractExpression> moreBinding=new ArrayList<AbstractExpression>(binding);
+            moreBinding.add(pve);
+            binding=moreBinding;
+          }
+ else           if (otherExpr instanceof ConstantValueExpression) {
+            ConstantValueExpression cve=(ConstantValueExpression)otherExpr;
+            if (!cve.isPrefixPatternString()) {
+              binding=null;
+              continue;
+            }
+          }
+ else {
+            binding=null;
+            continue;
+          }
+        }
         filtersToCover.remove(filter);
         break;
       }
@@ -19,7 +43,7 @@
       normalizedExpr=normalizedExpr.reverseOperator();
       indexableExpr=filter.getRight();
       otherExpr=filter.getLeft();
-      binding=bindingForIndexedFilterOperand(table,indexableExpr,otherExpr,coveringExpr,coveringColId);
+      binding=bindingIfValidIndexedFilterOperand(table,indexableExpr,otherExpr,coveringExpr,coveringColId);
       if (binding != null) {
         filtersToCover.remove(filter);
         break;
