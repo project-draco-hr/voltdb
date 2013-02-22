@@ -2,6 +2,7 @@
   log.info(HORIZONTAL_RULE);
   log.info(" Setup & Initialization");
   log.info(HORIZONTAL_RULE);
+  Semaphore permits=rateLimiter.addType(0,1);
   final int cidCount=128;
   final long[] lastRid=new long[cidCount];
   for (int i=0; i < lastRid.length; i++) {
@@ -44,16 +45,21 @@
   ReadThread readThread=new ReadThread(client,config.threads,config.threadoffset);
   readThread.start();
   AdHocMayhemThread adHocMayhemThread=new AdHocMayhemThread(client);
-  adHocMayhemThread.start();
+  if (!config.disableadhoc) {
+    adHocMayhemThread.start();
+  }
   List<ClientThread> clientThreads=new ArrayList<ClientThread>();
   for (byte cid=(byte)config.threadoffset; cid < config.threadoffset + config.threads; cid++) {
-    ClientThread clientThread=new ClientThread(cid,txnCount,client,processor);
+    ClientThread clientThread=new ClientThread(cid,txnCount,client,processor,permits);
     clientThread.start();
     clientThreads.add(clientThread);
   }
   final long benchmarkEndTime=System.currentTimeMillis() + (1000l * config.duration);
-  while (benchmarkEndTime > System.currentTimeMillis()) {
+  long currentTs=System.currentTimeMillis();
+  while (benchmarkEndTime > currentTs) {
+    rateLimiter.updateActivePermits(currentTs);
     Thread.yield();
+    currentTs=System.currentTimeMillis();
   }
   replicatedLoader.shutdown();
   partitionedLoader.shutdown();
