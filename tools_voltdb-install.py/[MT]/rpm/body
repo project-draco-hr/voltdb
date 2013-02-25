@@ -1,4 +1,6 @@
 def rpm():
+    installdir = os.path.join('usr', 'share')
+    installbin = os.path.join(os.sep, 'usr', 'bin')
     blddir = os.path.join(meta.build_root, 'rpmbuild')
     meta.options.prefix = blddir
     if os.path.exists(meta.build_root):
@@ -20,11 +22,17 @@ def rpm():
     voltdb_dist = ('%(pkgname)s-%(pkgversion)s' % syms)
     voltdb_build = (voltdb_dist + ('-%(pkgrelease)d' % syms))
     buildroot = os.path.join(blddir, 'tmp', voltdb_build)
-    shutil.copytree(volt_root, os.path.join(buildroot, 'usr', 'share', voltdb_dist), symlinks=False, ignore=None)
+    voltdb_prefix = os.path.join(buildroot, installdir, voltdb_dist)
+    shutil.copytree(volt_root, voltdb_prefix, symlinks=False, ignore=None)
     with ChDir(buildroot):
         with open(os.path.join(blddir, 'SPECS', 'myfiles'), 'w') as fout:
-            for l in pipe_cmd('find', '.', '-type', 'f'):
-                fout.write(('"%s"\n' % string.lstrip(l, '.')))
+            with open(os.path.join(blddir, 'SPECS', 'postcmd'), 'w') as pout:
+                with open(os.path.join(blddir, 'SPECS', 'preuncmd'), 'w') as uout:
+                    for l in pipe_cmd('find', '.', '-type', 'f'):
+                        fout.write(('"%s"\n' % string.lstrip(l, '.')))
+                        if l.startswith(os.path.join(installdir, voltdb_dist, 'bin'), 2):
+                            pout.write(('ln -sf /%s %s\n' % (os.path.relpath(l, buildroot), installbin)))
+                            uout.write(('unlink %s\n' % os.path.join(installbin, os.path.relpath(l, os.path.join(buildroot, installdir, voltdb_dist, 'bin')))))
     rpm_sources = os.path.join(blddir, 'SOURCES')
     os.mkdir(os.path.join(rpm_sources, voltdb_dist))
     with ChDir(os.path.join(blddir, 'SOURCES')):
