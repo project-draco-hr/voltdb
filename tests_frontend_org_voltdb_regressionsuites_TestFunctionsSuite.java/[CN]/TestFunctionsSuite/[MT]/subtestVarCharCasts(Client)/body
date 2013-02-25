@@ -1,0 +1,65 @@
+{
+  final String[] resultValues=new String[values.length];
+  final Set<String> filters=new HashSet<String>();
+  for (int kk=0; kk < resultValues.length; ++kk) {
+    resultValues[kk]="" + values[kk];
+    filters.add(resultValues[kk]);
+  }
+  FunctionVarCharTestCase[] results;
+  results=displayVarCharCastRun(client,values.length / COLUMNCOUNT);
+  assertEquals(results.length,values.length);
+  Map<String,Integer> valueBag=new HashMap<String,Integer>();
+  int kk=0;
+  for (  FunctionVarCharTestCase result : results) {
+    String expected=resultValues[kk++];
+    if (!expected.equals(result.m_filter)) {
+      complain("Failed " + result.m_case + " expected "+ expected+ " got "+ result.m_filter);
+    }
+    assertEquals(expected,result.m_filter);
+    Integer count=valueBag.get(expected);
+    if (count == null) {
+      count=0;
+    }
+    valueBag.put(expected,count + 1);
+  }
+  results=whereVarCharCastRun(client,filters);
+  assertEquals(results.length,COLUMNCOUNT * filters.size());
+  int coveringCount=resultValues.length;
+  for (  FunctionVarCharTestCase result : results) {
+    Integer count=valueBag.get(result.m_filter);
+    if (count == null) {
+      complain("CAST got unexpected result " + result.m_filter + ".");
+    }
+    assertNotNull(count);
+    if (count < result.m_result) {
+      complain(result.m_case + " value " + result.m_filter+ " not expected or previously depleted from "+ valueBag+ ".");
+    }
+    assertTrue(count >= result.m_result);
+    valueBag.put(result.m_filter,count - (int)result.m_result);
+    coveringCount-=(int)result.m_result;
+  }
+  for (  Entry<String,Integer> entry : valueBag.entrySet()) {
+    int count=entry.getValue();
+    if (count != 0) {
+      complain("VARCHAR CAST expected result " + entry.getKey() + " lacks "+ count+ " matches.");
+    }
+    assertEquals(0,count);
+  }
+  assertEquals(0,coveringCount);
+  FunctionTestCase[] orderedResults=orderFunctionRun(client,"VARCHAR_CAST",values.length / COLUMNCOUNT);
+  assertEquals(values.length,orderedResults.length);
+  kk=0;
+  int jj=0;
+  for (  FunctionTestCase result : orderedResults) {
+    int idIndex=kk++;
+    if (kk == ROWCOUNT) {
+      kk=0;
+    }
+    double[] expecteds=(jj / ROWCOUNT < FLOATCOLINDEX) ? orderedByStringIds : (jj / ROWCOUNT > FLOATCOLINDEX) ? orderedByDecimalStringIds : orderedByFloatStringIds;
+    if (expecteds[idIndex] != result.m_result) {
+      complain("Failed " + result.m_case + " expected "+ expecteds[idIndex]+ " got "+ result.m_result);
+    }
+    assertEquals(expecteds[idIndex],result.m_result);
+    ++jj;
+  }
+}

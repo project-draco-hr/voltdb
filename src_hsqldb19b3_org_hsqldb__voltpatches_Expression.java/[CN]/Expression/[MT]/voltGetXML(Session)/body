@@ -1,37 +1,77 @@
 {
-  VoltXMLElement exp=new VoltXMLElement("unset");
-  exp.attributes.put("id",getUniqueId(session));
-  if (getType() == OpTypes.VALUE) {
-    exp.name="value";
-    exp.attributes.put("type",Types.getTypeName(dataType.typeCode));
-    if (isParam) {
-      exp.attributes.put("isparam","true");
+  int exprOp=getType();
+  if ((exprOp == OpTypes.SIMPLE_COLUMN) && (this instanceof ExpressionColumn)) {
+    exprOp=OpTypes.COLUMN;
+  }
+  VoltXMLElement exp=prototypes.get(exprOp);
+  if (exp == null) {
+    throwForUnsupportedExpression(exprOp);
+  }
+  exp=exp.duplicate();
+  exp.attributes.put("id",this.getUniqueId(session));
+  if ((alias != null) && (getAlias().length() > 0)) {
+    exp.attributes.put("alias",getAlias());
+  }
+  for (  Expression expr : nodes) {
+    if (expr != null) {
+      VoltXMLElement vxmle=expr.voltGetXML(session);
+      exp.children.add(vxmle);
+      assert(vxmle != null);
     }
- else {
-      String value="NULL";
-      if (valueData != null)       value=valueData.toString();
-      exp.attributes.put("value",value);
+  }
+switch (exprOp) {
+case OpTypes.VALUE:
+    if ((dataType == null) || (valueData == null)) {
+      exp.attributes.put("valuetype","NULL");
+      exp.attributes.put("value","NULL");
+      return exp;
     }
+  if (dataType.isBooleanType()) {
+    throw new HSQLParseException("VoltDB does not support WHERE clauses containing only constants");
   }
- else   if (getType() == OpTypes.COLUMN) {
-    assert(false);
-  }
- else   if (getType() == OpTypes.ASTERISK) {
-    VoltXMLElement asterisk=new VoltXMLElement("asterisk");
-    exp.children.add(asterisk);
-    assert(asterisk != null);
-  }
- else {
-switch (getType()) {
-case OpTypes.ROW_SUBQUERY:
-case OpTypes.SCALAR_SUBQUERY:
-case OpTypes.TABLE_SUBQUERY:
-      throw new HSQLParseException("VoltDB does not yet support subqueries, consider using views instead");
-  }
-  System.err.println("UNSUPPORTED EXPR TYPE: " + String.valueOf(getType()));
-  VoltXMLElement unknown=new VoltXMLElement("unknown");
-  exp.children.add(unknown);
-  assert(unknown != null);
+exp.attributes.put("valuetype",Types.getTypeName(dataType.typeCode));
+if (valueData instanceof TimestampData) {
+TimestampData time=(TimestampData)valueData;
+exp.attributes.put("value",Long.toString(Math.round((time.getSeconds() + time.getZone()) * 1e6) + time.getNanos() / 1000));
+return exp;
+}
+if (valueData instanceof BinaryData) {
+BinaryData bd=(BinaryData)valueData;
+exp.attributes.put("value",hexEncode(bd.getBytes()));
+return exp;
+}
+exp.attributes.put("value",valueData.toString());
+return exp;
+case OpTypes.DYNAMIC_PARAM:
+if (dataType != null) {
+exp.attributes.put("valuetype",Types.getTypeName(dataType.typeCode));
 }
 return exp;
+case OpTypes.COLUMN:
+ExpressionColumn ec=(ExpressionColumn)this;
+return ec.voltAnnotateColumnXML(exp);
+case OpTypes.SQL_FUNCTION:
+FunctionSQL fn=(FunctionSQL)this;
+return fn.voltAnnotateFunctionXML(exp);
+case OpTypes.COUNT:
+case OpTypes.SUM:
+case OpTypes.AVG:
+if (((ExpressionAggregate)this).isDistinctAggregate) {
+exp.attributes.put("distinct","true");
+}
+return exp;
+case OpTypes.ORDER_BY:
+if (((ExpressionOrderBy)this).isDescending()) {
+exp.attributes.put("desc","true");
+}
+return exp;
+case OpTypes.CAST:
+if (dataType == null) {
+throw new HSQLParseException("VoltDB could not determine the type in a CAST operation");
+}
+exp.attributes.put("valuetype",dataType.getNameString());
+return exp;
+default :
+return exp;
+}
 }

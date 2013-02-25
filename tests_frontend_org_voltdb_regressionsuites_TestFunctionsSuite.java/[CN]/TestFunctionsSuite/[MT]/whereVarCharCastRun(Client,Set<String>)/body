@@ -1,0 +1,58 @@
+{
+  ClientResponse cr;
+  VoltTable result;
+  FunctionVarCharTestCase[] resultSet=new FunctionVarCharTestCase[numTypeNames.length * filters.size()];
+  int kk=0;
+  int jj=0;
+  for (  String numTypeName : numTypeNames) {
+    for (    String filter : filters) {
+      String proc="WHERE_VARCHAR_CAST_" + numTypeName;
+      String param=filter;
+      String[] decimalParts=filter.split("\\.");
+      if (jj < FLOATCOLINDEX) {
+        if (decimalParts.length < 2 || decimalParts[1].equals("0")) {
+          param=decimalParts[0];
+        }
+      }
+ else       if (jj > FLOATCOLINDEX) {
+        if (decimalParts.length < 2 || decimalParts[1].equals("0")) {
+          param=decimalParts[0] + ".000000000000";
+        }
+ else {
+          param=decimalParts[0] + "." + (decimalParts[1] + "000000000000").substring(0,12);
+        }
+      }
+ else {
+        if (decimalParts.length < 2 || decimalParts[1].equals("0")) {
+          if (decimalParts[0].equals("0")) {
+            param="0E0";
+          }
+ else {
+            int signedDigitWidth=(decimalParts[0].charAt(0) == '-') ? 2 : 1;
+            param=decimalParts[0].substring(0,signedDigitWidth) + "." + decimalParts[0].substring(signedDigitWidth)+ "E"+ (decimalParts[0].length() - signedDigitWidth);
+          }
+        }
+ else {
+          if (decimalParts[0].equals("0")) {
+            param=decimalParts[1].substring(0,1) + "." + decimalParts[1].substring(1)+ "E-1";
+          }
+ else           if (decimalParts[0].equals("-0")) {
+            param="-" + decimalParts[1].substring(0,1) + "."+ decimalParts[1].substring(1)+ "E-1";
+          }
+ else {
+            int signedDigitWidth=(decimalParts[0].charAt(0) == '-') ? 2 : 1;
+            param=decimalParts[0].substring(0,signedDigitWidth) + "." + decimalParts[0].substring(signedDigitWidth)+ decimalParts[1]+ "E"+ (decimalParts[0].length() - signedDigitWidth);
+          }
+        }
+      }
+      cr=client.callProcedure(proc,param);
+      result=cr.getResults()[0];
+      int rowCount=result.getRowCount();
+      assertEquals(rowCount,1);
+      long tupleCount=result.asScalarLong();
+      resultSet[kk++]=new FunctionVarCharTestCase(proc,filter,tupleCount);
+    }
+    ++jj;
+  }
+  return resultSet;
+}

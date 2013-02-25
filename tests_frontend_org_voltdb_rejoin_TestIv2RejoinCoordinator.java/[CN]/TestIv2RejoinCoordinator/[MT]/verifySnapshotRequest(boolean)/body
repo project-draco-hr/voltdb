@@ -1,0 +1,21 @@
+{
+  ArgumentCaptor<Long> clientHandleCaptor=ArgumentCaptor.forClass(Long.class);
+  ArgumentCaptor<Connection> connectionCaptor=ArgumentCaptor.forClass(Connection.class);
+  ArgumentCaptor<SnapshotInitiationInfo> infoCaptor=ArgumentCaptor.forClass(SnapshotInitiationInfo.class);
+  ArgumentCaptor<Boolean> notifyCaptor=ArgumentCaptor.forClass(Boolean.class);
+  if (expected) {
+    verify(m_snapshotDaemon,timeout(120000)).createAndWatchRequestNode(clientHandleCaptor.capture(),connectionCaptor.capture(),infoCaptor.capture(),notifyCaptor.capture());
+    System.out.println("JSON: " + infoCaptor.getValue().getJSONBlob());
+    VoltTable fake=new VoltTable(new VoltTable.ColumnInfo("ERR_MSG",VoltType.STRING),new VoltTable.ColumnInfo("RESULT",VoltType.STRING));
+    fake.addRow("","SUCCESS");
+    ClientResponseImpl resp=new ClientResponseImpl(ClientResponse.SUCCESS,Byte.MIN_VALUE,"enough",new VoltTable[]{fake},"");
+    ByteBuffer buf=ByteBuffer.allocate(resp.getSerializedSize() + 4);
+    buf.putInt(resp.getSerializedSize());
+    resp.flattenToBuffer(buf);
+    connectionCaptor.getValue().writeStream().enqueue(buf);
+  }
+ else {
+    Thread.sleep(1000);
+    verify(m_snapshotDaemon,never()).createAndWatchRequestNode(clientHandleCaptor.capture(),connectionCaptor.capture(),infoCaptor.capture(),notifyCaptor.capture());
+  }
+}

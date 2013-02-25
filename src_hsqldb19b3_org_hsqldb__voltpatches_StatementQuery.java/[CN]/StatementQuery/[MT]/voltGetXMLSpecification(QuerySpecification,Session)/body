@@ -1,8 +1,6 @@
 {
   VoltXMLElement query=new VoltXMLElement("select");
   if (select.isDistinctSelect)   query.attributes.put("distinct","true");
-  if (select.isGrouped)   query.attributes.put("grouped","true");
-  if (select.isAggregated)   query.attributes.put("aggregated","true");
   if ((select.sortAndSlice != null) && (select.sortAndSlice.limitCondition != null)) {
     Expression limitCondition=select.sortAndSlice.limitCondition;
     if (limitCondition.nodes.length != 2) {
@@ -66,7 +64,6 @@
   }
   VoltXMLElement cols=new VoltXMLElement("columns");
   query.children.add(cols);
-  assert(cols != null);
   ArrayList<Expression> orderByCols=new ArrayList<Expression>();
   ArrayList<Expression> groupByCols=new ArrayList<Expression>();
   ArrayList<Expression> displayCols=new ArrayList<Expression>();
@@ -93,12 +90,7 @@
  else     if (expr.opType == OpTypes.ORDER_BY) {
       orderByCols.add(expr);
     }
- else     if (expr.opType == OpTypes.SIMPLE_COLUMN && expr.isAggregate && expr.alias != null) {
-      displayCols.add(expr);
-    }
- else     if (expr.opType == OpTypes.SIMPLE_COLUMN) {
-    }
- else {
+ else     if (expr.opType != OpTypes.SIMPLE_COLUMN || (expr.isAggregate && expr.alias != null)) {
       displayCols.add(expr);
     }
   }
@@ -131,70 +123,33 @@
       assert(xml != null);
     }
   }
-  VoltXMLElement params=new VoltXMLElement("parameters");
-  query.children.add(params);
-  assert(params != null);
-  for (int i=0; i < parameters.length; i++) {
-    VoltXMLElement parameter=new VoltXMLElement("parameter");
-    params.children.add(parameter);
-    assert(parameter != null);
-    parameter.attributes.put("index",String.valueOf(i));
-    ExpressionColumn param=parameters[i];
-    parameter.attributes.put("id",param.getUniqueId(session));
-    Type paramType=param.getDataType();
-    if (paramType != null) {
-      parameter.attributes.put("type",Types.getTypeName(paramType.typeCode));
-    }
-  }
+  voltAppendParameters(session,query);
   VoltXMLElement scans=new VoltXMLElement("tablescans");
   query.children.add(scans);
   assert(scans != null);
-  for (  RangeVariable rangeVariable : rangeVariables)   scans.children.add(rangeVariable.voltGetXML(session));
+  for (  RangeVariable rangeVariable : rangeVariables)   scans.children.add(rangeVariable.voltGetRangeVariableXML(session));
+  Expression cond=null;
   if (select.queryCondition != null) {
-    VoltXMLElement condition=new VoltXMLElement("querycondition");
-    query.children.add(condition);
-    assert(condition != null);
-    condition.children.add(select.queryCondition.voltGetXML(session));
+    cond=select.queryCondition;
   }
  else {
-    Expression cond=null;
     for (int rvi=0; rvi < select.rangeVariables.length; ++rvi) {
       RangeVariable rv=rangeVariables[rvi];
       if (rv.nonIndexJoinCondition != null) {
-        if (cond != null) {
-          cond=new ExpressionLogical(OpTypes.AND,cond,rv.nonIndexJoinCondition);
-        }
- else {
-          cond=rv.nonIndexJoinCondition;
-        }
+        cond=voltCombineWithAnd(cond,rv.nonIndexJoinCondition);
       }
  else       if (rv.isJoinIndex) {
-        if (rv.indexCondition != null) {
-          if (cond != null) {
-            cond=new ExpressionLogical(OpTypes.AND,cond,rv.indexCondition);
-          }
- else {
-            cond=rv.indexCondition;
-          }
-        }
-        if (rv.indexEndCondition != null) {
-          if (cond != null) {
-            cond=new ExpressionLogical(OpTypes.AND,cond,rv.indexCondition);
-          }
- else {
-            cond=rv.indexCondition;
-          }
-        }
+        cond=voltCombineWithAnd(cond,rv.indexCondition,rv.indexEndCondition);
       }
     }
-    if (cond != null) {
-      VoltXMLElement condition=new VoltXMLElement("querycondition");
-      query.children.add(condition);
-      condition.children.add(cond.voltGetXML(session));
-    }
+  }
+  if (cond != null) {
+    VoltXMLElement condition=new VoltXMLElement("querycondition");
+    query.children.add(condition);
+    condition.children.add(cond.voltGetXML(session));
   }
   if (select.havingCondition != null) {
-    throw new HSQLParseException("VoltDB does not yet support the HAVING clause");
+    throw new HSQLParseException("VoltDB does not support the HAVING clause");
   }
   if (select.isGrouped) {
     VoltXMLElement groupCols=new VoltXMLElement("groupcolumns");

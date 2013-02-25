@@ -5,11 +5,8 @@ synchronized (m_startAndStopLock) {
       System.exit(-1);
     }
     consoleLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_StartupString.name(),null);
-    if (config.m_enableIV2) {
-      consoleLog.warn("Running 3.0 preview (iv2 mode). NOT SUPPORTED IN PRODUCTION.");
-    }
- else {
-      consoleLog.warn("Running 3.0 preview (legacy mode). NOT SUPPORTED IN PRODUCTION.");
+    if (!config.m_enableIV2) {
+      consoleLog.warn("Running 3.0 preview (legacy mode).  THIS MODE IS DEPRECATED.");
     }
     if (config.m_pathToDeployment == null) {
       try {
@@ -144,7 +141,7 @@ synchronized (m_startAndStopLock) {
         }
         SnapshotSaveAPI.recoveringSiteCount.set(hsidsToRejoin.size());
         hostLog.info("Set recovering site count to " + hsidsToRejoin.size());
-        m_rejoinCoordinator=new SequentialRejoinCoordinator(m_messenger,hsidsToRejoin,m_catalogContext.cluster.getVoltroot(),m_config.m_startAction == START_ACTION.LIVE_REJOIN);
+        m_rejoinCoordinator=new Iv2RejoinCoordinator(m_messenger,hsidsToRejoin,m_catalogContext.cluster.getVoltroot(),m_config.m_startAction == START_ACTION.LIVE_REJOIN);
         m_messenger.registerMailbox(m_rejoinCoordinator);
         if (m_config.m_startAction == START_ACTION.LIVE_REJOIN) {
           hostLog.info("Using live rejoin.");
@@ -388,6 +385,9 @@ catch (    ExecutionException e) {
     logDebuggingInfo(m_config.m_adminPort,m_config.m_httpPort,m_httpPortExtraLogMessage,m_jsonEnabled);
     if (clusterConfig.getReplicationFactor() == 0) {
       hostLog.warn("Running without redundancy (k=0) is not recommended for production use.");
+    }
+    if ((m_catalogContext.cluster.getNetworkpartition() == false) && (clusterConfig.getReplicationFactor() > 0)) {
+      hostLog.warn("Running a redundant (k-safe) cluster with network " + "partition detection disabled is not recommended for production use.");
     }
     assert(m_clientInterfaces.size() > 0);
     ClientInterface ci=m_clientInterfaces.get(0);

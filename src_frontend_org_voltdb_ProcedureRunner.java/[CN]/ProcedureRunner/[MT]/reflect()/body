@@ -1,10 +1,9 @@
 {
   if (m_catProc.getHasjava() == false) {
     try {
-      Map<String,Field> stmtMap=ProcedureCompiler.getValidSQLStmts(null,m_procedureName,m_procedure.getClass(),true);
-      Field f=stmtMap.get(VoltDB.ANON_STMT_NAME);
-      assert(f != null);
-      SQLStmt stmt=(SQLStmt)f.get(m_procedure);
+      Map<String,SQLStmt> stmtMap=ProcedureCompiler.getValidSQLStmts(null,m_procedureName,m_procedure.getClass(),m_procedure,true);
+      SQLStmt stmt=stmtMap.get(VoltDB.ANON_STMT_NAME);
+      assert(stmt != null);
       Statement statement=m_catProc.getStatements().get(VoltDB.ANON_STMT_NAME);
       stmt.sqlText=statement.getSqltext().getBytes(VoltDB.UTF8ENCODING);
       m_cachedSingleStmt.stmt=stmt;
@@ -15,9 +14,18 @@
       m_paramTypeComponentType=new Class<?>[numParams];
       for (      ProcParameter param : m_catProc.getParameters()) {
         VoltType type=VoltType.get((byte)param.getType());
-        if (type == VoltType.INTEGER)         type=VoltType.BIGINT;
-        if (type == VoltType.SMALLINT)         type=VoltType.BIGINT;
-        if (type == VoltType.TINYINT)         type=VoltType.BIGINT;
+        if (type == VoltType.INTEGER) {
+          type=VoltType.BIGINT;
+        }
+ else         if (type == VoltType.SMALLINT) {
+          type=VoltType.BIGINT;
+        }
+ else         if (type == VoltType.TINYINT) {
+          type=VoltType.BIGINT;
+        }
+ else         if (type == VoltType.NUMERIC) {
+          type=VoltType.FLOAT;
+        }
         m_paramTypes[param.getIndex()]=type.classFromType();
         m_paramTypeIsPrimitive[param.getIndex()]=m_paramTypes[param.getIndex()].isPrimitive();
         m_paramTypeIsArray[param.getIndex()]=param.getIsarray();
@@ -56,33 +64,20 @@
       throw new RuntimeException("No \"run\" method found in: " + m_procedure.getClass().getName());
     }
   }
-  Map<String,Field> stmtMap=null;
+  Map<String,SQLStmt> stmtMap=null;
   try {
-    stmtMap=ProcedureCompiler.getValidSQLStmts(null,m_procedureName,m_procedure.getClass(),true);
+    stmtMap=ProcedureCompiler.getValidSQLStmts(null,m_procedureName,m_procedure.getClass(),m_procedure,true);
   }
  catch (  Exception e1) {
     e1.printStackTrace();
     return;
   }
-  Field[] fields=new Field[stmtMap.size()];
-  int index=0;
-  for (  Field f : stmtMap.values()) {
-    fields[index++]=f;
-  }
-  for (  final Field f : fields) {
-    String name=f.getName();
+  for (  final Entry<String,SQLStmt> entry : stmtMap.entrySet()) {
+    String name=entry.getKey();
     Statement s=m_catProc.getStatements().get(name);
     if (s != null) {
-      try {
-        SQLStmt stmt=(SQLStmt)f.get(m_procedure);
-        initSQLStmt(stmt,s);
-      }
- catch (      IllegalArgumentException e) {
-        e.printStackTrace();
-      }
-catch (      IllegalAccessException e) {
-        e.printStackTrace();
-      }
+      SQLStmt stmt=entry.getValue();
+      initSQLStmt(stmt,s);
     }
   }
 }

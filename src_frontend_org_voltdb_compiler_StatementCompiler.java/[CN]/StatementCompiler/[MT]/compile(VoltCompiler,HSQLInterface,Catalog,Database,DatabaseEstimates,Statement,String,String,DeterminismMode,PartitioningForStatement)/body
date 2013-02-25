@@ -1,0 +1,88 @@
+{
+  stmt=stmt.replaceAll("\n"," ");
+  stmt=stmt.trim();
+  compiler.addInfo("Compiling Statement: " + stmt);
+  QueryType qtype=QueryType.getFromSQL(stmt);
+  catalogStmt.setReadonly(qtype.isReadOnly());
+  catalogStmt.setQuerytype(qtype.getValue());
+  catalogStmt.setSqltext(stmt);
+  catalogStmt.setSinglepartition(partitioning.wasSpecifiedAsSingle());
+  catalogStmt.setBatched(false);
+  catalogStmt.setParamnum(0);
+  String name=catalogStmt.getParent().getTypeName() + "-" + catalogStmt.getTypeName();
+  String sql=catalogStmt.getSqltext();
+  String stmtName=catalogStmt.getTypeName();
+  String procName=catalogStmt.getParent().getTypeName();
+  TrivialCostModel costModel=new TrivialCostModel();
+  QueryPlanner planner=new QueryPlanner(sql,stmtName,procName,catalog.getClusters().get("cluster"),db,partitioning,hsql,estimates,false,DEFAULT_MAX_JOIN_TABLES,costModel,null,joinOrder,detMode);
+  CompiledPlan plan=null;
+  try {
+    planner.parse();
+    plan=planner.plan();
+    assert(plan != null);
+  }
+ catch (  PlanningErrorException e) {
+    String msg="Failed to plan for statement (" + catalogStmt.getTypeName() + ") "+ catalogStmt.getSqltext();
+    if (e.getMessage() != null) {
+      msg+=" Error: \"" + e.getMessage() + "\"";
+    }
+    throw compiler.new VoltCompilerException(msg);
+  }
+catch (  Exception e) {
+    e.printStackTrace();
+    throw compiler.new VoltCompilerException("Failed to plan for stmt: " + catalogStmt.getTypeName());
+  }
+  boolean orderDeterministic=plan.isOrderDeterministic();
+  catalogStmt.setIsorderdeterministic(orderDeterministic);
+  boolean contentDeterministic=plan.isContentDeterministic();
+  catalogStmt.setIscontentdeterministic(contentDeterministic);
+  String nondeterminismDetail=plan.nondeterminismDetail();
+  catalogStmt.setNondeterminismdetail(nondeterminismDetail);
+  catalogStmt.setSeqscancount(plan.countSeqScans());
+  for (int i=0; i < plan.parameters.length; ++i) {
+    VoltType type=plan.parameters[i];
+    StmtParameter catalogParam=catalogStmt.getParameters().add(String.valueOf(i));
+    catalogParam.setJavatype(type.getValue());
+    catalogParam.setIndex(i);
+  }
+  int index=0;
+  for (  SchemaColumn col : plan.columns.getColumns()) {
+    Column catColumn=catalogStmt.getOutput_columns().add(String.valueOf(index));
+    catColumn.setNullable(false);
+    catColumn.setIndex(index);
+    if (col.getColumnAlias() != null && !col.getColumnAlias().equals("")) {
+      catColumn.setName(col.getColumnAlias());
+    }
+ else {
+      catColumn.setName(col.getColumnName());
+    }
+    catColumn.setType(col.getType().getValue());
+    catColumn.setSize(col.getSize());
+    index++;
+  }
+  catalogStmt.setReplicatedtabledml(plan.replicatedTableDML);
+  partitioning.setIsReplicatedTableDML(plan.replicatedTableDML);
+  StringBuilder planDescription=new StringBuilder(1000);
+  planDescription.append("SQL: ").append(plan.sql);
+  planDescription.append("\nCOST: ").append(plan.cost);
+  planDescription.append("\nPLAN:\n");
+  planDescription.append(plan.explainedPlan);
+  String planString=planDescription.toString();
+  BuildDirectoryUtils.writeFile("statement-winner-plans",name + ".txt",planString);
+  compiler.captureDiagnosticContext(planString);
+  catalogStmt.setExplainplan(Encoder.hexEncode(plan.explainedPlan));
+  PlanFragment planFragment=catalogStmt.getFragments().add("0");
+  planFragment.setHasdependencies(plan.subPlanGraph != null);
+  planFragment.setNontransactional(!fragmentReferencesPersistentTable(plan.rootPlanGraph));
+  planFragment.setMultipartition(plan.subPlanGraph != null);
+  writePlanBytes(compiler,planFragment,plan.rootPlanGraph);
+  if (plan.subPlanGraph != null) {
+    planFragment=catalogStmt.getFragments().add("1");
+    planFragment.setHasdependencies(false);
+    planFragment.setNontransactional(false);
+    planFragment.setMultipartition(true);
+    writePlanBytes(compiler,planFragment,plan.subPlanGraph);
+  }
+  int validType=catalogStmt.getQuerytype();
+  assert(validType != QueryType.INVALID.getValue());
+}
