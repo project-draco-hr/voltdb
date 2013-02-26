@@ -1,0 +1,64 @@
+{
+  if (params[0] == null) {
+    throw new Exception("@SnapshotSave JSON blob is null");
+  }
+  if (!(params[0] instanceof String)) {
+    throw new Exception("@SnapshotSave JSON blob is a " + params[0].getClass().getSimpleName() + " and should be a java.lang.String");
+  }
+  final JSONObject jsObj=new JSONObject((String)params[0]);
+  if (jsObj.has("service")) {
+    String service=jsObj.getString("service");
+    if (service.equalsIgnoreCase("log_truncation")) {
+      m_truncationRequest=true;
+      if (!VoltDB.instance().getCommandLog().isEnabled()) {
+        throw new Exception("Cannot ask for a command log truncation snapshot when " + "command logging is not present or enabled.");
+      }
+      return;
+    }
+ else {
+      throw new Exception("Unknown snapshot save service type: " + service);
+    }
+  }
+  m_path=jsObj.getString("uripath");
+  if (m_path.isEmpty()) {
+    throw new Exception("uripath cannot be empty");
+  }
+  URI pathURI=new URI(m_path);
+  String pathURIScheme=pathURI.getScheme();
+  if (pathURIScheme == null) {
+    throw new Exception("URI scheme cannot be null");
+  }
+  if (!pathURIScheme.equals("file")) {
+    throw new Exception("Unsupported URI scheme " + pathURIScheme + " if this is a file path then you must prepend file://");
+  }
+  m_path=pathURI.getPath();
+  m_nonce=jsObj.getString("nonce");
+  if (m_nonce.isEmpty()) {
+    throw new Exception("nonce cannot be empty");
+  }
+  Object blockingObj=false;
+  if (jsObj.has("block")) {
+    blockingObj=jsObj.get("block");
+  }
+  if (blockingObj instanceof Number) {
+    m_blocking=((Number)blockingObj).byteValue() == 0 ? false : true;
+  }
+ else   if (blockingObj instanceof Boolean) {
+    m_blocking=(Boolean)blockingObj;
+  }
+ else   if (blockingObj instanceof String) {
+    m_blocking=Boolean.valueOf((String)blockingObj);
+  }
+ else {
+    throw new Exception(blockingObj.getClass().getName() + " is not supported as " + " type for the block parameter");
+  }
+  m_format=SnapshotFormat.NATIVE;
+  String formatString=jsObj.optString("format",SnapshotFormat.NATIVE.toString());
+  try {
+    m_format=SnapshotFormat.getEnumIgnoreCase(formatString);
+  }
+ catch (  IllegalArgumentException argException) {
+    throw new Exception("@SnapshotSave format param is a " + m_format + " and should be one of [\"native\" | \"csv\"]");
+  }
+  m_data=(String)params[0];
+}
