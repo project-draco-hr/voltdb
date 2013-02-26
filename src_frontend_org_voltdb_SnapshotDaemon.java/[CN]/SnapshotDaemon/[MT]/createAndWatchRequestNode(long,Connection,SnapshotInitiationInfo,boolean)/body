@@ -1,0 +1,31 @@
+{
+  boolean requestExists=false;
+  final String requestId=createRequestNode(snapInfo);
+  if (requestId == null) {
+    requestExists=true;
+  }
+ else {
+    if (!snapInfo.isTruncationRequest()) {
+      try {
+        registerUserSnapshotResponseWatch(requestId,clientHandle,c,notifyChanges);
+      }
+ catch (      Exception e) {
+        VoltDB.crashLocalVoltDB("Failed to register ZK watch on snapshot response",true,e);
+      }
+    }
+ else {
+      VoltTable result=SnapshotSave.constructNodeResultsTable();
+      result.addRow(-1,CoreUtils.getHostnameOrAddress(),"","SUCCESS","SNAPSHOT REQUEST QUEUED");
+      final ClientResponseImpl resp=new ClientResponseImpl(ClientResponseImpl.SUCCESS,new VoltTable[]{result},"User-requested truncation snapshot successfully queued for execution.",clientHandle);
+      ByteBuffer buf=ByteBuffer.allocate(resp.getSerializedSize() + 4);
+      buf.putInt(buf.capacity() - 4);
+      resp.flattenToBuffer(buf).flip();
+      c.writeStream().enqueue(buf);
+    }
+  }
+  if (requestExists) {
+    VoltTable result=org.voltdb.sysprocs.SnapshotSave.constructNodeResultsTable();
+    result.addRow(-1,CoreUtils.getHostnameOrAddress(),"","FAILURE","SNAPSHOT IN PROGRESS");
+    throw new ForwardClientException("A request to perform a user snapshot already exists",result);
+  }
+}
