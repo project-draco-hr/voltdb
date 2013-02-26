@@ -12,55 +12,66 @@
       try {
         final long handle=m_nextCallbackHandle++;
         m_procedureCallbacks.put(handle,new ProcedureCallback(){
-          @Override public void clientCallback(          ClientResponse clientResponse) throws Exception {
-            if (clientResponse.getStatus() != ClientResponse.SUCCESS) {
-              SNAP_LOG.error(clientResponse.getStatusString());
-              userSnapshotRequestExistenceCheck(true);
-              return;
-            }
-            VoltTable results[]=clientResponse.getResults();
-            if (results == null || results.length == 0 || results[0].getRowCount() < 1) {
-              SNAP_LOG.error("Queued user snapshot request reattempt received an unexpected response" + " and will not be reattempted");
-              userSnapshotRequestExistenceCheck(true);
-              return;
-            }
-            VoltTable result=results[0];
-            boolean snapshotInProgress=false;
-            boolean haveFailure=false;
-            while (result.advanceRow()) {
-              if (result.getString("RESULT").equals("FAILURE")) {
-                if (result.getString("ERR_MSG").equals("SNAPSHOT IN PROGRESS")) {
-                  snapshotInProgress=true;
-                }
+          @Override public void clientCallback(          ClientResponse clientResponse){
+            try {
+              if (clientResponse.getStatus() != ClientResponse.SUCCESS) {
+                SNAP_LOG.error(clientResponse.getStatusString());
+                userSnapshotRequestExistenceCheck(true);
+                return;
+              }
+              VoltTable results[]=clientResponse.getResults();
+              if (results == null || results.length == 0 || results[0].getRowCount() < 1) {
+                SNAP_LOG.error("Queued user snapshot request reattempt received an unexpected response" + " and will not be reattempted");
+                userSnapshotRequestExistenceCheck(true);
+                return;
+              }
+              VoltTable result=results[0];
+              boolean snapshotInProgress=false;
+              boolean haveFailure=false;
+              while (result.advanceRow()) {
+                if (result.getString("RESULT").equals("FAILURE")) {
+                  if (result.getString("ERR_MSG").equals("SNAPSHOT IN PROGRESS")) {
+                    snapshotInProgress=true;
+                  }
  else {
-                  haveFailure=true;
+                    haveFailure=true;
+                  }
                 }
               }
-            }
-            if (snapshotInProgress) {
-              SNAP_LOG.info("Queued user snapshot was reattempted, but a snapshot was " + " still in progress. It will be reattempted.");
-              scheduleSnapshotForLater(requestObj,null,false);
-            }
- else             if (haveFailure) {
-              SNAP_LOG.info("Queued user snapshot was attempted, but there was a failure.");
-              if (requestId != null) {
-                ClientResponseImpl rimpl=(ClientResponseImpl)clientResponse;
-                ByteBuffer buf=ByteBuffer.allocate(rimpl.getSerializedSize());
-                m_zk.create(VoltZK.user_snapshot_response + requestId,rimpl.flattenToBuffer(buf).array(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+              if (snapshotInProgress) {
+                SNAP_LOG.info("Queued user snapshot was reattempted, but a snapshot was " + " still in progress. It will be reattempted.");
+                scheduleSnapshotForLater(requestObj,null,false);
               }
-              userSnapshotRequestExistenceCheck(true);
-              result.resetRowPosition();
-              SNAP_LOG.info(result);
-            }
+ else               if (haveFailure) {
+                SNAP_LOG.info("Queued user snapshot was attempted, but there was a failure.");
+                if (requestId != null) {
+                  ClientResponseImpl rimpl=(ClientResponseImpl)clientResponse;
+                  ByteBuffer buf=ByteBuffer.allocate(rimpl.getSerializedSize());
+                  m_zk.create(VoltZK.user_snapshot_response + requestId,rimpl.flattenToBuffer(buf).array(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+                }
+                userSnapshotRequestExistenceCheck(true);
+                result.resetRowPosition();
+                SNAP_LOG.info(result);
+              }
  else {
-              if (requestId != null) {
-                SNAP_LOG.debug("Queued user snapshot was successfully requested, saving to path " + VoltZK.user_snapshot_response + requestId);
-                ClientResponseImpl rimpl=(ClientResponseImpl)clientResponse;
-                ByteBuffer buf=ByteBuffer.allocate(rimpl.getSerializedSize());
-                m_zk.create(VoltZK.user_snapshot_response + requestId,rimpl.flattenToBuffer(buf).array(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+                if (requestId != null) {
+                  SNAP_LOG.debug("Queued user snapshot was successfully requested, saving to path " + VoltZK.user_snapshot_response + requestId);
+                  ClientResponseImpl rimpl=(ClientResponseImpl)clientResponse;
+                  ByteBuffer buf=ByteBuffer.allocate(rimpl.getSerializedSize());
+                  m_zk.create(VoltZK.user_snapshot_response + requestId,rimpl.flattenToBuffer(buf).array(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+                }
+                userSnapshotRequestExistenceCheck(true);
+                return;
               }
-              userSnapshotRequestExistenceCheck(true);
-              return;
+            }
+ catch (            Exception e) {
+              SNAP_LOG.error("Error processing procedure callback for user snapshot",e);
+              try {
+                userSnapshotRequestExistenceCheck(true);
+              }
+ catch (              Exception e1) {
+                VoltDB.crashLocalVoltDB("Error resetting watch for user snapshot requests",true,e1);
+              }
             }
           }
         }
@@ -68,6 +79,12 @@
         m_initiator.initiateSnapshotDaemonWork("@SnapshotSave",handle,new Object[]{requestObj});
       }
  catch (      Exception e) {
+        try {
+          userSnapshotRequestExistenceCheck(true);
+        }
+ catch (        Exception e1) {
+          VoltDB.crashLocalVoltDB("Error checking for existence of user snapshots",true,e1);
+        }
       }
     }
   }
