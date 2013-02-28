@@ -1,0 +1,40 @@
+{
+  ConfigHolder holder=new ConfigHolder();
+  final int tokensPerPartition=8;
+  Random r=new Random();
+  ByteBuffer buf=ByteBuffer.allocate(4 + (12 * partitions * tokensPerPartition));
+  holder.configBytes=buf.array();
+  buf.putInt(partitions * tokensPerPartition);
+  for (int ii=0; ii < partitions; ii++) {
+    for (int zz=0; zz < tokensPerPartition; zz++) {
+      while (true) {
+        long candidateKey=r.nextLong();
+        ByteBuffer buf2=ByteBuffer.allocate(8);
+        buf2.order(ByteOrder.nativeOrder());
+        buf2.putLong(candidateKey);
+        long candidateToken=MurmurHash3.hash3_x64_128(buf2,0,8,0);
+        if (holder.tokenToPartition.containsKey(candidateToken)) {
+          continue;
+        }
+        buf.putLong(candidateToken);
+        buf.putInt(ii);
+        holder.tokenToPartition.put(candidateToken,ii);
+        holder.tokenToKeys.put(candidateToken,candidateKey);
+        break;
+      }
+    }
+  }
+  final long firstToken=holder.tokenToPartition.firstKey();
+  while (true) {
+    long candidateKey=r.nextLong();
+    ByteBuffer buf2=ByteBuffer.allocate(8);
+    buf2.order(ByteOrder.nativeOrder());
+    buf2.putLong(candidateKey);
+    long candidateToken=MurmurHash3.hash3_x64_128(buf2,0,8,0);
+    if (candidateToken < firstToken) {
+      holder.keyLessThanFirstToken=candidateKey;
+      break;
+    }
+  }
+  return holder;
+}
