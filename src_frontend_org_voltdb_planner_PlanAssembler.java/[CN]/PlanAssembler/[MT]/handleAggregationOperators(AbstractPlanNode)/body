@@ -9,7 +9,7 @@
   }
   if (containsAggregateExpression || m_parsedSelect.isGrouped()) {
     AggregatePlanNode topAggNode;
-    if (root.getPlanNodeType() != PlanNodeType.INDEXSCAN || ((IndexScanPlanNode)root).getSortDirection() == SortDirectionType.INVALID) {
+    if (m_parsedSelect.isGrouped() && (root.getPlanNodeType() != PlanNodeType.INDEXSCAN || ((IndexScanPlanNode)root).getSortDirection() == SortDirectionType.INVALID)) {
       aggNode=new HashAggregatePlanNode();
       topAggNode=new HashAggregatePlanNode();
     }
@@ -18,32 +18,14 @@
       topAggNode=new AggregatePlanNode();
     }
     int outputColumnIndex=0;
-    int topOutputColumnIndex=0;
     NodeSchema agg_schema=new NodeSchema();
-    NodeSchema topAggSchema=new NodeSchema();
-    boolean hasAggregates=false;
-    boolean isPushDownAgg=true;
     for (    ParsedSelectStmt.ParsedColInfo col : m_parsedSelect.displayColumns) {
       AbstractExpression rootExpr=col.expression;
       AbstractExpression agg_input_expr=null;
       SchemaColumn schema_col=null;
-      SchemaColumn topSchemaCol=null;
-      ExpressionType agg_expression_type=rootExpr.getExpressionType();
-      if (rootExpr.hasAnySubexpressionOfClass(AggregateExpression.class)) {
+      if (rootExpr instanceof AggregateExpression) {
+        ExpressionType agg_expression_type=rootExpr.getExpressionType();
         agg_input_expr=rootExpr.getLeft();
-        hasAggregates=true;
-        if (rootExpr.getExpressionType() == ExpressionType.AGGREGATE_COUNT && rootExpr.getLeft() == null) {
-          agg_expression_type=ExpressionType.AGGREGATE_COUNT_STAR;
-          SchemaColumn first_col=root.getOutputSchema().getColumns().get(0);
-          TupleValueExpression tve=new TupleValueExpression();
-          tve.setValueType(first_col.getType());
-          tve.setValueSize(first_col.getSize());
-          tve.setColumnIndex(0);
-          tve.setColumnName(first_col.getColumnName());
-          tve.setColumnAlias(first_col.getColumnName());
-          tve.setTableName(first_col.getTableName());
-          agg_input_expr=tve;
-        }
         TupleValueExpression tve=new TupleValueExpression();
         tve.setValueType(rootExpr.getValueType());
         tve.setValueSize(rootExpr.getValueSize());
@@ -54,52 +36,55 @@
         boolean is_distinct=((AggregateExpression)rootExpr).isDistinct();
         aggNode.addAggregate(agg_expression_type,is_distinct,outputColumnIndex,agg_input_expr);
         schema_col=new SchemaColumn("VOLT_TEMP_TABLE","",col.alias,tve);
-        if (!is_distinct && (agg_expression_type == ExpressionType.AGGREGATE_COUNT_STAR || agg_expression_type == ExpressionType.AGGREGATE_COUNT || agg_expression_type == ExpressionType.AGGREGATE_SUM)) {
-          TupleValueExpression topOutputExpr=new TupleValueExpression();
-          topOutputExpr.setValueType(rootExpr.getValueType());
-          topOutputExpr.setValueSize(rootExpr.getValueSize());
-          topOutputExpr.setColumnIndex(topOutputColumnIndex);
-          topOutputExpr.setColumnName("");
-          topOutputExpr.setColumnAlias(col.alias);
-          topOutputExpr.setTableName("VOLT_TEMP_TABLE");
-          topAggNode.addAggregate(ExpressionType.AGGREGATE_SUM,false,outputColumnIndex,tve);
-          topSchemaCol=new SchemaColumn("VOLT_TEMP_TABLE","",col.alias,topOutputExpr);
-        }
- else         if (agg_expression_type == ExpressionType.AGGREGATE_MIN || agg_expression_type == ExpressionType.AGGREGATE_MAX) {
-          topAggNode.addAggregate(agg_expression_type,is_distinct,outputColumnIndex,tve);
-          topSchemaCol=schema_col;
-        }
+        if (topAggNode != null) {
+          ExpressionType top_expression_type=agg_expression_type;
+          if (agg_expression_type == ExpressionType.AGGREGATE_COUNT_STAR || agg_expression_type == ExpressionType.AGGREGATE_COUNT || agg_expression_type == ExpressionType.AGGREGATE_SUM) {
+            if (is_distinct) {
+              topAggNode=null;
+            }
  else {
-          isPushDownAgg=false;
+              top_expression_type=ExpressionType.AGGREGATE_SUM;
+            }
+          }
+ else           if (agg_expression_type != ExpressionType.AGGREGATE_MIN && agg_expression_type != ExpressionType.AGGREGATE_MAX) {
+            topAggNode=null;
+          }
+          if (topAggNode != null) {
+            topAggNode.addAggregate(top_expression_type,is_distinct,outputColumnIndex,tve);
+          }
         }
+      }
+ else       if (rootExpr.hasAnySubexpressionOfClass(AggregateExpression.class)) {
+        throw new PlanningErrorException("Unsupported operation on the result of an aggregate function in a column expression");
       }
  else {
         schema_col=new SchemaColumn(col.tableName,col.columnName,col.alias,col.expression);
       }
-      if (topSchemaCol == null) {
-        topSchemaCol=new SchemaColumn(schema_col.getTableName(),schema_col.getColumnName(),schema_col.getColumnAlias(),schema_col.getExpression());
-      }
       agg_schema.addColumn(schema_col);
-      topAggSchema.addColumn(topSchemaCol);
       outputColumnIndex++;
-      topOutputColumnIndex++;
     }
     for (    ParsedSelectStmt.ParsedColInfo col : m_parsedSelect.groupByColumns) {
       if (agg_schema.find(col.tableName,col.columnName,col.alias) == null) {
         throw new PlanningErrorException("GROUP BY column " + col.alias + " is not in the display columns."+ " Please specify "+ col.alias+ " as a display column.");
       }
       aggNode.addGroupByExpression(col.expression);
-      topAggNode.addGroupByExpression(col.expression);
+      if (topAggNode != null) {
+        topAggNode.addGroupByExpression(col.expression);
+      }
     }
     aggNode.setOutputSchema(agg_schema);
-    topAggNode.setOutputSchema(agg_schema);
-    if (!hasAggregates || !isPushDownAgg) {
-      topAggNode=null;
+    if (topAggNode != null) {
+      topAggNode.setOutputSchema(agg_schema);
     }
     root=pushDownAggregate(root,aggNode,topAggNode);
   }
- else {
-    root=handleDistinct(root);
+  if (m_parsedSelect.isGrouped()) {
+    if (m_parsedSelect.displayColumnsContainAllGroupByColumns()) {
+      return root;
+    }
   }
-  return root;
+ else   if (containsAggregateExpression) {
+    return root;
+  }
+  return handleDistinct(root);
 }
