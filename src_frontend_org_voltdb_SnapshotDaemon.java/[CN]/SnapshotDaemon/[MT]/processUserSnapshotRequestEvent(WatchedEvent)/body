@@ -8,23 +8,34 @@
     jsObj.put("perPartitionTxnIds",retrievePerPartitionTransactionIds());
     final long handle=m_nextCallbackHandle++;
     m_procedureCallbacks.put(handle,new ProcedureCallback(){
-      @Override public void clientCallback(      ClientResponse clientResponse) throws Exception {
-        if (clientResponse.getStatus() != ClientResponse.SUCCESS) {
-          ClientResponseImpl rimpl=(ClientResponseImpl)clientResponse;
-          ByteBuffer buf=ByteBuffer.allocate(rimpl.getSerializedSize());
-          m_zk.create(VoltZK.user_snapshot_response + requestId,rimpl.flattenToBuffer(buf).array(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
-          userSnapshotRequestExistenceCheck(true);
-          return;
-        }
-        if (isSnapshotInProgressResponse(clientResponse)) {
-          scheduleSnapshotForLater(jsObj.toString(4),requestId,true);
-        }
+      @Override public void clientCallback(      ClientResponse clientResponse){
+        try {
+          if (clientResponse.getStatus() != ClientResponse.SUCCESS) {
+            ClientResponseImpl rimpl=(ClientResponseImpl)clientResponse;
+            ByteBuffer buf=ByteBuffer.allocate(rimpl.getSerializedSize());
+            m_zk.create(VoltZK.user_snapshot_response + requestId,rimpl.flattenToBuffer(buf).array(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+            userSnapshotRequestExistenceCheck(true);
+            return;
+          }
+          if (isSnapshotInProgressResponse(clientResponse)) {
+            scheduleSnapshotForLater(jsObj.toString(4),requestId,true);
+          }
  else {
-          ClientResponseImpl rimpl=(ClientResponseImpl)clientResponse;
-          ByteBuffer buf=ByteBuffer.allocate(rimpl.getSerializedSize());
-          m_zk.create(VoltZK.user_snapshot_response + requestId,rimpl.flattenToBuffer(buf).array(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
-          userSnapshotRequestExistenceCheck(true);
-          return;
+            ClientResponseImpl rimpl=(ClientResponseImpl)clientResponse;
+            ByteBuffer buf=ByteBuffer.allocate(rimpl.getSerializedSize());
+            m_zk.create(VoltZK.user_snapshot_response + requestId,rimpl.flattenToBuffer(buf).array(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+            userSnapshotRequestExistenceCheck(true);
+            return;
+          }
+        }
+ catch (        Exception e) {
+          SNAP_LOG.error("Error processing user snapshot request",e);
+          try {
+            userSnapshotRequestExistenceCheck(true);
+          }
+ catch (          Exception e2) {
+            VoltDB.crashLocalVoltDB("Error resetting watch for user snapshots",true,e2);
+          }
         }
       }
     }
