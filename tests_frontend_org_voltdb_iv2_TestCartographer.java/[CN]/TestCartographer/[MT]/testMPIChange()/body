@@ -1,0 +1,22 @@
+{
+  ZooKeeper zk=getClient(0);
+  VoltZK.createPersistentZKNodes(zk);
+  LeaderCache mpwriter=new LeaderCache(zk,VoltZK.iv2mpi);
+  HostMessenger hm=mock(HostMessenger.class);
+  when(hm.getZK()).thenReturn(m_messengers.get(0).getZK());
+  Cartographer dut=new Cartographer(hm,3);
+  mpwriter.start(true);
+  mpwriter.put(MpInitiator.MP_INIT_PID,0l);
+  verify(hm,timeout(10000)).send(anyLong(),any(VoltMessage.class));
+  reset(hm);
+  mpwriter.put(MpInitiator.MP_INIT_PID,3l);
+  ArgumentCaptor<Long> hsIdCaptor=ArgumentCaptor.forClass(Long.class);
+  ArgumentCaptor<BinaryPayloadMessage> bpmCaptor=ArgumentCaptor.forClass(BinaryPayloadMessage.class);
+  verify(hm,timeout(10000)).send(hsIdCaptor.capture(),bpmCaptor.capture());
+  JSONObject jsObj=new JSONObject(new String(bpmCaptor.getValue().m_payload,"UTF-8"));
+  final int partitionId=jsObj.getInt(Cartographer.JSON_PARTITION_ID);
+  final long initiatorHSId=jsObj.getLong(Cartographer.JSON_INITIATOR_HSID);
+  assertEquals(MpInitiator.MP_INIT_PID,partitionId);
+  assertEquals(3,initiatorHSId);
+  mpwriter.shutdown();
+}
