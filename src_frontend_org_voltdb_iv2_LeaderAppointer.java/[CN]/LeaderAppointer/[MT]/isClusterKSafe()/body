@@ -1,11 +1,19 @@
 {
   boolean retval=true;
-  for (int i=0; i < m_partitionCount; i++) {
-    String dir=LeaderElector.electionDirForPartition(i);
+  List<String> partitionDirs=null;
+  try {
+    partitionDirs=m_zk.getChildren(VoltZK.leaders_initiators,null);
+  }
+ catch (  Exception e) {
+    VoltDB.crashLocalVoltDB("Unable to read partitions from ZK",true,e);
+  }
+  for (  String partitionDir : partitionDirs) {
+    int pid=LeaderElector.getPartitionFromElectionDir(partitionDir);
+    String dir=ZKUtil.joinZKPath(VoltZK.leaders_initiators,partitionDir);
     try {
       List<String> replicas=m_zk.getChildren(dir,null,null);
       if (replicas.isEmpty()) {
-        tmLog.fatal("K-Safety violation: No replicas found for partition: " + i);
+        tmLog.fatal("K-Safety violation: No replicas found for partition: " + pid);
         retval=false;
       }
     }
