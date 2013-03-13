@@ -1,0 +1,25 @@
+{
+  ClientInterfaceHandleManager.Iv2InFlight clientData;
+  if (clientResponse != null && clientResponse.getStatusString() != null && clientResponse.getStatusString().equals(ClientResponseImpl.IGNORED_TRANSACTION)) {
+    clientData=cihm.removeHandle(response.getClientInterfaceHandle());
+  }
+ else {
+    clientData=cihm.findHandle(response.getClientInterfaceHandle());
+  }
+  if (clientData == null) {
+    return new ByteBuffer[]{};
+  }
+  final long now=System.currentTimeMillis();
+  final int delta=(int)(now - clientData.m_creationTime);
+  if (restartTransaction(clientData.m_messageSize,now)) {
+    return new ByteBuffer[]{};
+  }
+  cihm.m_acg.logTransactionCompleted(cihm.connection.connectionId(),cihm.connection.getHostnameOrIP(),clientData.m_procName,delta,clientResponse.getStatus());
+  clientResponse.setClientHandle(clientData.m_clientHandle);
+  clientResponse.setClusterRoundtrip(delta);
+  clientResponse.setHash(null);
+  ByteBuffer results=ByteBuffer.allocate(clientResponse.getSerializedSize() + 4);
+  results.putInt(results.capacity() - 4);
+  clientResponse.flattenToBuffer(results);
+  return new ByteBuffer[]{results};
+}
