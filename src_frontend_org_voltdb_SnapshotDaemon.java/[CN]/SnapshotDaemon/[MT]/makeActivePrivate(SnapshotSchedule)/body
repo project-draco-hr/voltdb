@@ -1,19 +1,20 @@
 {
-  m_isActive=true;
-  m_frequency=schedule.getFrequencyvalue();
-  m_retain=schedule.getRetain();
-  m_path=schedule.getPath();
-  m_prefix=schedule.getPrefix();
-  m_prefixAndSeparator=m_prefix + "_";
-  final String frequencyUnitString=schedule.getFrequencyunit().toLowerCase();
-  assert(frequencyUnitString.length() == 1);
-  final char frequencyUnit=frequencyUnitString.charAt(0);
+  m_lastKnownSchedule=schedule;
+  if (schedule.getEnabled()) {
+    m_frequency=schedule.getFrequencyvalue();
+    m_retain=schedule.getRetain();
+    m_path=schedule.getPath();
+    m_prefix=schedule.getPrefix();
+    m_prefixAndSeparator=m_prefix + "_";
+    final String frequencyUnitString=schedule.getFrequencyunit().toLowerCase();
+    assert(frequencyUnitString.length() == 1);
+    final char frequencyUnit=frequencyUnitString.charAt(0);
 switch (frequencyUnit) {
 case 's':
-    m_frequencyUnit=TimeUnit.SECONDS;
-  break;
+      m_frequencyUnit=TimeUnit.SECONDS;
+    break;
 case 'm':
-m_frequencyUnit=TimeUnit.MINUTES;
+  m_frequencyUnit=TimeUnit.MINUTES;
 break;
 case 'h':
 m_frequencyUnit=TimeUnit.HOURS;
@@ -23,7 +24,11 @@ throw new RuntimeException("Frequency unit " + frequencyUnitString + ""+ " in sn
 }
 m_frequencyInMillis=TimeUnit.MILLISECONDS.convert(m_frequency,m_frequencyUnit);
 m_nextSnapshotTime=System.currentTimeMillis() + m_frequencyInMillis;
-m_es.scheduleAtFixedRate(new Runnable(){
+}
+if (m_isAutoSnapshotLeader) {
+if (schedule.getEnabled()) {
+if (m_autoSnapshotTask == null) {
+m_autoSnapshotTask=m_es.scheduleAtFixedRate(new Runnable(){
 @Override public void run(){
 try {
 doPeriodicWork(System.currentTimeMillis());
@@ -34,4 +39,13 @@ SNAP_LOG.warn("Error doing periodic snapshot management work",e);
 }
 }
 ,0,m_periodicWorkInterval,TimeUnit.MILLISECONDS);
+}
+}
+ else {
+if (m_autoSnapshotTask != null) {
+m_autoSnapshotTask.cancel(false);
+m_autoSnapshotTask=null;
+}
+}
+}
 }
