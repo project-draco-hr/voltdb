@@ -1,0 +1,34 @@
+{
+  VoltTable vt=tables[0];
+  if (tables.length == 1) {
+    int numPartitions=vt.getRowCount() - 1;
+    TheHashinator.initialize(LegacyHashinator.class,LegacyHashinator.getConfigureBytes(numPartitions));
+  }
+ else {
+    boolean advanced=tables[1].advanceRow();
+    if (!advanced) {
+      System.err.println("Topology description received from Volt was incomplete " + "performance will be lower because transactions can't be routed at this client");
+      return;
+    }
+    TheHashinator.initialize(HashinatorType.valueOf(tables[1].getString("HASHTYPE")).hashinatorClass,tables[1].getVarbinary("HASHCONFIG"));
+  }
+  m_hashinatorInitialized=true;
+  m_partitionMasters.clear();
+  m_partitionReplicas.clear();
+  while (vt.advanceRow()) {
+    Integer partition=(int)vt.getLong("Partition");
+    ArrayList<NodeConnection> connections=new ArrayList<NodeConnection>();
+    for (    String site : vt.getString("Sites").split(",")) {
+      site=site.trim();
+      Integer hostId=Integer.valueOf(site.split(":")[0]);
+      if (m_hostIdToConnection.containsKey(hostId)) {
+        connections.add(m_hostIdToConnection.get(hostId));
+      }
+    }
+    m_partitionReplicas.put(partition,connections.toArray(new NodeConnection[0]));
+    Integer leaderHostId=Integer.valueOf(vt.getString("Leader").split(":")[0]);
+    if (m_hostIdToConnection.containsKey(leaderHostId)) {
+      m_partitionMasters.put(partition,m_hostIdToConnection.get(leaderHostId));
+    }
+  }
+}
