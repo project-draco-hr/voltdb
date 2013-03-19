@@ -12,12 +12,17 @@
   }
   final CatalogContext catalogContext=m_catalogContext.get();
   AuthSystem.AuthUser user=catalogContext.authSystem.getUser(handler.m_username);
-  final Procedure catProc=catalogContext.procedures.get(task.procName);
-  Config sysProc=SystemProcedureCatalog.listing.get(task.procName);
-  if (sysProc == null) {
+  Procedure catProc=catalogContext.procedures.get(task.procName);
+  if (catProc == null) {
+    Config sysProc=SystemProcedureCatalog.listing.get(task.procName);
+    if (sysProc != null) {
+      catProc=sysProc.asCatalogProcedure();
+    }
+  }
+  if (catProc == null) {
     if (task.procName.equals("@AdHoc")) {
-      sysProc=SystemProcedureCatalog.listing.get("@AdHoc_RW_MP");
-      assert(sysProc != null);
+      catProc=SystemProcedureCatalog.listing.get("@AdHoc_RW_MP").asCatalogProcedure();
+      assert(catProc != null);
     }
  else     if (task.procName.equals("@Explain")) {
       return dispatchAdHoc(task,handler,ccxn,true);
@@ -34,85 +39,72 @@
     authLog.info("User " + handler.m_username + " has been removed from the system via a catalog update");
     return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],"User " + handler.m_username + " has been removed from the system via a catalog update",task.clientHandle);
   }
-  if (catProc == null && sysProc == null) {
+  if (catProc == null) {
     String errorMessage="Procedure " + task.procName + " was not found";
     authLog.l7dlog(Level.WARN,LogKeys.auth_ClientInterface_ProcedureNotFound.name(),new Object[]{task.procName},null);
     return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],errorMessage,task.clientHandle);
   }
-  error=checkPolicies(null,user,task,catProc,sysProc);
+  error=checkPolicies(null,user,task,catProc);
   if (error != null) {
     return error;
   }
-  error=checkPolicies(task.procName,user,task,catProc,sysProc);
+  error=checkPolicies(task.procName,user,task,catProc);
   if (error != null) {
     return error;
   }
-  if (sysProc != null) {
-    if (task.procName.equals("@AdHoc")) {
-      return dispatchAdHoc(task,handler,ccxn,false);
-    }
- else     if (task.procName.equals("@UpdateApplicationCatalog")) {
-      return dispatchUpdateApplicationCatalog(task,handler,ccxn);
-    }
- else     if (task.procName.equals("@LoadSinglepartitionTable")) {
-      return dispatchLoadSinglepartitionTable(buf,task,handler,ccxn);
-    }
- else     if (task.procName.equals("@LoadMultipartitionTable")) {
-      if (VoltDB.instance().isIV2Enabled() && task.getType() == ProcedureInvocationType.REPLICATED) {
-        sendSentinelsToAllPartitions(task.getOriginalTxnId());
-      }
-    }
- else     if (task.procName.equals("@SnapshotSave")) {
-      m_snapshotDaemon.requestUserSnapshot(task,ccxn);
-      return null;
-    }
- else     if (task.procName.equals("@Statistics")) {
-      return dispatchStatistics(sysProc,buf,task,handler,ccxn);
-    }
- else     if (task.procName.equals("@Promote")) {
-      return dispatchPromote(sysProc,buf,task,handler,ccxn);
-    }
-    if (task.procName.equals("@Pause") || task.procName.equals("@Resume")) {
-      if (!handler.isAdmin()) {
-        return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],"" + task.procName + " is not available to this client",task.clientHandle);
-      }
-    }
- else     if (task.procName.equals("@SystemInformation")) {
-      ParameterSet params=task.getParams();
-      if (params.toArray().length == 0) {
-        task.setParams("OVERVIEW");
-      }
-    }
-    int[] involvedPartitions=m_allPartitions;
-    if (sysProc.getSinglepartition()) {
-      involvedPartitions=new int[]{new java.util.Random().nextInt(involvedPartitions.length)};
-    }
-    createTransaction(handler.connectionId(),handler.m_hostname,handler.isAdmin(),task,sysProc.getReadonly(),sysProc.getSinglepartition(),sysProc.getEverysite(),involvedPartitions,ccxn,buf.capacity(),now);
+  if (task.procName.equals("@AdHoc")) {
+    return dispatchAdHoc(task,handler,ccxn,false);
   }
-  if (catProc != null) {
-    int[] involvedPartitions=null;
-    if (catProc.getSinglepartition() == false) {
-      involvedPartitions=m_allPartitions;
+ else   if (task.procName.equals("@UpdateApplicationCatalog")) {
+    return dispatchUpdateApplicationCatalog(task,handler,ccxn);
+  }
+ else   if (task.procName.equals("@LoadMultipartitionTable")) {
+    if (VoltDB.instance().isIV2Enabled() && task.getType() == ProcedureInvocationType.REPLICATED) {
+      sendSentinelsToAllPartitions(task.getOriginalTxnId());
     }
+  }
+ else   if (task.procName.equals("@SnapshotSave")) {
+    m_snapshotDaemon.requestUserSnapshot(task,ccxn);
+    return null;
+  }
+ else   if (task.procName.equals("@Statistics")) {
+    return dispatchStatistics(catProc,buf,task,handler,ccxn);
+  }
+ else   if (task.procName.equals("@Promote")) {
+    return dispatchPromote(catProc,buf,task,handler,ccxn);
+  }
+  if (task.procName.equals("@Pause") || task.procName.equals("@Resume")) {
+    if (!handler.isAdmin()) {
+      return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],"" + task.procName + " is not available to this client",task.clientHandle);
+    }
+  }
+ else   if (task.procName.equals("@SystemInformation")) {
+    ParameterSet params=task.getParams();
+    if (params.toArray().length == 0) {
+      task.setParams("OVERVIEW");
+    }
+  }
+  int[] involvedPartitions;
+  if (catProc.getSinglepartition() == false) {
+    involvedPartitions=m_allPartitions;
+  }
  else {
-      try {
-        involvedPartitions=new int[]{getPartitionForProcedure(catProc.getPartitionparameter(),catProc.getPartitioncolumn().getType(),task)};
-      }
- catch (      RuntimeException e) {
-        String errorMessage="Error sending procedure " + task.procName + " to the correct partition. Make sure parameter values are correct.";
-        authLog.l7dlog(Level.WARN,LogKeys.host_ClientInterface_unableToRouteSinglePartitionInvocation.name(),new Object[]{task.procName},null);
-        return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],errorMessage,task.clientHandle);
-      }
-catch (      Exception e) {
-        authLog.l7dlog(Level.WARN,LogKeys.host_ClientInterface_unableToRouteSinglePartitionInvocation.name(),new Object[]{task.procName},null);
-        return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],e.getMessage(),task.clientHandle);
-      }
+    try {
+      involvedPartitions=new int[]{getPartitionForProcedure(catProc.getPartitionparameter(),catProc.getPartitioncolumn().getType(),task)};
     }
-    boolean allowMismatchedResults=catProc.getReadonly() && isProcedureNonDeterministic(catProc);
-    boolean success=createTransaction(handler.connectionId(),handler.m_hostname,handler.isAdmin(),task,catProc.getReadonly(),catProc.getSinglepartition(),catProc.getEverysite(),involvedPartitions,ccxn,buf.capacity(),now);
-    if (!success) {
-      return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],ClientResponseImpl.IGNORED_TRANSACTION,task.clientHandle);
+ catch (    RuntimeException e) {
+      String errorMessage="Error sending procedure " + task.procName + " to the correct partition. Make sure parameter values are correct.";
+      authLog.l7dlog(Level.WARN,LogKeys.host_ClientInterface_unableToRouteSinglePartitionInvocation.name(),new Object[]{task.procName},null);
+      return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],errorMessage,task.clientHandle);
     }
+catch (    Exception e) {
+      authLog.l7dlog(Level.WARN,LogKeys.host_ClientInterface_unableToRouteSinglePartitionInvocation.name(),new Object[]{task.procName},null);
+      return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],e.getMessage(),task.clientHandle);
+    }
+  }
+  boolean success=createTransaction(handler.connectionId(),handler.m_hostname,handler.isAdmin(),task,catProc.getReadonly(),catProc.getSinglepartition(),catProc.getEverysite(),involvedPartitions,ccxn,buf.capacity(),now);
+  if (!success) {
+    return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],ClientResponseImpl.IGNORED_TRANSACTION,task.clientHandle);
   }
   return null;
 }
