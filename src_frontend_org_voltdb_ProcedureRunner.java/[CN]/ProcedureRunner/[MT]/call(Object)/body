@@ -1,6 +1,8 @@
 {
-  assert(m_statusCode == ClientResponse.UNINITIALIZED_APP_STATUS_CODE);
+  assert(m_statusCode == ClientResponse.SUCCESS);
   assert(m_statusString == null);
+  assert(m_appStatusCode == ClientResponse.UNINITIALIZED_APP_STATUS_CODE);
+  assert(m_appStatusString == null);
   assert(m_cachedRNG == null);
   m_inputCRC.reset();
   Object[] paramList=paramListIn;
@@ -8,7 +10,6 @@
   assert(m_batch.size() == 0);
   try {
     m_statsCollector.beginProcedure();
-    byte status=ClientResponse.SUCCESS;
     VoltTable[] results=null;
     if (isSystemProcedure()) {
       final Object[] combinedParams=new Object[paramList.length + 1];
@@ -19,8 +20,8 @@
     if (paramList.length != m_paramTypes.length) {
       m_statsCollector.endProcedure(false,true,null,null);
       String msg="PROCEDURE " + m_procedureName + " EXPECTS "+ String.valueOf(m_paramTypes.length)+ " PARAMS, BUT RECEIVED "+ String.valueOf(paramList.length);
-      status=ClientResponse.GRACEFUL_FAILURE;
-      return getErrorResponse(status,msg,null);
+      m_statusCode=ClientResponse.GRACEFUL_FAILURE;
+      return getErrorResponse(m_statusCode,msg,null);
     }
     for (int i=0; i < m_paramTypes.length; i++) {
       try {
@@ -29,8 +30,8 @@
  catch (      Exception e) {
         m_statsCollector.endProcedure(false,true,null,null);
         String msg="PROCEDURE " + m_procedureName + " TYPE ERROR FOR PARAMETER "+ i+ ": "+ e.toString();
-        status=ClientResponse.GRACEFUL_FAILURE;
-        return getErrorResponse(status,msg,null);
+        m_statusCode=ClientResponse.GRACEFUL_FAILURE;
+        return getErrorResponse(m_statusCode,msg,null);
       }
     }
     boolean error=false;
@@ -87,9 +88,9 @@
     ParameterSet paramSet=(invoc != null ? invoc.getParams() : null);
     m_statsCollector.endProcedure(abort,error,results,paramSet);
     if (results == null)     results=new VoltTable[0];
-    if (retval == null)     retval=new ClientResponseImpl(status,m_statusCode,m_statusString,results,null);
+    if (retval == null)     retval=new ClientResponseImpl(m_statusCode,m_appStatusCode,m_appStatusString,results,m_statusString);
     int hash=(int)m_inputCRC.getValue();
-    if ((retval.getStatus() == ClientResponse.SUCCESS) && (hash != 0)) {
+    if (!ClientResponseImpl.isTransactionallySuccessful(retval.getStatus()) && (hash != 0)) {
       retval.setHash(hash);
     }
     if ((m_txnState != null) && (m_txnState.getInvocation() != null) && (m_txnState.getInvocation().getType() == ProcedureInvocationType.REPLICATED)) {
@@ -99,8 +100,10 @@
   finally {
     m_batch.clear();
     m_txnState=null;
-    m_statusCode=ClientResponse.UNINITIALIZED_APP_STATUS_CODE;
+    m_statusCode=ClientResponse.SUCCESS;
     m_statusString=null;
+    m_appStatusCode=ClientResponse.UNINITIALIZED_APP_STATUS_CODE;
+    m_appStatusString=null;
     m_cachedRNG=null;
     m_cachedSingleStmt.params=null;
     m_cachedSingleStmt.expectation=null;
