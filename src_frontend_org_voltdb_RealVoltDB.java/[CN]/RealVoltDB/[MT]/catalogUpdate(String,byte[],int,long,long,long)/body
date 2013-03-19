@@ -17,7 +17,14 @@ synchronized (m_catalogUpdateLock) {
     final CatalogSpecificPlanner csp=new CatalogSpecificPlanner(m_asyncCompilerAgent,m_catalogContext);
     m_txnIdToContextTracker.put(currentTxnId,new ContextTracker(m_catalogContext,csp));
     m_catalogContext.logDebuggingInfoFromCatalog();
-    ExportManager.instance().updateCatalog(m_catalogContext);
+    SiteTracker siteTracker=VoltDB.instance().getSiteTrackerForSnapshot();
+    List<Long> sites=siteTracker.getSitesForHost(m_messenger.getHostId());
+    List<Pair<Integer,Long>> partitions=new ArrayList<Pair<Integer,Long>>();
+    for (    Long site : sites) {
+      Integer partition=siteTracker.getPartitionForSite(site);
+      partitions.add(Pair.of(partition,site));
+    }
+    ExportManager.instance().updateCatalog(m_catalogContext,partitions);
     for (    ClientInterface ci : m_clientInterfaces) {
       ci.notifyOfCatalogUpdate();
     }

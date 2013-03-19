@@ -1,0 +1,71 @@
+{
+  if (rejoinHostId == null || m_hasLocalServer) {
+    rejoinHostId=0;
+  }
+  int portNoToRejoin=m_cmdLines.get(rejoinHostId).internalPort();
+  log.info("Rejoining " + hostId + " to hostID: "+ rejoinHostId);
+  ArrayList<EEProcess> eeProcs=m_eeProcs.get(hostId);
+  for (  EEProcess proc : eeProcs) {
+    try {
+      proc.waitForShutdown();
+    }
+ catch (    InterruptedException e) {
+      throw new RuntimeException(e);
+    }
+  }
+  eeProcs.clear();
+  if (templateCmdLine.target().isIPC) {
+    for (int ii=0; ii < m_siteCount; ii++) {
+      String logfile="LocalCluster_host_" + hostId + "_site"+ ii+ ".log";
+      eeProcs.add(new EEProcess(templateCmdLine.target(),logfile));
+    }
+  }
+  PipeToFile ptf=null;
+  long start=0;
+  try {
+    CommandLine rejoinCmdLn=m_cmdLines.get(hostId);
+    rejoinCmdLn.javaProperties=templateCmdLine.javaProperties;
+    rejoinCmdLn.startCommand(startAction.name());
+    if (m_debug) {
+      rejoinCmdLn.debugPort(portGenerator.next());
+    }
+    rejoinCmdLn.leader(rejoinHost + ":" + String.valueOf(portNoToRejoin));
+    rejoinCmdLn.m_port=portGenerator.nextClient();
+    rejoinCmdLn.m_adminPort=portGenerator.nextAdmin();
+    rejoinCmdLn.m_zkInterface="127.0.0.1:" + portGenerator.next();
+    rejoinCmdLn.m_internalPort=portGenerator.next();
+    setPortsFromConfig(hostId,rejoinCmdLn);
+    List<String> rejoinCmdLnStr=rejoinCmdLn.createCommandLine();
+    String cmdLineFull="Rejoin cmd line:";
+    for (    String element : rejoinCmdLnStr) {
+      cmdLineFull+=" " + element;
+    }
+    log.info(cmdLineFull);
+    m_procBuilder.command().clear();
+    m_procBuilder.command().addAll(rejoinCmdLnStr);
+    Process proc=m_procBuilder.start();
+    start=System.currentTimeMillis();
+    String testoutputdir=rejoinCmdLn.buildDir() + File.separator + "testoutput";
+    File dir=new File(testoutputdir);
+    if (dir.exists()) {
+      assert(dir.isDirectory());
+    }
+ else {
+      boolean status=dir.mkdirs();
+      assert(status);
+    }
+    ptf=new PipeToFile(testoutputdir + File.separator + "LC-"+ getFileName()+ "-"+ hostId+ "-"+ "idx"+ String.valueOf(perLocalClusterExtProcessIndex++)+ ".rejoined.txt",proc.getInputStream(),PipeToFile.m_rejoinToken,true,proc);
+synchronized (this) {
+      m_pipes.set(hostId,ptf);
+      m_cluster.set(hostId,proc);
+    }
+    Thread t=new Thread(ptf);
+    t.setName("ClusterPipe:" + String.valueOf(hostId));
+    t.start();
+  }
+ catch (  IOException ex) {
+    log.error("Failed to start recovering cluster process:" + ex.getMessage(),ex);
+    assert(false);
+  }
+  return waitOnPTFReady(ptf,logtime,startTime,start,hostId);
+}
