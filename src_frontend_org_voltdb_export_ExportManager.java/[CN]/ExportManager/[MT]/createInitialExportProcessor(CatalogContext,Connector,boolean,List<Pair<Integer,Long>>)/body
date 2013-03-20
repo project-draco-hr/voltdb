@@ -1,0 +1,47 @@
+{
+  try {
+    exportLog.info("Creating connector " + m_loaderClass);
+    ExportDataProcessor newProcessor=null;
+    final Class<?> loaderClass=Class.forName(m_loaderClass);
+    newProcessor=(ExportDataProcessor)loaderClass.newInstance();
+    m_processor.set(newProcessor);
+    newProcessor.addLogger(exportLog);
+    File exportOverflowDirectory=new File(catalogContext.cluster.getExportoverflow());
+    if (startup) {
+      initializePersistedGenerations(exportOverflowDirectory,catalogContext,conn);
+    }
+    if (startup) {
+      final ExportGeneration currentGeneration=new ExportGeneration(catalogContext.m_uniqueId,m_onGenerationDrained,exportOverflowDirectory);
+      currentGeneration.initializeGenerationFromCatalog(conn,m_hostId,m_messenger,partitions);
+      m_generations.put(catalogContext.m_uniqueId,currentGeneration);
+    }
+    final ExportGeneration nextGeneration=m_generations.firstEntry().getValue();
+    newProcessor.setExportGeneration(nextGeneration);
+    newProcessor.setProcessorConfig(m_processorConfig);
+    newProcessor.readyForData();
+    if (startup) {
+      if (nextGeneration.isDiskBased() && !m_loaderClass.equals(RawProcessor.class.getName())) {
+        nextGeneration.kickOffLeaderElection();
+      }
+    }
+ else {
+      if (!m_loaderClass.equals(RawProcessor.class.getName())) {
+        if (nextGeneration.isDiskBased()) {
+          nextGeneration.kickOffLeaderElection();
+        }
+ else {
+          for (          Integer partitionId : m_masterOfPartitions) {
+            nextGeneration.acceptMastershipTask(partitionId);
+          }
+        }
+      }
+    }
+  }
+ catch (  final ClassNotFoundException e) {
+    exportLog.l7dlog(Level.ERROR,LogKeys.export_ExportManager_NoLoaderExtensions.name(),e);
+    Throwables.propagate(e);
+  }
+catch (  final Exception e) {
+    Throwables.propagate(e);
+  }
+}

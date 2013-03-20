@@ -1,5 +1,4 @@
 {
-  when(m_initiator.createTransaction(anyLong(),anyString(),anyBoolean(),any(StoredProcedureInvocation.class),anyBoolean(),anyBoolean(),anyBoolean(),any(int[].class),anyInt(),anyObject(),anyInt(),anyLong(),anyBoolean())).thenReturn(true);
   CatalogChangeResult catalogResult=new CatalogChangeResult();
   catalogResult.clientData=null;
   catalogResult.clientHandle=0;
@@ -15,21 +14,19 @@
   catalogResult.originalTxnId=12345678l;
   catalogResult.originalUniqueId=87654321l;
   m_ci.processFinishedCompilerWork(catalogResult).run();
-  ArgumentCaptor<Boolean> boolCaptor=ArgumentCaptor.forClass(Boolean.class);
-  ArgumentCaptor<StoredProcedureInvocation> invocationCaptor=ArgumentCaptor.forClass(StoredProcedureInvocation.class);
-  verify(m_initiator).createTransaction(anyLong(),anyString(),boolCaptor.capture(),invocationCaptor.capture(),boolCaptor.capture(),boolCaptor.capture(),boolCaptor.capture(),any(int[].class),anyInt(),anyObject(),anyInt(),anyLong(),boolCaptor.capture());
-  List<Boolean> boolValues=boolCaptor.getAllValues();
-  assertFalse(boolValues.get(0));
-  assertFalse(boolValues.get(1));
-  assertFalse(boolValues.get(2));
-  assertFalse(boolValues.get(3));
-  assertEquals("@UpdateApplicationCatalog",invocationCaptor.getValue().getProcName());
-  assertEquals("diff",invocationCaptor.getValue().getParameterAtIndex(0));
-  assertTrue(Arrays.equals("blah".getBytes(),(byte[])invocationCaptor.getValue().getParameterAtIndex(1)));
-  assertEquals(3,invocationCaptor.getValue().getParameterAtIndex(2));
-  assertEquals("blah",invocationCaptor.getValue().getParameterAtIndex(3));
-  assertEquals(1234l,invocationCaptor.getValue().getParameterAtIndex(4));
-  assertEquals(ProcedureInvocationType.REPLICATED,invocationCaptor.getValue().getType());
-  assertEquals(12345678l,invocationCaptor.getValue().getOriginalTxnId());
-  assertEquals(87654321l,invocationCaptor.getValue().getOriginalUniqueId());
+  ArgumentCaptor<Long> destinationCaptor=ArgumentCaptor.forClass(Long.class);
+  ArgumentCaptor<Iv2InitiateTaskMessage> messageCaptor=ArgumentCaptor.forClass(Iv2InitiateTaskMessage.class);
+  verify(m_messenger).send(destinationCaptor.capture(),messageCaptor.capture());
+  Iv2InitiateTaskMessage message=messageCaptor.getValue();
+  assertFalse(message.isReadOnly());
+  assertFalse(message.isSinglePartition());
+  assertEquals("@UpdateApplicationCatalog",message.getStoredProcedureName());
+  assertEquals("diff",message.getStoredProcedureInvocation().getParameterAtIndex(0));
+  assertTrue(Arrays.equals("blah".getBytes(),(byte[])message.getStoredProcedureInvocation().getParameterAtIndex(1)));
+  assertEquals(3,message.getStoredProcedureInvocation().getParameterAtIndex(2));
+  assertEquals("blah",message.getStoredProcedureInvocation().getParameterAtIndex(3));
+  assertEquals(1234l,message.getStoredProcedureInvocation().getParameterAtIndex(4));
+  assertEquals(ProcedureInvocationType.REPLICATED,message.getStoredProcedureInvocation().getType());
+  assertEquals(12345678l,message.getStoredProcedureInvocation().getOriginalTxnId());
+  assertEquals(87654321l,message.getStoredProcedureInvocation().getOriginalUniqueId());
 }
