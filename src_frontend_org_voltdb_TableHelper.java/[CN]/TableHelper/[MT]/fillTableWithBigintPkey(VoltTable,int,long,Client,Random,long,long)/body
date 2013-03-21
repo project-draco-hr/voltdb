@@ -1,5 +1,12 @@
 {
-  System.out.printf("Filling table %s with rows starting with pkey id %d (every %d rows) until RSS=%dmb\n",table.m_name,offset,jump,mb);
+  assert((maxRows > 0) || (mb > 0));
+  assert(maxRows >= 0);
+  assert(mb >= 0);
+  final int mbTarget=mb > 0 ? mb : Integer.MAX_VALUE;
+  if (maxRows == 0) {
+    maxRows=Long.MAX_VALUE;
+  }
+  System.out.printf("Filling table %s with rows starting with pkey id %d (every %d rows) until either RSS=%dmb or rowcount=%d\n",table.m_name,offset,jump,mbTarget,maxRows);
   int pkeyColIndex=getBigintPrimaryKeyIndexIfExists(table);
   if (pkeyColIndex == -1) {
     pkeyColIndex=0;
@@ -27,7 +34,7 @@
           rssPrev=tempRss;
           rss.set(tempRss);
           System.out.printf("RSS=%dmb\n",tempRss);
-          if (tempRss > mb) {
+          if (tempRss > mbTarget) {
             return;
           }
         }
@@ -44,13 +51,16 @@
   long rows=0;
   rssThread.start();
   final String insertProcName=table.m_name.toUpperCase() + ".insert";
-  while (rss.get() < mb) {
+  while (rss.get() < mbTarget) {
     Object[] row=randomRow(table,Integer.MAX_VALUE,rand);
     row[pkeyColIndex]=i;
     client.callProcedure(insertCallback,insertProcName,row);
     rows++;
     if ((rows % 100000) == 0) {
       System.out.printf("Loading 100000 rows. %d inserts sent (%d max id).\n",rows,i);
+    }
+    if (rows >= maxRows) {
+      break;
     }
     i+=jump;
   }
