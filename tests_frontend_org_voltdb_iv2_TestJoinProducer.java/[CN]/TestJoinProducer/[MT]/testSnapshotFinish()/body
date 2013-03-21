@@ -1,0 +1,20 @@
+{
+  testSnapshotDataTransfer();
+  ArgumentCaptor<SnapshotCompletionInterest> interestCaptor=ArgumentCaptor.forClass(SnapshotCompletionInterest.class);
+  verify(m_snapshotMonitor).addInterest(interestCaptor.capture());
+  SnapshotCompletionInterest interest=interestCaptor.getValue();
+  Map<Integer,Long> partitionTxnIds=new HashMap<Integer,Long>();
+  partitionTxnIds.put(2,3l);
+  Map<String,Map<Integer,Pair<Long,Long>>> exportSeqNums=new HashMap<String,Map<Integer,Pair<Long,Long>>>();
+  SnapshotCompletionInterest.SnapshotCompletionEvent event=new SnapshotCompletionInterest.SnapshotCompletionEvent("test-snapshot",1,partitionTxnIds,false,null,exportSeqNums);
+  interest.snapshotCompleted(event);
+  reset(m_mb);
+  SiteProcedureConnection site=mock(SiteProcedureConnection.class);
+  m_taskerQueue.poll().runForRejoin(site,null);
+  ArgumentCaptor<Long> hsidCaptor=ArgumentCaptor.forClass(Long.class);
+  ArgumentCaptor<RejoinMessage> msgCaptor=ArgumentCaptor.forClass(RejoinMessage.class);
+  verify(m_mb).send(hsidCaptor.capture(),msgCaptor.capture());
+  assertEquals(m_coordinatorHSId,hsidCaptor.getValue().longValue());
+  RejoinMessage rm=msgCaptor.getValue();
+  assertEquals(RejoinMessage.Type.SNAPSHOT_FINISHED,rm.getType());
+}
