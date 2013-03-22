@@ -1,0 +1,63 @@
+{
+  int totalMutations=0;
+  int columnDrops;
+  int columnAdds;
+  int columnGrows;
+  int columnReorders;
+  do {
+    columnDrops=Math.min((int)(Math.abs(rand.nextGaussian()) * 1.5),table.m_colCount);
+    columnAdds=Math.min((int)(Math.abs(rand.nextGaussian()) * 1.5),table.m_colCount);
+    columnGrows=Math.min((int)(Math.abs(rand.nextGaussian()) * 1.5),table.m_colCount);
+    columnReorders=Math.min((int)(Math.abs(rand.nextGaussian()) * 1.5),table.m_colCount);
+    totalMutations=columnDrops + columnAdds + columnGrows+ columnReorders;
+  }
+ while ((allowIdenty == false) && (totalMutations == 0));
+  System.out.printf("Mutations: %d %d %d %d\n",columnDrops,columnAdds,columnGrows,columnReorders);
+  ArrayList<VoltTable.ColumnInfo> columns=new ArrayList<VoltTable.ColumnInfo>();
+  for (int i=0; i < table.m_originalColumnInfos.length; i++) {
+    columns.add(table.m_originalColumnInfos[i].clone());
+  }
+  int tries=columns.size() * 2;
+  while ((columnDrops > 0) && (tries-- > 0)) {
+    int indexToRemove=rand.nextInt(columns.size());
+    VoltTable.ColumnInfo toRemove=columns.get(indexToRemove);
+    if (toRemove.pkeyIndex == -1) {
+      columnDrops--;
+      columns.remove(indexToRemove);
+    }
+  }
+  while (columnReorders > 0) {
+    if (columns.size() > 1) {
+      int srcIndex=rand.nextInt(columns.size());
+      int destIndex;
+      do {
+        destIndex=rand.nextInt(columns.size());
+      }
+ while (destIndex == srcIndex);
+      columns.add(destIndex,columns.remove(srcIndex));
+    }
+    columnReorders--;
+  }
+  int newColIndex=getNextColumnIndex(table);
+  while (columnAdds > 0) {
+    int indexToAdd=rand.nextInt(columns.size());
+    VoltTable.ColumnInfo toAdd=getRandomColumn(String.format("NEW%d",newColIndex++),rand);
+    columnAdds--;
+    columns.add(indexToAdd,toAdd);
+  }
+  tries=columns.size() * 2;
+  while ((columnGrows > 0) && (tries-- > 0)) {
+    int indexToGrow=rand.nextInt(columns.size());
+    VoltTable.ColumnInfo toGrow=columns.get(indexToGrow);
+    if (toGrow.pkeyIndex != -1)     continue;
+    toGrow=growColumn(toGrow);
+    if (toGrow != null) {
+      columns.remove(indexToGrow);
+      columns.add(indexToGrow,toGrow);
+      columnGrows--;
+    }
+  }
+  VoltTable t2=new VoltTable(columns.toArray(new VoltTable.ColumnInfo[0]));
+  t2.m_name=table.m_name;
+  return t2;
+}

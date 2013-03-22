@@ -2,7 +2,8 @@
   System.out.print(HORIZONTAL_RULE);
   System.out.println(" Setup & Initialization");
   System.out.println(HORIZONTAL_RULE);
-  connect(config.servers);
+  connect(client,config.servers);
+  connect(mpClient,config.servers);
   System.out.println();
   if (config.preload) {
     System.out.println("Preloading data store...");
@@ -15,49 +16,33 @@
   System.out.print(HORIZONTAL_RULE);
   System.out.println("Starting Benchmark");
   System.out.println(HORIZONTAL_RULE);
-  System.out.println("Warming up...");
-  final long warmupEndTime=System.currentTimeMillis() + (1000l * config.warmup);
-  while (warmupEndTime > System.currentTimeMillis()) {
-    if (rand.nextDouble() < config.getputratio) {
-      client.callProcedure(new NullCallback(),"Get",processor.generateRandomKeyForRetrieval());
-    }
- else {
-      final PayloadProcessor.Pair pair=processor.generateForStore();
-      client.callProcedure(new NullCallback(),"Put",pair.Key,pair.getStoreValue());
-    }
+  ArrayList<Thread> kvThreads=new ArrayList<Thread>();
+  for (int i=0; i < config.threads; ++i) {
+    kvThreads.add(new Thread(new KVThread(client,true)));
   }
+  for (int i=0; i < config.mpthreads; ++i) {
+    kvThreads.add(new Thread(new KVThread(mpClient,false)));
+  }
+  for (  Thread thread : kvThreads) {
+    thread.start();
+  }
+  System.out.println("Warming up...");
+  Thread.sleep(1000l * config.warmup);
+  warmupComplete.set(true);
   fullStatsContext.fetchAndResetBaseline();
   periodicStatsContext.fetchAndResetBaseline();
+  mpFullStatsContext.fetchAndResetBaseline();
   benchmarkStartTS=System.currentTimeMillis();
   schedulePeriodicStats();
   System.out.println("\nRunning benchmark...");
-  final long benchmarkEndTime=System.currentTimeMillis() + (1000l * config.duration);
-  long currentTime=System.currentTimeMillis();
-  long previousTime=currentTime;
-  int slice=20;
-  long permits=config.mpratelimit / slice;
-  while (benchmarkEndTime > currentTime) {
-    if (rand.nextDouble() < config.getputratio) {
-      if (permits > 0 && rand.nextDouble() < config.oneshotratio) {
-        client.callProcedure(new GetMPCallback(),"GetMP",processor.generateRandomKeyForRetrieval());
-        --permits;
-      }
- else {
-        client.callProcedure(new GetCallback(),"Get",processor.generateRandomKeyForRetrieval());
-      }
-    }
- else {
-      final PayloadProcessor.Pair pair=processor.generateForStore();
-      client.callProcedure(new PutCallback(pair),"Put",pair.Key,pair.getStoreValue());
-    }
-    currentTime=System.currentTimeMillis();
-    if ((currentTime - previousTime) >= (1000 / slice)) {
-      permits=config.mpratelimit / slice;
-      previousTime=currentTime;
-    }
-  }
+  Thread.sleep(1000l * config.duration);
+  benchmarkComplete.set(true);
   timer.cancel();
   client.drain();
+  mpClient.drain();
+  for (  Thread t : kvThreads) {
+    t.join();
+  }
   printResults();
   client.close();
 }
