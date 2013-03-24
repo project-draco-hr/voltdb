@@ -2,7 +2,28 @@
   String tableName=tableNode.attributes.get("table");
   Table table=getTableFromDB(tableName);
   assert(table != null);
-  JoinInfo joinInfo=parseTableConditions(tableNode);
+  JoinType joinType=JoinType.get(tableNode.attributes.get("jointype"));
+  assert(joinType != JoinType.INVALID);
+  if (joinType == JoinType.FULL) {
+    throw new PlanningErrorException("VoltDB does not support full outer joins");
+  }
+  List<AbstractExpression> exprs=parseTableConditions(tableNode);
+  assert(exprs.size() == 2);
   tableList.add(table);
-  tableJoinList.put(table,joinInfo);
+  if (joinTree == null) {
+    joinTree=new JoinTree();
+  }
+  JoinNode joinNode=new JoinNode(table,joinType,exprs.get(0),exprs.get(1));
+  if (joinTree.m_root == null) {
+    joinTree.m_root=joinNode;
+  }
+ else {
+    JoinNode node=new JoinNode();
+    node.m_leftNode=joinTree.m_root;
+    node.m_rightNode=joinNode;
+    joinTree.m_root=node;
+  }
+  if (joinType != JoinType.INNER) {
+    joinTree.m_hasOuterJoin=true;
+  }
 }
