@@ -23,11 +23,9 @@
     }
     m_rejoinLog.info("Scheduling snapshot after txnId " + globalInitiationPoint + " for cluster partition fault. Current commit point: "+ this.lastCommittedTxnId);
     SnapshotSchedule schedule=m_context.cluster.getFaultsnapshots().get("CLUSTER_PARTITION");
-    m_transactionQueue.makeRoadBlock(globalInitiationPoint,QueueState.BLOCKED_CLOSED,new ExecutionSiteLocalSnapshotMessage(globalInitiationPoint,schedule.getPath(),schedule.getPrefix(),true));
   }
   for (  Long i : failedSites) {
     failedInitiators.add(i);
-    m_transactionQueue.gotFaultForInitiator(i);
   }
   Set<Long> faultedTxns=new HashSet<Long>();
   Iterator<Long> it=m_transactionsById.keySet().iterator();
@@ -41,7 +39,6 @@
       if (!ts.isReadOnly()) {
         faultedTxns.add(ts.txnId);
       }
-      m_transactionQueue.faultTransaction(ts);
     }
  else     if (ts instanceof MultiPartitionParticipantTxnState && failedSites.contains(ts.coordinatorSiteId)) {
       MultiPartitionParticipantTxnState mpts=(MultiPartitionParticipantTxnState)ts;
@@ -66,7 +63,6 @@
         if (!ts.isReadOnly()) {
           faultedTxns.add(ts.txnId);
         }
-        m_transactionQueue.faultTransaction(ts);
       }
     }
  else     if (ts instanceof MultiPartitionParticipantTxnState && ts.coordinatorSiteId == m_siteId) {
@@ -77,17 +73,5 @@
   }
   if (m_recoveryProcessor != null) {
     m_recoveryProcessor.handleSiteFaults(failedSites,m_tracker);
-  }
-  try {
-    Semaphore logFault=VoltDB.instance().getCommandLog().logFault(failedInitiators,faultedTxns);
-    if (logFault != null) {
-      logFault.acquire();
-    }
- else {
-      VoltDB.crashLocalVoltDB("Node failure before log is initialized",false,null);
-    }
-  }
- catch (  InterruptedException e) {
-    VoltDB.crashLocalVoltDB("Interrupted while attempting to log a fault",true,e);
   }
 }
