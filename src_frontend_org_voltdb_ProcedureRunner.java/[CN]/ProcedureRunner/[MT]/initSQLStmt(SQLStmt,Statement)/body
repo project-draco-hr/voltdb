@@ -1,18 +1,23 @@
 {
-  stmt.catStmt=catStmt;
-  stmt.numFragGUIDs=catStmt.getFragments().size();
-  PlanFragment fragments[]=new PlanFragment[stmt.numFragGUIDs];
-  stmt.fragGUIDs=new long[stmt.numFragGUIDs];
-  int i=0;
-  for (  PlanFragment frag : stmt.catStmt.getFragments()) {
-    fragments[i]=frag;
-    stmt.fragGUIDs[i]=CatalogUtil.getUniqueIdForFragment(frag);
-    i++;
+  int fragCount=catStmt.getFragments().size();
+  for (  PlanFragment frag : catStmt.getFragments()) {
+    SQLStmt.Frag stmtFrag=new SQLStmt.Frag();
+    stmtFrag.planHash=Encoder.hexDecode(frag.getPlanhash());
+    byte[] plan=Encoder.hexDecode(frag.getPlannodetree());
+    stmtFrag.id=m_site.loadOrAddRefPlanFragment(stmtFrag.planHash,plan);
+    stmtFrag.transactional=frag.getNontransactional() == false;
+    if (fragCount == 1 || frag.getHasdependencies()) {
+      stmt.aggregator=stmtFrag;
+    }
+ else {
+      stmt.collector=stmtFrag;
+    }
   }
-  stmt.numStatementParamJavaTypes=stmt.catStmt.getParameters().size();
-  stmt.statementParamJavaTypes=new byte[stmt.numStatementParamJavaTypes];
-  for (  StmtParameter param : stmt.catStmt.getParameters()) {
+  stmt.isReadOnly=catStmt.getReadonly();
+  stmt.isReplicatedTableDML=catStmt.getReplicatedtabledml();
+  int numStatementParamJavaTypes=catStmt.getParameters().size();
+  stmt.statementParamJavaTypes=new byte[numStatementParamJavaTypes];
+  for (  StmtParameter param : catStmt.getParameters()) {
     stmt.statementParamJavaTypes[param.getIndex()]=(byte)param.getJavatype();
-    i++;
   }
 }

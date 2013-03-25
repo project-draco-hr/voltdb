@@ -10,15 +10,20 @@
     return currentFragResponse;
   }
   for (int frag=0; frag < m_task.getFragmentCount(); frag++) {
-    long fragmentId=m_task.getFragmentId(frag);
+    byte[] planHash=m_task.getPlanHash(frag);
     final int outputDepId=m_task.getOutputDepId(frag);
     ParameterSet params=m_task.getParameterSetForFragment(frag);
     final int inputDepId=m_task.getOnlyInputDepId(frag);
+    long fragmentId=0;
+    byte[] fragmentPlan=null;
     try {
       VoltTable dependency;
-      byte[] fragmentPlan=m_task.getFragmentPlan(frag);
+      fragmentPlan=m_task.getFragmentPlan(frag);
       if (fragmentPlan != null) {
-        fragmentId=siteConnection.loadPlanFragment(fragmentPlan);
+        fragmentId=siteConnection.loadOrAddRefPlanFragment(planHash,fragmentPlan);
+      }
+ else {
+        fragmentId=siteConnection.getFragmentIdForPlanHash(planHash);
       }
       dependency=siteConnection.executePlanFragments(1,new long[]{fragmentId},new long[]{inputDepId},new ParameterSet[]{params},m_txn.spHandle,m_txn.uniqueId,m_txn.isReadOnly())[0];
       if (hostLog.isTraceEnabled()) {
@@ -27,14 +32,19 @@
       currentFragResponse.addDependency(outputDepId,dependency);
     }
  catch (    final EEException e) {
-      hostLog.l7dlog(Level.TRACE,LogKeys.host_ExecutionSite_ExceptionExecutingPF.name(),new Object[]{fragmentId},e);
+      hostLog.l7dlog(Level.TRACE,LogKeys.host_ExecutionSite_ExceptionExecutingPF.name(),new Object[]{Encoder.hexEncode(planHash)},e);
       currentFragResponse.setStatus(FragmentResponseMessage.UNEXPECTED_ERROR,e);
       break;
     }
 catch (    final SQLException e) {
-      hostLog.l7dlog(Level.TRACE,LogKeys.host_ExecutionSite_ExceptionExecutingPF.name(),new Object[]{fragmentId},e);
+      hostLog.l7dlog(Level.TRACE,LogKeys.host_ExecutionSite_ExceptionExecutingPF.name(),new Object[]{Encoder.hexEncode(planHash)},e);
       currentFragResponse.setStatus(FragmentResponseMessage.UNEXPECTED_ERROR,e);
       break;
+    }
+ finally {
+      if (fragmentPlan != null) {
+        siteConnection.decrefPlanFragmentById(fragmentId);
+      }
     }
   }
   return currentFragResponse;
