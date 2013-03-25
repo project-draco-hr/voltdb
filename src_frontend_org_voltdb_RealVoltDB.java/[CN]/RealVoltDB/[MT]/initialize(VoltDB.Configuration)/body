@@ -79,13 +79,11 @@ synchronized (m_startAndStopLock) {
       VoltDB.crashLocalVoltDB("Failed to initialize license verifier. " + "See previous log message for details.",false,null);
     }
     m_globalServiceElector=new GlobalServiceElector(m_messenger.getZK(),m_messenger.getHostId());
-    Joiner joinCoordinator=null;
     if (m_joining) {
       Class<?> joinerClass=MiscUtils.loadProClass("org.voltdb.JoinerImpl","Elastic",false);
       try {
         Constructor<?> constructor=joinerClass.getConstructor(HostMessenger.class);
-        joinCoordinator=(Joiner)constructor.newInstance(m_messenger);
-        m_rejoinCoordinator=joinCoordinator;
+        m_rejoinCoordinator=(RejoinCoordinator)constructor.newInstance(m_messenger);
         m_messenger.registerMailbox(m_rejoinCoordinator);
       }
  catch (      Exception e) {
@@ -93,7 +91,7 @@ synchronized (m_startAndStopLock) {
       }
     }
     ClusterConfig clusterConfig=null;
-    JSONObject topo=getTopology(config.m_startAction,joinCoordinator);
+    JSONObject topo=getTopology(config.m_startAction,m_rejoinCoordinator);
     m_partitionsToSitesAtStartupForExportInit=new ArrayList<Pair<Integer,Long>>();
     try {
       clusterConfig=new ClusterConfig(topo);
@@ -108,7 +106,7 @@ synchronized (m_startAndStopLock) {
           }
         }
  else         if (m_joining) {
-          partitions=joinCoordinator.getPartitionsToAdd();
+          partitions=m_rejoinCoordinator.getPartitionsToAdd();
         }
  else {
           partitions=ClusterConfig.partitionsForHost(topo,m_messenger.getHostId());
@@ -146,7 +144,7 @@ synchronized (m_startAndStopLock) {
         }
       }
  else       if (m_joining) {
-        joinCoordinator.setSites(hsidsToRejoin);
+        m_rejoinCoordinator.setSites(hsidsToRejoin);
       }
     }
  catch (    Exception e) {
