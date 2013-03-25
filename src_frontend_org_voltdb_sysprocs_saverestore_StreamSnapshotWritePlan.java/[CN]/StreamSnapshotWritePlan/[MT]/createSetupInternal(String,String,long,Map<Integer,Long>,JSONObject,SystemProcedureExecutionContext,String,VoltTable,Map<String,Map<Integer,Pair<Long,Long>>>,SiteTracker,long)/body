@@ -1,8 +1,7 @@
 {
-  List<Long> sitesToInclude=new ArrayList<Long>();
-  Map<Long,Long> streamPairs=new HashMap<Long,Long>();
+  Map<Long,Long> streamPairs;
   assert(SnapshotSiteProcessor.ExecutionSitesCurrentlySnapshotting.isEmpty());
-  final List<Table> tables=SnapshotUtil.getTablesToSave(context.getDatabase());
+  final List<Table> tables=getTablesToInclude(jsData,context);
   final AtomicInteger numTables=new AtomicInteger(tables.size());
   final SnapshotRegistry.Snapshot snapshotRecord=SnapshotRegistry.startSnapshot(txnId,context.getHostId(),file_path,file_nonce,SnapshotFormat.STREAM,tables.toArray(new Table[0]));
   Map<Integer,byte[]> schemas=new HashMap<Integer,byte[]>();
@@ -10,29 +9,16 @@
     VoltTable schemaTable=CatalogUtil.getVoltTable(table);
     schemas.put(table.getRelativeIndex(),schemaTable.getSchemaBytes());
   }
-  if (jsData != null) {
-    try {
-      List<Long> localHSIds=tracker.getSitesForHost(context.getHostId());
-      JSONObject sp=jsData.getJSONObject("streamPairs");
-      @SuppressWarnings("unchecked") Iterator<String> it=sp.keys();
-      while (it.hasNext()) {
-        String key=it.next();
-        long sourceHSId=Long.valueOf(key);
-        if (localHSIds.contains(sourceHSId)) {
-          Long destHSId=Long.valueOf(sp.getString(key));
-          sitesToInclude.add(sourceHSId);
-          streamPairs.put(sourceHSId,destHSId);
-        }
-      }
-    }
- catch (    JSONException e) {
-      SnapshotRegistry.discardSnapshot(snapshotRecord);
-      return true;
-    }
+  try {
+    streamPairs=getStreamPairs(jsData,tracker);
+  }
+ catch (  JSONException e) {
+    SnapshotRegistry.discardSnapshot(snapshotRecord);
+    return true;
   }
   Map<Long,SnapshotDataTarget> sdts=new HashMap<Long,SnapshotDataTarget>();
   if (streamPairs.size() > 0) {
-    SNAP_LOG.debug("Sites to stream from: " + CoreUtils.hsIdCollectionToString(sitesToInclude));
+    SNAP_LOG.debug("Sites to stream from: " + CoreUtils.hsIdCollectionToString(streamPairs.keySet()));
     for (    Entry<Long,Long> entry : streamPairs.entrySet()) {
       sdts.put(entry.getKey(),new StreamSnapshotDataTarget(entry.getValue(),schemas));
     }

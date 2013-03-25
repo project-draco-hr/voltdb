@@ -2,12 +2,6 @@
   VoltDB.setDefaultTimezone();
   config=new SchemaChangeConfig();
   config.parse("SchemaChangeClient",args);
-  try {
-    deploymentString=readFileAsString(config.pathtodeployment);
-  }
- catch (  Exception e) {
-    deploymentString="<?xml version=\"1.0\"?><deployment>" + "<cluster hostcount=\"1\" sitesperhost=\"1\" kfactor=\"0\" />" + "<httpd enabled=\"true\"><jsonapi enabled=\"true\" /></httpd>"+ "<snapshot prefix=\"schemachange\" frequency=\"1s\" retain=\"2\"/></deployment>";
-  }
   ClientConfig clientConfig=new ClientConfig();
   clientConfig.setProcedureCallTimeout(30 * 60 * 1000);
   client=ClientFactory.createClient(clientConfig);
@@ -16,22 +10,25 @@
     server=server.trim();
     client.createConnection(server);
   }
-  VoltTable t=catalogChange(null);
+  topo=getCluterTopology(client);
+  VoltTable t=catalogChange(null,true);
   for (int i=0; i < 50; i++) {
     loadTable(t);
-    String tableName=TableHelper.getTableName(t);
-    VoltTable preT=sample(t);
-    t=catalogChange(t);
-    if (TableHelper.getTableName(t).equals(tableName)) {
-      VoltTable guessT=t.clone(4096 * 1024);
-      TableHelper.migrateTable(preT,guessT);
-      VoltTable postT=sample(t);
-      postT.resetRowPosition();
-      preT.resetRowPosition();
-      StringBuilder sb=new StringBuilder();
-      if (!TableHelper.deepEqualsWithErrorMsg(postT,guessT,sb)) {
-        System.err.println(sb.toString());
-        assert(false);
+    for (int j=0; j < 50; j++) {
+      String tableName=TableHelper.getTableName(t);
+      VoltTable preT=sample(t);
+      t=catalogChange(t,(j == 0) && (rand.nextInt(5) == 0));
+      if (TableHelper.getTableName(t).equals(tableName)) {
+        VoltTable guessT=t.clone(4096 * 1024);
+        TableHelper.migrateTable(preT,guessT);
+        VoltTable postT=sample(t);
+        postT.resetRowPosition();
+        preT.resetRowPosition();
+        StringBuilder sb=new StringBuilder();
+        if (!TableHelper.deepEqualsWithErrorMsg(postT,guessT,sb)) {
+          System.err.println(sb.toString());
+          assert(false);
+        }
       }
     }
   }
