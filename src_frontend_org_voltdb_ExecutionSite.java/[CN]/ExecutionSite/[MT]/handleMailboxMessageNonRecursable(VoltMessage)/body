@@ -14,28 +14,6 @@
  else     if (info instanceof MultiPartitionParticipantMessage) {
     }
     TransactionState ts=m_transactionsById.get(info.getTxnId());
-    if (info instanceof CompleteTransactionMessage) {
-      CompleteTransactionMessage complete=(CompleteTransactionMessage)info;
-      if (ts != null) {
-        ts.processCompleteTransaction(complete);
-      }
- else {
-        if (complete.requiresAck()) {
-          CompleteTransactionResponseMessage ctrm=new CompleteTransactionResponseMessage(complete,m_siteId);
-          m_mailbox.send(complete.getCoordinatorHSId(),ctrm);
-        }
-      }
-      return;
-    }
-    if (ts == null) {
-      if (info.isSinglePartition()) {
-        ts=new SinglePartitionTxnState(m_mailbox,this,info);
-      }
- else {
-        ts=new MultiPartitionParticipantTxnState(m_mailbox,this,info);
-      }
-      hostLog.info("Dropping txn " + ts.txnId + " data from failed initiatorSiteId: "+ ts.initiatorHSId);
-    }
     if (ts != null) {
       if (message instanceof FragmentTaskMessage) {
         ts.createLocalFragmentWork((FragmentTaskMessage)message,false);
@@ -63,22 +41,6 @@
     RejoinMessage rm=(RejoinMessage)message;
     handleRejoinMessage(rm);
   }
- else   if (message instanceof FragmentResponseMessage) {
-    FragmentResponseMessage response=(FragmentResponseMessage)message;
-    TransactionState txnState=m_transactionsById.get(response.getTxnId());
-    if (txnState != null) {
-      assert(txnState instanceof MultiPartitionParticipantTxnState);
-      txnState.processRemoteWorkResponse(response);
-    }
-  }
- else   if (message instanceof CompleteTransactionResponseMessage) {
-    CompleteTransactionResponseMessage response=(CompleteTransactionResponseMessage)message;
-    TransactionState txnState=m_transactionsById.get(response.getTxnId());
-    if (txnState != null) {
-      assert(txnState instanceof MultiPartitionParticipantTxnState);
-      txnState.processCompleteTransactionResponse(response);
-    }
-  }
  else   if (message instanceof ExecutionSiteNodeFailureMessage) {
     discoverGlobalFaultData((ExecutionSiteNodeFailureMessage)message);
   }
@@ -86,8 +48,6 @@
     long txn_id=((CheckTxnStateCompletionMessage)message).m_txnId;
     TransactionState txnState=m_transactionsById.get(txn_id);
     if (txnState != null) {
-      assert(txnState instanceof MultiPartitionParticipantTxnState);
-      ((MultiPartitionParticipantTxnState)txnState).checkWorkUnits();
     }
   }
  else   if (message instanceof RawProcessor.ExportInternalMessage) {

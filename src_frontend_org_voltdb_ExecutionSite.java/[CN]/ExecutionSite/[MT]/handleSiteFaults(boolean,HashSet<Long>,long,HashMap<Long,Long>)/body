@@ -32,42 +32,11 @@
   while (it.hasNext()) {
     final long tid=it.next();
     TransactionState ts=m_transactionsById.get(tid);
-    ts.handleSiteFaults(failedSites);
     if (initiatorSafeInitiationPoint.containsKey(ts.initiatorHSId) && ts.txnId > initiatorSafeInitiationPoint.get(ts.initiatorHSId) && failedSites.contains(ts.initiatorHSId)) {
       m_rejoinLog.info("Site " + m_siteId + " faulting non-globally initiated transaction "+ ts.txnId);
       it.remove();
       if (!ts.isReadOnly()) {
         faultedTxns.add(ts.txnId);
-      }
-    }
- else     if (ts instanceof MultiPartitionParticipantTxnState && failedSites.contains(ts.coordinatorSiteId)) {
-      MultiPartitionParticipantTxnState mpts=(MultiPartitionParticipantTxnState)ts;
-      if (ts.isInProgress() && ts.txnId <= globalMultiPartCommitPoint) {
-        m_rejoinLog.info("Committing in progress multi-partition txn " + ts.txnId + " even though coordinator was on a failed host because the txnId <= "+ "the global multi-part commit point");
-        CompleteTransactionMessage ft=mpts.createCompleteTransactionMessage(false,false);
-        ft.m_sourceHSId=m_siteId;
-        m_mailbox.deliverFront(ft);
-      }
- else       if (ts.isInProgress() && ts.txnId > globalMultiPartCommitPoint) {
-        m_rejoinLog.info("Rolling back in progress multi-partition txn " + ts.txnId + " because the coordinator was on a failed host and the txnId > "+ "the global multi-part commit point");
-        CompleteTransactionMessage ft=mpts.createCompleteTransactionMessage(true,false);
-        ft.m_sourceHSId=m_siteId;
-        if (!ts.isReadOnly()) {
-          faultedTxns.add(ts.txnId);
-        }
-        m_mailbox.deliverFront(ft);
-      }
- else {
-        m_rejoinLog.info("Faulting multi-part transaction " + ts.txnId + " because the coordinator was on a failed node");
-        it.remove();
-        if (!ts.isReadOnly()) {
-          faultedTxns.add(ts.txnId);
-        }
-      }
-    }
- else     if (ts instanceof MultiPartitionParticipantTxnState && ts.coordinatorSiteId == m_siteId) {
-      if (ts.isInProgress()) {
-        m_mailbox.deliverFront(new CheckTxnStateCompletionMessage(ts.txnId,m_siteId));
       }
     }
   }
