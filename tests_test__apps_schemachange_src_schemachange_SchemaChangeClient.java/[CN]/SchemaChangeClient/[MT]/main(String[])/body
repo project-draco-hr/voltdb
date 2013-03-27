@@ -2,17 +2,15 @@
   VoltDB.setDefaultTimezone();
   config=new SchemaChangeConfig();
   config.parse("SchemaChangeClient",args);
-  ClientConfig clientConfig=new ClientConfig();
+  ClientConfig clientConfig=new ClientConfig("","",new StatusListener());
   clientConfig.setProcedureCallTimeout(30 * 60 * 1000);
-  client=ClientFactory.createClient(clientConfig);
-  String[] servers=config.servers.split(",");
-  for (  String server : servers) {
-    server=server.trim();
-    client.createConnection(server);
-  }
+  Client c=ClientFactory.createClient(clientConfig);
+  client=new subClient(clientConfig);
+  connect(config.servers);
+  schedulePeriodicChecks();
   topo=getCluterTopology(client);
   VoltTable t=catalogChange(null,true);
-  long startTime=System.currentTimeMillis();
+  startTime=System.currentTimeMillis();
   while (config.duration == 0 || (System.currentTimeMillis() - startTime < (config.duration * 1000))) {
     loadTable(t);
     for (int j=0; j < 3; j++) {
@@ -27,7 +25,7 @@
         preT.resetRowPosition();
         StringBuilder sb=new StringBuilder();
         if (!TableHelper.deepEqualsWithErrorMsg(postT,guessT,sb)) {
-          System.err.println(sb.toString());
+          System.err.println(_F(sb.toString()));
           assert(false);
         }
       }
