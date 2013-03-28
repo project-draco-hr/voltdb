@@ -1,35 +1,7 @@
 {
   VoltDB.setDefaultTimezone();
-  config=new SchemaChangeConfig();
+  SchemaChangeConfig config=new SchemaChangeConfig();
   config.parse("SchemaChangeClient",args);
-  ClientConfig clientConfig=new ClientConfig("","",new StatusListener());
-  clientConfig.setProcedureCallTimeout(30 * 60 * 1000);
-  Client c=ClientFactory.createClient(clientConfig);
-  client=new subClient(clientConfig);
-  connect(config.servers);
-  schedulePeriodicChecks();
-  topo=getCluterTopology(client);
-  VoltTable t=catalogChange(null,true);
-  startTime=System.currentTimeMillis();
-  while (config.duration == 0 || (System.currentTimeMillis() - startTime < (config.duration * 1000))) {
-    loadTable(t);
-    for (int j=0; j < 3; j++) {
-      String tableName=TableHelper.getTableName(t);
-      VoltTable preT=sample(t);
-      t=catalogChange(t,(j == 0) && (rand.nextInt(5) == 0));
-      if (TableHelper.getTableName(t).equals(tableName)) {
-        VoltTable guessT=t.clone(4096 * 1024);
-        TableHelper.migrateTable(preT,guessT);
-        VoltTable postT=sample(t);
-        postT.resetRowPosition();
-        preT.resetRowPosition();
-        StringBuilder sb=new StringBuilder();
-        if (!TableHelper.deepEqualsWithErrorMsg(postT,guessT,sb)) {
-          System.err.println(_F(sb.toString()));
-          assert(false);
-        }
-      }
-    }
-  }
-  client.close();
+  SchemaChangeClient schemaChange=new SchemaChangeClient(config);
+  schemaChange.runTestWorkload();
 }
