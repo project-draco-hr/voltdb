@@ -1,0 +1,63 @@
+{
+class Callback implements ProcedureCallback {
+    ProcedureCallback callback;
+    String procName;
+    Object[] parameters;
+    long tries;
+    Callback(    ProcedureCallback callback,    String procName,    Object... parameters){
+      this.callback=callback;
+      this.procName=procName;
+      this.parameters=parameters;
+      this.tries=0;
+    }
+    @Override public void clientCallback(    ClientResponse clientResponse) throws Exception {
+      this.tries++;
+      byte s=clientResponse.getStatus();
+      if (s != ClientResponse.SUCCESS) {
+        System.err.println(_F(((ClientResponseImpl)clientResponse).toJSONString()));
+switch (s) {
+case ClientResponse.CONNECTION_LOST:
+case ClientResponse.CONNECTION_TIMEOUT:
+case ClientResponse.UNEXPECTED_FAILURE:
+          log.error(_F("Retrying lost/timeout connection %d",this.tries));
+        if (noProgressCB)         break;
+      Thread.sleep(1);
+    client.callProcedure(this,procName,parameters);
+  break;
+default :
+this.callback.clientCallback(clientResponse);
+break;
+}
+}
+ else {
+lastSuccessTime=System.currentTimeMillis();
+if (this.tries > 1) System.err.println(_F("success retrying"));
+this.callback.clientCallback(clientResponse);
+}
+}
+}
+;
+ProcedureCallback cb=new Callback(callback,procName,parameters);
+boolean r=false;
+while (!noProgressCB) {
+try {
+return client.callProcedure(cb,procName,parameters);
+}
+ catch (NoConnectionsException e) {
+System.err.println(_F("Caught NoConnectionsException(a): " + e.getMessage()));
+}
+catch (IOException e) {
+System.err.println(_F("Caught IOException(a): " + e.getMessage()));
+throw e;
+}
+ finally {
+try {
+Thread.sleep(3);
+}
+ catch (Exception e) {
+}
+}
+}
+terminate(1);
+return false;
+}
