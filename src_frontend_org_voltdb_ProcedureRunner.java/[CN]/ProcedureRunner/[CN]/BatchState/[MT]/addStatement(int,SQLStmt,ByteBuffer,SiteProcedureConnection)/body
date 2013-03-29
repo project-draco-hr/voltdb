@@ -1,0 +1,32 @@
+{
+  assert(index >= 0);
+  assert(index < m_batchSize);
+  assert(stmt != null);
+  if (stmt.aggregator.transactional == true) {
+    m_localFragsAreNonTransactional=false;
+  }
+  if (stmt.collector == null) {
+    m_depsForLocalTask[index]=-1;
+    if (stmt.inCatalog) {
+      m_localTask.addFragment(stmt.aggregator.planHash,m_depsToResume[index],params);
+    }
+ else {
+      byte[] planBytes=site.planForFragmentId(stmt.aggregator.id);
+      m_localTask.addCustomFragment(stmt.aggregator.planHash,m_depsToResume[index],params,planBytes);
+    }
+  }
+ else {
+    int outputDepId=m_txnState.getNextDependencyId() | DtxnConstants.MULTIPARTITION_DEPENDENCY;
+    m_depsForLocalTask[index]=outputDepId;
+    if (stmt.inCatalog) {
+      m_localTask.addFragment(stmt.aggregator.planHash,m_depsToResume[index],params);
+      m_distributedTask.addFragment(stmt.collector.planHash,outputDepId,params);
+    }
+ else {
+      byte[] planBytes=site.planForFragmentId(stmt.aggregator.id);
+      m_localTask.addCustomFragment(stmt.aggregator.planHash,m_depsToResume[index],params,planBytes);
+      planBytes=site.planForFragmentId(stmt.collector.id);
+      m_distributedTask.addCustomFragment(stmt.collector.planHash,outputDepId,params,planBytes);
+    }
+  }
+}
