@@ -10,15 +10,20 @@
     return currentFragResponse;
   }
   for (int frag=0; frag < m_fragmentMsg.getFragmentCount(); frag++) {
-    long fragmentId=m_fragmentMsg.getFragmentId(frag);
+    byte[] planHash=m_fragmentMsg.getPlanHash(frag);
     final int outputDepId=m_fragmentMsg.getOutputDepId(frag);
     ParameterSet params=m_fragmentMsg.getParameterSetForFragment(frag);
     final int inputDepId=m_fragmentMsg.getOnlyInputDepId(frag);
+    long fragmentId=0;
+    byte[] fragmentPlan=null;
     try {
       VoltTable dependency;
-      byte[] fragmentPlan=m_fragmentMsg.getFragmentPlan(frag);
+      fragmentPlan=m_fragmentMsg.getFragmentPlan(frag);
       if (fragmentPlan != null) {
-        fragmentId=siteConnection.loadPlanFragment(fragmentPlan);
+        fragmentId=siteConnection.loadOrAddRefPlanFragment(planHash,fragmentPlan);
+      }
+ else {
+        fragmentId=siteConnection.getFragmentIdForPlanHash(planHash);
       }
       dependency=siteConnection.executePlanFragments(1,new long[]{fragmentId},new long[]{inputDepId},new ParameterSet[]{params},m_txnState.spHandle,m_txnState.uniqueId,m_txnState.isReadOnly())[0];
       if (hostLog.isTraceEnabled()) {
@@ -27,14 +32,19 @@
       currentFragResponse.addDependency(outputDepId,dependency);
     }
  catch (    final EEException e) {
-      hostLog.l7dlog(Level.TRACE,LogKeys.host_ExecutionSite_ExceptionExecutingPF.name(),new Object[]{fragmentId},e);
+      hostLog.l7dlog(Level.TRACE,LogKeys.host_ExecutionSite_ExceptionExecutingPF.name(),new Object[]{Encoder.hexEncode(planHash)},e);
       currentFragResponse.setStatus(FragmentResponseMessage.UNEXPECTED_ERROR,e);
       break;
     }
 catch (    final SQLException e) {
-      hostLog.l7dlog(Level.TRACE,LogKeys.host_ExecutionSite_ExceptionExecutingPF.name(),new Object[]{fragmentId},e);
+      hostLog.l7dlog(Level.TRACE,LogKeys.host_ExecutionSite_ExceptionExecutingPF.name(),new Object[]{Encoder.hexEncode(planHash)},e);
       currentFragResponse.setStatus(FragmentResponseMessage.UNEXPECTED_ERROR,e);
       break;
+    }
+ finally {
+      if (fragmentPlan != null) {
+        siteConnection.decrefPlanFragmentById(fragmentId);
+      }
     }
   }
   return currentFragResponse;
