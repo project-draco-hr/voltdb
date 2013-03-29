@@ -3,14 +3,22 @@
   client=ClientFactory.createClient(clientConfig);
   connect(config.servers);
   topo=getCluterTopology();
-  VoltTable t=catalogChange(null,true);
+  VoltTable t=null;
+  while (t == null) {
+    t=catalogChange(null,true);
+  }
   startTime=System.currentTimeMillis();
   while (config.duration == 0 || (System.currentTimeMillis() - startTime < (config.duration * 1000))) {
     loadTable(t);
     for (int j=0; j < 3; j++) {
       String tableName=TableHelper.getTableName(t);
       VoltTable preT=sample(t);
-      t=catalogChange(t,(j == 0) && (rand.nextInt(5) == 0));
+      VoltTable newT=null;
+      boolean isNewTable=(j == 0) && (rand.nextInt(5) == 0);
+      while (newT == null) {
+        newT=catalogChange(t,isNewTable);
+      }
+      t=newT;
       if (TableHelper.getTableName(t).equals(tableName)) {
         VoltTable guessT=t.clone(4096 * 1024);
         TableHelper.migrateTable(preT,guessT);
