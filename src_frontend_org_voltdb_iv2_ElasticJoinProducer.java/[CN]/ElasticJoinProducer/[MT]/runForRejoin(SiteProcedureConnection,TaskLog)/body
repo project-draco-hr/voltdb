@@ -4,30 +4,18 @@
  else   if (!m_firstFragResponseSent) {
     sendFirstFragResponse();
   }
- else   if (m_completionMonitorAwait.isDone()) {
-    JOINLOG.info("P" + m_partitionId + " run for rejoin is complete");
-    SnapshotCompletionInterest.SnapshotCompletionEvent event=null;
-    try {
-      event=m_completionMonitorAwait.get();
-      assert(event != null);
+ else   if (!m_replicatedStreamFinished) {
+    if (m_replicatedCompletionMonitor.isDone()) {
+      notifyReplicatedSnapshotFinished();
+      return;
     }
- catch (    InterruptedException e) {
-      VoltDB.crashLocalVoltDB("Impossible interruption happend",true,e);
-    }
-catch (    ExecutionException e) {
-      VoltDB.crashLocalVoltDB("Error waiting for snapshot to finish",true,e);
-    }
-    RejoinMessage rm=new RejoinMessage(m_mailbox.getHSId(),RejoinMessage.Type.SNAPSHOT_FINISHED);
-    m_mailbox.send(m_coordinatorHsId,rm);
-    setJoinComplete(siteConnection,event.exportSequenceNumbers);
-    return;
-  }
  else {
-    Pair<Integer,ByteBuffer> dataPair=m_snapshotData.poll();
-    if (dataPair != null) {
-      JOINLOG.info("P" + m_partitionId + " restoring table "+ dataPair.getFirst()+ " block of ("+ dataPair.getSecond().position()+ ","+ dataPair.getSecond().limit()+ ")");
-      restoreBlock(dataPair,siteConnection);
+      runForReplicatedDataTransfer(siteConnection);
     }
+  }
+ else   if (!m_partitionedStreamFinished) {
+    runForBlockingDataTransfer(siteConnection);
+    return;
   }
   m_taskQueue.offer(this);
 }

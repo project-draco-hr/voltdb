@@ -1,0 +1,33 @@
+{
+  JOINLOG.info("P" + m_partitionId + " blocking partitioned table transfer starts");
+  Pair<Integer,ByteBuffer> tableBlock=m_firstWork.get();
+  while (tableBlock != null) {
+    restoreBlock(tableBlock,siteConnection);
+    try {
+      tableBlock=m_dataSink.take();
+    }
+ catch (    InterruptedException e) {
+      JOINLOG.warn("ElasticJoinProducer interrupted at take()");
+      tableBlock=null;
+    }
+  }
+  m_dataSink.close();
+  JOINLOG.debug(m_whoami + " partitioned table snapshot transfer is finished");
+  SnapshotCompletionEvent event=null;
+  try {
+    event=m_partitionedCompletionMonitor.get();
+    assert(event != null);
+    JOINLOG.debug("P" + m_partitionId + " noticed partitioned table snapshot completion");
+    m_completionAction.setSnapshotTxnId(event.multipartTxnId);
+  }
+ catch (  InterruptedException e) {
+    VoltDB.crashLocalVoltDB("Impossible interruption happend",true,e);
+  }
+catch (  ExecutionException e) {
+    VoltDB.crashLocalVoltDB("Error waiting for snapshot to finish",true,e);
+  }
+  RejoinMessage rm=new RejoinMessage(m_mailbox.getHSId(),RejoinMessage.Type.SNAPSHOT_FINISHED);
+  m_mailbox.send(m_coordinatorHsId,rm);
+  m_partitionedStreamFinished=true;
+  setJoinComplete(siteConnection,event.exportSequenceNumbers);
+}
