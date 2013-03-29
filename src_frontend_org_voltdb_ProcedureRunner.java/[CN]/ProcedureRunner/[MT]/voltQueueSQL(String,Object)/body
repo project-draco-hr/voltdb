@@ -13,7 +13,12 @@
     assert(1 == paw.plannedStatements.size());
     QueuedSQL queuedSQL=new QueuedSQL();
     AdHocPlannedStatement plannedStatement=paw.plannedStatements.get(0);
-    queuedSQL.stmt=SQLStmtAdHocHelper.createWithPlan(plannedStatement.sql,plannedStatement.core.aggregatorFragment,plannedStatement.core.collectorFragment,plannedStatement.core.isReplicatedTableDML,plannedStatement.core.readOnly,plannedStatement.core.parameterTypes);
+    long aggFragId=m_site.loadOrAddRefPlanFragment(plannedStatement.core.aggregatorHash,plannedStatement.core.aggregatorFragment);
+    long collectorFragId=0;
+    if (plannedStatement.core.collectorFragment != null) {
+      collectorFragId=m_site.loadOrAddRefPlanFragment(plannedStatement.core.collectorHash,plannedStatement.core.collectorFragment);
+    }
+    queuedSQL.stmt=SQLStmtAdHocHelper.createWithPlan(plannedStatement.sql,aggFragId,plannedStatement.core.aggregatorHash,true,collectorFragId,plannedStatement.core.collectorHash,true,plannedStatement.core.isReplicatedTableDML,plannedStatement.core.readOnly,plannedStatement.core.parameterTypes,m_site);
     if (plannedStatement.extractedParamValues.size() == 0) {
       queuedSQL.params=getCleanParams(queuedSQL.stmt,args);
     }
@@ -22,7 +27,7 @@
         throw new ExpectedProcedureException("Number of arguments provided was " + args.length + " where 0 were expected for statement "+ sql);
       }
       Object[] extractedParams=plannedStatement.extractedParamValues.toArray();
-      if (extractedParams.length != queuedSQL.stmt.numStatementParamJavaTypes) {
+      if (extractedParams.length != queuedSQL.stmt.statementParamJavaTypes.length) {
         String msg=String.format("Wrong number of extracted param for parameterized statement: %s",sql);
         throw new VoltAbortException(msg);
       }

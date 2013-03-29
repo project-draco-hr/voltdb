@@ -1,40 +1,50 @@
 {
-  final FragmentResponseMessage currentFragResponse=new FragmentResponseMessage(m_task,m_initiator.getHSId());
+  final FragmentResponseMessage currentFragResponse=new FragmentResponseMessage(m_fragmentMsg,m_initiator.getHSId());
   currentFragResponse.setStatus(FragmentResponseMessage.SUCCESS,null);
   if (m_inputDeps != null) {
     siteConnection.stashWorkUnitDependencies(m_inputDeps);
   }
-  if (m_task.isEmptyForRestart()) {
-    int outputDepId=m_task.getOutputDepId(0);
+  if (m_fragmentMsg.isEmptyForRestart()) {
+    int outputDepId=m_fragmentMsg.getOutputDepId(0);
     currentFragResponse.addDependency(outputDepId,new VoltTable(new ColumnInfo[]{new ColumnInfo("UNUSED",VoltType.INTEGER)},1));
     return currentFragResponse;
   }
-  for (int frag=0; frag < m_task.getFragmentCount(); frag++) {
-    long fragmentId=m_task.getFragmentId(frag);
-    final int outputDepId=m_task.getOutputDepId(frag);
-    ParameterSet params=m_task.getParameterSetForFragment(frag);
-    final int inputDepId=m_task.getOnlyInputDepId(frag);
+  for (int frag=0; frag < m_fragmentMsg.getFragmentCount(); frag++) {
+    byte[] planHash=m_fragmentMsg.getPlanHash(frag);
+    final int outputDepId=m_fragmentMsg.getOutputDepId(frag);
+    ParameterSet params=m_fragmentMsg.getParameterSetForFragment(frag);
+    final int inputDepId=m_fragmentMsg.getOnlyInputDepId(frag);
+    long fragmentId=0;
+    byte[] fragmentPlan=null;
     try {
       VoltTable dependency;
-      byte[] fragmentPlan=m_task.getFragmentPlan(frag);
+      fragmentPlan=m_fragmentMsg.getFragmentPlan(frag);
       if (fragmentPlan != null) {
-        fragmentId=siteConnection.loadPlanFragment(fragmentPlan);
+        fragmentId=siteConnection.loadOrAddRefPlanFragment(planHash,fragmentPlan);
       }
-      dependency=siteConnection.executePlanFragments(1,new long[]{fragmentId},new long[]{inputDepId},new ParameterSet[]{params},m_txn.spHandle,m_txn.uniqueId,m_txn.isReadOnly())[0];
+ else {
+        fragmentId=siteConnection.getFragmentIdForPlanHash(planHash);
+      }
+      dependency=siteConnection.executePlanFragments(1,new long[]{fragmentId},new long[]{inputDepId},new ParameterSet[]{params},m_txnState.spHandle,m_txnState.uniqueId,m_txnState.isReadOnly())[0];
       if (hostLog.isTraceEnabled()) {
         hostLog.l7dlog(Level.TRACE,LogKeys.org_voltdb_ExecutionSite_SendingDependency.name(),new Object[]{outputDepId},null);
       }
       currentFragResponse.addDependency(outputDepId,dependency);
     }
  catch (    final EEException e) {
-      hostLog.l7dlog(Level.TRACE,LogKeys.host_ExecutionSite_ExceptionExecutingPF.name(),new Object[]{fragmentId},e);
+      hostLog.l7dlog(Level.TRACE,LogKeys.host_ExecutionSite_ExceptionExecutingPF.name(),new Object[]{Encoder.hexEncode(planHash)},e);
       currentFragResponse.setStatus(FragmentResponseMessage.UNEXPECTED_ERROR,e);
       break;
     }
 catch (    final SQLException e) {
-      hostLog.l7dlog(Level.TRACE,LogKeys.host_ExecutionSite_ExceptionExecutingPF.name(),new Object[]{fragmentId},e);
+      hostLog.l7dlog(Level.TRACE,LogKeys.host_ExecutionSite_ExceptionExecutingPF.name(),new Object[]{Encoder.hexEncode(planHash)},e);
       currentFragResponse.setStatus(FragmentResponseMessage.UNEXPECTED_ERROR,e);
       break;
+    }
+ finally {
+      if (fragmentPlan != null) {
+        siteConnection.decrefPlanFragmentById(fragmentId);
+      }
     }
   }
   return currentFragResponse;
