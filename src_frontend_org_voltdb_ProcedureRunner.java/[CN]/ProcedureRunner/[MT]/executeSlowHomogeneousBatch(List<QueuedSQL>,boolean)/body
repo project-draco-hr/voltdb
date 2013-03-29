@@ -14,41 +14,7 @@
     }
     ByteBuffer params=fs.getBuffer();
     assert(params != null);
-    if (queuedSQL.stmt.catStmt != null) {
-      int numFrags=queuedSQL.stmt.catStmt.getFragments().size();
-      assert(numFrags > 0);
-      assert(numFrags <= 2);
-      Iterator<PlanFragment> fragmentIter=queuedSQL.stmt.catStmt.getFragments().iterator();
-      if (numFrags == 1) {
-        PlanFragment frag=fragmentIter.next();
-        state.addFragment(i,frag,params);
-      }
- else {
-        PlanFragment frag1=fragmentIter.next();
-        assert(frag1 != null);
-        PlanFragment frag2=fragmentIter.next();
-        assert(frag2 != null);
-        if (frag1.getHasdependencies() == false) {
-          state.addFragmentPair(i,frag1,frag2,params);
-        }
- else {
-          state.addFragmentPair(i,frag2,frag1,params);
-        }
-      }
-    }
- else {
-      SQLStmtPlan plan=queuedSQL.stmt.getPlan();
-      assert(plan != null);
-      byte[] collectorFragment=plan.getCollectorFragment();
-      byte[] aggregatorFragment=plan.getAggregatorFragment();
-      assert(aggregatorFragment != null);
-      if (collectorFragment == null) {
-        state.addCustomFragment(i,aggregatorFragment,params);
-      }
- else {
-        state.addCustomFragmentPair(i,collectorFragment,aggregatorFragment,params);
-      }
-    }
+    state.addStatement(i,queuedSQL.stmt,params,m_site);
   }
   m_txnState.setupProcedureResume(finalTask,state.m_depsToResume);
   for (int i=0; i < state.m_depsForLocalTask.length; i++) {
@@ -70,14 +36,7 @@
     state.m_results[i]=matchingTablesForId.get(0);
     final SQLStmt stmt=batch.get(i).stmt;
     boolean isReplicated;
-    if (stmt.catStmt != null) {
-      isReplicated=stmt.catStmt.getReplicatedtabledml();
-    }
- else {
-      final SQLStmtPlan plan=stmt.getPlan();
-      assert(plan != null);
-      isReplicated=plan.isReplicatedTableDML();
-    }
+    isReplicated=stmt.isReplicatedTableDML;
     if (isReplicated) {
       long newVal=state.m_results[i].asScalarLong() / m_site.getReplicatedDMLDivisor();
       state.m_results[i]=new VoltTable(new VoltTable.ColumnInfo("modified_tuples",VoltType.BIGINT));
