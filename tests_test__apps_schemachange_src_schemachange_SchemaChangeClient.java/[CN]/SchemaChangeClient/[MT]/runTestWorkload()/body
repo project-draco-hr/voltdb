@@ -9,25 +9,31 @@
   }
   startTime=System.currentTimeMillis();
   while (config.duration == 0 || (System.currentTimeMillis() - startTime < (config.duration * 1000))) {
+    long sampleOffset=Math.min((long)(config.targetrowcount * .75),111000);
     loadTable(t);
     for (int j=0; j < 3; j++) {
       String tableName=TableHelper.getTableName(t);
-      VoltTable preT=sample(t);
+      VoltTable preT=null;
+      long max=maxId(t);
+      if (max > 0) {
+        max=Math.min((long)(max * .75),max - 100);
+        assert(max >= 0);
+        preT=sample(sampleOffset,t);
+      }
       VoltTable newT=null;
       boolean isNewTable=(j == 0) && (rand.nextInt(5) == 0);
       while (newT == null) {
         newT=catalogChange(t,isNewTable);
       }
       t=newT;
-      if (TableHelper.getTableName(t).equals(tableName)) {
+      if (!isNewTable && (preT != null)) {
         VoltTable guessT=t.clone(4096 * 1024);
         TableHelper.migrateTable(preT,guessT);
-        VoltTable postT=sample(t);
-        postT.resetRowPosition();
-        preT.resetRowPosition();
-        StringBuilder sb=new StringBuilder();
-        if (!TableHelper.deepEqualsWithErrorMsg(postT,guessT,sb)) {
-          System.err.println(_F(sb.toString()));
+        VoltTable result=callROProcedureWithRetry("VerifySchemaChanged" + tableName,sampleOffset,guessT).getResults()[0];
+        boolean success=result.fetchRow(0).getLong(0) == 1;
+        String err=result.fetchRow(0).getString(1);
+        if (!success) {
+          System.err.println(_F(err));
           assert(false);
         }
       }
