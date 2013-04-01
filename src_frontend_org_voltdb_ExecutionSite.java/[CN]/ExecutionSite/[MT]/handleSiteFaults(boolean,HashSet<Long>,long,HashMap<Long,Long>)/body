@@ -23,71 +23,24 @@
     }
     m_rejoinLog.info("Scheduling snapshot after txnId " + globalInitiationPoint + " for cluster partition fault. Current commit point: "+ this.lastCommittedTxnId);
     SnapshotSchedule schedule=m_context.cluster.getFaultsnapshots().get("CLUSTER_PARTITION");
-    m_transactionQueue.makeRoadBlock(globalInitiationPoint,QueueState.BLOCKED_CLOSED,new ExecutionSiteLocalSnapshotMessage(globalInitiationPoint,schedule.getPath(),schedule.getPrefix(),true));
   }
   for (  Long i : failedSites) {
     failedInitiators.add(i);
-    m_transactionQueue.gotFaultForInitiator(i);
   }
   Set<Long> faultedTxns=new HashSet<Long>();
   Iterator<Long> it=m_transactionsById.keySet().iterator();
   while (it.hasNext()) {
     final long tid=it.next();
     TransactionState ts=m_transactionsById.get(tid);
-    ts.handleSiteFaults(failedSites);
     if (initiatorSafeInitiationPoint.containsKey(ts.initiatorHSId) && ts.txnId > initiatorSafeInitiationPoint.get(ts.initiatorHSId) && failedSites.contains(ts.initiatorHSId)) {
       m_rejoinLog.info("Site " + m_siteId + " faulting non-globally initiated transaction "+ ts.txnId);
       it.remove();
       if (!ts.isReadOnly()) {
         faultedTxns.add(ts.txnId);
       }
-      m_transactionQueue.faultTransaction(ts);
-    }
- else     if (ts instanceof MultiPartitionParticipantTxnState && failedSites.contains(ts.coordinatorSiteId)) {
-      MultiPartitionParticipantTxnState mpts=(MultiPartitionParticipantTxnState)ts;
-      if (ts.isInProgress() && ts.txnId <= globalMultiPartCommitPoint) {
-        m_rejoinLog.info("Committing in progress multi-partition txn " + ts.txnId + " even though coordinator was on a failed host because the txnId <= "+ "the global multi-part commit point");
-        CompleteTransactionMessage ft=mpts.createCompleteTransactionMessage(false,false);
-        ft.m_sourceHSId=m_siteId;
-        m_mailbox.deliverFront(ft);
-      }
- else       if (ts.isInProgress() && ts.txnId > globalMultiPartCommitPoint) {
-        m_rejoinLog.info("Rolling back in progress multi-partition txn " + ts.txnId + " because the coordinator was on a failed host and the txnId > "+ "the global multi-part commit point");
-        CompleteTransactionMessage ft=mpts.createCompleteTransactionMessage(true,false);
-        ft.m_sourceHSId=m_siteId;
-        if (!ts.isReadOnly()) {
-          faultedTxns.add(ts.txnId);
-        }
-        m_mailbox.deliverFront(ft);
-      }
- else {
-        m_rejoinLog.info("Faulting multi-part transaction " + ts.txnId + " because the coordinator was on a failed node");
-        it.remove();
-        if (!ts.isReadOnly()) {
-          faultedTxns.add(ts.txnId);
-        }
-        m_transactionQueue.faultTransaction(ts);
-      }
-    }
- else     if (ts instanceof MultiPartitionParticipantTxnState && ts.coordinatorSiteId == m_siteId) {
-      if (ts.isInProgress()) {
-        m_mailbox.deliverFront(new CheckTxnStateCompletionMessage(ts.txnId,m_siteId));
-      }
     }
   }
   if (m_recoveryProcessor != null) {
     m_recoveryProcessor.handleSiteFaults(failedSites,m_tracker);
-  }
-  try {
-    Semaphore logFault=VoltDB.instance().getCommandLog().logFault(failedInitiators,faultedTxns);
-    if (logFault != null) {
-      logFault.acquire();
-    }
- else {
-      VoltDB.crashLocalVoltDB("Node failure before log is initialized",false,null);
-    }
-  }
- catch (  InterruptedException e) {
-    VoltDB.crashLocalVoltDB("Interrupted while attempting to log a fault",true,e);
   }
 }

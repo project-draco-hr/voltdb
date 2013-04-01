@@ -3,6 +3,7 @@
   VoltTable t2=null;
   String currentName=t1 == null ? "B" : TableHelper.getTableName(t1);
   String newName=currentName;
+  VoltTable versionT=TableHelper.quickTable(String.format("V%s (BIGINT)",schemaVersionNo + 1));
   if (newTable) {
     newName=currentName.equals("A") ? "B" : "A";
     t2=TableHelper.getTotallyRandomTable(newName,rand);
@@ -10,33 +11,71 @@
  else {
     t2=TableHelper.mutateTable(t1,false,rand);
   }
-  System.out.printf("New Schema:\n%s\n",TableHelper.ddlForTable(t2));
+  log.info(_F("New Schema:\n%s",TableHelper.ddlForTable(t2)));
   builder.addLiteralSchema(TableHelper.ddlForTable(t2));
+  builder.addLiteralSchema(TableHelper.ddlForTable(versionT));
   if (newName.equalsIgnoreCase("A")) {
     int pkeyIndex=TableHelper.getBigintPrimaryKeyIndexIfExists(t2);
     builder.addPartitionInfo(newName,t2.getColumnName(pkeyIndex));
+    builder.addProcedures(VerifySchemaChangedA.class);
+  }
+ else {
+    builder.addProcedures(VerifySchemaChangedB.class);
   }
   byte[] catalogData=builder.compileToBytes();
   assert(catalogData != null);
   long count=tupleCount(t1);
   long start=System.nanoTime();
   if (newTable) {
-    System.out.println("Starting catalog update to swap tables.");
+    log.info(_F("Starting catalog update to swap tables."));
   }
  else {
-    System.out.println("Starting catalog update to change schema.");
+    log.info(_F("Starting catalog update to change schema."));
   }
-  ClientResponse cr=client.callProcedure("@UpdateApplicationCatalog",catalogData,null);
-  assert(cr.getStatus() == ClientResponse.SUCCESS);
-  long end=System.nanoTime();
-  double seconds=(end - start) / 1000000000.0;
-  if (newTable) {
-    System.out.printf("Completed catalog update that swapped tables in %.4f seconds\n",seconds);
+  boolean success=false;
+  ClientResponse cr=null;
+  try {
+    cr=client.callProcedure("@UpdateApplicationCatalog",catalogData,null);
   }
+ catch (  NoConnectionsException e) {
+  }
+catch (  IOException e) {
+    logStackTrace(e);
+    System.exit(-1);
+  }
+  if (cr != null) {
+switch (cr.getStatus()) {
+case ClientResponse.SUCCESS:
+      success=true;
+    break;
+case ClientResponse.CONNECTION_LOST:
+case ClientResponse.CONNECTION_TIMEOUT:
+case ClientResponse.RESPONSE_UNKNOWN:
+case ClientResponse.SERVER_UNAVAILABLE:
+  break;
+case ClientResponse.UNEXPECTED_FAILURE:
+case ClientResponse.GRACEFUL_FAILURE:
+case ClientResponse.USER_ABORT:
+assert(false);
+System.exit(-1);
+}
+}
+int versionObserved=verifyAndGetSchemaVersion();
+if (versionObserved == schemaVersionNo) {
+assert(success == false);
+return null;
+}
  else {
-    System.out.printf("Completed catalog update of %d tuples in %.4f seconds (%d tuples/sec)\n",count,seconds,(long)(count / seconds));
-  }
-  System.out.println("Sleeping for 5s");
-  Thread.sleep(5000);
-  return t2;
+assert(versionObserved == (schemaVersionNo + 1));
+schemaVersionNo++;
+long end=System.nanoTime();
+double seconds=(end - start) / 1000000000.0;
+if (newTable) {
+log.info(_F("Completed catalog update that swapped tables in %.4f seconds",seconds));
+}
+ else {
+log.info(_F("Completed catalog update of %d tuples in %.4f seconds (%d tuples/sec)",count,seconds,(long)(count / seconds)));
+}
+return t2;
+}
 }
