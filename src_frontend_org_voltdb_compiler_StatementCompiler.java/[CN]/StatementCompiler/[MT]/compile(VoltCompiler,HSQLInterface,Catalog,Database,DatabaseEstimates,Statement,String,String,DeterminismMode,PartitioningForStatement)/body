@@ -71,17 +71,33 @@ catch (  Exception e) {
   BuildDirectoryUtils.writeFile("statement-winner-plans",name + ".txt",planString);
   compiler.captureDiagnosticContext(planString);
   catalogStmt.setExplainplan(Encoder.hexEncode(plan.explainedPlan));
+  MessageDigest md=null;
+  try {
+    md=MessageDigest.getInstance("SHA-1");
+  }
+ catch (  NoSuchAlgorithmException e) {
+    e.printStackTrace();
+    assert(false);
+    System.exit(-1);
+  }
   PlanFragment planFragment=catalogStmt.getFragments().add("0");
   planFragment.setHasdependencies(plan.subPlanGraph != null);
   planFragment.setNontransactional(!fragmentReferencesPersistentTable(plan.rootPlanGraph));
   planFragment.setMultipartition(plan.subPlanGraph != null);
-  writePlanBytes(compiler,planFragment,plan.rootPlanGraph);
+  byte[] planBytes=writePlanBytes(compiler,planFragment,plan.rootPlanGraph);
+  md.update(planBytes,0,planBytes.length);
+  md.reset();
+  md.update(planBytes);
+  planFragment.setPlanhash(Encoder.hexEncode(md.digest()));
   if (plan.subPlanGraph != null) {
     planFragment=catalogStmt.getFragments().add("1");
     planFragment.setHasdependencies(false);
     planFragment.setNontransactional(false);
     planFragment.setMultipartition(true);
-    writePlanBytes(compiler,planFragment,plan.subPlanGraph);
+    byte[] subBytes=writePlanBytes(compiler,planFragment,plan.subPlanGraph);
+    md.reset();
+    md.update(subBytes);
+    planFragment.setPlanhash(Encoder.hexEncode(md.digest()));
   }
   int validType=catalogStmt.getQuerytype();
   assert(validType != QueryType.INVALID.getValue());
