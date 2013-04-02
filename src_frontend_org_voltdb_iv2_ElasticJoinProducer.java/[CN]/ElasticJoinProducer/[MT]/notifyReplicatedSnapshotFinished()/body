@@ -1,0 +1,32 @@
+{
+  JOINLOG.info("P" + m_partitionId + " noticed replicated table snapshot completion");
+  SnapshotCompletionEvent event;
+  try {
+    event=m_replicatedCompletionMonitor.get();
+    assert(event != null);
+  }
+ catch (  InterruptedException e) {
+    VoltDB.crashLocalVoltDB("Impossible interruption happend",true,e);
+  }
+catch (  ExecutionException e) {
+    VoltDB.crashLocalVoltDB("Error waiting for snapshot to finish",true,e);
+  }
+  RejoinMessage rm=new RejoinMessage(m_mailbox.getHSId(),RejoinMessage.Type.SNAPSHOT_FINISHED);
+  m_mailbox.send(m_coordinatorHsId,rm);
+  m_replicatedStreamFinished=true;
+  Thread firstSnapshotBlock=new Thread(){
+    @Override public void run(){
+      Pair<Integer,ByteBuffer> rejoinWork=null;
+      try {
+        rejoinWork=m_dataSink.take();
+      }
+ catch (      InterruptedException e) {
+        VoltDB.crashLocalVoltDB("Interrupted in take()ing first snapshot block for rejoin",true,e);
+      }
+      m_firstWork.set(rejoinWork);
+      m_taskQueue.offer(ElasticJoinProducer.this);
+    }
+  }
+;
+  firstSnapshotBlock.start();
+}
