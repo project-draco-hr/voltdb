@@ -1,0 +1,150 @@
+{
+  ListenableFuture<?> retval=null;
+  if (m_snapshotTableTasks == null || m_availableSnapshotBuffers.isEmpty() || (!ignoreQuietPeriod && inQuietPeriod())) {
+    return retval;
+  }
+  while (!m_snapshotTableTasks.isEmpty()) {
+    final SnapshotTableTask currentTask=m_snapshotTableTasks.peek();
+    assert(currentTask != null);
+    final int headerSize=currentTask.m_target.getHeaderSize();
+    int serialized=0;
+    final BBContainer snapshotBuffer=m_availableSnapshotBuffers.poll();
+    assert(snapshotBuffer != null);
+    snapshotBuffer.b.clear();
+    snapshotBuffer.b.position(headerSize);
+    if (!currentTask.m_isDevNull) {
+      serialized=ee.tableStreamSerializeMore(snapshotBuffer,currentTask.m_tableId,TableStreamType.SNAPSHOT);
+      if (serialized < 0) {
+        VoltDB.crashLocalVoltDB("Failure while serialize data from a table for COW snapshot",false,null);
+      }
+    }
+    if (serialized == 0) {
+      final SnapshotTableTask t=m_snapshotTableTasks.poll();
+      SNAP_LOG.debug("Finished snapshot task: " + t);
+      if (t.m_isReplicated && t.m_target.getFormat().isTableBased()) {
+        final Thread terminatorThread=new Thread("Replicated SnapshotDataTarget terminator "){
+          @Override public void run(){
+            try {
+              t.m_target.close();
+            }
+ catch (            IOException e) {
+              throw new RuntimeException(e);
+            }
+catch (            InterruptedException e) {
+              throw new RuntimeException(e);
+            }
+          }
+        }
+;
+        m_snapshotTargetTerminators.add(terminatorThread);
+        terminatorThread.start();
+      }
+      m_availableSnapshotBuffers.offer(snapshotBuffer);
+      continue;
+    }
+    snapshotBuffer.b.limit(serialized + headerSize);
+    snapshotBuffer.b.position(0);
+    Callable<BBContainer> valueForTarget=Callables.returning(snapshotBuffer);
+    for (    SnapshotDataFilter filter : currentTask.m_filters) {
+      valueForTarget=filter.filter(valueForTarget);
+    }
+    retval=currentTask.m_target.write(valueForTarget,currentTask);
+    if (retval != null) {
+      final ListenableFuture<?> retvalFinal=retval;
+      retvalFinal.addListener(new Runnable(){
+        @Override public void run(){
+          try {
+            retvalFinal.get();
+          }
+ catch (          Throwable t) {
+            if (m_lastSnapshotSucceded) {
+              SNAP_LOG.error("Error while attempting to write snapshot data to file " + currentTask.m_target,t);
+              m_lastSnapshotSucceded=false;
+            }
+          }
+        }
+      }
+,MoreExecutors.sameThreadExecutor());
+    }
+    quietPeriodSet(ignoreQuietPeriod);
+    break;
+  }
+  if (m_snapshotTableTasks.isEmpty()) {
+    SNAP_LOG.debug("Finished with tasks");
+    SiteTasker postSnapshotTask=m_siteTasksPostSnapshotting.remove(partitionId);
+    if (postSnapshotTask != null) {
+      m_siteTaskerQueue.offer(postSnapshotTask);
+    }
+    final ArrayList<SnapshotDataTarget> snapshotTargets=m_snapshotTargets;
+    m_snapshotTargets=null;
+    m_snapshotTableTasks=null;
+    boolean IamLast=false;
+synchronized (ExecutionSitesCurrentlySnapshotting) {
+      if (!ExecutionSitesCurrentlySnapshotting.contains(this)) {
+        VoltDB.crashLocalVoltDB("Currently snapshotting site didn't find itself in set of snapshotting sites",true,null);
+      }
+      IamLast=ExecutionSitesCurrentlySnapshotting.size() == 1;
+      if (!IamLast) {
+        ExecutionSitesCurrentlySnapshotting.remove(this);
+      }
+    }
+    if (IamLast) {
+      SNAP_LOG.debug("I AM LAST!");
+      final long txnId=m_lastSnapshotTxnId;
+      final int numHosts=m_lastSnapshotNumHosts;
+      final Map<String,Map<Integer,Pair<Long,Long>>> exportSequenceNumbers=m_exportSequenceNumbersToLogOnCompletion;
+      m_exportSequenceNumbersToLogOnCompletion=null;
+      final Thread terminatorThread=new Thread("Snapshot terminator"){
+        @Override public void run(){
+          try {
+            for (            Thread t : m_snapshotTargetTerminators) {
+              if (t == this) {
+                continue;
+              }
+              try {
+                t.join();
+              }
+ catch (              InterruptedException e) {
+                return;
+              }
+            }
+            for (            final SnapshotDataTarget t : snapshotTargets) {
+              try {
+                t.close();
+              }
+ catch (              IOException e) {
+                m_lastSnapshotSucceded=false;
+                throw new RuntimeException(e);
+              }
+catch (              InterruptedException e) {
+                m_lastSnapshotSucceded=false;
+                throw new RuntimeException(e);
+              }
+            }
+            Runnable r=null;
+            while ((r=m_tasksOnSnapshotCompletion.poll()) != null) {
+              try {
+                r.run();
+              }
+ catch (              Exception e) {
+                SNAP_LOG.error("Error running snapshot completion task",e);
+              }
+            }
+          }
+  finally {
+            try {
+              logSnapshotCompleteToZK(txnId,numHosts,m_lastSnapshotSucceded,exportSequenceNumbers);
+            }
+  finally {
+              ExecutionSitesCurrentlySnapshotting.remove(SnapshotSiteProcessor.this);
+            }
+          }
+        }
+      }
+;
+      m_snapshotTargetTerminators.add(terminatorThread);
+      terminatorThread.start();
+    }
+  }
+  return retval;
+}
