@@ -1,0 +1,102 @@
+{
+  while (warmupComplete.get() == false) {
+    if (m_sp) {
+      if (rand.nextDouble() < config.getputratio) {
+        try {
+          m_client.callProcedure("Get",processor.generateRandomKeyForRetrieval());
+        }
+ catch (        Exception e) {
+        }
+      }
+ else {
+        final PayloadProcessor.Pair pair=processor.generateForStore();
+        try {
+          m_client.callProcedure("Put",pair.Key,pair.getStoreValue());
+        }
+ catch (        Exception e) {
+        }
+      }
+    }
+ else {
+      if (rand.nextDouble() < config.mpgetputratio) {
+        try {
+          m_client.callProcedure("GetMP",processor.generateRandomKeyForRetrieval());
+        }
+ catch (        Exception e) {
+        }
+      }
+ else {
+        try {
+          String[] keys=processor.generateAdjecentKeys(config.mpputpartitions);
+          final PayloadProcessor.Pair pair=processor.generateForStore();
+          m_client.callProcedure("PutsMP",pair.getStoreValue(),keys);
+        }
+ catch (        Exception e) {
+        }
+      }
+    }
+  }
+  while (benchmarkComplete.get() == false) {
+    if (m_sp) {
+      if (rand.nextDouble() < config.getputratio) {
+        try {
+          ClientResponse response=m_client.callProcedure("Get",processor.generateRandomKeyForRetrieval());
+          final VoltTable pairData=response.getResults()[0];
+          if (pairData.getRowCount() == 0)           missedGets.incrementAndGet();
+ else {
+            final PayloadProcessor.Pair pair=processor.retrieveFromStore(pairData.fetchRow(0).getString(0),pairData.fetchRow(0).getVarbinary(1));
+            successfulGets.incrementAndGet();
+            networkGetData.addAndGet(pair.getStoreValueLength());
+            rawGetData.addAndGet(pair.getRawValueLength());
+          }
+        }
+ catch (        Exception e) {
+          failedGets.incrementAndGet();
+        }
+      }
+ else {
+        final PayloadProcessor.Pair pair=processor.generateForStore();
+        try {
+          m_client.callProcedure("Put",pair.Key,pair.getStoreValue());
+          successfulPuts.incrementAndGet();
+        }
+ catch (        Exception e) {
+          failedPuts.incrementAndGet();
+        }
+        networkPutData.addAndGet(pair.getStoreValueLength());
+        rawPutData.addAndGet(pair.getRawValueLength());
+      }
+    }
+ else {
+      if (rand.nextDouble() < config.mpgetputratio) {
+        try {
+          ClientResponse response=m_client.callProcedure("GetMP",processor.generateRandomKeyForRetrieval());
+          final VoltTable pairData=response.getResults()[0];
+          if (pairData.getRowCount() == 0)           missedGets.incrementAndGet();
+ else {
+            final PayloadProcessor.Pair pair=processor.retrieveFromStore(pairData.fetchRow(0).getString(0),pairData.fetchRow(0).getVarbinary(1));
+            successfulGets.incrementAndGet();
+            networkGetData.addAndGet(pair.getStoreValueLength());
+            rawGetData.addAndGet(pair.getRawValueLength());
+          }
+        }
+ catch (        Exception e) {
+          failedGets.incrementAndGet();
+        }
+      }
+ else {
+        final String[] keys=processor.generateAdjecentKeys(config.mpputpartitions);
+        final PayloadProcessor.Pair pair=processor.generateForStore();
+        try {
+          m_client.callProcedure((config.mpputoptimistic ? "OptimisticPutsMP" : "PutsMP"),pair.getStoreValue(),keys);
+          successfulPuts.incrementAndGet();
+        }
+ catch (        Exception e) {
+          failedPuts.incrementAndGet();
+        }
+        networkPutData.addAndGet(pair.getStoreValueLength());
+        rawPutData.addAndGet(pair.getRawValueLength());
+      }
+    }
+  }
+}
