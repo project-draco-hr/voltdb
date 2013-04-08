@@ -13,10 +13,18 @@ synchronized (m_catalogUpdateLock) {
       hostLog.fatal("Failed catalog update." + " expectedCatalogVersion: " + expectedCatalogVersion + " currentTxnId: "+ currentTxnId+ " currentTxnUniqueId: "+ currentTxnUniqueId+ " m_catalogContext.catalogVersion "+ m_catalogContext.catalogVersion);
       throw new RuntimeException("Trying to update main catalog context with diff " + "commands generated for an out-of date catalog. Expected catalog version: " + expectedCatalogVersion + " does not match actual version: "+ m_catalogContext.catalogVersion);
     }
+    hostLog.info(String.format("Globally updating the current application catalog (new hash %s).",Encoder.hexEncode(catalogBytesHash).substring(0,10)));
+    SortedMap<String,String> oldDbgMap=m_catalogContext.getDebuggingInfoFromCatalog();
     m_catalogContext=m_catalogContext.update(currentTxnId,currentTxnUniqueId,newCatalogBytes,diffCommands,true,deploymentCRC);
     final CatalogSpecificPlanner csp=new CatalogSpecificPlanner(m_asyncCompilerAgent,m_catalogContext);
     m_txnIdToContextTracker.put(currentTxnId,new ContextTracker(m_catalogContext,csp));
-    m_catalogContext.logDebuggingInfoFromCatalog();
+    SortedMap<String,String> newDbgMap=m_catalogContext.getDebuggingInfoFromCatalog();
+    for (    Entry<String,String> e : newDbgMap.entrySet()) {
+      if (oldDbgMap.containsKey(e.getKey()) && oldDbgMap.get(e.getKey()).equals(e.getValue())) {
+        continue;
+      }
+      hostLog.info(e.getValue());
+    }
     SiteTracker siteTracker=VoltDB.instance().getSiteTrackerForSnapshot();
     List<Long> sites=siteTracker.getSitesForHost(m_messenger.getHostId());
     List<Pair<Integer,Long>> partitions=new ArrayList<Pair<Integer,Long>>();
