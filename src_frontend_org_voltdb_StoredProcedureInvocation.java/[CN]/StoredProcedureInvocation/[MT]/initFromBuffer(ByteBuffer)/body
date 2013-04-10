@@ -2,12 +2,15 @@
   FastDeserializer in=new FastDeserializer(buf);
   byte version=in.readByte();
   type=ProcedureInvocationType.typeFromByte(version);
+  int startPos=buf.position();
   if (type == ProcedureInvocationType.REPLICATED) {
     originalTxnId=in.readLong();
     originalUniqueId=in.readLong();
   }
   procName=in.readString().intern();
+  debug=procName.equals("@UpdateApplicationCatalog");
   clientHandle=in.readLong();
+  int beforeParamPos=buf.position();
   serializedParams=in.remainder();
   final ByteBuffer duplicate=serializedParams.duplicate();
   params=new FutureTask<ParameterSet>(new Callable<ParameterSet>(){
@@ -17,4 +20,9 @@
     }
   }
 );
+  int endPos=beforeParamPos + serializedParams.remaining();
+  if (debug) {
+    hostLog.info("UAC initFromBuffer called for: " + toStringLite());
+    hostLog.info(String.format("UAC Invocation initFromBuffer deserialized %d param bytes and %d total.",endPos - beforeParamPos,endPos - startPos));
+  }
 }
