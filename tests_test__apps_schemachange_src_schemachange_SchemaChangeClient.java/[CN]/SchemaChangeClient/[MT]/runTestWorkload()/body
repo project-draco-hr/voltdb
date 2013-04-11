@@ -4,8 +4,11 @@
   connect(config.servers);
   topo=getCluterTopology();
   VoltTable t=null;
+  TableHelper.ViewRep v=null;
   while (t == null) {
-    t=catalogChange(null,true);
+    Pair<VoltTable,TableHelper.ViewRep> schema=catalogChange(null,true,null);
+    t=schema.getFirst();
+    v=schema.getSecond();
   }
   startTime=System.currentTimeMillis();
   while (config.duration == 0 || (System.currentTimeMillis() - startTime < (config.duration * 1000))) {
@@ -23,11 +26,15 @@
         log.info(_F("Sampled table %s from offset %d limit 100 and found %d rows.",tableName,sampleOffset,preT.getRowCount()));
       }
       VoltTable newT=null;
+      TableHelper.ViewRep newV=null;
       boolean isNewTable=(j == 0) && (rand.nextInt(5) == 0);
       while (newT == null) {
-        newT=catalogChange(t,isNewTable);
+        Pair<VoltTable,TableHelper.ViewRep> schema=catalogChange(t,isNewTable,v);
+        newT=schema.getFirst();
+        newV=schema.getSecond();
       }
       t=newT;
+      v=newV;
       if (!isNewTable && (preT != null)) {
         VoltTable guessT=t.clone(4096 * 1024);
         TableHelper.migrateTable(preT,guessT);
