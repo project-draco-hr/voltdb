@@ -1,0 +1,28 @@
+{
+  if (hashinatorType == HashinatorType.LEGACY)   return;
+  byte[] config=ElasticHashinator.getConfigureBytes(3,ElasticHashinator.DEFAULT_TOKENS_PER_PARTITION);
+  byte[] newConfig=ElasticHashinator.addPartitions(new ElasticHashinator(config),Arrays.asList(3,4,5),ElasticHashinator.DEFAULT_TOKENS_PER_PARTITION);
+  TheHashinator.initialize(HashinatorType.ELASTIC.hashinatorClass,newConfig);
+  Map<Long,Integer> newTokens=deserializeElasticConfig(newConfig);
+  Set<Long> tokensForP4=new HashSet<Long>();
+  Set<Integer> predecessors=TheHashinator.predecessors(4);
+  assertFalse(predecessors.contains(4));
+  for (  Map.Entry<Long,Integer> entry : newTokens.entrySet()) {
+    if (entry.getValue() == 4) {
+      tokensForP4.add(entry.getKey());
+    }
+  }
+  assertEquals(ElasticHashinator.DEFAULT_TOKENS_PER_PARTITION,tokensForP4.size());
+  ElasticHashinator hashinator=new ElasticHashinator(TheHashinator.getCurrentConfig().getSecond());
+  for (  long token : tokensForP4) {
+    int pid;
+    if (token != Long.MIN_VALUE) {
+      pid=hashinator.partitionForToken(token - 1);
+    }
+ else {
+      pid=hashinator.partitionForToken(Long.MAX_VALUE);
+    }
+    predecessors.remove(pid);
+  }
+  assertEquals(0,predecessors.size());
+}

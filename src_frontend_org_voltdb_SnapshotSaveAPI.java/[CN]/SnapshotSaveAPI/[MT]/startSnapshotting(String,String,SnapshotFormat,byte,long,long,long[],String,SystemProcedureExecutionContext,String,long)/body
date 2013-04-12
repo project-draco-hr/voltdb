@@ -30,6 +30,8 @@ synchronized (SnapshotSiteProcessor.m_snapshotCreateLock) {
     SNAP_LOG.debug("Registering transaction id " + partitionTxnId + " for "+ TxnEgo.getPartitionId(partitionTxnId));
     m_partitionLastSeenTransactionIds.put(TxnEgo.getPartitionId(partitionTxnId),partitionTxnId);
   }
+  boolean runPostTasks=false;
+  VoltTable earlyResultTable=null;
   try {
     SnapshotSiteProcessor.m_snapshotCreateSetupBarrier.await();
     try {
@@ -43,18 +45,20 @@ synchronized (m_createLock) {
           VoltTable finalresult=m_createResult.get();
           if (finalresult != null) {
             m_createResult.set(null);
-            return finalresult;
+            earlyResultTable=finalresult;
           }
  else {
-            return SnapshotSave.constructNodeResultsTable();
+            earlyResultTable=SnapshotSave.constructNodeResultsTable();
           }
         }
  else         if (taskList == null) {
+          SNAP_LOG.debug("No task for this site, block " + block);
           if (block != 0) {
-            return SnapshotSave.constructPartitionResultsTable();
+            runPostTasks=true;
+            earlyResultTable=SnapshotSave.constructPartitionResultsTable();
           }
  else {
-            return SnapshotSave.constructNodeResultsTable();
+            earlyResultTable=SnapshotSave.constructNodeResultsTable();
           }
         }
  else {
@@ -71,11 +75,17 @@ synchronized (m_createLock) {
   }
 catch (  InterruptedException e) {
     result.addRow(context.getHostId(),hostname,"","FAILURE",CoreUtils.throwableToString(e));
-    return result;
+    earlyResultTable=result;
   }
 catch (  BrokenBarrierException e) {
     result.addRow(context.getHostId(),hostname,"","FAILURE",CoreUtils.throwableToString(e));
-    return result;
+    earlyResultTable=result;
+  }
+  if (earlyResultTable != null) {
+    if (runPostTasks) {
+      SnapshotSiteProcessor.runPostSnapshotTasks(context);
+    }
+    return earlyResultTable;
   }
   if (block != 0) {
     HashSet<Exception> failures=null;
@@ -83,6 +93,7 @@ catch (  BrokenBarrierException e) {
     String err="";
     try {
       failures=context.getSiteSnapshotConnection().completeSnapshotWork();
+      SnapshotSiteProcessor.runPostSnapshotTasks(context);
     }
  catch (    InterruptedException e) {
       status="FAILURE";
