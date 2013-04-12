@@ -1,0 +1,47 @@
+{
+  SortedMap<String,String> logLines=new TreeMap<String,String>();
+  Deployment deployment=cluster.getDeployment().iterator().next();
+  int hostCount=deployment.getHostcount();
+  int sitesPerHost=deployment.getSitesperhost();
+  int kFactor=deployment.getKfactor();
+  logLines.put("deployment1",String.format("Cluster has %d hosts with leader hostname: \"%s\". %d sites per host. K = %d.",hostCount,VoltDB.instance().getConfig().m_leader,sitesPerHost,kFactor));
+  int replicas=kFactor + 1;
+  int partitionCount=sitesPerHost * hostCount / replicas;
+  logLines.put("deployment2",String.format("The entire cluster has %d %s of%s %d logical partition%s.",replicas,replicas > 1 ? "copies" : "copy",partitionCount > 1 ? " each of the" : "",partitionCount,partitionCount > 1 ? "s" : ""));
+  logLines.put("voltdbroot","Using \"" + cluster.getVoltroot() + "\" for voltdbroot directory.");
+  if (cluster.getNetworkpartition()) {
+    logLines.put("partition-detection","Detection of network partitions in the cluster is enabled.");
+  }
+ else {
+    logLines.put("partition-detection","Detection of network partitions in the cluster is not enabled.");
+  }
+  if (cluster.getSecurityenabled()) {
+    logLines.put("sec-enabled","Client authentication is enabled.");
+  }
+ else {
+    logLines.put("sec-enabled","Client authentication is not enabled. Anonymous clients accepted.");
+  }
+  SnapshotSchedule ssched=database.getSnapshotschedule().get("default");
+  if (ssched == null || !ssched.getEnabled()) {
+    logLines.put("snapshot-schedule1","No schedule set for automated snapshots.");
+  }
+ else {
+    final String frequencyUnitString=ssched.getFrequencyunit().toLowerCase();
+    final char frequencyUnit=frequencyUnitString.charAt(0);
+    String msg="[unknown frequency]";
+switch (frequencyUnit) {
+case 's':
+      msg=String.valueOf(ssched.getFrequencyvalue()) + " seconds";
+    break;
+case 'm':
+  msg=String.valueOf(ssched.getFrequencyvalue()) + " minutes";
+break;
+case 'h':
+msg=String.valueOf(ssched.getFrequencyvalue()) + " hours";
+break;
+}
+logLines.put("snapshot-schedule1","Automatic snapshots enabled, saved to " + ssched.getPath() + " and named with prefix '"+ ssched.getPrefix()+ "'.");
+logLines.put("snapshot-schedule2","Database will retain a history of " + ssched.getRetain() + " snapshots, generated every "+ msg+ ".");
+}
+return logLines;
+}
