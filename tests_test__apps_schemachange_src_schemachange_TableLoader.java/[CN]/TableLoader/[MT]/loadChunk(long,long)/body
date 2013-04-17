@@ -1,0 +1,42 @@
+{
+  assert(startPkey >= 0);
+  assert(stopPkey >= 0);
+  if (startPkey >= stopPkey) {
+    return true;
+  }
+  outstandingPkeys.clear();
+  log.info(_F("loadChunk | startPkey:%d stopPkey:%d",startPkey,stopPkey));
+  long maxSentPkey=-1;
+  hadError.set(false);
+  for (long key=startPkey; key <= stopPkey; key++) {
+    if (hadError.get()) {
+      log.info("loadChunk exiting (failed) due to callback error");
+      return false;
+    }
+    Object[] row=TableHelper.randomRow(table,Integer.MAX_VALUE,rand);
+    row[pkeyColIndex]=key;
+    try {
+      outstandingPkeys.add(key);
+      maxSentPkey=key;
+      client.callProcedure(new Callback(key),insertCRUD,row);
+    }
+ catch (    Exception e) {
+      log.info("loadChunk exiting (failed) due to thrown exception: " + e.getMessage());
+      return false;
+    }
+  }
+  try {
+    client.drain();
+  }
+ catch (  Exception e) {
+    log.info("loadChunk exiting (failed) due to thrown exception during drain: " + e.getMessage());
+    return false;
+  }
+  if ((outstandingPkeys.size() == 0) && (maxSentPkey == stopPkey)) {
+    return true;
+  }
+ else {
+    log.info(_F("loadChunk exiting (failed) due to thrown condition %d, %d, %d",outstandingPkeys.size(),maxSentPkey,stopPkey));
+    return false;
+  }
+}
