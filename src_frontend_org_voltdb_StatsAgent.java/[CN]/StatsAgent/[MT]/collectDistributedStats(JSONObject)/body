@@ -1,0 +1,34 @@
+{
+  long requestId=obj.getLong("requestId");
+  long returnAddress=obj.getLong("returnAddress");
+  VoltTable[] stats=null;
+  String selectorString=obj.getString("selector");
+  SysProcSelector selector=SysProcSelector.valueOf(selectorString);
+  if (selector == SysProcSelector.DRNODE) {
+    stats=collectDRStats();
+  }
+  if (stats == null) {
+    ByteBuffer responseBuffer=ByteBuffer.allocate(8);
+    responseBuffer.putLong(requestId);
+    byte responseBytes[]=CompressionService.compressBytes(responseBuffer.array());
+    BinaryPayloadMessage bpm=new BinaryPayloadMessage(new byte[]{STATS_PAYLOAD},responseBytes);
+    m_mailbox.send(returnAddress,bpm);
+    return;
+  }
+  ByteBuffer[] bufs=new ByteBuffer[stats.length];
+  int statbytes=0;
+  for (int i=0; i < stats.length; i++) {
+    bufs[i]=stats[i].getBuffer();
+    bufs[i].position(0);
+    statbytes+=bufs[i].remaining();
+  }
+  ByteBuffer responseBuffer=ByteBuffer.allocate(16 + statbytes);
+  responseBuffer.putLong(requestId);
+  for (int i=0; i < bufs.length; i++) {
+    responseBuffer.putInt(bufs[i].remaining());
+    responseBuffer.put(bufs[i]);
+  }
+  byte responseBytes[]=CompressionService.compressBytes(responseBuffer.array());
+  BinaryPayloadMessage bpm=new BinaryPayloadMessage(new byte[]{STATS_PAYLOAD},responseBytes);
+  m_mailbox.send(returnAddress,bpm);
+}
