@@ -1,0 +1,42 @@
+{
+  if (hashinatorType == HashinatorType.LEGACY)   return;
+  ElasticHashinator hashinator=new ElasticHashinator(ElasticHashinator.getConfigureBytes(24,ElasticHashinator.DEFAULT_TOKENS_PER_PARTITION));
+  Map<Long,Long> range1=hashinator.pGetRanges(15);
+  assertFalse(range1.isEmpty());
+  long previous=Long.MIN_VALUE;
+  for (  long k : range1.keySet()) {
+    assertTrue(k >= previous);
+    previous=k;
+  }
+  for (  Map.Entry<Long,Long> entry : range1.entrySet()) {
+    long start=entry.getKey();
+    long end=entry.getValue();
+    assertEquals(15,hashinator.partitionForToken(start));
+    if (end != Long.MIN_VALUE) {
+      assertEquals(15,hashinator.partitionForToken(end - 1));
+    }
+ else {
+      assertEquals(15,hashinator.partitionForToken(Long.MAX_VALUE));
+    }
+    assertNotSame(15,hashinator.partitionForToken(end));
+  }
+  byte[] config=hashinator.pGetCurrentConfig().getSecond();
+  Map<Long,Integer> tokens=deserializeElasticConfig(config);
+  for (  Map.Entry<Long,Integer> entry : tokens.entrySet()) {
+    long token=entry.getKey();
+    int partition=entry.getValue();
+    if (partition == 15) {
+      boolean foundRange=false;
+      for (      Map.Entry<Long,Long> rangeEntry : range1.entrySet()) {
+        long start=rangeEntry.getKey();
+        long end=rangeEntry.getValue();
+        if (start <= token && token < end) {
+          foundRange=true;
+          break;
+        }
+      }
+      assertTrue(foundRange);
+    }
+  }
+  assertTrue(hashinator.pGetRanges(32).isEmpty());
+}
