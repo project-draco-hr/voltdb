@@ -4,76 +4,88 @@
   if (ignoreCrash) {
     throw new AssertionError("Faux crash of VoltDB successful.");
   }
-  List<String> currentStacktrace=new ArrayList<String>();
-  currentStacktrace.add("Stack trace from crashLocalVoltDB() method:");
+  if (VoltDB.isThisATest()) {
+    VoltLogger log=new VoltLogger("HOST");
+    log.warn("Declining to drop a crash file during a junit test.");
+  }
   try {
-    TimestampType ts=new TimestampType(new java.util.Date());
-    CatalogContext catalogContext=VoltDB.instance().getCatalogContext();
-    String root=catalogContext != null ? catalogContext.cluster.getVoltroot() + File.separator : "";
-    PrintWriter writer=new PrintWriter(root + "voltdb_crash" + ts.toString().replace(' ','-')+ ".txt");
-    writer.println("Time: " + ts);
-    writer.println("Message: " + errMsg);
-    writer.println();
-    writer.println("Platform Properties:");
-    PlatformProperties pp=PlatformProperties.getPlatformProperties();
-    String[] lines=pp.toLogLines().split("\n");
-    for (    String line : lines) {
-      writer.println(line.trim());
-    }
-    if (thrown != null) {
-      writer.println();
-      writer.println("****** Exception Thread ****** ");
-      thrown.printStackTrace(writer);
-    }
-    printStackTraces(writer,currentStacktrace);
-    writer.close();
-  }
- catch (  Throwable err) {
-    err.printStackTrace();
-  }
-  VoltLogger log=null;
-  try {
-    log=new VoltLogger("HOST");
-  }
- catch (  RuntimeException rt_ex) {
-  }
-  if (log != null) {
-    log.fatal(errMsg);
-    if (thrown != null) {
-      if (stackTrace) {
-        log.fatal("Fatal exception",thrown);
+    try {
+      List<String> currentStacktrace=new ArrayList<String>();
+      currentStacktrace.add("Stack trace from crashLocalVoltDB() method:");
+      try {
+        TimestampType ts=new TimestampType(new java.util.Date());
+        CatalogContext catalogContext=VoltDB.instance().getCatalogContext();
+        String root=catalogContext != null ? catalogContext.cluster.getVoltroot() + File.separator : "";
+        PrintWriter writer=new PrintWriter(root + "voltdb_crash" + ts.toString().replace(' ','-')+ ".txt");
+        writer.println("Time: " + ts);
+        writer.println("Message: " + errMsg);
+        writer.println();
+        writer.println("Platform Properties:");
+        PlatformProperties pp=PlatformProperties.getPlatformProperties();
+        String[] lines=pp.toLogLines().split("\n");
+        for (        String line : lines) {
+          writer.println(line.trim());
+        }
+        if (thrown != null) {
+          writer.println();
+          writer.println("****** Exception Thread ****** ");
+          thrown.printStackTrace(writer);
+        }
+        printStackTraces(writer,currentStacktrace);
+        writer.close();
+      }
+ catch (      Throwable err) {
+        err.printStackTrace();
+      }
+      VoltLogger log=null;
+      try {
+        log=new VoltLogger("HOST");
+      }
+ catch (      RuntimeException rt_ex) {
+      }
+      if (log != null) {
+        log.fatal(errMsg);
+        if (thrown != null) {
+          if (stackTrace) {
+            log.fatal("Fatal exception",thrown);
+          }
+ else {
+            log.fatal(thrown.toString());
+          }
+        }
+ else {
+          if (stackTrace) {
+            for (            String currentStackElem : currentStacktrace) {
+              log.fatal(currentStackElem);
+            }
+          }
+        }
       }
  else {
-        log.fatal(thrown.toString());
-      }
-    }
+        System.err.println(errMsg);
+        if (thrown != null) {
+          if (stackTrace) {
+            thrown.printStackTrace();
+          }
  else {
-      if (stackTrace) {
-        for (        String currentStackElem : currentStacktrace) {
-          log.fatal(currentStackElem);
+            System.err.println(thrown.toString());
+          }
+        }
+ else {
+          if (stackTrace) {
+            for (            String currentStackElem : currentStacktrace) {
+              System.err.println(currentStackElem);
+            }
+          }
         }
       }
     }
-  }
- else {
-    System.err.println(errMsg);
-    if (thrown != null) {
-      if (stackTrace) {
-        thrown.printStackTrace();
-      }
- else {
-        System.err.println(thrown.toString());
-      }
-    }
- else {
-      if (stackTrace) {
-        for (        String currentStackElem : currentStacktrace) {
-          System.err.println(currentStackElem);
-        }
-      }
+  finally {
+      System.err.println("VoltDB has encountered an unrecoverable error and is exiting.");
+      System.err.println("The log may contain additional information.");
     }
   }
-  System.err.println("VoltDB has encountered an unrecoverable error and is exiting.");
-  System.err.println("The log may contain additional information.");
-  System.exit(-1);
+  finally {
+    System.exit(-1);
+  }
 }

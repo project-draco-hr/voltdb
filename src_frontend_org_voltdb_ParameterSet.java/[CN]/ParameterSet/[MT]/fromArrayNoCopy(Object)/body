@@ -1,0 +1,133 @@
+{
+  byte[][][] encodedStringArrays=new byte[params.length][][];
+  byte[][] encodedStrings=new byte[params.length][];
+  int size=2;
+  for (int ii=0; ii < params.length; ii++) {
+    Object obj=params[ii];
+    if ((obj == null) || (obj == JSONObject.NULL)) {
+      size++;
+      continue;
+    }
+    size+=1;
+    Class<?> cls=obj.getClass();
+    if (cls.isArray()) {
+      if (obj instanceof byte[]) {
+        final byte[] b=(byte[])obj;
+        size+=4 + b.length;
+        continue;
+      }
+      VoltType type;
+      try {
+        type=VoltType.typeFromClass(cls.getComponentType());
+      }
+ catch (      VoltTypeException e) {
+        obj=getAKosherArray((Object[])obj);
+        cls=obj.getClass();
+        type=VoltType.typeFromClass(cls.getComponentType());
+      }
+      size+=1 + 2;
+switch (type) {
+case SMALLINT:
+        size+=2 * ((short[])obj).length;
+      break;
+case INTEGER:
+    size+=4 * ((int[])obj).length;
+  break;
+case BIGINT:
+size+=8 * ((long[])obj).length;
+break;
+case FLOAT:
+size+=8 * ((double[])obj).length;
+break;
+case STRING:
+String strings[]=(String[])obj;
+byte arrayEncodedStrings[][]=new byte[strings.length][];
+for (int zz=0; zz < strings.length; zz++) {
+if (strings[zz] == null) {
+size+=4;
+}
+ else {
+try {
+arrayEncodedStrings[zz]=strings[zz].getBytes("UTF-8");
+}
+ catch (UnsupportedEncodingException e) {
+VoltDB.crashLocalVoltDB("Shouldn't happen",false,e);
+}
+size+=4 + arrayEncodedStrings[zz].length;
+}
+}
+encodedStringArrays[ii]=arrayEncodedStrings;
+break;
+case TIMESTAMP:
+size+=8 * ((TimestampType[])obj).length;
+break;
+case DECIMAL:
+size+=16 * ((BigDecimal[])obj).length;
+break;
+case VOLTTABLE:
+for (VoltTable vt : (VoltTable[])obj) {
+size+=vt.getSerializedSize();
+}
+break;
+case VARBINARY:
+for (byte[] buf : (byte[][])obj) {
+size+=4;
+if (buf != null) {
+size+=buf.length;
+}
+}
+break;
+default :
+throw new RuntimeException("FIXME: Unsupported type " + type);
+}
+continue;
+}
+if (obj == VoltType.NULL_TIMESTAMP) {
+size+=8;
+continue;
+}
+ else if (obj == VoltType.NULL_STRING_OR_VARBINARY) {
+size+=4;
+continue;
+}
+ else if (obj == VoltType.NULL_DECIMAL) {
+size+=16;
+continue;
+}
+VoltType type=VoltType.typeFromClass(cls);
+switch (type) {
+case TINYINT:
+size++;
+break;
+case SMALLINT:
+size+=2;
+break;
+case INTEGER:
+size+=4;
+break;
+case BIGINT:
+size+=8;
+break;
+case FLOAT:
+size+=8;
+break;
+case STRING:
+byte encodedString[]=((String)obj).getBytes(VoltDB.UTF8ENCODING);
+size+=4 + encodedString.length;
+encodedStrings[ii]=encodedString;
+break;
+case TIMESTAMP:
+size+=8;
+break;
+case DECIMAL:
+size+=16;
+break;
+case VOLTTABLE:
+size+=((VoltTable)obj).getSerializedSize();
+break;
+default :
+throw new RuntimeException("FIXME: Unsupported type " + type);
+}
+}
+return new ParameterSet(params,size,encodedStrings,encodedStringArrays);
+}

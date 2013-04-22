@@ -1,0 +1,40 @@
+{
+  ClientStats stats=fullStatsContext.fetch().getStats();
+  String display="\n" + HORIZONTAL_RULE + " KV Store Results\n"+ HORIZONTAL_RULE+ "\nA total of %,d operations were posted...\n"+ " - GETs: %,9d Operations (%,d Misses and %,d Failures)\n"+ "         %,9d MB in compressed store data\n"+ "         %,9d MB in uncompressed application data\n"+ "         Network Throughput: %6.3f Gbps*\n"+ " - PUTs: %,9d Operations (%,d Failures)\n"+ "         %,9d MB in compressed store data\n"+ "         %,9d MB in uncompressed application data\n"+ "         Network Throughput: %6.3f Gbps*\n"+ " - Total Network Throughput: %6.3f Gbps*\n\n"+ "* Figure includes key & value traffic but not database protocol overhead.\n\n";
+  double oneGigabit=(1024 * 1024 * 1024) / 8;
+  long oneMB=(1024 * 1024);
+  double getThroughput=networkGetData.get() + (successfulGets.get() * config.keysize);
+  getThroughput/=(oneGigabit * config.duration);
+  long totalPuts=successfulPuts.get() + failedPuts.get();
+  double putThroughput=networkGetData.get() + (totalPuts * config.keysize);
+  putThroughput/=(oneGigabit * config.duration);
+  System.out.printf(display,stats.getInvocationsCompleted(),successfulGets.get(),missedGets.get(),failedGets.get(),networkGetData.get() / oneMB,rawGetData.get() / oneMB,getThroughput,successfulPuts.get(),failedPuts.get(),networkPutData.get() / oneMB,rawPutData.get() / oneMB,putThroughput,getThroughput + putThroughput);
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println(" Client Workload Statistics");
+  System.out.println(HORIZONTAL_RULE);
+  System.out.printf("Average throughput:            %,9d txns/sec\n",stats.getTxnThroughput());
+  System.out.printf("Average latency:               %,9.2f ms\n",stats.getAverageLatency());
+  System.out.printf("95th percentile latency:       %,9d ms\n",stats.kPercentileLatency(.95));
+  System.out.printf("99th percentile latency:       %,9d ms\n",stats.kPercentileLatency(.99));
+  for (  Entry<String,ClientStats> e : fullStatsContext.getStatsByProc().entrySet()) {
+    System.out.println("\nPROC: " + e.getKey());
+    System.out.printf("Average throughput:            %,9d txns/sec\n",e.getValue().getTxnThroughput());
+    System.out.printf("Average latency:               %,9.2f ms\n",e.getValue().getAverageLatency());
+    System.out.printf("95th percentile latency:       %,9d ms\n",e.getValue().kPercentileLatency(.95));
+    System.out.printf("99th percentile latency:       %,9d ms\n",e.getValue().kPercentileLatency(.99));
+  }
+  mpFullStatsContext.fetch();
+  for (  Entry<String,ClientStats> e : mpFullStatsContext.getStatsByProc().entrySet()) {
+    System.out.println("\nMP PROC: " + e.getKey());
+    System.out.printf("Average throughput:            %,9d txns/sec\n",e.getValue().getTxnThroughput());
+    System.out.printf("Average latency:               %,9.2f ms\n",e.getValue().getAverageLatency());
+    System.out.printf("95th percentile latency:       %,9d ms\n",e.getValue().kPercentileLatency(.95));
+    System.out.printf("99th percentile latency:       %,9d ms\n",e.getValue().kPercentileLatency(.99));
+  }
+  System.out.print("\n" + HORIZONTAL_RULE);
+  System.out.println(" System Server Statistics");
+  System.out.println(HORIZONTAL_RULE);
+  System.out.printf("Reported Internal Avg Latency: %,9.2f ms\n",stats.getAverageInternalLatency());
+  System.out.printf("Reported Internal Avg MP Latency: %,9.2f ms\n",mpFullStatsContext.getStats().getAverageInternalLatency());
+  client.writeSummaryCSV(stats,config.statsfile);
+}

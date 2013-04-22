@@ -1,30 +1,18 @@
 {
-  return executeQueuedSQL(batch,new FragmentExecutor(){
-    @Override public VoltTable[] onExecutePrePlanned(    final List<QueuedSQL> batch,    final boolean last){
-      final int batchSize=batch.size();
-      ParameterSet[] params=new ParameterSet[batchSize];
-      long[] fragmentIds=new long[batchSize];
-      int i=0;
-      for (      final QueuedSQL qs : batch) {
-        assert(qs.stmt.numFragGUIDs == 1);
-        fragmentIds[i]=qs.stmt.fragGUIDs[0];
-        params[i]=qs.params;
-        i++;
-      }
-      return m_site.executePlanFragments(batchSize,fragmentIds,null,params,m_txnState.spHandle,m_txnState.uniqueId,m_catProc.getReadonly());
+  final int batchSize=batch.size();
+  Object[] params=new Object[batchSize];
+  long[] fragmentIds=new long[batchSize];
+  int i=0;
+  for (  final QueuedSQL qs : batch) {
+    assert(qs.stmt.collector == null);
+    fragmentIds[i]=qs.stmt.aggregator.id;
+    if (qs.serialization != null) {
+      params[i]=qs.serialization;
     }
-    @Override public VoltTable[] onExecuteUnplanned(    final List<QueuedSQL> batch,    final boolean last){
-      final VoltTable[] results=new VoltTable[batch.size()];
-      for (int i=0; i < batch.size(); i++) {
-        final QueuedSQL queuedSQL=batch.get(i);
-        final SQLStmt stmt=queuedSQL.stmt;
-        final byte[] aggregatorFragment=stmt.getPlan().getAggregatorFragment();
-        assert(aggregatorFragment != null);
-        long fragId=m_site.loadPlanFragment(aggregatorFragment);
-        results[i]=m_site.executePlanFragments(1,new long[]{fragId},new long[]{AGG_DEPID},new ParameterSet[]{queuedSQL.params},m_txnState.spHandle,m_txnState.uniqueId,m_catProc.getReadonly())[0];
-      }
-      return results;
+ else {
+      params[i]=qs.params;
     }
+    i++;
   }
-);
+  return m_site.executePlanFragments(batchSize,fragmentIds,null,params,m_txnState.spHandle,m_txnState.uniqueId,m_catProc.getReadonly());
 }

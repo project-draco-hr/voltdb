@@ -1,9 +1,10 @@
 {
   hostLog.debug("STARTING: " + this);
-  MpTransactionState txn=(MpTransactionState)m_txn;
-  if (m_isRestart && (txn.m_task.getStoredProcedureName().startsWith("@") && !txn.m_task.getStoredProcedureName().startsWith("@AdHoc"))) {
-    InitiateResponseMessage errorResp=new InitiateResponseMessage(txn.m_task);
-    errorResp.setResults(new ClientResponseImpl(ClientResponse.UNEXPECTED_FAILURE,new VoltTable[]{},"Failure while running system procedure " + txn.m_task.getStoredProcedureName() + ", and system procedures can not be restarted."));
+  MpTransactionState txn=(MpTransactionState)m_txnState;
+  String spName=txn.m_initiationMsg.getStoredProcedureName();
+  if (m_isRestart && spName.startsWith("@") && !spName.startsWith("@AdHoc")&& !spName.equals("@UpdateApplicationCatalog")) {
+    InitiateResponseMessage errorResp=new InitiateResponseMessage(txn.m_initiationMsg);
+    errorResp.setResults(new ClientResponseImpl(ClientResponse.UNEXPECTED_FAILURE,new VoltTable[]{},"Failure while running system procedure " + txn.m_initiationMsg.getStoredProcedureName() + ", and system procedures can not be restarted."));
     txn.setNeedsRollback();
     completeInitiateTask(siteConnection);
     errorResp.m_sourceHSId=m_initiator.getHSId();
@@ -12,12 +13,12 @@
     return;
   }
   if (m_isRestart) {
-    CompleteTransactionMessage restart=new CompleteTransactionMessage(m_initiator.getHSId(),m_initiator.getHSId(),m_txn.txnId,m_txn.isReadOnly(),0,true,false,!m_txn.isReadOnly(),m_msg.isForReplay());
+    CompleteTransactionMessage restart=new CompleteTransactionMessage(m_initiator.getHSId(),m_initiator.getHSId(),m_txnState.txnId,m_txnState.isReadOnly(),0,true,false,!m_txnState.isReadOnly(),m_msg.isForReplay());
     restart.setTruncationHandle(m_msg.getTruncationHandle());
     restart.setOriginalTxnId(m_msg.getOriginalTxnId());
     m_initiator.send(com.google.common.primitives.Longs.toArray(m_initiatorHSIds),restart);
   }
-  final InitiateResponseMessage response=processInitiateTask(txn.m_task,siteConnection);
+  final InitiateResponseMessage response=processInitiateTask(txn.m_initiationMsg,siteConnection);
   int status=response.getClientResponseData().getStatus();
   if (status != ClientResponse.TXN_RESTART || (status == ClientResponse.TXN_RESTART && m_msg.isReadOnly())) {
     if (!response.shouldCommit()) {

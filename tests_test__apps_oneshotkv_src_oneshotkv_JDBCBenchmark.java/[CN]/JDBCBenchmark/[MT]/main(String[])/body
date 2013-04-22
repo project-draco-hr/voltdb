@@ -1,0 +1,67 @@
+{
+  try {
+    KVConfig config=new KVConfig();
+    config.parse(JDBCBenchmark.class.getName(),args);
+    System.out.println(config.getConfigDumpString());
+    Class.forName("org.voltdb.jdbc.Driver");
+    String url="jdbc:voltdb://" + config.servers;
+    System.out.printf("Connecting to: %s\n",url);
+    int sleep=1000;
+    while (true) {
+      try {
+        Con=DriverManager.getConnection(url,"","");
+        break;
+      }
+ catch (      Exception e) {
+        System.err.printf("Connection failed - retrying in %d second(s).\n",sleep / 1000);
+        try {
+          Thread.sleep(sleep);
+        }
+ catch (        Exception tie) {
+        }
+        if (sleep < 8000)         sleep+=sleep;
+      }
+    }
+    System.out.println("Connected.  Starting benchmark.");
+    final PayloadProcessor processor=new PayloadProcessor(config.keysize,config.minvaluesize,config.maxvaluesize,config.entropy,config.poolsize,config.usecompression);
+    if (config.preload) {
+      System.out.print("Initializing data store... ");
+      final CallableStatement initializeCS=Con.prepareCall("{call Initialize(?,?,?,?)}");
+      for (int i=0; i < config.poolsize; i+=1000) {
+        initializeCS.setInt(1,i);
+        initializeCS.setInt(2,Math.min(i + 1000,config.poolsize));
+        initializeCS.setString(3,processor.KeyFormat);
+        initializeCS.setBytes(4,processor.generateForStore().getStoreValue());
+        initializeCS.executeUpdate();
+      }
+      System.out.println(" Done.");
+    }
+    Timer timer=new Timer();
+    timer.scheduleAtFixedRate(new TimerTask(){
+      @Override public void run(){
+        try {
+          System.out.print(Con.unwrap(IVoltDBConnection.class).getStatistics("Get","Put"));
+        }
+ catch (        Exception x) {
+        }
+      }
+    }
+,config.displayinterval * 1000l,config.displayinterval * 1000l);
+    ArrayList<Thread> threads=new ArrayList<Thread>();
+    for (int i=0; i < config.threads; i++)     threads.add(new Thread(new ClientThread(url,processor,config.duration,config.getputratio)));
+    for (    Thread thread : threads)     thread.start();
+    for (    Thread thread : threads)     thread.join();
+    timer.cancel();
+    System.out.printf("\n-------------------------------------------------------------------------------------\n" + " Store Results\n" + "-------------------------------------------------------------------------------------\n\n"+ "A total of %,d operations was posted...\n"+ " - GETs: %,9d Operations (%,9d Misses/Failures)\n"+ "         %,9d MB in compressed store data\n"+ "         %,9d MB in uncompressed application data\n"+ "         Network Throughput: %6.3f Gbps*\n\n"+ " - PUTs: %,9d Operations (%,9d Failures)\n"+ "         %,9d MB in compressed store data\n"+ "         %,9d MB in uncompressed application data\n"+ "         Network Throughput: %6.3f Gbps*\n\n"+ " - Total Network Throughput: %6.3f Gbps*\n\n"+ "* Figure includes key & value traffic but not database protocol overhead.\n"+ "\n"+ "-------------------------------------------------------------------------------------\n",GetStoreResults.get(0) + GetStoreResults.get(1) + PutStoreResults.get(0)+ PutStoreResults.get(1),GetStoreResults.get(0),GetStoreResults.get(1),GetCompressionResults.get(0) / 1048576l,GetCompressionResults.get(1) / 1048576l,((double)GetCompressionResults.get(0) + (GetStoreResults.get(0) + GetStoreResults.get(1)) * config.keysize) / (134217728d * config.duration),PutStoreResults.get(0),PutStoreResults.get(1),PutCompressionResults.get(0) / 1048576l,PutCompressionResults.get(1) / 1048576l,((double)PutCompressionResults.get(0) + (PutStoreResults.get(0) + PutStoreResults.get(1)) * config.keysize) / (134217728d * config.duration),((double)GetCompressionResults.get(0) + (GetStoreResults.get(0) + GetStoreResults.get(1)) * config.keysize) / (134217728d * config.duration) + ((double)PutCompressionResults.get(0) + (PutStoreResults.get(0) + PutStoreResults.get(1)) * config.keysize) / (134217728d * config.duration));
+    System.out.println("\n\n-------------------------------------------------------------------------------------\n" + " System Statistics\n" + "-------------------------------------------------------------------------------------\n\n");
+    System.out.print(Con.unwrap(IVoltDBConnection.class).getStatistics("Get","Put").toString(false));
+    System.out.println("\n\n-------------------------------------------------------------------------------------\n" + " Detailed Statistics\n" + "-------------------------------------------------------------------------------------\n\n");
+    System.out.print(Con.unwrap(IVoltDBConnection.class).getStatistics().toString(false));
+    Con.unwrap(IVoltDBConnection.class).saveStatistics(config.statsfile);
+    Con.close();
+  }
+ catch (  Exception x) {
+    System.out.println("Exception: " + x);
+    x.printStackTrace();
+  }
+}

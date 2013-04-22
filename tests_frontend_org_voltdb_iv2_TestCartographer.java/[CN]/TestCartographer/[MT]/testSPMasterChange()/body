@@ -1,0 +1,29 @@
+{
+  ZooKeeper zk=getClient(0);
+  VoltZK.createPersistentZKNodes(zk);
+  LeaderCache spwriter=new LeaderCache(zk,VoltZK.iv2masters);
+  HostMessenger hm=mock(HostMessenger.class);
+  when(hm.getZK()).thenReturn(m_messengers.get(0).getZK());
+  Cartographer dut=new Cartographer(hm);
+  spwriter.start(true);
+  spwriter.put(0,0l);
+  verify(hm,timeout(10000)).send(anyLong(),any(VoltMessage.class));
+  reset(hm);
+  spwriter.put(1,1l);
+  verify(hm,timeout(10000)).send(anyLong(),any(VoltMessage.class));
+  reset(hm);
+  spwriter.put(2,2l);
+  verify(hm,timeout(10000)).send(anyLong(),any(VoltMessage.class));
+  reset(hm);
+  spwriter.put(0,3l);
+  ArgumentCaptor<Long> hsIdCaptor=ArgumentCaptor.forClass(Long.class);
+  ArgumentCaptor<BinaryPayloadMessage> bpmCaptor=ArgumentCaptor.forClass(BinaryPayloadMessage.class);
+  verify(hm,timeout(10000)).send(hsIdCaptor.capture(),bpmCaptor.capture());
+  JSONObject jsObj=new JSONObject(new String(bpmCaptor.getValue().m_payload,"UTF-8"));
+  System.out.println("BPM: " + jsObj.toString());
+  final int partitionId=jsObj.getInt(Cartographer.JSON_PARTITION_ID);
+  final long initiatorHSId=jsObj.getLong(Cartographer.JSON_INITIATOR_HSID);
+  assertEquals(0,partitionId);
+  assertEquals(3,initiatorHSId);
+  spwriter.shutdown();
+}

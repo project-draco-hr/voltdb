@@ -7,45 +7,13 @@
     TransactionInfoBaseMessage info=(TransactionInfoBaseMessage)message;
     assertTxnIdOrdering(info);
     if (info instanceof HeartbeatMessage) {
-      long lastSeenTxnFromInitiator=m_transactionQueue.noteTransactionRecievedAndReturnLastSeen(info.getInitiatorHSId(),info.getTxnId(),true,((HeartbeatMessage)info).getLastSafeTxnId());
-      HeartbeatResponseMessage response=new HeartbeatResponseMessage(m_siteId,lastSeenTxnFromInitiator,m_transactionQueue.getQueueState() == QueueState.BLOCKED_SAFETY);
-      m_mailbox.send(info.getInitiatorHSId(),response);
       return;
     }
  else     if (info instanceof InitiateTaskMessage) {
-      m_transactionQueue.noteTransactionRecievedAndReturnLastSeen(info.getInitiatorHSId(),info.getTxnId(),false,((InitiateTaskMessage)info).getLastSafeTxnId());
     }
  else     if (info instanceof MultiPartitionParticipantMessage) {
-      m_transactionQueue.noteTransactionRecievedAndReturnLastSeen(info.getInitiatorHSId(),info.getTxnId(),false,DtxnConstants.DUMMY_LAST_SEEN_TXN_ID);
     }
     TransactionState ts=m_transactionsById.get(info.getTxnId());
-    if (info instanceof CompleteTransactionMessage) {
-      CompleteTransactionMessage complete=(CompleteTransactionMessage)info;
-      if (ts != null) {
-        ts.processCompleteTransaction(complete);
-      }
- else {
-        if (complete.requiresAck()) {
-          CompleteTransactionResponseMessage ctrm=new CompleteTransactionResponseMessage(complete,m_siteId);
-          m_mailbox.send(complete.getCoordinatorHSId(),ctrm);
-        }
-      }
-      return;
-    }
-    if (ts == null) {
-      if (info.isSinglePartition()) {
-        ts=new SinglePartitionTxnState(m_mailbox,this,info);
-      }
- else {
-        ts=new MultiPartitionParticipantTxnState(m_mailbox,this,info);
-      }
-      if (m_transactionQueue.add(ts)) {
-        m_transactionsById.put(ts.txnId,ts);
-      }
- else {
-        hostLog.info("Dropping txn " + ts.txnId + " data from failed initiatorSiteId: "+ ts.initiatorHSId);
-      }
-    }
     if (ts != null) {
       if (message instanceof FragmentTaskMessage) {
         ts.createLocalFragmentWork((FragmentTaskMessage)message,false);
@@ -73,22 +41,6 @@
     RejoinMessage rm=(RejoinMessage)message;
     handleRejoinMessage(rm);
   }
- else   if (message instanceof FragmentResponseMessage) {
-    FragmentResponseMessage response=(FragmentResponseMessage)message;
-    TransactionState txnState=m_transactionsById.get(response.getTxnId());
-    if (txnState != null) {
-      assert(txnState instanceof MultiPartitionParticipantTxnState);
-      txnState.processRemoteWorkResponse(response);
-    }
-  }
- else   if (message instanceof CompleteTransactionResponseMessage) {
-    CompleteTransactionResponseMessage response=(CompleteTransactionResponseMessage)message;
-    TransactionState txnState=m_transactionsById.get(response.getTxnId());
-    if (txnState != null) {
-      assert(txnState instanceof MultiPartitionParticipantTxnState);
-      txnState.processCompleteTransactionResponse(response);
-    }
-  }
  else   if (message instanceof ExecutionSiteNodeFailureMessage) {
     discoverGlobalFaultData((ExecutionSiteNodeFailureMessage)message);
   }
@@ -96,8 +48,6 @@
     long txn_id=((CheckTxnStateCompletionMessage)message).m_txnId;
     TransactionState txnState=m_transactionsById.get(txn_id);
     if (txnState != null) {
-      assert(txnState instanceof MultiPartitionParticipantTxnState);
-      ((MultiPartitionParticipantTxnState)txnState).checkWorkUnits();
     }
   }
  else   if (message instanceof RawProcessor.ExportInternalMessage) {
