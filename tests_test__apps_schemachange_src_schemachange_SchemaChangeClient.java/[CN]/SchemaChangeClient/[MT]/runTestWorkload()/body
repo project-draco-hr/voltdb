@@ -1,14 +1,34 @@
 {
+  startTime=System.currentTimeMillis();
+class watchDog extends Thread {
+    @Override public void run(){
+      if (config.duration == 0)       return;
+      try {
+        Thread.sleep(config.duration * 1000);
+      }
+ catch (      Exception e) {
+      }
+      log.info("Duration limit reached, terminating run");
+      System.exit(0);
+    }
+  }
+  ;
+  watchDog th=new watchDog();
+  th.setDaemon(true);
+  th.start();
   ClientConfig clientConfig=new ClientConfig("","",new StatusListener());
+  clientConfig.setMaxOutstandingTxns(512);
   client=ClientFactory.createClient(clientConfig);
   connect(config.servers);
   topo=getCluterTopology();
   VoltTable t=null;
+  TableHelper.ViewRep v=null;
   while (t == null) {
-    t=catalogChange(null,true);
+    Pair<VoltTable,TableHelper.ViewRep> schema=catalogChange(null,true,null);
+    t=schema.getFirst();
+    v=schema.getSecond();
   }
-  startTime=System.currentTimeMillis();
-  while (config.duration == 0 || (System.currentTimeMillis() - startTime < (config.duration * 1000))) {
+  while (true) {
     loadTable(t);
     for (int j=0; j < 3; j++) {
       String tableName=TableHelper.getTableName(t);
@@ -16,18 +36,27 @@
       long max=maxId(t);
       long sampleOffset=-1;
       if (max > 0) {
-        sampleOffset=Math.min((long)(max * .75),max - 100);
+        if (max <= 100)         sampleOffset=0;
+ else         sampleOffset=Math.min((long)(max * .75),max - 100);
         assert(max >= 0);
         preT=sample(sampleOffset,t);
         assert(preT.getRowCount() > 0);
         log.info(_F("Sampled table %s from offset %d limit 100 and found %d rows.",tableName,sampleOffset,preT.getRowCount()));
       }
       VoltTable newT=null;
+      TableHelper.ViewRep newV=null;
       boolean isNewTable=(j == 0) && (rand.nextInt(5) == 0);
       while (newT == null) {
-        newT=catalogChange(t,isNewTable);
+        Pair<VoltTable,TableHelper.ViewRep> schema=catalogChange(t,isNewTable,v);
+        if (schema == null) {
+          log.info(_F("Retrying an unsuccessful catalog update."));
+          continue;
+        }
+        newT=schema.getFirst();
+        newV=schema.getSecond();
       }
       t=newT;
+      v=newV;
       if (!isNewTable && (preT != null)) {
         VoltTable guessT=t.clone(4096 * 1024);
         TableHelper.migrateTable(preT,guessT);
@@ -42,5 +71,4 @@
       }
     }
   }
-  client.close();
 }

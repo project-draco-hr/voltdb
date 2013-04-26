@@ -1,17 +1,36 @@
 {
+  Pair<Integer,ByteBuffer> tableBlock=m_dataSinks.get(0).poll();
+  if (tableBlock == null && !m_dataSinks.get(0).isEOF()) {
+    m_taskQueue.offer(this);
+    return;
+  }
   JOINLOG.info("P" + m_partitionId + " blocking partitioned table transfer starts");
-  Pair<Integer,ByteBuffer> tableBlock=m_firstWork.get();
-  while (tableBlock != null) {
-    restoreBlock(tableBlock,siteConnection);
-    try {
-      tableBlock=m_dataSink.take();
+  while (!m_dataSinks.isEmpty()) {
+    if (tableBlock != null) {
+      if (JOINLOG.isTraceEnabled()) {
+        JOINLOG.trace(m_whoami + "restoring partitioned table " + tableBlock.getFirst()+ " block of ("+ tableBlock.getSecond().position()+ ","+ tableBlock.getSecond().limit()+ ")");
+      }
+      restoreBlock(tableBlock,siteConnection);
     }
- catch (    InterruptedException e) {
-      JOINLOG.warn("ElasticJoinProducer interrupted at take()");
-      tableBlock=null;
+    tableBlock=null;
+    ListIterator<StreamSnapshotSink> sinkIter=m_dataSinks.listIterator();
+    while (sinkIter.hasNext()) {
+      StreamSnapshotSink sink=sinkIter.next();
+      if (sink.isEOF()) {
+        sink.close();
+        sinkIter.remove();
+        if (JOINLOG.isTraceEnabled()) {
+          JOINLOG.trace(m_whoami + " finished transfering partitioned table data from one partition");
+        }
+      }
+ else {
+        tableBlock=sink.poll();
+      }
+      if (tableBlock != null) {
+        break;
+      }
     }
   }
-  m_dataSink.close();
   JOINLOG.debug(m_whoami + " partitioned table snapshot transfer is finished");
   SnapshotCompletionEvent event=null;
   try {
