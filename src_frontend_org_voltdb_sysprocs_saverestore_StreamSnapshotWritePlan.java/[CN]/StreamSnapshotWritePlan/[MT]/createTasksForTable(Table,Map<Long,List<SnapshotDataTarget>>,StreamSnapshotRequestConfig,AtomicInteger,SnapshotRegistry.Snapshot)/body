@@ -1,0 +1,25 @@
+{
+  final List<SnapshotTableTask> tasksForThisTable=new ArrayList<SnapshotTableTask>();
+  final List<Long> srcHSIds=new ArrayList<Long>(dataTargets.keySet());
+  AbstractExpression predicate=null;
+  boolean deleteTuples=false;
+  if (!table.getIsreplicated()) {
+    predicate=createPredicateForTable(table,config);
+    deleteTuples=true;
+  }
+  for (  List<SnapshotDataTarget> targets : dataTargets.values()) {
+    m_targets.addAll(targets);
+    for (    SnapshotDataTarget target : targets) {
+      final Runnable onClose=new TargetStatsClosure(target,table.getTypeName(),numTables,snapshotRecord);
+      target.setOnCloseHandler(onClose);
+      final SnapshotTableTask task=new SnapshotTableTask(table.getRelativeIndex(),target,new SnapshotDataFilter[0],predicate,deleteTuples,table.getIsreplicated(),table.getTypeName());
+      tasksForThisTable.add(task);
+    }
+  }
+  if (table.getIsreplicated()) {
+    placeReplicatedTasks(tasksForThisTable,srcHSIds);
+  }
+ else {
+    placePartitionedTasks(tasksForThisTable,srcHSIds);
+  }
+}

@@ -14,43 +14,23 @@
     VoltTable schemaTable=CatalogUtil.getVoltTable(table);
     schemas.put(table.getRelativeIndex(),schemaTable.getSchemaBytes());
   }
-  Map<Long,SnapshotDataTarget> sdts=new HashMap<Long,SnapshotDataTarget>();
+  Map<Long,List<SnapshotDataTarget>> sdts=new HashMap<Long,List<SnapshotDataTarget>>();
   if (config.streamPairs.size() > 0) {
     SNAP_LOG.debug("Sites to stream from: " + CoreUtils.hsIdCollectionToString(config.streamPairs.keySet()));
-    for (    Entry<Long,Long> entry : config.streamPairs.entrySet()) {
-      sdts.put(entry.getKey(),new StreamSnapshotDataTarget(entry.getValue(),schemas));
+    for (    Entry<Long,List<Long>> entry : config.streamPairs.entrySet()) {
+      long srcHSId=entry.getKey();
+      List<Long> destHSIds=entry.getValue();
+      for (      long destHSId : destHSIds) {
+        MiscUtils.multimapPut(sdts,srcHSId,new StreamSnapshotDataTarget(destHSId,schemas));
+      }
     }
   }
  else {
     return false;
   }
-  for (  Entry<Long,SnapshotDataTarget> entry : sdts.entrySet()) {
-    final ArrayList<SnapshotTableTask> partitionedSnapshotTasks=new ArrayList<SnapshotTableTask>();
-    final ArrayList<SnapshotTableTask> replicatedSnapshotTasks=new ArrayList<SnapshotTableTask>();
-    SnapshotDataTarget sdt=entry.getValue();
-    m_targets.add(sdt);
-    for (    final Table table : config.tables) {
-      final Runnable onClose=new TargetStatsClosure(sdt,table.getTypeName(),numTables,snapshotRecord);
-      sdt.setOnCloseHandler(onClose);
-      AbstractExpression predicate=null;
-      boolean deleteTuples=false;
-      if (!table.getIsreplicated()) {
-        predicate=createPredicateForTable(table,config);
-        deleteTuples=true;
-      }
-      final SnapshotTableTask task=new SnapshotTableTask(table.getRelativeIndex(),sdt,new SnapshotDataFilter[0],predicate,deleteTuples,table.getIsreplicated(),table.getTypeName());
-      if (table.getIsreplicated()) {
-        replicatedSnapshotTasks.add(task);
-      }
- else {
-        partitionedSnapshotTasks.add(task);
-      }
-      result.addRow(context.getHostId(),hostname,table.getTypeName(),"SUCCESS","");
-    }
-    List<Long> thisOne=new ArrayList<Long>();
-    thisOne.add(entry.getKey());
-    placePartitionedTasks(partitionedSnapshotTasks,thisOne);
-    placeReplicatedTasks(replicatedSnapshotTasks,thisOne);
+  for (  final Table table : config.tables) {
+    createTasksForTable(table,sdts,config,numTables,snapshotRecord);
+    result.addRow(context.getHostId(),hostname,table.getTypeName(),"SUCCESS","");
   }
   return false;
 }
