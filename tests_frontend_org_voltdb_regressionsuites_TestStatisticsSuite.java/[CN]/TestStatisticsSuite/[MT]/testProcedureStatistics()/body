@@ -1,65 +1,41 @@
 {
-  Client client=getClient();
-  VoltTable results[]=null;
-  results=client.callProcedure("@Statistics","INITIATOR",0).getResults();
-  results=client.callProcedure("@Statistics","INITIATOR",0).getResults();
-  assertEquals(1,results.length);
-  System.out.println("Test initiators table: " + results[0].toString());
-  assertEquals(2,results[0].getRowCount());
-  int counts=0;
-  while (results[0].advanceRow()) {
-    String procName=results[0].getString("PROCEDURE_NAME");
-    if (procName.equals("@SystemCatalog")) {
-      assertEquals(1,results[0].getLong("INVOCATIONS"));
-      counts++;
-    }
- else     if (procName.equals("@Statistics")) {
-      assertEquals(1,results[0].getLong("INVOCATIONS"));
-      counts++;
-    }
+  System.out.println("\n\nTESTING PROCEDURE STATS\n\n\n");
+  Client client=getFullyConnectedClient();
+  ColumnInfo[] expectedSchema=new ColumnInfo[19];
+  expectedSchema[0]=new ColumnInfo("TIMESTAMP",VoltType.BIGINT);
+  expectedSchema[1]=new ColumnInfo("HOST_ID",VoltType.INTEGER);
+  expectedSchema[2]=new ColumnInfo("HOSTNAME",VoltType.STRING);
+  expectedSchema[3]=new ColumnInfo("SITE_ID",VoltType.INTEGER);
+  expectedSchema[4]=new ColumnInfo("PARTITION_ID",VoltType.INTEGER);
+  expectedSchema[5]=new ColumnInfo("PROCEDURE",VoltType.STRING);
+  expectedSchema[6]=new ColumnInfo("INVOCATIONS",VoltType.BIGINT);
+  expectedSchema[7]=new ColumnInfo("TIMED_INVOCATIONS",VoltType.BIGINT);
+  expectedSchema[8]=new ColumnInfo("MIN_EXECUTION_TIME",VoltType.BIGINT);
+  expectedSchema[9]=new ColumnInfo("MAX_EXECUTION_TIME",VoltType.BIGINT);
+  expectedSchema[10]=new ColumnInfo("AVG_EXECUTION_TIME",VoltType.BIGINT);
+  expectedSchema[11]=new ColumnInfo("MIN_RESULT_SIZE",VoltType.INTEGER);
+  expectedSchema[12]=new ColumnInfo("MAX_RESULT_SIZE",VoltType.INTEGER);
+  expectedSchema[13]=new ColumnInfo("AVG_RESULT_SIZE",VoltType.INTEGER);
+  expectedSchema[14]=new ColumnInfo("MIN_PARAMETER_SET_SIZE",VoltType.INTEGER);
+  expectedSchema[15]=new ColumnInfo("MAX_PARAMETER_SET_SIZE",VoltType.INTEGER);
+  expectedSchema[16]=new ColumnInfo("AVG_PARAMETER_SET_SIZE",VoltType.INTEGER);
+  expectedSchema[17]=new ColumnInfo("ABORTS",VoltType.BIGINT);
+  expectedSchema[18]=new ColumnInfo("FAILURES",VoltType.BIGINT);
+  VoltTable expectedTable=new VoltTable(expectedSchema);
+  VoltTable[] results=null;
+  for (int i=0; i < hosts * sites; i++) {
+    client.callProcedure("NEW_ORDER.insert",i);
   }
-  assertEquals(2,counts);
-  try {
-    client.callProcedure("@Statistics");
-    fail();
-  }
- catch (  ProcCallException ex) {
-    assertEquals("VOLTDB ERROR: PROCEDURE Statistics EXPECTS 3 PARAMS, BUT RECEIVED 1",ex.getMessage());
-  }
-  try {
-    client.callProcedure("@Statistics","garbage",0);
-    fail();
-  }
- catch (  ProcCallException ex) {
-  }
-  results=client.callProcedure("@Statistics",SysProcSelector.PARTITIONCOUNT.name(),0).getResults();
-  assertEquals(1,results.length);
-  assertTrue(results[0] != null);
-  assertEquals(1,results[0].getRowCount());
-  assertEquals(1,results[0].getColumnCount());
-  assertEquals(VoltType.INTEGER,results[0].getColumnType(0));
-  assertTrue(results[0].advanceRow());
-  final int siteCount=(int)results[0].getLong(0);
-  assertTrue(siteCount == TestSystemProcedureSuite.sites);
-  results=client.callProcedure("@Statistics","table",0).getResults();
-  assertTrue(results.length == 1);
-  assertEquals(TestSystemProcedureSuite.hosts * TestSystemProcedureSuite.sites * 3,results[0].getRowCount());
-  System.out.println("Test statistics table: " + results[0].toString());
-  results=client.callProcedure("@Statistics","index",0).getResults();
-  assertEquals(1,results.length);
-  Thread.sleep(1000);
-  results=client.callProcedure("@Statistics","memory",0).getResults();
-  assertEquals(1,results.length);
-  System.out.println("Node memory statistics table: " + results[0].toString());
-  results=client.callProcedure("@Statistics","nodememory",0).getResults();
-  assertEquals(1,results.length);
-  System.out.println("Node memory statistics table: " + results[0].toString());
   for (int ii=0; ii < 3; ii++) {
     results=client.callProcedure("GoSleep",3000,0,null).getResults();
   }
   results=client.callProcedure("@Statistics","procedure",0).getResults();
-  assertEquals(1,results.length);
   System.out.println("Test procedures table: " + results[0].toString());
+  assertEquals(1,results.length);
+  validateSchema(results[0],expectedTable);
+  validateRowSeenAtAllHosts(results[0],"PROCEDURE","NEW_ORDER.insert",false);
+  validateRowSeenAtAllPartitions(results[0],"PROCEDURE","NEW_ORDER.insert",false);
+  results[0].resetRowPosition();
   VoltTable stats=results[0];
   String procname="blerg";
   while (!procname.equals("org.voltdb_testprocs.regressionsuites.malicious.GoSleep")) {
@@ -93,21 +69,4 @@
   assertTrue("Failed MIN_PARAMETER_SET_SIZE < 1,000,000, value was: " + min_parameter_set_size,min_parameter_set_size < 1000000L);
   assertTrue("Failed MAX_PARAMETER_SET_SIZE < 1,000,000, value was: " + max_parameter_set_size,max_parameter_set_size < 1000000L);
   assertTrue("Failed AVG_PARAMETER_SET_SIZE < 1,000,000, value was: " + avg_parameter_set_size,avg_parameter_set_size < 1000000L);
-  results=client.callProcedure("@Statistics","iostats",0).getResults();
-  assertEquals(1,results.length);
-  System.out.println("Test iostats table: " + results[0].toString());
-  if (VoltDB.checkTestEnvForIv2()) {
-    results=client.callProcedure("@Statistics","TOPO",0).getResults();
-    assertEquals(2,results.length);
-    System.out.println("Test TOPO table: " + results[0].toString());
-    System.out.println("Test TOPO table: " + results[1].toString());
-    VoltTable topo=results[0];
-    boolean found=false;
-    while (topo.advanceRow()) {
-      if ((int)topo.getLong("Partition") == TxnEgo.MP_PARTITIONID) {
-        found=true;
-      }
-    }
-    assertTrue(found);
-  }
 }
