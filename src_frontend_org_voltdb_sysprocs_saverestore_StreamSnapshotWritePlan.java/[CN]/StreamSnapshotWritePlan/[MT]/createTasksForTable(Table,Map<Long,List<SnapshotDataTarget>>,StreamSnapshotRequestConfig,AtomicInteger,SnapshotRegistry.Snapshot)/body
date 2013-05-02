@@ -1,6 +1,4 @@
 {
-  final List<SnapshotTableTask> tasksForThisTable=new ArrayList<SnapshotTableTask>();
-  final List<Long> srcHSIds=new ArrayList<Long>(dataTargets.keySet());
   AbstractExpression predicate=null;
   boolean deleteTuples=false;
   if (!table.getIsreplicated()) {
@@ -9,19 +7,22 @@
       deleteTuples=true;
     }
   }
-  for (  List<SnapshotDataTarget> targets : dataTargets.values()) {
+  for (  Entry<Long,List<SnapshotDataTarget>> siteTargets : dataTargets.entrySet()) {
+    long hsId=siteTargets.getKey();
+    List<SnapshotDataTarget> targets=siteTargets.getValue();
     m_targets.addAll(targets);
+    final List<SnapshotTableTask> tasksForThisTable=new ArrayList<SnapshotTableTask>();
     for (    SnapshotDataTarget target : targets) {
       final Runnable onClose=new TargetStatsClosure(target,table.getTypeName(),numTables,snapshotRecord);
       target.setOnCloseHandler(onClose);
       final SnapshotTableTask task=new SnapshotTableTask(table,target,new SnapshotDataFilter[0],predicate,deleteTuples);
       tasksForThisTable.add(task);
     }
-  }
-  if (table.getIsreplicated()) {
-    placeReplicatedTasks(tasksForThisTable,srcHSIds);
-  }
+    if (table.getIsreplicated()) {
+      placeReplicatedTasks(tasksForThisTable,Arrays.asList(hsId));
+    }
  else {
-    placePartitionedTasks(tasksForThisTable,srcHSIds);
+      placePartitionedTasks(tasksForThisTable,Arrays.asList(hsId));
+    }
   }
 }
