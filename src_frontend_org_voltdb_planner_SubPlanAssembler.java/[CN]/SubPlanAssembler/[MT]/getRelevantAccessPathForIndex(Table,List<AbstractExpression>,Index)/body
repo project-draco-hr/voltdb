@@ -3,16 +3,16 @@
   filtersToCover.addAll(exprs);
   String exprsjson=index.getExpressionsjson();
   List<AbstractExpression> indexedExprs=null;
-  List<ColumnRef> sortedColumns=null;
-  int[] colIds=null;
+  List<ColumnRef> indexedColRefs=null;
+  int[] indexedColIds=null;
   int keyComponentCount;
   if (exprsjson.isEmpty()) {
-    sortedColumns=CatalogUtil.getSortedCatalogItems(index.getColumns(),"index");
-    keyComponentCount=sortedColumns.size();
-    colIds=new int[keyComponentCount];
+    indexedColRefs=CatalogUtil.getSortedCatalogItems(index.getColumns(),"index");
+    keyComponentCount=indexedColRefs.size();
+    indexedColIds=new int[keyComponentCount];
     int ii=0;
-    for (    ColumnRef cr : sortedColumns) {
-      colIds[ii++]=cr.getColumn().getIndex();
+    for (    ColumnRef cr : indexedColRefs) {
+      indexedColIds[ii++]=cr.getColumn().getIndex();
     }
   }
  else {
@@ -30,45 +30,13 @@
   retval.use=IndexUseType.COVERING_UNIQUE_EQUALITY;
   retval.index=index;
   List<AbstractExpression> bindingsForOrder=new ArrayList<AbstractExpression>();
-  if (m_parsedStmt instanceof ParsedSelectStmt) {
-    ParsedSelectStmt parsedSelectStmt=(ParsedSelectStmt)m_parsedStmt;
-    int countOrderBys=parsedSelectStmt.orderColumns.size();
-    if (countOrderBys > 0 && countOrderBys <= keyComponentCount) {
-      Iterator<ColumnRef> colRefIter=(indexedExprs == null) ? sortedColumns.iterator() : null;
-      boolean ascending=parsedSelectStmt.orderColumns.get(0).ascending;
-      retval.sortDirection=ascending ? SortDirectionType.ASC : SortDirectionType.DESC;
-      int jj=0;
-      for (      ParsedColInfo colInfo : parsedSelectStmt.orderColumns) {
-        if (colInfo.ascending == ascending) {
-          if (indexedExprs == null) {
-            assert(colRefIter.hasNext());
-            ColumnRef colRef=colRefIter.next();
-            if (colInfo.expression instanceof TupleValueExpression && colInfo.tableName.equals(table.getTypeName()) && colInfo.columnName.equals(colRef.getColumn().getTypeName())) {
-              continue;
-            }
-          }
- else {
-            assert(jj < indexedExprs.size());
-            AbstractExpression nextExpr=indexedExprs.get(jj++);
-            List<AbstractExpression> moreBindings=colInfo.expression.bindingToIndexedExpression(nextExpr);
-            if (moreBindings != null) {
-              bindingsForOrder.addAll(moreBindings);
-              continue;
-            }
-          }
-        }
-        retval.sortDirection=SortDirectionType.INVALID;
-        bindingsForOrder=null;
-        break;
-      }
-    }
-  }
+  determineIndexOrdering(table,keyComponentCount,indexedExprs,indexedColRefs,retval,bindingsForOrder);
   int coveredCount=0;
   AbstractExpression coveringExpr=null;
   int coveringColId=-1;
   for (; coveredCount < keyComponentCount; ++coveredCount) {
     if (indexedExprs == null) {
-      coveringColId=colIds[coveredCount];
+      coveringColId=indexedColIds[coveredCount];
     }
  else {
       coveringExpr=indexedExprs.get(coveredCount);
