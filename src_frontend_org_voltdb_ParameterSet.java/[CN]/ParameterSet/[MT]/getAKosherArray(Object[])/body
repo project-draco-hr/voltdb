@@ -3,6 +3,7 @@
   int integers=0;
   int strings=0;
   int doubles=0;
+  int nulls=0;
   if (array.length == 0)   return new int[0];
   for (int i=0; i < array.length; i++) {
     if (array[i] instanceof VoltTable)     tables++;
@@ -13,6 +14,8 @@
  else     if (array[i] instanceof Integer)     integers++;
  else     if (array[i] instanceof Long)     integers++;
  else     if (array[i] instanceof String)     strings++;
+ else     if (array[i] == VoltType.NULL_STRING_OR_VARBINARY)     nulls++;
+ else     if (null == array[i])     nulls++;
  else {
       String msg=String.format("Type %s not supported in parameter set arrays.",array[i].getClass().toString());
       throw new RuntimeException(msg);
@@ -28,15 +31,25 @@
     for (int i=0; i < array.length; i++)     retval[i]=(VoltTable)array[i];
     return retval;
   }
+  if (nulls == array.length)   throw new RuntimeException("Unable to determine type. Parameter set array contains all NULL values.");
   if (strings > 0) {
     if ((integers + doubles) > 0) {
       String msg="Cannot mix strings and numbers in parameter set arrays.";
       throw new RuntimeException(msg);
     }
-    assert(strings == array.length);
-    String[] retval=new String[strings];
-    for (int i=0; i < array.length; i++)     retval[i]=(String)array[i];
+    assert((strings + nulls) == array.length);
+    String[] retval=new String[array.length];
+    for (int i=0; i < array.length; i++) {
+      if (array[i] == VoltType.NULL_STRING_OR_VARBINARY) {
+        array[i]=null;
+      }
+      retval[i]=(String)array[i];
+    }
     return retval;
+  }
+  if (nulls > 0) {
+    String msg="Cannot mix numerics and nulls in parameter set arrays.";
+    throw new RuntimeException(msg);
   }
   if (doubles > 0) {
     assert((doubles + integers) == array.length);
