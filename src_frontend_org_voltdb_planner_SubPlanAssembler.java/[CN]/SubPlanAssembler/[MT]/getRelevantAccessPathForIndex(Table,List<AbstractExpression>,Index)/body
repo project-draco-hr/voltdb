@@ -29,9 +29,11 @@
   AccessPath retval=new AccessPath();
   retval.use=IndexUseType.COVERING_UNIQUE_EQUALITY;
   retval.index=index;
+  int orderSpoilers[]=new int[keyComponentCount];
   List<AbstractExpression> bindingsForOrder=new ArrayList<AbstractExpression>();
-  determineIndexOrdering(table,keyComponentCount,indexedExprs,indexedColRefs,retval,bindingsForOrder);
+  int nSpoilers=determineIndexOrdering(table,keyComponentCount,indexedExprs,indexedColRefs,retval,orderSpoilers,bindingsForOrder);
   int coveredCount=0;
+  int nRecoveredSpoilers=0;
   AbstractExpression coveringExpr=null;
   int coveringColId=-1;
   for (; coveredCount < keyComponentCount; ++coveredCount) {
@@ -41,7 +43,7 @@
  else {
       coveringExpr=indexedExprs.get(coveredCount);
     }
-    IndexableExpression eqExpr=getIndexableExpressionFromFilters(ExpressionType.COMPARE_EQUAL,ExpressionType.COMPARE_EQUAL,coveringExpr,coveringColId,table,filtersToCover);
+    IndexableExpression eqExpr=getIndexableExpressionFromFilters(ExpressionType.COMPARE_EQUAL,ExpressionType.COMPARE_EQUAL,coveringExpr,coveringColId,table,filtersToCover,EXCLUDE_FROM_POST_FILTERS);
     if (eqExpr == null) {
       break;
     }
@@ -49,6 +51,9 @@
     retval.indexExprs.add(comparator);
     retval.bindings.addAll(eqExpr.getBindings());
     retval.endExprs.add(comparator);
+    if (nRecoveredSpoilers < nSpoilers && orderSpoilers[nRecoveredSpoilers] == coveredCount) {
+      ++nRecoveredSpoilers;
+    }
   }
   if (coveredCount == keyComponentCount) {
     retval.otherExprs.addAll(filtersToCover);
@@ -60,17 +65,28 @@
   if (!IndexType.isScannable(index.getType())) {
     return null;
   }
+  if (nRecoveredSpoilers < nSpoilers) {
+    assert(retval.sortDirection != SortDirectionType.INVALID);
+    List<AbstractExpression> otherBindingsForOrder=recoverOrderSpoilers(orderSpoilers,nSpoilers,nRecoveredSpoilers,indexedExprs,indexedColIds,table,filtersToCover);
+    if (otherBindingsForOrder == null) {
+      retval.sortDirection=SortDirectionType.INVALID;
+      bindingsForOrder.clear();
+    }
+ else {
+      bindingsForOrder.addAll(otherBindingsForOrder);
+    }
+  }
   IndexableExpression startingBoundExpr=null;
   IndexableExpression endingBoundExpr=null;
   if (!filtersToCover.isEmpty()) {
-    IndexableExpression doubleBoundExpr=getIndexableExpressionFromFilters(ExpressionType.COMPARE_LIKE,ExpressionType.COMPARE_LIKE,coveringExpr,coveringColId,table,filtersToCover);
+    IndexableExpression doubleBoundExpr=getIndexableExpressionFromFilters(ExpressionType.COMPARE_LIKE,ExpressionType.COMPARE_LIKE,coveringExpr,coveringColId,table,filtersToCover,EXCLUDE_FROM_POST_FILTERS);
     if (doubleBoundExpr != null) {
       startingBoundExpr=doubleBoundExpr.extractStartFromPrefixLike();
       endingBoundExpr=doubleBoundExpr.extractEndFromPrefixLike();
     }
  else {
-      startingBoundExpr=getIndexableExpressionFromFilters(ExpressionType.COMPARE_GREATERTHAN,ExpressionType.COMPARE_GREATERTHANOREQUALTO,coveringExpr,coveringColId,table,filtersToCover);
-      endingBoundExpr=getIndexableExpressionFromFilters(ExpressionType.COMPARE_LESSTHAN,ExpressionType.COMPARE_LESSTHANOREQUALTO,coveringExpr,coveringColId,table,filtersToCover);
+      startingBoundExpr=getIndexableExpressionFromFilters(ExpressionType.COMPARE_GREATERTHAN,ExpressionType.COMPARE_GREATERTHANOREQUALTO,coveringExpr,coveringColId,table,filtersToCover,EXCLUDE_FROM_POST_FILTERS);
+      endingBoundExpr=getIndexableExpressionFromFilters(ExpressionType.COMPARE_LESSTHAN,ExpressionType.COMPARE_LESSTHANOREQUALTO,coveringExpr,coveringColId,table,filtersToCover,EXCLUDE_FROM_POST_FILTERS);
     }
   }
   if (retval.sortDirection == SortDirectionType.DESC) {
