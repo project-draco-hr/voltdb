@@ -1,0 +1,36 @@
+{
+  if (!(m_parsedStmt instanceof ParsedSelectStmt)) {
+    return;
+  }
+  ParsedSelectStmt parsedSelectStmt=(ParsedSelectStmt)m_parsedStmt;
+  int countOrderBys=parsedSelectStmt.orderColumns.size();
+  if (countOrderBys > 0 && countOrderBys <= keyComponentCount) {
+    boolean ascending=parsedSelectStmt.orderColumns.get(0).ascending;
+    retval.sortDirection=ascending ? SortDirectionType.ASC : SortDirectionType.DESC;
+    int jj=0;
+    for (    ParsedColInfo colInfo : parsedSelectStmt.orderColumns) {
+      if (colInfo.ascending == ascending) {
+        if (indexedExprs == null) {
+          if (colInfo.expression instanceof TupleValueExpression) {
+            ColumnRef nextColRef=indexedColRefs.get(jj++);
+            if (colInfo.tableName.equals(table.getTypeName()) && colInfo.columnName.equals(nextColRef.getColumn().getTypeName())) {
+              continue;
+            }
+          }
+        }
+ else {
+          assert(jj < indexedExprs.size());
+          AbstractExpression nextExpr=nextExpr=indexedExprs.get(jj++);
+          List<AbstractExpression> moreBindings=colInfo.expression.bindingToIndexedExpression(nextExpr);
+          if (moreBindings != null) {
+            bindingsForOrder.addAll(moreBindings);
+            continue;
+          }
+        }
+      }
+      retval.sortDirection=SortDirectionType.INVALID;
+      bindingsForOrder.clear();
+      return;
+    }
+  }
+}

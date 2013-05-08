@@ -1,7 +1,5 @@
 {
-  int size=args.length;
-  for (int i=0; i < size; i++) {
-    String str=args[i];
+  for (  String str : args) {
     if (str.startsWith("-C=")) {
       String subStr=str.split("=")[1];
       String[] configs=subStr.split(",");
@@ -9,42 +7,52 @@
         m_config.add(config.trim());
       }
     }
-    if (str.startsWith("-sp=")) {
-      m_isSavePathFromCML=true;
-      String subStr=str.split("=")[1];
-      String[] savePaths=subStr.split(",");
-      for (      String savePath : savePaths) {
-        savePath=savePath.trim();
-        if (!savePath.endsWith("/")) {
-          savePath+="/";
-        }
-        m_savePlanPaths.add(savePath);
+ else     if (str.startsWith("-sp=")) {
+      m_workPath=str.split("=")[1];
+      m_workPath=m_workPath.trim();
+      if (!m_workPath.endsWith("/")) {
+        m_workPath+="/";
       }
     }
- else     if (str.startsWith("-cd")) {
-      m_isCompileSave=true;
-      m_isDiff=true;
-      m_showExpainedPlan=true;
-      m_showSQLStatement=true;
-    }
- else     if (str.startsWith("-cs")) {
-      m_isCompileSave=true;
-    }
- else     if (str.startsWith("-d")) {
-      m_isDiff=true;
-    }
- else     if (str.startsWith("-r")) {
-      m_reportDir=str.split("=")[1];
-      m_reportDir=m_reportDir.trim();
-      if (!m_reportDir.endsWith("/")) {
-        m_reportDir+="/";
+ else     if (str.startsWith("-b=")) {
+      m_fixedBaselinePath=str.split("=")[1];
+      m_fixedBaselinePath=m_fixedBaselinePath.trim();
+      if (!m_fixedBaselinePath.endsWith("/")) {
+        m_fixedBaselinePath+="/";
       }
     }
- else     if (str.startsWith("-e")) {
-      m_showExpainedPlan=true;
+ else     if (str.equals("-s")) {
+      m_isCompile=true;
+      m_isSave=true;
     }
- else     if (str.startsWith("-s")) {
-      m_showSQLStatement=true;
+ else     if (str.equals("-sv")) {
+      m_isCompile=true;
+      m_isSave=true;
+      m_reportExplainedPlan=true;
+      m_reportSQLStatement=true;
+    }
+ else     if (str.equals("-d")) {
+      m_isCompile=true;
+      m_isDiff=true;
+    }
+ else     if (str.equals("-dv")) {
+      m_isCompile=true;
+      m_isDiff=true;
+      m_reportExplainedPlan=true;
+      m_reportSQLStatement=true;
+    }
+ else     if (str.startsWith("-r=")) {
+      m_reportPath=str.split("=")[1];
+      m_reportPath=m_reportPath.trim();
+      if (!m_reportPath.endsWith("/")) {
+        m_reportPath+="/";
+      }
+    }
+ else     if (str.equals("-re")) {
+      m_reportExplainedPlan=true;
+    }
+ else     if (str.equals("-rs")) {
+      m_reportSQLStatement=true;
     }
  else     if (str.startsWith("-i=")) {
       m_filters.add(str.split("=")[1]);
@@ -53,17 +61,19 @@
       printUsage();
       System.exit(0);
     }
+ else {
+      System.out.println("Illegal command line argument: " + str);
+      printUsage();
+      System.exit(0);
+    }
   }
-  size=m_config.size();
-  if (m_isCompileSave) {
-    Iterator<String> it=m_savePlanPaths.iterator();
+  if (!new File(m_workPath).exists()) {
+    new File(m_workPath).mkdirs();
+  }
+  if (m_isCompile) {
     for (    String config : m_config) {
       try {
-        setUp(config);
-        if (m_isSavePathFromCML && it.hasNext()) {
-          m_savePlanPath=it.next();
-        }
-        batchCompileSave();
+        configCompileSave(config,m_isSave);
       }
  catch (      Exception e) {
         e.printStackTrace();
@@ -71,42 +81,36 @@
     }
   }
   if (m_isDiff) {
-    if (!new File(m_reportDir).exists()) {
-      new File(m_reportDir).mkdirs();
+    if (!new File(m_reportPath).exists()) {
+      new File(m_reportPath).mkdirs();
     }
     try {
-      m_reportWriter=new BufferedWriter(new FileWriter(m_reportDir + "plannerTester.report"));
+      m_reportWriter=new BufferedWriter(new FileWriter(m_reportPath + "plannerTester.report"));
     }
  catch (    IOException e1) {
       System.out.println(e1.getMessage());
       System.exit(-1);
     }
-    Iterator<String> it=m_savePlanPaths.iterator();
     for (    String config : m_config) {
       try {
-        setUp(config);
-        if (m_isSavePathFromCML && it.hasNext()) {
-          m_savePlanPath=it.next();
-        }
-        startDiff();
+        configDiff(config);
       }
  catch (      Exception e) {
         e.printStackTrace();
       }
     }
     int numTest=m_numPass + m_numFail;
-    System.out.println("Test: " + numTest);
-    System.out.println("Pass: " + m_numPass);
-    System.out.println("Fail: " + m_numFail);
+    String summary="\nTest: " + numTest + "\nPass: "+ m_numPass+ "\nFail: "+ m_numFail+ "\n";
+    System.out.print(summary);
     try {
-      m_reportWriter.write("\nTest: " + numTest + "\n"+ "Pass: "+ m_numPass+ "\n"+ "Fail: "+ m_numFail+ "\n");
+      m_reportWriter.write(summary);
       m_reportWriter.flush();
       m_reportWriter.close();
     }
  catch (    IOException e) {
       e.printStackTrace();
     }
-    System.out.println("Report file created at " + m_reportDir + "plannerTester.report");
+    System.out.println("Report file created at " + m_reportPath + "plannerTester.report");
   }
   if (m_numFail == 0) {
     System.exit(0);

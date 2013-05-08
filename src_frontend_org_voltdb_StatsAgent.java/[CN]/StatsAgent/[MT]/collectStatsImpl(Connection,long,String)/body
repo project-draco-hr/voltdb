@@ -28,11 +28,11 @@
       c.writeStream().enqueue(buf);
       return;
     }
-    PendingStatsRequest psr=new PendingStatsRequest(selector,c,clientHandle,new VoltTable[1],System.currentTimeMillis());
+    PendingStatsRequest psr=new PendingStatsRequest(selector,c,clientHandle,System.currentTimeMillis());
     collectTopoStats(psr);
     return;
   }
-  PendingStatsRequest psr=new PendingStatsRequest(selector,c,clientHandle,new VoltTable[2],System.currentTimeMillis());
+  PendingStatsRequest psr=new PendingStatsRequest(selector,c,clientHandle,System.currentTimeMillis());
   final long requestId=m_nextRequestId++;
   m_pendingRequests.put(requestId,psr);
   m_es.schedule(new Runnable(){
@@ -41,15 +41,19 @@
     }
   }
 ,STATS_COLLECTION_TIMEOUT,TimeUnit.MILLISECONDS);
+  String realSelector=selector;
+  if (selector.equalsIgnoreCase("DR")) {
+    realSelector="DRNODE";
+  }
   JSONObject obj=new JSONObject();
   obj.put("requestId",requestId);
   obj.put("returnAddress",m_mailbox.getHSId());
-  obj.put("selector","DRNODE");
+  obj.put("selector",realSelector);
   byte payloadBytes[]=CompressionService.compressBytes(obj.toString(4).getBytes("UTF-8"));
-  final SiteTracker st=VoltDB.instance().getSiteTracker();
-  for (  long agent : st.getStatsAgents()) {
+  for (  int hostId : m_messenger.getLiveHostIds()) {
+    long agentHsId=CoreUtils.getHSIdFromHostAndSite(hostId,HostMessenger.STATS_SITE_ID);
     psr.expectedStatsResponses++;
     BinaryPayloadMessage bpm=new BinaryPayloadMessage(new byte[]{JSON_PAYLOAD},payloadBytes);
-    m_mailbox.send(agent,bpm);
+    m_mailbox.send(agentHsId,bpm);
   }
 }

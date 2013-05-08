@@ -1,20 +1,21 @@
 {
-  hostLog.debug("STARTING: " + this);
-  if (!m_txn.isReadOnly()) {
-    m_txn.setBeginUndoToken(siteConnection.getLatestUndoToken());
+  if (hostLog.isDebugEnabled()) {
+    hostLog.debug("STARTING: " + this);
   }
-  SpTransactionState txn=(SpTransactionState)m_txn;
-  final InitiateResponseMessage response=processInitiateTask(txn.m_task,siteConnection);
-  int hash=m_txn.getHash();
+  if (!m_txnState.isReadOnly()) {
+    m_txnState.setBeginUndoToken(siteConnection.getLatestUndoToken());
+  }
+  SpTransactionState txnState=(SpTransactionState)m_txnState;
+  final InitiateResponseMessage response=processInitiateTask(txnState.m_initiationMsg,siteConnection);
   if (!response.shouldCommit()) {
-    m_txn.setNeedsRollback();
+    m_txnState.setNeedsRollback();
   }
   completeInitiateTask(siteConnection);
   response.m_sourceHSId=m_initiator.getHSId();
   m_initiator.deliver(response);
   execLog.l7dlog(Level.TRACE,LogKeys.org_voltdb_ExecutionSite_SendingCompletedWUToDtxn.name(),null);
-  hostLog.debug("COMPLETE: " + this);
-  if (m_drGateway != null && !m_txn.isReadOnly() && !m_txn.needsRollback()) {
-    m_drGateway.onSuccessfulProcedureCall(txn.txnId,txn.uniqueId,hash,txn.getInvocation(),response.getClientResponseData());
+  if (hostLog.isDebugEnabled()) {
+    hostLog.debug("COMPLETE: " + this);
   }
+  logToDR(txnState,response);
 }

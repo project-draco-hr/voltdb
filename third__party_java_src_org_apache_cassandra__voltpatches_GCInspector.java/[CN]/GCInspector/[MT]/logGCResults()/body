@@ -1,0 +1,33 @@
+{
+  for (  GarbageCollectorMXBean gc : beans) {
+    Long previousTotal=gctimes.get(gc.getName());
+    Long total=gc.getCollectionTime();
+    if (previousTotal == null)     previousTotal=0L;
+    if (previousTotal.equals(total))     continue;
+    gctimes.put(gc.getName(),total);
+    Long duration=total - previousTotal;
+    Long previousCount=gccounts.get(gc.getName());
+    Long count=gc.getCollectionCount();
+    if (previousCount == null)     previousCount=0L;
+    if (count.equals(previousCount))     continue;
+    gccounts.put(gc.getName(),count);
+    MemoryUsage mu=membean.getHeapMemoryUsage();
+    long memoryUsed=mu.getUsed();
+    long memoryMax=mu.getMax();
+    long durationPerCollection=duration / (count - previousCount);
+    if (durationPerCollection > MIN_DURATION) {
+      String st=String.format("GC for %s: %s ms for %s collections, %s used; max is %s",gc.getName(),duration,count - previousCount,memoryUsed,memoryMax);
+      logger.info(st);
+    }
+ else     if (logger.isDebugEnabled()) {
+      String st=String.format("GC for %s: %s ms for %s collections, %s used; max is %s",gc.getName(),duration,count - previousCount,memoryUsed,memoryMax);
+      logger.debug(st);
+    }
+    if (oldGenGCs.contains(gc.getName())) {
+      double usage=(double)memoryUsed / memoryMax;
+      if (memoryUsed > .5 * memoryMax) {
+        logger.warn("Heap is " + usage + " full out of "+ memoryMax+ ".");
+      }
+    }
+  }
+}

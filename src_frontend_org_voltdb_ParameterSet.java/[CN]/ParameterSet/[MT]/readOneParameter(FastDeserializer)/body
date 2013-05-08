@@ -1,60 +1,105 @@
 {
+  Object value;
+  byte[] encodedString=null;
+  byte[][] encodedStringArray=null;
   byte nextTypeByte=in.readByte();
   if (nextTypeByte == ARRAY) {
     VoltType nextType=VoltType.get(in.readByte());
-    if (nextType == null)     return null;
-    return in.readArray(nextType.classFromType());
+    if (nextType == null) {
+      value=null;
+    }
+ else     if (nextType == VoltType.STRING) {
+      encodedStringArray=(byte[][])in.readArray(byte[].class);
+      String[] sval=new String[encodedStringArray.length];
+      for (int i=0; i < encodedStringArray.length; ++i) {
+        if (encodedStringArray[i] == null) {
+          sval[i]=null;
+        }
+ else {
+          sval[i]=new String(encodedStringArray[i],VoltDB.UTF8ENCODING);
+        }
+      }
+      value=sval;
+    }
+ else {
+      value=in.readArray(nextType.classFromType());
+    }
   }
  else {
     VoltType nextType=VoltType.get(nextTypeByte);
 switch (nextType) {
 case NULL:
-      return null;
+      value=null;
+    break;
 case TINYINT:
-    return in.readByte();
+  value=in.readByte();
+break;
 case SMALLINT:
-  return in.readShort();
+value=in.readShort();
+break;
 case INTEGER:
-return in.readInt();
+value=in.readInt();
+break;
 case BIGINT:
-return in.readLong();
+value=in.readLong();
+break;
 case FLOAT:
-return in.readDouble();
+value=in.readDouble();
+break;
 case STRING:
-String string_val=in.readString();
-if (string_val == null) {
-return VoltType.NULL_STRING_OR_VARBINARY;
+encodedString=in.readVarbinary();
+if (encodedString == null) {
+value=VoltType.NULL_STRING_OR_VARBINARY;
 }
-return string_val;
+ else {
+value=new String(encodedString,VoltDB.UTF8ENCODING);
+}
+break;
 case VARBINARY:
 byte[] bin_val=in.readVarbinary();
 if (bin_val == null) {
-return VoltType.NULL_STRING_OR_VARBINARY;
+value=VoltType.NULL_STRING_OR_VARBINARY;
 }
-return bin_val;
+ else {
+value=bin_val;
+}
+break;
 case TIMESTAMP:
 final long micros=in.readLong();
-return new TimestampType(micros);
+value=new TimestampType(micros);
+break;
 case VOLTTABLE:
-return in.readObject(VoltTable.class);
+value=in.readObject(VoltTable.class);
+break;
 case DECIMAL:
 {
 BigDecimal decimal_val=in.readBigDecimal();
 if (decimal_val == null) {
-return VoltType.NULL_DECIMAL;
+value=VoltType.NULL_DECIMAL;
 }
-return decimal_val;
+ else {
+value=decimal_val;
+}
+break;
 }
 case DECIMAL_STRING:
 {
 BigDecimal decimal_val=in.readBigDecimalFromString();
 if (decimal_val == null) {
-return VoltType.NULL_DECIMAL;
+value=VoltType.NULL_DECIMAL;
 }
-return decimal_val;
+ else {
+value=decimal_val;
+}
+break;
 }
 default :
 throw new RuntimeException("ParameterSet doesn't support type " + nextType);
 }
 }
+OneParamInfo retval=new OneParamInfo();
+retval.value=value;
+retval.encodedString=encodedString;
+retval.encodedStringArray=encodedStringArray;
+return retval;
 }

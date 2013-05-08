@@ -1,0 +1,50 @@
+{
+  JSONObject jsData=null;
+  String truncReqId="";
+  if (data != null && !data.isEmpty()) {
+    try {
+      jsData=new JSONObject(data);
+      if (jsData.has("truncReqId")) {
+        truncReqId=jsData.getString("truncReqId");
+      }
+    }
+ catch (    JSONException e) {
+      SNAP_LOG.error(String.format("JSON exception on snapshot data \"%s\".",data),e);
+    }
+  }
+  SnapshotWritePlan plan=null;
+  if (format == SnapshotFormat.NATIVE) {
+    plan=new NativeSnapshotWritePlan();
+  }
+ else   if (format == SnapshotFormat.CSV) {
+    plan=new CSVSnapshotWritePlan();
+  }
+ else   if (format == SnapshotFormat.STREAM) {
+    plan=new StreamSnapshotWritePlan();
+  }
+ else {
+    throw new RuntimeException("BAD BAD BAD");
+  }
+  boolean abort=plan.createSetup(file_path,file_nonce,txnId,partitionTransactionIds,jsData,context,hostname,result,exportSequenceNumbers,tracker,timestamp);
+synchronized (m_createLock) {
+    if (!m_taskListsForHSIds.isEmpty()) {
+      SNAP_LOG.warn("Found lingering snapshot tasks while setting up a snapshot");
+    }
+    m_taskListsForHSIds.clear();
+    m_snapshotDataTargets.clear();
+    m_createSuccess.set(!abort);
+    m_createResult.set(result);
+    if (!abort) {
+      m_taskListsForHSIds.putAll(plan.getTaskListsForHSIds());
+      m_snapshotDataTargets.addAll(plan.getSnapshotDataTargets());
+      if (m_taskListsForHSIds.isEmpty()) {
+        SNAP_LOG.debug("Node had no snapshot work to do.  Creating a null task to drive completion.");
+        m_taskListsForHSIds.put(context.getSiteId(),new ArrayDeque<SnapshotTableTask>());
+      }
+      SNAP_LOG.debug("Planned tasks: " + CoreUtils.hsIdCollectionToString(plan.getTaskListsForHSIds().keySet()));
+      SNAP_LOG.debug("Created tasks for HSIds: " + CoreUtils.hsIdCollectionToString(m_taskListsForHSIds.keySet()));
+      VoltDB.instance().getSnapshotCompletionMonitor().registerPartitionTxnIdsForSnapshot(txnId,partitionTransactionIds);
+      logSnapshotStartToZK(txnId,context,file_nonce,truncReqId);
+    }
+  }
+}

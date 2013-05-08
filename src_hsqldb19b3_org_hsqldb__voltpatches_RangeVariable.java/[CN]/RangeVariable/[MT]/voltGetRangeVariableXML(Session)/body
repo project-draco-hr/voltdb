@@ -1,0 +1,61 @@
+{
+  Index index;
+  Index primaryIndex;
+  int[] primaryKey;
+  boolean isSeqScan;
+  index=rangeIndex;
+  primaryIndex=rangeTable.getPrimaryIndex();
+  primaryKey=rangeTable.getPrimaryKey();
+  isSeqScan=indexCondition == null;
+  if (rangeTable.tableType == TableBase.SYSTEM_SUBQUERY) {
+    throw new HSQLParseException("VoltDB does not support subqueries, consider using views instead");
+  }
+  if (index == null)   index=primaryIndex;
+  if (index == primaryIndex && primaryKey.length == 0)   isSeqScan=true;
+  VoltXMLElement scan=new VoltXMLElement("tablescan");
+  scan.attributes.put("table",rangeTable.getName().name);
+  if (tableAlias != null && !rangeTable.getName().name.equals(tableAlias)) {
+    scan.attributes.put("tablealias",tableAlias.name);
+  }
+  if (isLeftJoin && isRightJoin) {
+    scan.attributes.put("jointype","full");
+  }
+ else   if (isLeftJoin) {
+    scan.attributes.put("jointype","left");
+  }
+ else   if (isRightJoin) {
+    scan.attributes.put("jointype","right");
+  }
+ else {
+    scan.attributes.put("jointype","inner");
+  }
+  Expression cond=indexCondition;
+  if (indexEndCondition != null) {
+    if (cond != null) {
+      cond=new ExpressionLogical(OpTypes.AND,cond,indexEndCondition);
+    }
+ else {
+      cond=indexEndCondition;
+    }
+  }
+  if (nonIndexJoinCondition != null) {
+    if (cond != null) {
+      cond=new ExpressionLogical(OpTypes.AND,cond,nonIndexJoinCondition);
+    }
+ else {
+      cond=nonIndexJoinCondition;
+    }
+  }
+  if (cond != null) {
+    cond=cond.eliminateDuplicates(session);
+    VoltXMLElement joinCond=new VoltXMLElement("joincond");
+    joinCond.children.add(cond.voltGetXML(session));
+    scan.children.add(joinCond);
+  }
+  if (nonIndexWhereCondition != null) {
+    VoltXMLElement whereCond=new VoltXMLElement("wherecond");
+    whereCond.children.add(nonIndexWhereCondition.voltGetXML(session));
+    scan.children.add(whereCond);
+  }
+  return scan;
+}
