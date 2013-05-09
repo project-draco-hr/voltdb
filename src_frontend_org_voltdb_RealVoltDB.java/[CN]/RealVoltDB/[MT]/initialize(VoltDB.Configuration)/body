@@ -45,12 +45,12 @@ synchronized (m_startAndStopLock) {
     final int computationThreads=Math.max(2,CoreUtils.availableProcessors() / 4);
     m_computationService=CoreUtils.getListeningExecutorService("Computation service thread",computationThreads,m_config.m_computationCoreBindings);
     boolean isRejoin=false;
-    if (config.m_startAction == START_ACTION.REJOIN || config.m_startAction == START_ACTION.LIVE_REJOIN) {
+    if (config.m_startAction.doesRejoin()) {
       isRejoin=true;
     }
     m_rejoining=isRejoin;
     m_rejoinDataPending=isRejoin;
-    m_joining=config.m_startAction == START_ACTION.JOIN;
+    m_joining=config.m_startAction == StartAction.JOIN;
     try {
       System.setOut(new PrintStream(System.out,true,"UTF-8"));
       System.setErr(new PrintStream(System.err,true,"UTF-8"));
@@ -124,9 +124,6 @@ synchronized (m_startAndStopLock) {
         m_iv2Initiators.add(m_MPI);
       }
       clusterConfig=new ClusterConfig(topo);
-      final long statsHSId=m_messenger.getHSIdForLocalSite(HostMessenger.STATS_SITE_ID);
-      m_messenger.generateMailboxId(statsHSId);
-      hostLog.info("Registering stats mailbox id " + CoreUtils.hsIdToString(statsHSId));
       List<Long> hsidsToRejoin=new ArrayList<Long>();
       for (      Initiator init : m_iv2Initiators) {
         if (init.isRejoinable()) {
@@ -136,9 +133,9 @@ synchronized (m_startAndStopLock) {
       if (isRejoin && isIV2Enabled()) {
         SnapshotSaveAPI.recoveringSiteCount.set(hsidsToRejoin.size());
         hostLog.info("Set recovering site count to " + hsidsToRejoin.size());
-        m_rejoinCoordinator=new Iv2RejoinCoordinator(m_messenger,hsidsToRejoin,m_catalogContext.cluster.getVoltroot(),m_config.m_startAction == START_ACTION.LIVE_REJOIN);
+        m_rejoinCoordinator=new Iv2RejoinCoordinator(m_messenger,hsidsToRejoin,m_catalogContext.cluster.getVoltroot(),m_config.m_startAction == StartAction.LIVE_REJOIN);
         m_messenger.registerMailbox(m_rejoinCoordinator);
-        if (m_config.m_startAction == START_ACTION.LIVE_REJOIN) {
+        if (m_config.m_startAction == StartAction.LIVE_REJOIN) {
           hostLog.info("Using live rejoin.");
         }
  else {
@@ -182,6 +179,8 @@ synchronized (m_startAndStopLock) {
     m_partitionCountStats=new PartitionCountStats(m_cartographer);
     m_statsAgent.registerStatsSource(SysProcSelector.PARTITIONCOUNT,0,m_partitionCountStats);
     m_initiatorStats=new InitiatorStats(m_myHostId);
+    m_liveClientsStats=new LiveClientsStats();
+    m_statsAgent.registerStatsSource(SysProcSelector.LIVECLIENTS,0,m_liveClientsStats);
     m_latencyStats=new LatencyStats(m_myHostId);
     if (m_commandLog != null && isRejoin) {
       m_commandLog.initForRejoin(m_catalogContext,Long.MIN_VALUE,m_iv2InitiatorStartingTxnIds,true,m_config.m_commandLogBinding);
@@ -237,7 +236,7 @@ synchronized (m_startAndStopLock) {
           MPHSId=null;
         }
         m_statsManager=(StatsManager)statsManagerClass.newInstance();
-        m_statsManager.initialize(localHSIds,MPHSId);
+        m_statsManager.initialize();
       }
     }
  catch (    Exception e) {
@@ -266,11 +265,11 @@ synchronized (m_startAndStopLock) {
         VoltDB.crashLocalVoltDB("Failed to announce ready state.",false,null);
       }
     }
-    if (!m_joining && (m_cartographer.getPartitions().size() - 1) != m_configuredNumberOfPartitions) {
+    if (!m_joining && (m_cartographer.getPartitionCount()) != m_configuredNumberOfPartitions) {
       for (      Map.Entry<Integer,ImmutableList<Long>> entry : getSiteTrackerForSnapshot().m_partitionsToSitesImmutable.entrySet()) {
         hostLog.info(entry.getKey() + " -- " + CoreUtils.hsIdCollectionToString(entry.getValue()));
       }
-      VoltDB.crashGlobalVoltDB("Mismatch between configured number of partitions (" + m_configuredNumberOfPartitions + ") and actual ("+ (m_cartographer.getPartitions().size() - 1)+ ")",true,null);
+      VoltDB.crashGlobalVoltDB("Mismatch between configured number of partitions (" + m_configuredNumberOfPartitions + ") and actual ("+ m_cartographer.getPartitionCount()+ ")",true,null);
     }
     schedulePeriodicWorks();
     m_clientInterfaces.get(0).schedulePeriodicWorks();
