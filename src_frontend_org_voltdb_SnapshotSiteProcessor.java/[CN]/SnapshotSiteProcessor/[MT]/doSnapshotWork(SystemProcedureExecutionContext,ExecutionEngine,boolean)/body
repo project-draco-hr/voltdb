@@ -1,73 +1,36 @@
 {
   ListenableFuture<?> retval=null;
-  if (m_snapshotTableTasks == null || m_availableSnapshotBuffers.isEmpty() || (!ignoreQuietPeriod && inQuietPeriod())) {
+  if (m_snapshotTableTasks == null || (!ignoreQuietPeriod && inQuietPeriod())) {
     return retval;
   }
-  while (!m_snapshotTableTasks.isEmpty()) {
-    final SnapshotTableTask currentTask=m_snapshotTableTasks.peek();
-    assert(currentTask != null);
-    final int headerSize=currentTask.m_target.getHeaderSize();
-    int serialized=0;
-    final BBContainer snapshotBuffer=m_availableSnapshotBuffers.poll();
-    assert(snapshotBuffer != null);
-    snapshotBuffer.b.clear();
-    snapshotBuffer.b.position(headerSize);
-    if (!currentTask.m_isDevNull) {
-      serialized=ee.tableStreamSerializeMore(snapshotBuffer,currentTask.m_tableId,TableStreamType.SNAPSHOT);
-      if (serialized < 0) {
+  Iterator<Map.Entry<Integer,Collection<SnapshotTableTask>>> taskIter=m_snapshotTableTasks.asMap().entrySet().iterator();
+  while (taskIter.hasNext()) {
+    Map.Entry<Integer,Collection<SnapshotTableTask>> taskEntry=taskIter.next();
+    final int tableId=taskEntry.getKey();
+    final Collection<SnapshotTableTask> tableTasks=taskEntry.getValue();
+    final List<BBContainer> outputBuffers=createOutputBuffers(tableTasks);
+    if (outputBuffers == null) {
+      break;
+    }
+    final int[] serialized=ee.tableStreamSerializeMore(tableId,TableStreamType.SNAPSHOT,outputBuffers);
+    for (    int serializedBytes : serialized) {
+      if (serializedBytes < 0) {
         VoltDB.crashLocalVoltDB("Failure while serialize data from a table for COW snapshot",false,null);
       }
     }
-    if (serialized == 0) {
-      final SnapshotTableTask t=m_snapshotTableTasks.poll();
-      SNAP_LOG.debug("Finished snapshot task: " + t);
-      if (t.m_isReplicated && t.m_target.getFormat().isTableBased()) {
-        final Thread terminatorThread=new Thread("Replicated SnapshotDataTarget terminator "){
-          @Override public void run(){
-            try {
-              t.m_target.close();
-            }
- catch (            IOException e) {
-              throw new RuntimeException(e);
-            }
-catch (            InterruptedException e) {
-              throw new RuntimeException(e);
-            }
-          }
-        }
-;
-        m_snapshotTargetTerminators.add(terminatorThread);
-        terminatorThread.start();
+    if (serialized[0] == 0) {
+      asyncTerminateReplicatedTableTasks(tableTasks);
+      taskIter.remove();
+      SNAP_LOG.debug("Finished snapshot tasks for table " + tableId + ": "+ tableTasks);
+      for (      BBContainer container : outputBuffers) {
+        m_availableSnapshotBuffers.offer(container);
       }
-      m_availableSnapshotBuffers.offer(snapshotBuffer);
-      continue;
     }
-    snapshotBuffer.b.limit(serialized + headerSize);
-    snapshotBuffer.b.position(0);
-    Callable<BBContainer> valueForTarget=Callables.returning(snapshotBuffer);
-    for (    SnapshotDataFilter filter : currentTask.m_filters) {
-      valueForTarget=filter.filter(valueForTarget);
+ else {
+      retval=writeSnapshotBlocksToTargets(tableId,outputBuffers,serialized);
+      quietPeriodSet(ignoreQuietPeriod);
+      break;
     }
-    retval=currentTask.m_target.write(valueForTarget,currentTask);
-    if (retval != null) {
-      final ListenableFuture<?> retvalFinal=retval;
-      retvalFinal.addListener(new Runnable(){
-        @Override public void run(){
-          try {
-            retvalFinal.get();
-          }
- catch (          Throwable t) {
-            if (m_lastSnapshotSucceded) {
-              SNAP_LOG.error("Error while attempting to write snapshot data to file " + currentTask.m_target,t);
-              m_lastSnapshotSucceded=false;
-            }
-          }
-        }
-      }
-,MoreExecutors.sameThreadExecutor());
-    }
-    quietPeriodSet(ignoreQuietPeriod);
-    break;
   }
   if (m_snapshotTableTasks.isEmpty()) {
     SNAP_LOG.debug("Finished with tasks");
