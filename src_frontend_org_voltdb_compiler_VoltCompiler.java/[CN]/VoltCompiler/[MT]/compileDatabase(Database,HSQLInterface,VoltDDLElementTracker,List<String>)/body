@@ -1,0 +1,80 @@
+{
+  final DDLCompiler ddlcompiler=new DDLCompiler(this,hsql,voltDdlTracker);
+  for (  final String schemaPath : schemas) {
+    File schemaFile=null;
+    if (schemaPath.contains(".jar!")) {
+      String ddlText=null;
+      try {
+        ddlText=readFileFromJarfile(schemaPath);
+      }
+ catch (      final Exception e) {
+        throw new VoltCompilerException(e);
+      }
+      schemaFile=VoltProjectBuilder.writeStringToTempFile(ddlText);
+    }
+ else {
+      schemaFile=new File(schemaPath);
+    }
+    if (!schemaFile.isAbsolute()) {
+      if (m_projectFileURL != null) {
+        schemaFile=new File(new File(m_projectFileURL).getParent(),schemaPath);
+      }
+ else {
+        schemaFile=new File(schemaPath);
+      }
+    }
+    m_ddlFilePaths.put(schemaFile.getName(),schemaFile.getPath());
+    ddlcompiler.loadSchema(schemaFile.getAbsolutePath(),db);
+  }
+  ddlcompiler.compileToCatalog(db);
+  String msg="In database, ";
+  final CatalogMap<Table> tables=db.getTables();
+  for (  String tableName : voltDdlTracker.m_partitionMap.keySet()) {
+    String colName=voltDdlTracker.m_partitionMap.get(tableName);
+    if (colName != null) {
+      final Table t=tables.getIgnoreCase(tableName);
+      if (t == null) {
+        msg+="PARTITION has unknown TABLE '" + tableName + "'";
+        throw new VoltCompilerException(msg);
+      }
+      final Column c=t.getColumns().getIgnoreCase(colName);
+      if (c == null) {
+        msg+="PARTITION has unknown COLUMN '" + colName + "'";
+        throw new VoltCompilerException(msg);
+      }
+      if (c.getNullable() == true) {
+        msg+="Partition column '" + tableName + "."+ colName+ "' is nullable. "+ "Partition columns must be constrained \"NOT NULL\".";
+        throw new VoltCompilerException(msg);
+      }
+      VoltType pcolType=VoltType.get((byte)c.getType());
+switch (pcolType) {
+case TINYINT:
+case SMALLINT:
+case INTEGER:
+case BIGINT:
+case STRING:
+case VARBINARY:
+        break;
+default :
+      msg+="Partition column '" + tableName + "."+ colName+ "' is not a valid type. "+ "Partition columns must be an integer or varchar type.";
+    throw new VoltCompilerException(msg);
+}
+t.setPartitioncolumn(c);
+t.setIsreplicated(false);
+final CatalogMap<MaterializedViewInfo> views=t.getViews();
+for (final MaterializedViewInfo mvi : views) {
+  mvi.getDest().setIsreplicated(false);
+  setGroupedTablePartitionColumn(mvi,c);
+}
+}
+}
+String catData=m_catalog.serialize();
+m_catalog=new Catalog();
+m_catalog.execute(catData);
+db=getCatalogDatabase();
+addDatabaseEstimatesInfo(m_estimates,db);
+for (String exportedTableName : voltDdlTracker.getExportedTables()) {
+addExportTableToConnector(exportedTableName,db);
+}
+return db;
+}

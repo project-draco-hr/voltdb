@@ -1,16 +1,7 @@
 {
-  final ArrayList<String> programs=new ArrayList<String>();
   final List<String> schemas=new ArrayList<String>(Arrays.asList(ddlFilePaths));
-  final ArrayList<ProcedureDescriptor> procedures=new ArrayList<ProcedureDescriptor>();
-  final ArrayList<Class<?>> classDependencies=new ArrayList<Class<?>>();
   final VoltDDLElementTracker voltDdlTracker=new VoltDDLElementTracker(this);
-  final String databaseName=database.getName();
-  if (databaseName.equals("database") == false) {
-    final String msg="VoltDB currently requires all database elements to be named " + "\"database\" (found: \"" + databaseName + "\")";
-    throw new VoltCompilerException(msg);
-  }
-  m_catalog.execute("add /clusters[cluster] databases " + databaseName);
-  Database db=m_catalog.getClusters().get("cluster").getDatabases().get(databaseName);
+  Database db=initCatalogDatabase();
   if (database.getSchemas() != null) {
     for (    SchemasType.Schema schema : database.getSchemas().getSchema()) {
       compilerLog.l7dlog(Level.INFO,LogKeys.compiler_VoltCompiler_CatalogPath.name(),new Object[]{schema.getPath()},null);
@@ -38,116 +29,16 @@
       voltDdlTracker.add(getProcedure(proc));
     }
   }
-  if (database.getClassdependencies() != null) {
-    for (    Classdependency dep : database.getClassdependencies().getClassdependency()) {
-      classDependencies.add(getClassDependency(dep));
-    }
-  }
   if (database.getPartitions() != null) {
     for (    org.voltdb.compiler.projectfile.PartitionsType.Partition table : database.getPartitions().getPartition()) {
       voltDdlTracker.put(table.getTable(),table.getColumn());
     }
   }
-  m_hsql=HSQLInterface.loadHsqldb();
-  for (  final String programName : programs) {
-    m_catalog.execute("add " + db.getPath() + " programs "+ programName);
+  HSQLInterface hsql=HSQLInterface.loadHsqldb();
+  db=compileDatabase(db,hsql,voltDdlTracker,schemas);
+  if (database.getExport() != null) {
+    ExportType export=database.getExport();
+    compileExport(export,db);
   }
-  final DDLCompiler ddlcompiler=new DDLCompiler(this,m_hsql,voltDdlTracker,db);
-  for (  final String schemaPath : schemas) {
-    File schemaFile=null;
-    if (schemaPath.contains(".jar!")) {
-      String ddlText=null;
-      try {
-        ddlText=readFileFromJarfile(schemaPath);
-      }
- catch (      final Exception e) {
-        throw new VoltCompilerException(e);
-      }
-      schemaFile=VoltProjectBuilder.writeStringToTempFile(ddlText);
-    }
- else {
-      schemaFile=new File(schemaPath);
-    }
-    if (!schemaFile.isAbsolute()) {
-      if (m_projectFileURL != null) {
-        schemaFile=new File(new File(m_projectFileURL).getParent(),schemaPath);
-      }
- else {
-        schemaFile=new File(schemaPath);
-      }
-    }
-    m_ddlFilePaths.put(schemaFile.getName(),schemaFile.getPath());
-    ddlcompiler.loadSchema(schemaFile.getAbsolutePath());
-  }
-  ddlcompiler.compileToCatalog(m_catalog,db);
-  String msg="In database \"" + databaseName + "\", ";
-  final CatalogMap<Table> tables=db.getTables();
-  for (  String tableName : voltDdlTracker.m_partitionMap.keySet()) {
-    String colName=voltDdlTracker.m_partitionMap.get(tableName);
-    if (colName != null) {
-      final Table t=tables.getIgnoreCase(tableName);
-      if (t == null) {
-        msg+="PARTITION has unknown TABLE '" + tableName + "'";
-        throw new VoltCompilerException(msg);
-      }
-      final Column c=t.getColumns().getIgnoreCase(colName);
-      if (c == null) {
-        msg+="PARTITION has unknown COLUMN '" + colName + "'";
-        throw new VoltCompilerException(msg);
-      }
-      if (c.getNullable() == true) {
-        msg+="Partition column '" + tableName + "."+ colName+ "' is nullable. "+ "Partition columns must be constrained \"NOT NULL\".";
-        throw new VoltCompilerException(msg);
-      }
-      VoltType pcolType=VoltType.get((byte)c.getType());
-switch (pcolType) {
-case TINYINT:
-case SMALLINT:
-case INTEGER:
-case BIGINT:
-case STRING:
-case VARBINARY:
-        break;
-default :
-      msg+="Partition column '" + tableName + "."+ colName+ "' is not a valid type. "+ "Partition columns must be an integer or varchar type.";
-    throw new VoltCompilerException(msg);
-}
-t.setPartitioncolumn(c);
-t.setIsreplicated(false);
-final CatalogMap<MaterializedViewInfo> views=t.getViews();
-for (final MaterializedViewInfo mvi : views) {
-  mvi.getDest().setIsreplicated(false);
-  setGroupedTablePartitionColumn(mvi,c);
-}
-}
-}
-String catData=m_catalog.serialize();
-m_catalog=new Catalog();
-m_catalog.execute(catData);
-db=m_catalog.getClusters().get("cluster").getDatabases().get(databaseName);
-addDatabaseEstimatesInfo(m_estimates,db);
-for (String exportedTableName : voltDdlTracker.getExportedTables()) {
-addExportTableToConnector(exportedTableName,db);
-}
-if (database.getExport() != null) {
-ExportType export=database.getExport();
-compileExport(export,db);
-}
-List<ProcedureDescriptor> autoCrudProcedures=generateCrud(m_catalog);
-procedures.addAll(autoCrudProcedures);
-procedures.addAll(voltDdlTracker.getProcedureDescriptors());
-for (final ProcedureDescriptor procedureDescriptor : procedures) {
-final String procedureName=procedureDescriptor.m_className;
-if (procedureDescriptor.m_singleStmt == null) {
-m_currentFilename=procedureName.substring(procedureName.lastIndexOf('.') + 1);
-m_currentFilename+=".class";
-}
- else {
-m_currentFilename=procedureName;
-}
-ProcedureCompiler.compile(this,m_hsql,m_estimates,m_catalog,db,procedureDescriptor);
-}
-for (final Class<?> classDependency : classDependencies) {
-addClassToJar(classDependency,this);
-}
+  compileProcedures(db,hsql,voltDdlTracker);
 }
