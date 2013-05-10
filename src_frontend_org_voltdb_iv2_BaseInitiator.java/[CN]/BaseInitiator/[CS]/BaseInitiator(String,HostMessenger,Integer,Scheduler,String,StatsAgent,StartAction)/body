@@ -1,0 +1,37 @@
+{
+  m_zkMailboxNode=zkMailboxNode;
+  m_messenger=messenger;
+  m_partitionId=partition;
+  m_scheduler=scheduler;
+  boolean isLiveRejoin=startAction == StartAction.LIVE_REJOIN;
+  JoinProducerBase joinProducer;
+  if (startAction == StartAction.JOIN) {
+    joinProducer=new ElasticJoinProducer(m_partitionId,scheduler.m_tasks);
+  }
+ else   if (VoltDB.createForRejoin(startAction)) {
+    joinProducer=new RejoinProducer(m_partitionId,scheduler.m_tasks,isLiveRejoin);
+  }
+ else {
+    joinProducer=null;
+  }
+  if (m_partitionId == MpInitiator.MP_INIT_PID) {
+    m_initiatorMailbox=new MpInitiatorMailbox(m_partitionId,m_scheduler,m_messenger,m_repairLog,joinProducer);
+  }
+ else {
+    m_initiatorMailbox=new InitiatorMailbox(m_partitionId,m_scheduler,m_messenger,m_repairLog,joinProducer);
+  }
+  m_messenger.createMailbox(null,m_initiatorMailbox);
+  if (joinProducer != null) {
+    joinProducer.setMailbox(m_initiatorMailbox);
+  }
+  m_scheduler.setMailbox(m_initiatorMailbox);
+  StarvationTracker st=new StarvationTracker(getInitiatorHSId());
+  m_scheduler.setStarvationTracker(st);
+  m_scheduler.setLock(m_initiatorMailbox);
+  agent.registerStatsSource(SysProcSelector.STARVATION,getInitiatorHSId(),st);
+  String partitionString=" ";
+  if (m_partitionId != -1) {
+    partitionString=" for partition " + m_partitionId + " ";
+  }
+  m_whoami=whoamiPrefix + " " + CoreUtils.hsIdToString(getInitiatorHSId())+ partitionString;
+}
