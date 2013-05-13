@@ -15,17 +15,25 @@
       return;
     }
   }
-  if (selector.equals("TOPO")) {
-    PendingStatsRequest psr=new PendingStatsRequest(selector,c,clientHandle,System.currentTimeMillis());
+  JSONObject obj=new JSONObject();
+  obj.put("selector",selector);
+  String err=parseParamsForStatistics(params,obj);
+  if (err != null) {
+    sendErrorResponse(c,ClientResponse.GRACEFUL_FAILURE,err,clientHandle);
+    return;
+  }
+  String subselector=obj.getString("subselector");
+  if (subselector.equals("TOPO")) {
+    PendingStatsRequest psr=new PendingStatsRequest(selector,subselector,c,clientHandle,System.currentTimeMillis());
     collectTopoStats(psr);
     return;
   }
- else   if (selector.equals("PARTITIONCOUNT")) {
-    PendingStatsRequest psr=new PendingStatsRequest(selector,c,clientHandle,System.currentTimeMillis());
+ else   if (subselector.equals("PARTITIONCOUNT")) {
+    PendingStatsRequest psr=new PendingStatsRequest(selector,subselector,c,clientHandle,System.currentTimeMillis());
     collectPartitionCount(psr);
     return;
   }
-  PendingStatsRequest psr=new PendingStatsRequest(selector,c,clientHandle,System.currentTimeMillis());
+  PendingStatsRequest psr=new PendingStatsRequest(selector,subselector,c,clientHandle,System.currentTimeMillis());
   final long requestId=m_nextRequestId++;
   m_pendingRequests.put(requestId,psr);
   m_es.schedule(new Runnable(){
@@ -34,11 +42,8 @@
     }
   }
 ,STATS_COLLECTION_TIMEOUT,TimeUnit.MILLISECONDS);
-  JSONObject obj=new JSONObject();
   obj.put("requestId",requestId);
   obj.put("returnAddress",m_mailbox.getHSId());
-  obj.put("selector",selector);
-  obj.put("interval",interval);
   byte payloadBytes[]=CompressionService.compressBytes(obj.toString(4).getBytes("UTF-8"));
   for (  int hostId : m_messenger.getLiveHostIds()) {
     long agentHsId=CoreUtils.getHSIdFromHostAndSite(hostId,HostMessenger.STATS_SITE_ID);
