@@ -80,17 +80,34 @@ assert(false);
 System.exit(-1);
 }
 }
-int versionObserved=verifyAndGetSchemaVersion();
-if (versionObserved == schemaVersionNo) {
-assert(success == false);
 if (success == true) {
-log.info(_F("Catalog update was reported to be successful but is not observable."));
+if (schemaVersionNo > 0) {
+cr=callROProcedureWithRetry("@AdHoc",String.format("select count(*) from V%d limit 1;",schemaVersionNo));
+if (cr.getStatus() == ClientResponse.SUCCESS) {
+log.info(_F("Catalog update was reported to be successful but is not observable(1)."));
 System.exit(-1);
 }
-return null;
+}
+cr=callROProcedureWithRetry("@AdHoc",String.format("select count(*) from V%d limit 1;",schemaVersionNo + 1));
+if (cr.getStatus() != ClientResponse.SUCCESS) {
+log.info(_F("Catalog update was reported to be successful but is not observable(2)."));
+System.exit(-1);
+}
 }
  else {
-assert(versionObserved == (schemaVersionNo + 1));
+if (schemaVersionNo > 0) {
+cr=callROProcedureWithRetry("@AdHoc",String.format("select count(*) from V%d limit 1;",schemaVersionNo));
+if (cr.getStatus() != ClientResponse.SUCCESS) {
+log.info(_F("Catalog update was reported to be un-successful but is observable(1)."));
+System.exit(-1);
+}
+}
+cr=callROProcedureWithRetry("@AdHoc",String.format("select count(*) from V%d limit 1;",schemaVersionNo + 1));
+if (cr.getStatus() == ClientResponse.SUCCESS) {
+log.info(_F("Catalog update was reported to be un-successful but is observable(2)."));
+System.exit(-1);
+}
+}
 schemaVersionNo++;
 long end=System.nanoTime();
 double seconds=(end - start) / 1000000000.0;
@@ -101,5 +118,4 @@ log.info(_F("Completed catalog update that swapped tables in %.4f seconds",secon
 log.info(_F("Completed catalog update of %d tuples in %.4f seconds (%d tuples/sec)",count,seconds,(long)(count / seconds)));
 }
 return new Pair<VoltTable,TableHelper.ViewRep>(t2,view,false);
-}
 }
