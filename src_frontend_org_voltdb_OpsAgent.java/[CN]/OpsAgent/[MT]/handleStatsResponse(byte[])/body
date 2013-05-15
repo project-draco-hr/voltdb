@@ -1,0 +1,46 @@
+{
+  ByteBuffer buf=ByteBuffer.wrap(payload);
+  Long requestId=buf.getLong();
+  PendingStatsRequest request=m_pendingRequests.get(requestId);
+  if (request == null) {
+    hostLog.warn("Received a stats response for stats request " + requestId + " that no longer exists");
+    return;
+  }
+  if (request.aggregateTables == null) {
+    List<VoltTable> tables=new ArrayList<VoltTable>();
+    while (buf.hasRemaining()) {
+      final int tableLength=buf.getInt();
+      int oldLimit=buf.limit();
+      buf.limit(buf.position() + tableLength);
+      ByteBuffer tableBuf=buf.slice();
+      buf.position(buf.limit()).limit(oldLimit);
+      ByteBuffer copy=ByteBuffer.allocate(tableBuf.capacity() * 2);
+      copy.put(tableBuf);
+      copy.limit(copy.position());
+      copy.position(0);
+      VoltTable vt=PrivateVoltTableFactory.createVoltTableFromBuffer(copy,false);
+      tables.add(vt);
+    }
+    request.aggregateTables=tables.toArray(new VoltTable[tables.size()]);
+  }
+ else {
+    for (int ii=0; ii < request.aggregateTables.length; ii++) {
+      if (buf.hasRemaining()) {
+        final int tableLength=buf.getInt();
+        int oldLimit=buf.limit();
+        buf.limit(buf.position() + tableLength);
+        ByteBuffer tableBuf=buf.slice();
+        buf.position(buf.limit()).limit(oldLimit);
+        VoltTable vt=PrivateVoltTableFactory.createVoltTableFromBuffer(tableBuf,true);
+        while (vt.advanceRow()) {
+          request.aggregateTables[ii].add(vt);
+        }
+      }
+    }
+  }
+  request.expectedStatsResponses--;
+  if (request.expectedStatsResponses > 0)   return;
+  m_pendingRequests.remove(requestId);
+  dispatchFinalAggregations(request);
+  sendStatsResponse(request);
+}
