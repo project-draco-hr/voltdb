@@ -3,8 +3,8 @@
   final List<Long> localHSIds=Longs.asList(tracker.getLocalSites());
   final StreamSnapshotRequestConfig config=new StreamSnapshotRequestConfig(jsData,context.getDatabase(),localHSIds);
   List<Integer> localPartitions=tracker.getPartitionsForHost(context.getHostId());
-  if (!config.partitionsToAdd.isEmpty()) {
-    Map<Long,Integer> tokensToAdd=createTokensToAdd(config.partitionsToAdd);
+  Map<Long,Integer> tokensToAdd=createTokensToAdd(config);
+  if (!tokensToAdd.isEmpty()) {
     createUpdateHashinatorTasksForSites(localPartitions,tokensToAdd,txnId);
   }
   final AtomicInteger numTables=new AtomicInteger(config.tables.length);
@@ -14,22 +14,17 @@
     VoltTable schemaTable=CatalogUtil.getVoltTable(table);
     schemas.put(table.getRelativeIndex(),schemaTable.getSchemaBytes());
   }
-  ArrayListMultimap<Long,SnapshotDataTarget> sdts=ArrayListMultimap.create();
-  if (config.streamPairs.size() > 0) {
-    SNAP_LOG.debug("Sites to stream from: " + CoreUtils.hsIdCollectionToString(config.streamPairs.keySet()));
-    for (    Entry<Long,Collection<Long>> entry : config.streamPairs.asMap().entrySet()) {
+  List<DataTargetInfo> sdts=Lists.newArrayList();
+  for (  StreamSnapshotRequestConfig.Stream stream : config.streams) {
+    SNAP_LOG.debug("Sites to stream from: " + CoreUtils.hsIdCollectionToString(stream.streamPairs.keySet()));
+    for (    Entry<Long,Long> entry : stream.streamPairs.entries()) {
       long srcHSId=entry.getKey();
-      Collection<Long> destHSIds=entry.getValue();
-      for (      long destHSId : destHSIds) {
-        sdts.put(srcHSId,new StreamSnapshotDataTarget(destHSId,schemas));
-      }
+      long destHSId=entry.getValue();
+      sdts.add(new DataTargetInfo(stream,srcHSId,new StreamSnapshotDataTarget(destHSId,schemas)));
     }
   }
- else {
-    return false;
-  }
   for (  final Table table : config.tables) {
-    createTasksForTable(table,sdts.asMap(),config,numTables,snapshotRecord);
+    createTasksForTable(table,sdts,config,numTables,snapshotRecord);
     result.addRow(context.getHostId(),hostname,table.getTypeName(),"SUCCESS","");
   }
   return false;
