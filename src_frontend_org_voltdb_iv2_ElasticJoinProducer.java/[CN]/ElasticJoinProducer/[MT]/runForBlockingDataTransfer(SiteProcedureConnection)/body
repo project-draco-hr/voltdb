@@ -1,0 +1,52 @@
+{
+  Pair<Integer,ByteBuffer> tableBlock=m_dataSinks.get(0).poll();
+  if (tableBlock == null && !m_dataSinks.get(0).isEOF()) {
+    m_taskQueue.offer(this);
+    return;
+  }
+  JOINLOG.info("P" + m_partitionId + " blocking partitioned table transfer starts");
+  while (!m_dataSinks.isEmpty()) {
+    if (tableBlock != null) {
+      if (JOINLOG.isTraceEnabled()) {
+        JOINLOG.trace(m_whoami + "restoring partitioned table " + tableBlock.getFirst()+ " block of ("+ tableBlock.getSecond().position()+ ","+ tableBlock.getSecond().limit()+ ")");
+      }
+      restoreBlock(tableBlock,siteConnection);
+    }
+    tableBlock=null;
+    ListIterator<StreamSnapshotSink> sinkIter=m_dataSinks.listIterator();
+    while (sinkIter.hasNext()) {
+      StreamSnapshotSink sink=sinkIter.next();
+      if (sink.isEOF()) {
+        sink.close();
+        sinkIter.remove();
+        if (JOINLOG.isTraceEnabled()) {
+          JOINLOG.trace(m_whoami + " finished transfering partitioned table data from one partition");
+        }
+      }
+ else {
+        tableBlock=sink.poll();
+      }
+      if (tableBlock != null) {
+        break;
+      }
+    }
+  }
+  JOINLOG.debug(m_whoami + " partitioned table snapshot transfer is finished");
+  SnapshotCompletionEvent event=null;
+  try {
+    event=m_partitionedCompletionMonitor.get();
+    assert(event != null);
+    JOINLOG.debug("P" + m_partitionId + " noticed partitioned table snapshot completion");
+    m_completionAction.setSnapshotTxnId(event.multipartTxnId);
+  }
+ catch (  InterruptedException e) {
+    VoltDB.crashLocalVoltDB("Impossible interruption happend",true,e);
+  }
+catch (  ExecutionException e) {
+    VoltDB.crashLocalVoltDB("Error waiting for snapshot to finish",true,e);
+  }
+  RejoinMessage rm=new RejoinMessage(m_mailbox.getHSId(),RejoinMessage.Type.SNAPSHOT_FINISHED);
+  m_mailbox.send(m_coordinatorHsId,rm);
+  m_partitionedStreamFinished=true;
+  setJoinComplete(siteConnection,event.exportSequenceNumbers);
+}
