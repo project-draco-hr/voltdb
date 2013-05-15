@@ -13,43 +13,7 @@
     return;
   }
   String subselector=obj.getString("subselector");
-  if (selector == OpsSelector.SYSTEMCATALOG) {
-    PendingStatsRequest psr=new PendingStatsRequest(selector,subselector,c,clientHandle,System.currentTimeMillis());
-    collectSystemCatalog(psr);
-    return;
-  }
-  if (m_pendingRequests.size() > MAX_IN_FLIGHT_REQUESTS) {
-    Iterator<PendingStatsRequest> iter=m_pendingRequests.values().iterator();
-    final long now=System.currentTimeMillis();
-    boolean foundExpiredRequest=false;
-    while (iter.hasNext()) {
-      PendingStatsRequest psr=iter.next();
-      if (now - psr.startTime > STATS_COLLECTION_TIMEOUT * 2) {
-        iter.remove();
-        foundExpiredRequest=true;
-      }
-    }
-    if (!foundExpiredRequest) {
-      sendErrorResponse(c,ClientResponse.GRACEFUL_FAILURE,"Too many pending stat requests",clientHandle);
-      return;
-    }
-  }
   PendingStatsRequest psr=new PendingStatsRequest(selector,subselector,c,clientHandle,System.currentTimeMillis());
-  final long requestId=m_nextRequestId++;
-  m_pendingRequests.put(requestId,psr);
-  m_es.schedule(new Runnable(){
-    @Override public void run(){
-      checkForRequestTimeout(requestId);
-    }
-  }
-,STATS_COLLECTION_TIMEOUT,TimeUnit.MILLISECONDS);
-  obj.put("requestId",requestId);
-  obj.put("returnAddress",m_mailbox.getHSId());
-  byte payloadBytes[]=CompressionService.compressBytes(obj.toString(4).getBytes("UTF-8"));
-  for (  int hostId : m_messenger.getLiveHostIds()) {
-    long agentHsId=CoreUtils.getHSIdFromHostAndSite(hostId,HostMessenger.SYSCATALOG_SITE_ID);
-    psr.expectedStatsResponses++;
-    BinaryPayloadMessage bpm=new BinaryPayloadMessage(new byte[]{JSON_PAYLOAD},payloadBytes);
-    m_mailbox.send(agentHsId,bpm);
-  }
+  collectSystemCatalog(psr);
+  return;
 }
