@@ -1,0 +1,30 @@
+{
+  DDLStatement stmt=getNextStatement(reader,m_compiler);
+  while (stmt != null) {
+    boolean processed=false;
+    try {
+      processed=processVoltDBStatement(stmt.statement,db);
+    }
+ catch (    VoltCompilerException e) {
+      String msg="VoltDB DDL Error: \"" + e.getMessage() + "\" in statement starting on lineno: "+ stmt.lineNo;
+      throw m_compiler.new VoltCompilerException(msg);
+    }
+    if (!processed) {
+      try {
+        m_fullDDL+=Encoder.hexEncode(stmt.statement) + "\n";
+        m_hsql.runDDLCommand(stmt.statement);
+      }
+ catch (      HSQLParseException e) {
+        String msg="DDL Error: \"" + e.getMessage() + "\" in statement starting on lineno: "+ stmt.lineNo;
+        throw m_compiler.new VoltCompilerException(msg,stmt.lineNo);
+      }
+    }
+    stmt=getNextStatement(reader,m_compiler);
+  }
+  try {
+    reader.close();
+  }
+ catch (  IOException e) {
+    throw m_compiler.new VoltCompilerException("Error closing schema file");
+  }
+}
