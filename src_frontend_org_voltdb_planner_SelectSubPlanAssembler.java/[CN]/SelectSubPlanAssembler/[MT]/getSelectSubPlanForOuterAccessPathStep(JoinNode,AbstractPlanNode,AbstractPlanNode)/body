@@ -1,0 +1,35 @@
+{
+  ArrayList<AbstractExpression> whereClauses=new ArrayList<AbstractExpression>();
+  whereClauses.addAll(joinNode.m_whereInnerList);
+  whereClauses.addAll(joinNode.m_whereInnerOuterList);
+  AccessPath innerAccessPath=joinNode.m_rightNode.m_currentAccessPath;
+  AbstractJoinPlanNode retval=null;
+  if (innerPlan instanceof IndexScanPlanNode && hasInnerOuterIndexExpression(joinNode.m_joinInnerOuterList,innerAccessPath.otherExprs)) {
+    NestLoopIndexPlanNode nlijNode=new NestLoopIndexPlanNode();
+    nlijNode.setJoinType(joinNode.m_rightNode.m_joinType);
+    @SuppressWarnings("unused") IndexScanPlanNode innerNode=(IndexScanPlanNode)innerPlan;
+    nlijNode.addInlinePlanNode(innerPlan);
+    nlijNode.addAndLinkChild(outerPlan);
+    nlijNode.generateOutputSchema(m_db);
+    retval=nlijNode;
+  }
+ else {
+    ArrayList<AbstractExpression> joinClauses=innerAccessPath.joinExprs;
+    NestLoopPlanNode nljNode=new NestLoopPlanNode();
+    if ((joinClauses != null) && !joinClauses.isEmpty()) {
+      nljNode.setJoinPredicate(ExpressionUtil.combine(joinClauses));
+    }
+    nljNode.setJoinType(joinNode.m_rightNode.m_joinType);
+    nljNode.addAndLinkChild(outerPlan);
+    nljNode.addAndLinkChild(innerPlan);
+    nljNode.generateOutputSchema(m_db);
+    retval=nljNode;
+  }
+  if ((joinNode.m_joinOuterList != null) && !joinNode.m_joinOuterList.isEmpty()) {
+    retval.setPreJoinPredicate(ExpressionUtil.combine(joinNode.m_joinOuterList));
+  }
+  if ((whereClauses != null) && !whereClauses.isEmpty()) {
+    retval.setWherePredicate(ExpressionUtil.combine(whereClauses));
+  }
+  return retval;
+}
