@@ -1,32 +1,26 @@
 {
   assert(SnapshotSiteProcessor.ExecutionSitesCurrentlySnapshotting.isEmpty());
-  List<Long> sitesToInclude=CSVSnapshotWritePlan.computeDedupedLocalSites(txnId,tracker);
-  if (sitesToInclude.isEmpty() && !tracker.isFirstHost()) {
-    return false;
-  }
-  NativeSnapshotWritePlan.createFileBasedCompletionTasks(file_path,file_nonce,txnId,partitionTransactionIds,context,exportSequenceNumbers,timestamp,context.getNumberOfPartitions());
+  NativeSnapshotWritePlan.createFileBasedCompletionTasks(file_path,file_nonce,txnId,partitionTransactionIds,context,exportSequenceNumbers,timestamp,newPartitionCount);
   final List<Table> tables=SnapshotUtil.getTablesToSave(context.getDatabase());
   final AtomicInteger numTables=new AtomicInteger(tables.size());
-  final SnapshotRegistry.Snapshot snapshotRecord=SnapshotRegistry.startSnapshot(txnId,context.getHostId(),file_path,file_nonce,SnapshotFormat.CSV,tables.toArray(new Table[0]));
+  final SnapshotRegistry.Snapshot snapshotRecord=SnapshotRegistry.startSnapshot(txnId,context.getHostId(),file_path,file_nonce,SnapshotFormat.NATIVE,tables.toArray(new Table[0]));
   SnapshotDataTarget sdt=null;
   boolean noTargetsCreated=true;
   final ArrayList<SnapshotTableTask> partitionedSnapshotTasks=new ArrayList<SnapshotTableTask>();
   final ArrayList<SnapshotTableTask> replicatedSnapshotTasks=new ArrayList<SnapshotTableTask>();
   for (  final Table table : tables) {
-    if (table.getIsreplicated() && !tracker.isFirstHost()) {
-      snapshotRecord.removeTable(table.getTypeName());
-      continue;
-    }
-    File saveFilePath=null;
-    saveFilePath=SnapshotUtil.constructFileForTable(table,file_path,file_nonce,SnapshotFormat.CSV,context.getHostId());
     try {
-      sdt=new SimpleFileSnapshotDataTarget(saveFilePath,!table.getIsreplicated());
+      File saveFilePath=null;
+      saveFilePath=SnapshotUtil.constructFileForTable(table,file_path,file_nonce,SnapshotFormat.NATIVE,context.getHostId());
+      sdt=constructSnapshotDataTargetForTable(context,saveFilePath,table,context.getHostId(),context.getNumberOfPartitions(),txnId,timestamp,tracker.getPartitionsForHost(context.getHostId()));
+      if (sdt == null) {
+        throw new IOException("Unable to create snapshot target");
+      }
       m_targets.add(sdt);
       final Runnable onClose=new TargetStatsClosure(sdt,table.getTypeName(),numTables,snapshotRecord);
       sdt.setOnCloseHandler(onClose);
-      List<SnapshotDataFilter> filters=new ArrayList<SnapshotDataFilter>();
-      filters.add(new CSVSnapshotFilter(CatalogUtil.getVoltTable(table),',',null));
-      final SnapshotTableTask task=new SnapshotTableTask(table,sdt,filters.toArray(new SnapshotDataFilter[filters.size()]),null,false);
+      final SnapshotTableTask task=new SnapshotTableTask(table,sdt,new SnapshotDataFilter[0],null,false);
+      SNAP_LOG.debug("ADDING TASK: " + task);
       if (table.getIsreplicated()) {
         replicatedSnapshotTasks.add(task);
       }
@@ -43,7 +37,7 @@
   if (noTargetsCreated) {
     SnapshotRegistry.discardSnapshot(snapshotRecord);
   }
-  placePartitionedTasks(partitionedSnapshotTasks,sitesToInclude);
+  placePartitionedTasks(partitionedSnapshotTasks,tracker.getSitesForHost(context.getHostId()));
   placeReplicatedTasks(replicatedSnapshotTasks,tracker.getSitesForHost(context.getHostId()));
   return noTargetsCreated;
 }
