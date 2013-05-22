@@ -6,16 +6,20 @@
   cfg.parse(CSVLoader.class.getName(),args);
   config=cfg;
   configuration();
-  CSVReader csvReader=null;
+  ICsvListReader listReader=null;
   try {
-    if (CSVLoader.standin)     csvReader=new CSVReader(new BufferedReader(new InputStreamReader(System.in)),config.separator,config.quotechar,config.escape,config.skip,config.strictquotes,config.nowhitespace);
- else     csvReader=new CSVReader(new FileReader(config.file),config.separator,config.quotechar,config.escape,config.skip,config.strictquotes,config.nowhitespace);
+    if (CSVLoader.standin) {
+      listReader=new CsvListReader(new BufferedReader(new InputStreamReader(System.in)),CsvPreference.STANDARD_PREFERENCE);
+    }
+ else     listReader=new CsvListReader(new FileReader(config.file),CsvPreference.STANDARD_PREFERENCE);
+    listReader.getHeader(true);
+    final CellProcessor[] processors=getProcessors();
   }
  catch (  FileNotFoundException e) {
     m_log.error("CSV file '" + config.file + "' could not be found.");
     System.exit(-1);
   }
-  assert(csvReader != null);
+  assert(listReader != null);
   String[] serverlist=config.servers.split(",");
   ClientConfig c_config=new ClientConfig(config.user,config.password);
   c_config.setProcedureCallTimeout(0);
@@ -30,19 +34,22 @@
   }
   assert(csvClient != null);
   try {
+    final CellProcessor[] processors=getProcessors();
     ProcedureCallback cb=null;
     boolean lastOK=true;
-    String line[]=null;
-    while ((config.limitrows-- > 0) && (line=csvReader.readNext()) != null) {
+    List<Object> lineList;
+    Object[] line;
+    while ((config.limitrows-- > 0) && (lineList=listReader.read(processors)) != null) {
       outCount.incrementAndGet();
       boolean queued=false;
       while (queued == false) {
         StringBuilder linedata=new StringBuilder();
+        line=lineList.toArray();
         for (int i=0; i < line.length; i++) {
           linedata.append("\"" + line[i] + "\"");
           if (i != line.length - 1)           linedata.append(",");
         }
-        String[] correctedLine=line;
+        Object[] correctedLine=line;
         cb=new MyCallback(outCount.get(),config,linedata.toString());
         String lineCheckResult;
         if ((lineCheckResult=checkparams_trimspace(correctedLine,columnCnt)) != null) {
@@ -85,6 +92,6 @@ synchronized (errorInfo) {
   }
   produceFiles();
   close_cleanup();
-  csvReader.close();
+  listReader.close();
   csvClient.close();
 }
