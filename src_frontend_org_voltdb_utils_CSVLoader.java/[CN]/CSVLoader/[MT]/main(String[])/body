@@ -8,12 +8,8 @@
   configuration();
   ICsvListReader listReader=null;
   try {
-    if (CSVLoader.standin) {
-      listReader=new CsvListReader(new BufferedReader(new InputStreamReader(System.in)),CsvPreference.STANDARD_PREFERENCE);
-    }
+    if (CSVLoader.standin)     listReader=new CsvListReader(new BufferedReader(new InputStreamReader(System.in)),CsvPreference.STANDARD_PREFERENCE);
  else     listReader=new CsvListReader(new FileReader(config.file),CsvPreference.STANDARD_PREFERENCE);
-    listReader.getHeader(true);
-    final CellProcessor[] processors=getProcessors();
   }
  catch (  FileNotFoundException e) {
     m_log.error("CSV file '" + config.file + "' could not be found.");
@@ -28,56 +24,97 @@
     csvClient=CSVLoader.getClient(c_config,serverlist,config.port);
   }
  catch (  Exception e) {
-    m_log.error("Error connecting to the servers:" + config.servers);
+    m_log.error("Error to connect to the servers:" + config.servers);
     close_cleanup();
     System.exit(-1);
   }
   assert(csvClient != null);
   try {
-    final CellProcessor[] processors=getProcessors();
     ProcedureCallback cb=null;
     boolean lastOK=true;
-    List<String> lineList;
-    Object[] line;
-    while ((config.limitrows-- > 0) && (lineList=listReader.read()) != null) {
-      outCount.incrementAndGet();
-      boolean queued=false;
-      while (queued == false) {
-        StringBuilder linedata=new StringBuilder();
-        line=lineList.toArray();
-        for (int i=0; i < line.length; i++) {
-          linedata.append("\"" + line[i] + "\"");
-          if (i != line.length - 1)           linedata.append(",");
+    int columnCnt=0;
+    VoltTable procInfo=null;
+    boolean isProcExist=false;
+    try {
+      procInfo=csvClient.callProcedure("@SystemCatalog","PROCEDURECOLUMNS").getResults()[0];
+      while (procInfo.advanceRow()) {
+        if (insertProcedure.matches((String)procInfo.get("PROCEDURE_NAME",VoltType.STRING))) {
+          columnCnt++;
+          isProcExist=true;
+          String typeStr=(String)procInfo.get("TYPE_NAME",VoltType.STRING);
+          typeList.add(VoltType.typeFromString(typeStr));
         }
-        Object[] correctedLine=line;
-        cb=new MyCallback(outCount.get(),config,linedata.toString());
-        String lineCheckResult;
-        if ((lineCheckResult=checkparams_trimspace(correctedLine,columnCnt)) != null) {
-synchronized (errorInfo) {
-            if (!errorInfo.containsKey(outCount.get())) {
-              String[] info={linedata.toString(),lineCheckResult};
-              errorInfo.put(outCount.get(),info);
-            }
-            if (errorInfo.size() >= config.maxerrors) {
-              m_log.error("The number of Failure row data exceeds " + config.maxerrors);
-              produceFiles();
-              close_cleanup();
-              System.exit(-1);
-            }
-          }
-          break;
-        }
-        queued=csvClient.callProcedure(cb,insertProcedure,(Object[])correctedLine);
-        if (queued == false) {
-          ++waits;
-          if (lastOK == false) {
-            ++shortWaits;
-          }
-          Thread.sleep(waitSeconds);
-        }
-        lastOK=queued;
       }
     }
+ catch (    Exception e) {
+      m_log.error(e.getMessage(),e);
+      close_cleanup();
+      System.exit(-1);
+    }
+    if (isProcExist == false) {
+      m_log.error("No matching insert procedure available");
+      close_cleanup();
+      System.exit(-1);
+    }
+    List<String> lineList=null;
+    do {
+      try {
+        if (listReader.getLineNumber() == 0)         lineList=listReader.read();
+        if (listReader.getLineNumber() <= config.skip) {
+          lineList=listReader.read();
+          continue;
+        }
+        outCount.incrementAndGet();
+        boolean queued=false;
+        while (queued == false) {
+          Object[] correctedLine=lineList.toArray();
+          cb=new MyCallback(outCount.get(),config,lineList.toString());
+          String lineCheckResult;
+          if ((lineCheckResult=checkparams_trimspace(correctedLine,columnCnt)) != null) {
+synchronized (errorInfo) {
+              if (!errorInfo.containsKey(outCount.get())) {
+                String[] info={lineList.toString(),lineCheckResult};
+                errorInfo.put(outCount.get(),info);
+              }
+              if (errorInfo.size() >= config.maxerrors) {
+                m_log.error("The number of Failure row data exceeds " + config.maxerrors);
+                produceFiles();
+                close_cleanup();
+                System.exit(-1);
+              }
+            }
+            break;
+          }
+          queued=csvClient.callProcedure(cb,insertProcedure,(Object[])correctedLine);
+          if (queued == false) {
+            ++waits;
+            if (lastOK == false) {
+              ++shortWaits;
+            }
+            Thread.sleep(waitSeconds);
+          }
+          lastOK=queued;
+        }
+        lineList=listReader.read();
+      }
+ catch (      SuperCsvException e) {
+        outCount.incrementAndGet();
+        String msg=e.getMessage();
+synchronized (errorInfo) {
+          if (!errorInfo.containsKey(outCount.get())) {
+            String[] info={"At line" + listReader.getLineNumber(),msg};
+            errorInfo.put(outCount.get(),info);
+          }
+          if (errorInfo.size() >= config.maxerrors) {
+            m_log.error("The number of Failure row data exceeds " + config.maxerrors);
+            produceFiles();
+            close_cleanup();
+            System.exit(-1);
+          }
+        }
+      }
+    }
+ while ((config.limitrows-- > 0) && lineList != null);
     csvClient.drain();
   }
  catch (  Exception e) {
