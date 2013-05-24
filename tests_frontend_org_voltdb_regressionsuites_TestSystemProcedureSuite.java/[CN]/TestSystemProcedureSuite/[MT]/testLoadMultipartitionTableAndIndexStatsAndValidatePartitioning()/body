@@ -1,5 +1,9 @@
 {
   Client client=getClient();
+  Random r=new Random(0);
+  for (int ii=0; ii < 50; ii++) {
+    client.callProcedure(new NullCallback(),"@AdHoc","INSERT INTO new_order values (" + (short)(r.nextDouble() * Short.MAX_VALUE) + ");");
+  }
   try {
     client.callProcedure("@LoadMultipartitionTable","DOES_NOT_EXIST",null,1);
     fail();
@@ -63,13 +67,25 @@
       if (success) {
         success=memorySum == indexMemorySum;
         if (success) {
-          return;
+          break;
         }
       }
       Thread.sleep(1);
     }
     assertTrue(indexMemorySum != 120);
     assertEquals(memorySum,indexMemorySum);
+    VoltTable validateResult=client.callProcedure("@ValidatePartitioning",0,null).getResults()[0];
+    System.out.println(validateResult);
+    while (validateResult.advanceRow()) {
+      assertEquals(0L,validateResult.getLong("MISPARTITIONED_ROWS"));
+    }
+    validateResult=client.callProcedure("@ValidatePartitioning",0,new byte[]{0,0,0,9}).getResults()[0];
+    System.out.println(validateResult);
+    while (validateResult.advanceRow()) {
+      if (validateResult.getString("TABLE").equals("NEW_ORDER")) {
+        assertTrue(validateResult.getLong("MISPARTITIONED_ROWS") > 0);
+      }
+    }
   }
  catch (  Exception e) {
     e.printStackTrace();
