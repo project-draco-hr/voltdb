@@ -1,0 +1,74 @@
+{
+  ImmutableList.Builder<Class<?>> builder=ImmutableList.builder();
+  ClassLoader cl=c.getClassLoader();
+  if (cl == null) {
+    cl=Thread.currentThread().getContextClassLoader();
+  }
+  String stem=c.getName().replace('.','/');
+  URL curl=cl.getResource(stem + ".class");
+  if ("jar".equals(curl.getProtocol())) {
+    Pattern nameRE=Pattern.compile("\\A(" + stem + "\\$[^/]+).class\\z");
+    String jarFN;
+    try {
+      jarFN=URLDecoder.decode(curl.getFile(),"UTF-8");
+    }
+ catch (    UnsupportedEncodingException e) {
+      String msg="Unable to UTF-8 decode " + curl.getFile() + " for class "+ c;
+      throw new VoltCompilerException(msg);
+    }
+    jarFN=jarFN.substring(5,jarFN.indexOf('!'));
+    JarFile jar=null;
+    try {
+      jar=new JarFile(jarFN);
+      Enumeration<JarEntry> entries=jar.entries();
+      while (entries.hasMoreElements()) {
+        String name=entries.nextElement().getName();
+        Matcher mtc=nameRE.matcher(name);
+        if (mtc.find()) {
+          String innerName=mtc.group(1).replace('/','.');
+          Class<?> inner;
+          try {
+            inner=cl.loadClass(innerName);
+          }
+ catch (          ClassNotFoundException e) {
+            String msg="Unable to load " + c + " inner class "+ innerName;
+            throw new VoltCompilerException(msg);
+          }
+          builder.add(inner);
+        }
+      }
+    }
+ catch (    IOException e) {
+      String msg="Cannot access class " + c + " source code location of "+ jarFN;
+      throw new VoltCompilerException(msg);
+    }
+ finally {
+      if (jar != null)       try {
+        jar.close();
+      }
+ catch (      Exception ignoreIt) {
+      }
+      ;
+    }
+  }
+ else   if ("file".equals(curl.getProtocol())) {
+    Pattern nameRE=Pattern.compile("/(" + stem + "\\$[^/]+).class\\z");
+    File sourceDH=new File(curl.getFile()).getParentFile();
+    for (    File f : sourceDH.listFiles()) {
+      Matcher mtc=nameRE.matcher(f.getAbsolutePath());
+      if (mtc.find()) {
+        String innerName=mtc.group(1).replace('/','.');
+        Class<?> inner;
+        try {
+          inner=cl.loadClass(innerName);
+        }
+ catch (        ClassNotFoundException e) {
+          String msg="Unable to load " + c + " inner class "+ innerName;
+          throw new VoltCompilerException(msg);
+        }
+        builder.add(inner);
+      }
+    }
+  }
+  return builder.build();
+}
