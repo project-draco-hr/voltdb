@@ -1,0 +1,52 @@
+{
+  String shortName=scriptClass.getSimpleName();
+  Method run;
+  try {
+    run=scriptClass.getMethod("run",(Class<?>[])null);
+  }
+ catch (  NoSuchMethodException e) {
+    throw new SetupException("Procedure \"" + scriptClass.getName() + "\" is not a groovy script",e);
+  }
+  Script script;
+  try {
+    script=(Script)scriptClass.newInstance();
+  }
+ catch (  InstantiationException e) {
+    throw new SetupException("Error instantiating the code block script for \"" + shortName + "\"",e);
+  }
+catch (  IllegalAccessException e) {
+    throw new SetupException("Error instantiating the code block script for \"" + shortName + "\"",e);
+  }
+catch (  ClassCastException e) {
+    throw new SetupException("Procedure \"" + shortName + "\" is not a groovy script",e);
+  }
+  Binding binding=new Binding();
+  binding.setVariable(GVY_PROCEDURE_INSTANCE_VAR,this);
+  script.setBinding(binding);
+  try {
+    run.invoke(script,(Object[])null);
+  }
+ catch (  IllegalAccessException e) {
+    throw new SetupException("Error running the code block script for \"" + shortName + "\"",e);
+  }
+catch (  InvocationTargetException e) {
+    throw new SetupException("Error running the code block script for \"" + shortName + "\"",e.getTargetException() == null ? e : e.getTargetException());
+  }
+  Object transactOn=binding.getVariable(GVY_PROCEDURE_ENTRY_CLOSURE);
+  if (transactOn == null || !(transactOn instanceof Closure)) {
+    throw new SetupException(String.format("Procedure \"%s\" code block does not contain the required \"%s\" closure",shortName,GVY_PROCEDURE_ENTRY_CLOSURE));
+  }
+  @SuppressWarnings("unchecked") Map<String,Object> bindings=(Map<String,Object>)binding.getVariables();
+  ImmutableMap.Builder<String,SQLStmt> builder=ImmutableMap.builder();
+  for (  Map.Entry<String,Object> entry : bindings.entrySet()) {
+    if (entry.getValue() != null && entry.getValue() instanceof SQLStmt) {
+      SQLStmt statement=SQLStmt.class.cast(entry.getValue());
+      builder.put(entry.getKey(),statement);
+    }
+  }
+  @SuppressWarnings("unchecked") Closure<Object> procedureInvocationClosure=(Closure<Object>)transactOn;
+  m_procedureName=shortName;
+  m_closure=procedureInvocationClosure;
+  m_parameterTypes=procedureInvocationClosure.getParameterTypes();
+  m_statementMap=builder.build();
+}

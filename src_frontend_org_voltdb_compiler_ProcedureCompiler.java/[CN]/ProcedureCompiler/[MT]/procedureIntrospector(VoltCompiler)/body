@@ -1,0 +1,97 @@
+{
+  return new Language.CheckedExceptionVisitor<Map<String,Object>,Class<?>,VoltCompilerException>(){
+    @Override public Map<String,Object> visitJava(    Class<?> p) throws VoltCompilerException {
+      String shortName=deriveShortProcedureName(p.getName());
+      VoltProcedure procInstance;
+      try {
+        procInstance=(VoltProcedure)p.newInstance();
+      }
+ catch (      InstantiationException e) {
+        throw new RuntimeException("Error instantiating procedure \"%s\"" + p.getName(),e);
+      }
+catch (      IllegalAccessException e) {
+        throw new RuntimeException("Error instantiating procedure \"%s\"" + p.getName(),e);
+      }
+      Map<String,SQLStmt> stmtMap=getValidSQLStmts(compiler,p.getSimpleName(),p,procInstance,true);
+      ImmutableMap.Builder<String,Object> builder=ImmutableMap.builder();
+      builder.putAll(stmtMap);
+      Method procMethod=null;
+      Method[] methods=p.getDeclaredMethods();
+      for (      final Method m : methods) {
+        String name=m.getName();
+        if (name.equals("run")) {
+          assert(m.getDeclaringClass() == p);
+          if (procMethod != null) {
+            String msg="Procedure: " + shortName + " has multiple public run(...) methods. ";
+            msg+="Only a single run(...) method is supported.";
+            throw compiler.new VoltCompilerException(msg);
+          }
+          if (Modifier.isPublic(m.getModifiers())) {
+            procMethod=m;
+          }
+ else {
+            compiler.addWarn("Procedure: " + shortName + " has non-public run(...) method.");
+          }
+        }
+      }
+      if (procMethod == null) {
+        String msg="Procedure: " + shortName + " has no run(...) method.";
+        throw compiler.new VoltCompilerException(msg);
+      }
+      if ((procMethod.getReturnType() != VoltTable[].class) && (procMethod.getReturnType() != VoltTable.class) && (procMethod.getReturnType() != long.class)&& (procMethod.getReturnType() != Long.class)) {
+        String msg="Procedure: " + shortName + " has run(...) method that doesn't return long, Long, VoltTable or VoltTable[].";
+        throw compiler.new VoltCompilerException(msg);
+      }
+      builder.put("@run",procMethod);
+      return builder.build();
+    }
+    @Override public Map<String,Object> visitGroovy(    Class<?> p) throws VoltCompilerException {
+      String shortName=deriveShortProcedureName(p.getName());
+      Method run;
+      try {
+        run=p.getMethod("run",(Class<?>[])null);
+      }
+ catch (      NoSuchMethodException ex) {
+        throw compiler.new VoltCompilerException(String.format("Procedure \"%s\" code block is not a groovy script",shortName));
+      }
+      Script script;
+      try {
+        script=(Script)p.newInstance();
+      }
+ catch (      InstantiationException e) {
+        throw new RuntimeException("Error instantiating the code block script for \"" + shortName + "\"",e);
+      }
+catch (      IllegalAccessException e) {
+        throw new RuntimeException("Error instantiating the code block script for \"" + shortName + "\"",e);
+      }
+catch (      ClassCastException ex) {
+        throw compiler.new VoltCompilerException(String.format("Procedure \"%s\" code block is not a groovy script",shortName));
+      }
+      Binding binding=new Binding();
+      binding.setVariable(GVY_PROCEDURE_INSTANCE_VAR,(VoltProcedure)null);
+      script.setBinding(binding);
+      try {
+        run.invoke(script,(Object[])null);
+      }
+ catch (      IllegalAccessException e) {
+        throw new RuntimeException("Error running the code block script for \"" + shortName + "\"",e);
+      }
+catch (      InvocationTargetException e) {
+        throw new RuntimeException("Error running the code block script for \"" + shortName + "\"",e);
+      }
+      Object transactOn=binding.getVariable(GVY_PROCEDURE_ENTRY_CLOSURE);
+      if (transactOn == null || !(transactOn instanceof Closure)) {
+        throw compiler.new VoltCompilerException(String.format("Procedure \"%s\" code block does not contain the required \"%s\" closure",shortName,GVY_PROCEDURE_ENTRY_CLOSURE));
+      }
+      @SuppressWarnings("unchecked") Map<String,Object> bindings=(Map<String,Object>)binding.getVariables();
+      ImmutableMap.Builder<String,Object> builder=ImmutableMap.builder();
+      for (      Map.Entry<String,Object> entry : bindings.entrySet()) {
+        if (entry.getValue() != null) {
+          builder.put(entry.getKey(),entry.getValue());
+        }
+      }
+      return builder.build();
+    }
+  }
+;
+}

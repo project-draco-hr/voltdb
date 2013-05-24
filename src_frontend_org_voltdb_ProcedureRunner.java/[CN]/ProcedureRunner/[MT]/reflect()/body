@@ -43,35 +43,32 @@
     }
   }
  else {
-    Method[] methods=m_procedure.getClass().getDeclaredMethods();
-    for (    final Method m : methods) {
-      String name=m.getName();
-      if (name.equals("run")) {
-        if (Modifier.isPublic(m.getModifiers()) == false)         continue;
-        m_procMethod=m;
-        m_paramTypes=m.getParameterTypes();
-        int tempParamTypesLength=m_paramTypes.length;
-        m_paramTypeIsPrimitive=new boolean[tempParamTypesLength];
-        m_paramTypeIsArray=new boolean[tempParamTypesLength];
-        m_paramTypeComponentType=new Class<?>[tempParamTypesLength];
-        for (int ii=0; ii < tempParamTypesLength; ii++) {
-          m_paramTypeIsPrimitive[ii]=m_paramTypes[ii].isPrimitive();
-          m_paramTypeIsArray[ii]=m_paramTypes[ii].isArray();
-          m_paramTypeComponentType[ii]=m_paramTypes[ii].getComponentType();
-        }
-      }
+    m_paramTypes=m_language.accept(parametersTypeRetriever,this);
+    int tempParamTypesLength=m_paramTypes.length;
+    m_paramTypeIsPrimitive=new boolean[tempParamTypesLength];
+    m_paramTypeIsArray=new boolean[tempParamTypesLength];
+    m_paramTypeComponentType=new Class<?>[tempParamTypesLength];
+    for (int ii=0; ii < tempParamTypesLength; ii++) {
+      m_paramTypeIsPrimitive[ii]=m_paramTypes[ii].isPrimitive();
+      m_paramTypeIsArray[ii]=m_paramTypes[ii].isArray();
+      m_paramTypeComponentType[ii]=m_paramTypes[ii].getComponentType();
     }
-    if (m_procMethod == null) {
+    if (m_procMethod == null && m_language == Language.JAVA) {
       throw new RuntimeException("No \"run\" method found in: " + m_procedure.getClass().getName());
     }
   }
   Map<String,SQLStmt> stmtMap=null;
-  try {
-    stmtMap=ProcedureCompiler.getValidSQLStmts(null,m_procedureName,m_procedure.getClass(),m_procedure,true);
+  if (m_catProc.getHasjava() == false) {
+    try {
+      stmtMap=ProcedureCompiler.getValidSQLStmts(null,m_procedureName,m_procedure.getClass(),m_procedure,true);
+    }
+ catch (    Exception e1) {
+      e1.printStackTrace();
+      return;
+    }
   }
- catch (  Exception e1) {
-    e1.printStackTrace();
-    return;
+ else {
+    stmtMap=m_language.accept(sqlStatementsRetriever,this);
   }
   for (  final Entry<String,SQLStmt> entry : stmtMap.entrySet()) {
     String name=entry.getKey();
