@@ -1,0 +1,23 @@
+def decorated_log_split(f, offset, keyfunc, fnamedict={}):
+    ' Generator that splits on timestamps. This returns\n    (millis-since-epoch, {"datetime":<original timestamp> ,\n                          "newdatetime":<offset timestamp>,\n                          "message": <log message>\n                          "filename":<filename>})\n    '
+    ts_format = '\\d{0,4}-?\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}:\\d{2},?\\d{0,3}'
+    log_re = re.compile(('(?P<datetime>%s)\n                             \\s+\n                             (?P<message>.*)\n                             ' % ts_format), re.VERBOSE)
+    if hasattr(f, 'name'):
+        fname = os.path.basename(f.name)
+    else:
+        fname = ''
+    currentdict = {}
+    for line in f:
+        m = log_re.match(line)
+        if m:
+            if currentdict:
+                yield (keyfunc(currentdict['newdatetime']), currentdict)
+            currentdict = copy.deepcopy(m.groupdict())
+            currentdict['filename'] = fname
+            if (currentdict['datetime'][4] != '-'):
+                currentdict['datetime'] = ((str(datetime.now().year) + '-') + currentdict['datetime'])
+            new_epoch_ms = (keyfunc(currentdict['datetime']) + offset)
+            currentdict['newdatetime'] = time_str = ('%s,%03d' % (time.strftime('%Y-%m-%d %H:%M:%S', time.localtime((new_epoch_ms / 1000))), (new_epoch_ms % 1000)))
+        elif ('message' in currentdict):
+            currentdict['message'] += line
+    yield (new_epoch_ms, currentdict)
