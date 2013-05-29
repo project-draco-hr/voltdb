@@ -9,7 +9,16 @@
     err="SnapshotScanAgent received non-SNAPSHOTSCAN selector: " + selector.name();
   }
   if (err != null) {
-    sendErrorResponse(c,ClientResponse.GRACEFUL_FAILURE,err,clientHandle);
+    ColumnInfo[] result_columns=new ColumnInfo[1];
+    result_columns[0]=new ColumnInfo("ERR_MSG",VoltType.STRING);
+    VoltTable results[]=new VoltTable[]{new VoltTable(result_columns)};
+    results[0].addRow(err);
+    ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponse.SUCCESS,ClientResponse.UNINITIALIZED_APP_STATUS_CODE,null,results,err);
+    errorResponse.setClientHandle(clientHandle);
+    ByteBuffer buf=ByteBuffer.allocate(errorResponse.getSerializedSize() + 4);
+    buf.putInt(buf.capacity() - 4);
+    errorResponse.flattenToBuffer(buf).flip();
+    c.writeStream().enqueue(buf);
     return;
   }
   String subselector=obj.getString("subselector");
