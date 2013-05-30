@@ -10,9 +10,20 @@ import time
 if (__name__ == '__main__'):
     parser = OptionParser(usage='usage: %prog [options] FILE...')
     parser.add_option('-o', '--output', dest='outputfile', help='write to ')
-    parser.add_option('-t', '--tzoffset', type='string', default='0', nargs=1, metavar='TZ_OFFSET', action='callback', callback=tz_offset_callback, help="Change the timestamps by [-|+]hh:mm to timezones. EST is -05:00, PDT is -08:00. Don't forget daylight savings.")
+    parser.add_option('-t', '--tzoffset', type='string', default='0', nargs=1, action='callback', callback=tz_offset_callback, help="Change the timestamps by [-|+]hh:mm to timezones. EST is -05:00, PDT is -08:00. Don't forget daylight savings.")
+    parser.add_option('-e', '--exclude', type='string', default=os.path.join(os.path.dirname(os.path.realpath(__file__)), 'exclude.txt'), nargs=1, dest='exclude_file', action='callback', callback=exclude_callback, help="Exclude file to use. Default it exclude.txt.  If 'None' is specified, no exclude file will be used")
     (options, args) = parser.parse_args()
     offsets = {}
+    tar = None
+    if (len(args) == 0):
+        parser.error('You must provide at least one logfile or apprunner archive')
+    if (len(args) >= 1):
+        try:
+            tarfiles = [f for f in args if tarfile.is_tarfile(f)]
+        except IOError as e:
+            sys.exit(('Cannot open input file: ' + str(e)))
+        if ((len(tarfiles) >= 1) and (len(args) > 1)):
+            parser.error('There can only specify 1 apprunner archive')
     if ((len(args) == 1) and tarfile.is_tarfile(args[0])):
         try:
             tar = ApprunnerTarFile(args[0])
@@ -38,9 +49,12 @@ if (__name__ == '__main__'):
         except IOError as e:
             sys.exit(('Cannot write output file %s: %s ' % (options.outputfile, str(e))))
     excludes = []
-    exclude_file = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'exclude.txt')
-    with open(exclude_file) as exf:
-        excludes = [l.rstrip() for l in exf if (l[0] != '#')]
+    if options.exclude_file:
+        try:
+            with open(options.exclude_file) as ef:
+                excludes = [l.rstrip() for l in ef if (l[0] != '#')]
+        except IOError as e:
+            sys.exit(('Cannot read exclude file %s: %s' % (options.exclude_file, str(e))))
     name_dict = {'(volt\\w*)-.*.txt': '  ', 'org.voltdb.(dr).VoltDBReplicationAgent': '%%', '(apprunner).log': '&&', '(.*)\\.Benchmark\\.': '--', }
     for (time_str, entry) in merge_logs(files, offsets):
         if tar:
