@@ -1,0 +1,36 @@
+def install_pip(py_executable, search_dirs=None, never_download=False):
+    if (search_dirs is None):
+        search_dirs = file_search_dirs()
+    filenames = []
+    for dir in search_dirs:
+        filenames.extend([join(dir, fn) for fn in os.listdir(dir) if _pip_re.search(fn)])
+    filenames = [(os.path.basename(filename).lower(), i, filename) for (i, filename) in enumerate(filenames)]
+    filenames.sort()
+    filenames = [filename for (basename, i, filename) in filenames]
+    if (not filenames):
+        filename = 'pip'
+    else:
+        filename = filenames[(-1)]
+    easy_install_script = 'easy_install'
+    if is_win:
+        easy_install_script = 'easy_install-script.py'
+    cmd = [py_executable, '-x', join(os.path.dirname(py_executable), easy_install_script), filename]
+    if (is_jython or is_pypy):
+        cmd.remove('-x')
+    if (filename == 'pip'):
+        if never_download:
+            logger.fatal(("Can't find any local distributions of pip to install and --never-download is set.  Either re-run virtualenv without the --never-download option, or place a pip source distribution (zip/tar.gz/tar.bz2) in one of these locations: %r" % search_dirs))
+            sys.exit(1)
+        logger.info('Installing pip from network...')
+    else:
+        logger.info(('Installing existing %s distribution: %s' % (os.path.basename(filename), filename)))
+    logger.start_progress('Installing pip...')
+    logger.indent += 2
+
+    def _filter_setup(line):
+        return filter_ez_setup(line, 'pip')
+    try:
+        call_subprocess(cmd, show_stdout=False, filter_stdout=_filter_setup)
+    finally:
+        logger.indent -= 2
+        logger.end_progress()

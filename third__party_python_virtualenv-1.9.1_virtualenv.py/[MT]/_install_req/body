@@ -1,0 +1,78 @@
+def _install_req(py_executable, unzip=False, distribute=False, search_dirs=None, never_download=False):
+    if (search_dirs is None):
+        search_dirs = file_search_dirs()
+    if (not distribute):
+        egg_path = ('setuptools-*-py%s.egg' % sys.version[:3])
+        (found, egg_path) = _find_file(egg_path, search_dirs)
+        project_name = 'setuptools'
+        bootstrap_script = EZ_SETUP_PY
+        tgz_path = None
+    else:
+        egg_path = ('distribute-*-py%s.egg' % sys.version[:3])
+        (found, egg_path) = _find_file(egg_path, search_dirs)
+        project_name = 'distribute'
+        if found:
+            tgz_path = None
+            bootstrap_script = DISTRIBUTE_FROM_EGG_PY
+        else:
+            egg_path = None
+            tgz_path = 'distribute-*.tar.gz'
+            (found, tgz_path) = _find_file(tgz_path, search_dirs)
+            bootstrap_script = DISTRIBUTE_SETUP_PY
+    if (is_jython and (os._name == 'nt')):
+        (fd, ez_setup) = tempfile.mkstemp('.py')
+        os.write(fd, bootstrap_script)
+        os.close(fd)
+        cmd = [py_executable, ez_setup]
+    else:
+        cmd = [py_executable, '-c', bootstrap_script]
+    if (unzip and egg_path):
+        cmd.append('--always-unzip')
+    env = {}
+    remove_from_env = ['__PYVENV_LAUNCHER__']
+    if (logger.stdout_level_matches(logger.DEBUG) and egg_path):
+        cmd.append('-v')
+    old_chdir = os.getcwd()
+    if ((egg_path is not None) and os.path.exists(egg_path)):
+        logger.info(('Using existing %s egg: %s' % (project_name, egg_path)))
+        cmd.append(egg_path)
+        if os.environ.get('PYTHONPATH'):
+            env['PYTHONPATH'] = ((egg_path + os.path.pathsep) + os.environ['PYTHONPATH'])
+        else:
+            env['PYTHONPATH'] = egg_path
+    elif ((tgz_path is not None) and os.path.exists(tgz_path)):
+        logger.info(('Using existing %s egg: %s' % (project_name, tgz_path)))
+        os.chdir(os.path.dirname(tgz_path))
+        remove_from_env.append('PYTHONPATH')
+    elif never_download:
+        logger.fatal(("Can't find any local distributions of %s to install and --never-download is set.  Either re-run virtualenv without the --never-download option, or place a %s distribution (%s) in one of these locations: %r" % (project_name, project_name, (egg_path or tgz_path), search_dirs)))
+        sys.exit(1)
+    elif egg_path:
+        logger.info(('No %s egg found; downloading' % project_name))
+        cmd.extend(['--always-copy', '-U', project_name])
+    else:
+        logger.info(('No %s tgz found; downloading' % project_name))
+    logger.start_progress(('Installing %s...' % project_name))
+    logger.indent += 2
+    cwd = None
+    if (project_name == 'distribute'):
+        env['DONT_PATCH_SETUPTOOLS'] = 'true'
+
+    def _filter_ez_setup(line):
+        return filter_ez_setup(line, project_name)
+    if (not os.access(os.getcwd(), os.W_OK)):
+        cwd = tempfile.mkdtemp()
+        if ((tgz_path is not None) and os.path.exists(tgz_path)):
+            target = os.path.join(cwd, os.path.split(tgz_path)[(-1)])
+            shutil.copy(tgz_path, target)
+    try:
+        call_subprocess(cmd, show_stdout=False, filter_stdout=_filter_ez_setup, extra_env=env, remove_from_env=remove_from_env, cwd=cwd)
+    finally:
+        logger.indent -= 2
+        logger.end_progress()
+        if (cwd is not None):
+            shutil.rmtree(cwd)
+        if (os.getcwd() != old_chdir):
+            os.chdir(old_chdir)
+        if (is_jython and (os._name == 'nt')):
+            os.remove(ez_setup)

@@ -1,0 +1,37 @@
+def fixup_scripts(home_dir):
+    shebang = ('#!%s/bin/python' % os.path.normcase(os.path.abspath(home_dir)))
+    new_shebang = ('#!/usr/bin/env python%s' % sys.version[:3])
+    if is_win:
+        bin_suffix = 'Scripts'
+    else:
+        bin_suffix = 'bin'
+    bin_dir = os.path.join(home_dir, bin_suffix)
+    (home_dir, lib_dir, inc_dir, bin_dir) = path_locations(home_dir)
+    for filename in os.listdir(bin_dir):
+        filename = os.path.join(bin_dir, filename)
+        if (not os.path.isfile(filename)):
+            continue
+        f = open(filename, 'rb')
+        try:
+            try:
+                lines = f.read().decode('utf-8').splitlines()
+            except UnicodeDecodeError:
+                continue
+        finally:
+            f.close()
+        if (not lines):
+            logger.warn(('Script %s is an empty file' % filename))
+            continue
+        if (not lines[0].strip().startswith(shebang)):
+            if (os.path.basename(filename) in OK_ABS_SCRIPTS):
+                logger.debug(('Cannot make script %s relative' % filename))
+            elif (lines[0].strip() == new_shebang):
+                logger.info(('Script %s has already been made relative' % filename))
+            else:
+                logger.warn(("Script %s cannot be made relative (it's not a normal script that starts with %s)" % (filename, shebang)))
+            continue
+        logger.notify(('Making script %s relative' % filename))
+        script = relative_script(([new_shebang] + lines[1:]))
+        f = open(filename, 'wb')
+        f.write('\n'.join(script).encode('utf-8'))
+        f.close()

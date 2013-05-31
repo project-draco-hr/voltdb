@@ -1,0 +1,28 @@
+def use_setuptools(version=DEFAULT_VERSION, download_base=DEFAULT_URL, to_dir=os.curdir, download_delay=15, no_fake=True):
+    to_dir = os.path.abspath(to_dir)
+    was_imported = (('pkg_resources' in sys.modules) or ('setuptools' in sys.modules))
+    try:
+        try:
+            import pkg_resources
+            if (not hasattr(pkg_resources, '_distribute')):
+                if (not no_fake):
+                    _fake_setuptools()
+                raise ImportError
+        except ImportError:
+            return _do_download(version, download_base, to_dir, download_delay)
+        try:
+            pkg_resources.require(('distribute>=' + version))
+            return
+        except pkg_resources.VersionConflict:
+            e = sys.exc_info()[1]
+            if was_imported:
+                sys.stderr.write(("The required version of distribute (>=%s) is not available,\nand can't be installed while this script is running. Please\ninstall a more recent version first, using\n'easy_install -U distribute'.\n\n(Currently using %r)\n" % (version, e.args[0])))
+                sys.exit(2)
+            else:
+                del pkg_resources, sys.modules['pkg_resources']
+                return _do_download(version, download_base, to_dir, download_delay)
+        except pkg_resources.DistributionNotFound:
+            return _do_download(version, download_base, to_dir, download_delay)
+    finally:
+        if (not no_fake):
+            _create_fake_setuptools_pkg_info(to_dir)

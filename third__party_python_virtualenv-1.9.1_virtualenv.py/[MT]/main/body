@@ -1,0 +1,68 @@
+def main():
+    parser = ConfigOptionParser(version=virtualenv_version, usage='%prog [OPTIONS] DEST_DIR', formatter=UpdatingDefaultsHelpFormatter())
+    parser.add_option('-v', '--verbose', action='count', dest='verbose', default=0, help='Increase verbosity')
+    parser.add_option('-q', '--quiet', action='count', dest='quiet', default=0, help='Decrease verbosity')
+    parser.add_option('-p', '--python', dest='python', metavar='PYTHON_EXE', help=('The Python interpreter to use, e.g., --python=python2.5 will use the python2.5 interpreter to create the new environment.  The default is the interpreter that virtualenv was installed with (%s)' % sys.executable))
+    parser.add_option('--clear', dest='clear', action='store_true', help='Clear out the non-root install and start from scratch')
+    parser.set_defaults(system_site_packages=False)
+    parser.add_option('--no-site-packages', dest='system_site_packages', action='store_false', help="Don't give access to the global site-packages dir to the virtual environment (default)")
+    parser.add_option('--system-site-packages', dest='system_site_packages', action='store_true', help='Give access to the global site-packages dir to the virtual environment')
+    parser.add_option('--unzip-setuptools', dest='unzip_setuptools', action='store_true', help='Unzip Setuptools or Distribute when installing it')
+    parser.add_option('--relocatable', dest='relocatable', action='store_true', help='Make an EXISTING virtualenv environment relocatable.  This fixes up scripts and makes all .pth files relative')
+    parser.add_option('--distribute', '--use-distribute', dest='use_distribute', action='store_true', help='Use Distribute instead of Setuptools. Set environ variable VIRTUALENV_DISTRIBUTE to make it the default ')
+    parser.add_option('--no-setuptools', dest='no_setuptools', action='store_true', help='Do not install distribute/setuptools (or pip) in the new virtualenv.')
+    parser.add_option('--no-pip', dest='no_pip', action='store_true', help='Do not install pip in the new virtualenv.')
+    parser.add_option('--setuptools', dest='use_distribute', action='store_false', help='Use Setuptools instead of Distribute.  Set environ variable VIRTUALENV_SETUPTOOLS to make it the default ')
+    parser.set_defaults(use_distribute=False)
+    default_search_dirs = file_search_dirs()
+    parser.add_option('--extra-search-dir', dest='search_dirs', action='append', default=default_search_dirs, help='Directory to look for setuptools/distribute/pip distributions in. You can add any number of additional --extra-search-dir paths.')
+    parser.add_option('--never-download', dest='never_download', action='store_true', help='Never download anything from the network.  Instead, virtualenv will fail if local distributions of setuptools/distribute/pip are not present.')
+    parser.add_option('--prompt', dest='prompt', help='Provides an alternative prompt prefix for this environment')
+    if ('extend_parser' in globals()):
+        extend_parser(parser)
+    (options, args) = parser.parse_args()
+    global logger
+    if ('adjust_options' in globals()):
+        adjust_options(options, args)
+    verbosity = (options.verbose - options.quiet)
+    logger = Logger([(Logger.level_for_integer((2 - verbosity)), sys.stdout)])
+    if (options.python and (not os.environ.get('VIRTUALENV_INTERPRETER_RUNNING'))):
+        env = os.environ.copy()
+        interpreter = resolve_interpreter(options.python)
+        if (interpreter == sys.executable):
+            logger.warn(('Already using interpreter %s' % interpreter))
+        else:
+            logger.notify(('Running virtualenv with interpreter %s' % interpreter))
+            env['VIRTUALENV_INTERPRETER_RUNNING'] = 'true'
+            file = __file__
+            if file.endswith('.pyc'):
+                file = file[:(-1)]
+            popen = subprocess.Popen(([interpreter, file] + sys.argv[1:]), env=env)
+            raise SystemExit(popen.wait())
+    if (majver > 2):
+        options.use_distribute = True
+    if (os.environ.get('PYTHONDONTWRITEBYTECODE') and (not options.use_distribute)):
+        print 'The PYTHONDONTWRITEBYTECODE environment variable is not compatible with setuptools. Either use --distribute or unset PYTHONDONTWRITEBYTECODE.'
+        sys.exit(2)
+    if (not args):
+        print 'You must provide a DEST_DIR'
+        parser.print_help()
+        sys.exit(2)
+    if (len(args) > 1):
+        print ('There must be only one argument: DEST_DIR (you gave %s)' % ' '.join(args))
+        parser.print_help()
+        sys.exit(2)
+    home_dir = args[0]
+    if os.environ.get('WORKING_ENV'):
+        logger.fatal('ERROR: you cannot run virtualenv while in a workingenv')
+        logger.fatal('Please deactivate your workingenv, then re-run this script')
+        sys.exit(3)
+    if ('PYTHONHOME' in os.environ):
+        logger.warn('PYTHONHOME is set.  You *must* activate the virtualenv before using it')
+        del os.environ['PYTHONHOME']
+    if options.relocatable:
+        make_environment_relocatable(home_dir)
+        return
+    create_environment(home_dir, site_packages=options.system_site_packages, clear=options.clear, unzip_setuptools=options.unzip_setuptools, use_distribute=options.use_distribute, prompt=options.prompt, search_dirs=options.search_dirs, never_download=options.never_download, no_setuptools=options.no_setuptools, no_pip=options.no_pip)
+    if ('after_install' in globals()):
+        after_install(options, home_dir)
