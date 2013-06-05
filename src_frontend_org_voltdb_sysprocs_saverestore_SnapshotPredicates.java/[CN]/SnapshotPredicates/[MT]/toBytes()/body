@@ -5,18 +5,29 @@
   byte[][] predicates=new byte[m_predicates.size()][];
   int i=0;
   int size=0;
-  for (  AbstractExpression predicate : m_predicates) {
-    if (predicate == null) {
-      predicates[i]=createAcceptAllPredicate().toJSONString().getBytes(Charsets.UTF_8);
-    }
+  try {
+    for (    Pair<AbstractExpression,Boolean> p : m_predicates) {
+      final AbstractExpression predicate=p.getFirst();
+      JSONStringer stringer=new JSONStringer();
+      stringer.object();
+      stringer.key("triggersDelete").value(p.getSecond());
+      stringer.key("predicateExpression").object();
+      if (predicate == null) {
+        createAcceptAllPredicate().toJSONString(stringer);
+      }
  else {
-      predicates[i]=predicate.toJSONString().getBytes(Charsets.UTF_8);
+        predicate.toJSONString(stringer);
+      }
+      stringer.endObject().endObject();
+      predicates[i]=stringer.toString().getBytes(Charsets.UTF_8);
+      size+=predicates[i].length;
+      i++;
     }
-    size+=predicates[i].length;
-    i++;
   }
-  ByteBuffer buf=ByteBuffer.allocate(1 + 4 + 4 * predicates.length + size);
-  buf.put(m_deleteTuples ? 1 : (byte)0);
+ catch (  Exception e) {
+    VoltDB.crashLocalVoltDB("Failed to serialize snapshot predicates",true,e);
+  }
+  ByteBuffer buf=ByteBuffer.allocate(4 + 4 * predicates.length + size);
   buf.putInt(m_predicates.size());
   for (  byte[] predicate : predicates) {
     buf.putInt(predicate.length);

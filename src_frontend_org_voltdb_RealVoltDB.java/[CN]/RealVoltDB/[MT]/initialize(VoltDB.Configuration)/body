@@ -25,7 +25,7 @@ synchronized (m_startAndStopLock) {
     m_deployment=null;
     m_messenger=null;
     m_startMode=null;
-    m_statsAgent=new StatsAgent();
+    m_opsRegistrar=new OpsRegistrar();
     m_asyncCompilerAgent=new AsyncCompilerAgent();
     m_faultManager=null;
     m_snapshotCompletionMonitor=null;
@@ -119,7 +119,7 @@ synchronized (m_startAndStopLock) {
         m_iv2Initiators=createIv2Initiators(partitions,m_config.m_startAction,m_partitionsToSitesAtStartupForExportInit);
         m_iv2InitiatorStartingTxnIds.put(MpInitiator.MP_INIT_PID,TxnEgo.makeZero(MpInitiator.MP_INIT_PID).getTxnId());
         long mpiBuddyHSId=m_iv2Initiators.get(0).getInitiatorHSId();
-        m_MPI=new MpInitiator(m_messenger,mpiBuddyHSId,m_statsAgent);
+        m_MPI=new MpInitiator(m_messenger,mpiBuddyHSId,getStatsAgent());
         m_iv2Initiators.add(m_MPI);
       }
       clusterConfig=new ClusterConfig(topo);
@@ -171,15 +171,15 @@ synchronized (m_startAndStopLock) {
       }
     }
     m_ioStats=new IOStats();
-    m_statsAgent.registerStatsSource(SysProcSelector.IOSTATS,0,m_ioStats);
+    getStatsAgent().registerStatsSource(StatsSelector.IOSTATS,0,m_ioStats);
     m_memoryStats=new MemoryStats();
-    m_statsAgent.registerStatsSource(SysProcSelector.MEMORY,0,m_memoryStats);
-    m_statsAgent.registerStatsSource(SysProcSelector.TOPO,0,m_cartographer);
+    getStatsAgent().registerStatsSource(StatsSelector.MEMORY,0,m_memoryStats);
+    getStatsAgent().registerStatsSource(StatsSelector.TOPO,0,m_cartographer);
     m_partitionCountStats=new PartitionCountStats(m_cartographer);
-    m_statsAgent.registerStatsSource(SysProcSelector.PARTITIONCOUNT,0,m_partitionCountStats);
+    getStatsAgent().registerStatsSource(StatsSelector.PARTITIONCOUNT,0,m_partitionCountStats);
     m_initiatorStats=new InitiatorStats(m_myHostId);
     m_liveClientsStats=new LiveClientsStats();
-    m_statsAgent.registerStatsSource(SysProcSelector.LIVECLIENTS,0,m_liveClientsStats);
+    getStatsAgent().registerStatsSource(StatsSelector.LIVECLIENTS,0,m_liveClientsStats);
     m_latencyStats=new LatencyStats(m_myHostId);
     if (m_commandLog != null && isRejoin) {
       m_commandLog.initForRejoin(m_catalogContext,Long.MIN_VALUE,m_iv2InitiatorStartingTxnIds,true,m_config.m_commandLogBinding);
@@ -189,7 +189,7 @@ synchronized (m_startAndStopLock) {
       m_leaderAppointer=new LeaderAppointer(m_messenger,clusterConfig.getPartitionCount(),m_deployment.getCluster().getKfactor(),m_catalogContext.cluster.getNetworkpartition(),m_catalogContext.cluster.getFaultsnapshots().get("CLUSTER_PARTITION"),usingCommandLog,topo,m_MPI);
       m_globalServiceElector.registerService(m_leaderAppointer);
       for (      Initiator iv2init : m_iv2Initiators) {
-        iv2init.configure(getBackendTargetType(),m_serializedCatalog,m_catalogContext,m_deployment.getCluster().getKfactor(),csp,clusterConfig.getPartitionCount(),m_config.m_startAction,m_statsAgent,m_memoryStats,m_commandLog,m_nodeDRGateway,m_config.m_executionCoreBindings.poll());
+        iv2init.configure(getBackendTargetType(),m_serializedCatalog,m_catalogContext,m_deployment.getCluster().getKfactor(),csp,clusterConfig.getPartitionCount(),m_config.m_startAction,getStatsAgent(),m_memoryStats,m_commandLog,m_nodeDRGateway,m_config.m_executionCoreBindings.poll());
       }
     }
  catch (    Exception e) {
@@ -205,6 +205,7 @@ synchronized (m_startAndStopLock) {
  catch (    Exception e) {
       VoltDB.crashLocalVoltDB("Unable to start GlobalServiceElector",true,e);
     }
+    m_opsRegistrar.registerMailboxes(m_messenger);
     int portOffset=0;
     for (int i=0; i < 1; i++) {
       try {

@@ -1,0 +1,36 @@
+{
+  if (m_pendingRequests.size() > MAX_IN_FLIGHT_REQUESTS) {
+    Iterator<Entry<Long,PendingOpsRequest>> iter=m_pendingRequests.entrySet().iterator();
+    final long now=System.currentTimeMillis();
+    boolean foundExpiredRequest=false;
+    while (iter.hasNext()) {
+      PendingOpsRequest por=iter.next().getValue();
+      if (now - por.startTime > OPS_COLLECTION_TIMEOUT * 2) {
+        iter.remove();
+        foundExpiredRequest=true;
+      }
+    }
+    if (!foundExpiredRequest) {
+      sendErrorResponse(newRequest.c,ClientResponse.GRACEFUL_FAILURE,"Too many pending stat requests",newRequest.clientData);
+      return;
+    }
+  }
+  final long requestId=m_nextRequestId++;
+  m_pendingRequests.put(requestId,newRequest);
+  m_es.schedule(new Runnable(){
+    @Override public void run(){
+      checkForRequestTimeout(requestId);
+    }
+  }
+,OPS_COLLECTION_TIMEOUT,TimeUnit.MILLISECONDS);
+  obj.put("requestId",requestId);
+  obj.put("returnAddress",m_mailbox.getHSId());
+  int siteId=CoreUtils.getSiteIdFromHSId(m_mailbox.getHSId());
+  byte payloadBytes[]=CompressionService.compressBytes(obj.toString(4).getBytes("UTF-8"));
+  for (  int hostId : m_messenger.getLiveHostIds()) {
+    long agentHsId=CoreUtils.getHSIdFromHostAndSite(hostId,siteId);
+    newRequest.expectedOpsResponses++;
+    BinaryPayloadMessage bpm=new BinaryPayloadMessage(new byte[]{JSON_PAYLOAD},payloadBytes);
+    m_mailbox.send(agentHsId,bpm);
+  }
+}
