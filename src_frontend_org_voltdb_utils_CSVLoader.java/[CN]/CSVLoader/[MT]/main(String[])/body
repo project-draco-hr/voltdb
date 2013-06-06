@@ -6,16 +6,22 @@
   cfg.parse(CSVLoader.class.getName(),args);
   config=cfg;
   configuration();
-  CSVReader csvReader=null;
+  Tokenizer tokenizer=null;
+  ICsvListReader listReader=null;
   try {
-    if (CSVLoader.standin)     csvReader=new CSVReader(new BufferedReader(new InputStreamReader(System.in)),config.separator,config.quotechar,config.escape,config.skip,config.strictquotes,config.nowhitespace);
- else     csvReader=new CSVReader(new FileReader(config.file),config.separator,config.quotechar,config.escape,config.skip,config.strictquotes,config.nowhitespace);
+    if (CSVLoader.standin) {
+      tokenizer=new Tokenizer(new BufferedReader(new InputStreamReader(System.in)),csvPreference,config.strictquotes,config.escape,config.columnsizelimit);
+      listReader=new CsvListReader(tokenizer,csvPreference);
+    }
+ else {
+      tokenizer=new Tokenizer(new FileReader(config.file),csvPreference,config.strictquotes,config.escape,config.columnsizelimit);
+      listReader=new CsvListReader(tokenizer,csvPreference);
+    }
   }
  catch (  FileNotFoundException e) {
     m_log.error("CSV file '" + config.file + "' could not be found.");
     System.exit(-1);
   }
-  assert(csvReader != null);
   String[] serverlist=config.servers.split(",");
   ClientConfig c_config=new ClientConfig(config.user,config.password);
   c_config.setProcedureCallTimeout(0);
@@ -32,7 +38,6 @@
   try {
     ProcedureCallback cb=null;
     boolean lastOK=true;
-    String line[]=null;
     int columnCnt=0;
     VoltTable procInfo=null;
     boolean isProcExist=false;
@@ -57,42 +62,38 @@
       close_cleanup();
       System.exit(-1);
     }
-    while ((config.limitrows-- > 0) && (line=csvReader.readNext()) != null) {
-      outCount.incrementAndGet();
-      boolean queued=false;
-      while (queued == false) {
-        StringBuilder linedata=new StringBuilder();
-        for (int i=0; i < line.length; i++) {
-          linedata.append("\"" + line[i] + "\"");
-          if (i != line.length - 1)           linedata.append(",");
-        }
-        String[] correctedLine=line;
-        cb=new MyCallback(outCount.get(),config,linedata.toString());
-        String lineCheckResult;
-        if ((lineCheckResult=checkparams_trimspace(correctedLine,columnCnt)) != null) {
-synchronized (errorInfo) {
-            if (!errorInfo.containsKey(outCount.get())) {
-              String[] info={linedata.toString(),lineCheckResult};
-              errorInfo.put(outCount.get(),info);
-            }
-            if (errorInfo.size() >= config.maxerrors) {
-              m_log.error("The number of Failure row data exceeds " + config.maxerrors);
-              produceFiles();
-              close_cleanup();
-              System.exit(-1);
-            }
+    List<String> lineList=new ArrayList<String>();
+    while ((config.limitrows-- > 0) && lineList != null) {
+      try {
+        while (listReader.getLineNumber() < config.skip)         lineList=listReader.read();
+        lineList=listReader.read();
+        if (lineList == null)         break;
+        outCount.incrementAndGet();
+        boolean queued=false;
+        while (queued == false) {
+          Object[] correctedLine=lineList.toArray();
+          cb=new MyCallback(outCount.get(),config,lineList);
+          String lineCheckResult;
+          if ((lineCheckResult=checkparams_trimspace(correctedLine,columnCnt)) != null) {
+            String[] info={lineList.toString(),lineCheckResult};
+            synchronizeErrorInfo(info);
+            break;
           }
-          break;
-        }
-        queued=csvClient.callProcedure(cb,insertProcedure,(Object[])correctedLine);
-        if (queued == false) {
-          ++waits;
-          if (lastOK == false) {
-            ++shortWaits;
+          queued=csvClient.callProcedure(cb,insertProcedure,(Object[])correctedLine);
+          if (queued == false) {
+            ++waits;
+            if (lastOK == false) {
+              ++shortWaits;
+            }
+            Thread.sleep(waitSeconds);
           }
-          Thread.sleep(waitSeconds);
+          lastOK=queued;
         }
-        lastOK=queued;
+      }
+ catch (      SuperCsvException e) {
+        outCount.incrementAndGet();
+        String[] info={e.getMessage(),""};
+        synchronizeErrorInfo(info);
       }
     }
     csvClient.drain();
@@ -109,6 +110,6 @@ synchronized (errorInfo) {
   }
   produceFiles();
   close_cleanup();
-  csvReader.close();
+  listReader.close();
   csvClient.close();
 }
