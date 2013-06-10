@@ -65,7 +65,7 @@
     List<String> lineList=new ArrayList<String>();
     while (listReader.getLineNumber() < config.skip) {
       try {
-        totalCount.getAndIncrement();
+        totalCount.set(listReader.getLineNumber());
         if (listReader.read() == null)         break;
       }
  catch (      SuperCsvException e) {
@@ -73,21 +73,21 @@
     }
     while ((config.limitrows-- > 0)) {
       try {
+        totalCount.set(listReader.getLineNumber());
         lineList=listReader.read();
         if (lineList == null)         break;
-        totalCount.getAndIncrement();
         boolean queued=false;
         while (queued == false) {
           String[] correctedLine=lineList.toArray(new String[0]);
-          outCount.incrementAndGet();
-          cb=new MyCallback(totalCount.get(),config,lineList);
+          cb=new MyCallback(totalCount.get() + 1,config,lineList);
           String lineCheckResult;
           if ((lineCheckResult=checkparams_trimspace(correctedLine,columnCnt)) != null) {
             String[] info={lineList.toString(),lineCheckResult};
-            synchronizeErrorInfo(totalCount.get(),info);
+            synchronizeErrorInfo(totalCount.get() + 1,info);
             break;
           }
           queued=csvClient.callProcedure(cb,insertProcedure,(Object[])correctedLine);
+          outCount.incrementAndGet();
           if (queued == false) {
             ++waits;
             if (lastOK == false) {
@@ -99,9 +99,8 @@
         }
       }
  catch (      SuperCsvException e) {
-        totalCount.getAndIncrement();
         String[] info={e.getMessage(),""};
-        synchronizeErrorInfo(totalCount.get(),info);
+        synchronizeErrorInfo(totalCount.get() + 1,info);
       }
     }
     csvClient.drain();
