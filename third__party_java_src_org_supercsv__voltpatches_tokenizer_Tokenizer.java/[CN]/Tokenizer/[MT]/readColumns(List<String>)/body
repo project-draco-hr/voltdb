@@ -1,0 +1,123 @@
+{
+  if (columns == null) {
+    throw new NullPointerException("columns should not be null");
+  }
+  columns.clear();
+  currentColumn.setLength(0);
+  currentRow.setLength(0);
+  String line;
+  do {
+    line=readLine();
+    if (line == null) {
+      return false;
+    }
+  }
+ while (line.length() == 0 || (commentMatcher != null && commentMatcher.isComment(line)) || skip >= getLineNumber());
+  currentRow.append(line);
+  line+=NEWLINE;
+  TokenizerState state=TokenizerState.NORMAL;
+  int quoteScopeStartingLine=-1;
+  int potentialSpaces=0;
+  int charIndex=0;
+  boolean espectQuote=false;
+  boolean isEscape=false;
+  boolean sawNewLineInQuote=false;
+  while (true) {
+    final char c=line.charAt(charIndex);
+    if (TokenizerState.NORMAL.equals(state)) {
+      if (isEscape) {
+        isEscape=false;
+        if (this.strictQuotes && espectQuote) {
+          throw new SuperCsvException(String.format("strictQuotes: quotes needed at line %d: %s",getLineNumber(),line));
+        }
+        if (!surroundingSpacesNeedQuotes || currentColumn.length() > 0) {
+          appendSpaces(currentColumn,potentialSpaces);
+        }
+        potentialSpaces=0;
+        currentColumn.append(c);
+      }
+ else       if (c == escapeChar && !(line.charAt(charIndex + 1) == 'N')) {
+        isEscape=true;
+      }
+ else       if (c == delimeterChar) {
+        espectQuote=true;
+        if (!surroundingSpacesNeedQuotes) {
+          appendSpaces(currentColumn,potentialSpaces);
+        }
+        columns.add(currentColumn.length() > 0 ? currentColumn.toString() : null);
+        potentialSpaces=0;
+        currentColumn.setLength(0);
+      }
+ else       if (c == SPACE) {
+        potentialSpaces++;
+      }
+ else       if (c == NEWLINE) {
+        if (!surroundingSpacesNeedQuotes) {
+          appendSpaces(currentColumn,potentialSpaces);
+        }
+        columns.add(currentColumn.length() > 0 ? currentColumn.toString() : null);
+        return true;
+      }
+ else       if (c == quoteChar) {
+        espectQuote=false;
+        state=TokenizerState.QUOTE_MODE;
+        quoteScopeStartingLine=getLineNumber();
+        if (!surroundingSpacesNeedQuotes || currentColumn.length() > 0) {
+          appendSpaces(currentColumn,potentialSpaces);
+        }
+        potentialSpaces=0;
+      }
+ else {
+        if (this.strictQuotes && espectQuote) {
+          throw new SuperCsvException(String.format("strictQuotes: quotes needed at line %d: %s",getLineNumber(),line));
+        }
+        if (!surroundingSpacesNeedQuotes || currentColumn.length() > 0) {
+          appendSpaces(currentColumn,potentialSpaces);
+        }
+        potentialSpaces=0;
+        currentColumn.append(c);
+      }
+    }
+ else {
+      if (sawNewLineInQuote) {
+        if (currentColumn.length() > columnSizeLimit) {
+          state=TokenizerState.NORMAL;
+          sawNewLineInQuote=false;
+          throw new SuperCsvException(String.format("oversized column while reading quoted column beginning on line %d and ending on line %d",quoteScopeStartingLine,getLineNumber()));
+        }
+      }
+      if (c == NEWLINE) {
+        if (currentColumn.length() > columnSizeLimit) {
+          state=TokenizerState.NORMAL;
+          sawNewLineInQuote=false;
+          throw new SuperCsvException(String.format("oversized column while reading quoted column beginning on line %d and ending on line %d",quoteScopeStartingLine,getLineNumber()));
+        }
+        sawNewLineInQuote=true;
+        currentColumn.append(NEWLINE);
+        currentRow.append(NEWLINE);
+        charIndex=-1;
+        line=readLine();
+        if (line == null) {
+          throw new SuperCsvException(String.format("unexpected end of file while reading quoted column beginning on line %d and ending on line %d",quoteScopeStartingLine,getLineNumber()));
+        }
+        currentRow.append(line);
+        line+=NEWLINE;
+      }
+ else       if (c == quoteChar) {
+        if (line.charAt(charIndex + 1) == quoteChar) {
+          currentColumn.append(c);
+          charIndex++;
+        }
+ else {
+          state=TokenizerState.NORMAL;
+          sawNewLineInQuote=false;
+          quoteScopeStartingLine=-1;
+        }
+      }
+ else {
+        currentColumn.append(c);
+      }
+    }
+    charIndex++;
+  }
+}
