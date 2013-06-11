@@ -5,14 +5,60 @@
   if (keySize == 0 && m_endExpression != null) {
     keySize=1;
   }
-  String scanType="unique-scan";
-  if (m_lookupType != IndexLookupType.EQ)   scanType="range-scan";
-  String cover="covering";
-  if (indexSize > keySize)   cover=String.format("%d/%d cols",keySize,indexSize);
-  String usageInfo=String.format("(%s %s)",scanType,cover);
-  if (keySize == 0)   usageInfo="(for sort order only)";
+  String usageInfo;
+  if (keySize == 0) {
+    if (m_forDeterminismOnly) {
+      usageInfo=" (for deterministic order only)";
+    }
+ else {
+      usageInfo=" (for sort order only)";
+    }
+  }
+ else {
+    String[] asIndexed=new String[indexSize];
+    for (int ii=0; ii < keySize; ++ii) {
+      asIndexed[ii]="(index key " + ii + ")";
+    }
+    String jsonExpr=m_catalogIndex.getExpressionsjson();
+    if (jsonExpr.isEmpty()) {
+      for (      ColumnRef cref : m_catalogIndex.getColumns()) {
+        Column col=cref.getColumn();
+        asIndexed[cref.getIndex()]=col.getName();
+      }
+    }
+ else {
+      try {
+        List<AbstractExpression> indexExpressions=AbstractExpression.fromJSONArrayString(jsonExpr,null);
+        int ii=0;
+        for (        AbstractExpression ae : indexExpressions) {
+          asIndexed[ii++]=ae.explain(m_targetTableName);
+        }
+      }
+ catch (      JSONException e) {
+      }
+    }
+    String start=explainSearchKeys(asIndexed,keySize);
+    if (m_lookupType == IndexLookupType.EQ) {
+      if (m_catalogIndex.getUnique()) {
+        usageInfo=" uniquely match " + start;
+      }
+ else {
+        usageInfo=" scan matches for " + start;
+      }
+    }
+ else {
+      if (indexSize == keySize) {
+        usageInfo=" range-scan covering from " + start;
+      }
+ else {
+        usageInfo=String.format(" range-scan %d/%d cols from %s",keySize,indexSize,start);
+      }
+      usageInfo+=explainEndKeys(asIndexed);
+    }
+  }
+  String predicate=explainPredicate();
   String retval="INDEX SCAN of \"" + m_targetTableName + "\"";
   retval+=" using \"" + m_targetIndexName + "\"";
-  retval+=" " + usageInfo;
+  retval+=usageInfo + predicate;
   return retval;
 }
