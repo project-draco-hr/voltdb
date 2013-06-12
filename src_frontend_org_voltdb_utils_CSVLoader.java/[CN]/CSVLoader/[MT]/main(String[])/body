@@ -10,11 +10,11 @@
   ICsvListReader listReader=null;
   try {
     if (CSVLoader.standin) {
-      tokenizer=new Tokenizer(new BufferedReader(new InputStreamReader(System.in)),csvPreference,config.strictquotes,config.escape,config.columnsizelimit);
+      tokenizer=new Tokenizer(new BufferedReader(new InputStreamReader(System.in)),csvPreference,config.strictquotes,config.escape,config.columnsizelimit,config.skip);
       listReader=new CsvListReader(tokenizer,csvPreference);
     }
  else {
-      tokenizer=new Tokenizer(new FileReader(config.file),csvPreference,config.strictquotes,config.escape,config.columnsizelimit);
+      tokenizer=new Tokenizer(new FileReader(config.file),csvPreference,config.strictquotes,config.escape,config.columnsizelimit,config.skip);
       listReader=new CsvListReader(tokenizer,csvPreference);
     }
   }
@@ -63,23 +63,28 @@
       System.exit(-1);
     }
     List<String> lineList=new ArrayList<String>();
-    while ((config.limitrows-- > 0) && lineList != null) {
+    while ((config.limitrows-- > 0)) {
       try {
-        while (listReader.getLineNumber() < config.skip)         lineList=listReader.read();
+        if (listReader.getLineNumber() == 0)         totalLineCount.set(cfg.skip);
+ else         totalLineCount.set(listReader.getLineNumber());
         lineList=listReader.read();
-        if (lineList == null)         break;
-        outCount.incrementAndGet();
+        if (lineList == null) {
+          if (totalLineCount.get() > listReader.getLineNumber())           totalLineCount.set(listReader.getLineNumber());
+          break;
+        }
+        totalRowCount.getAndIncrement();
         boolean queued=false;
         while (queued == false) {
-          Object[] correctedLine=lineList.toArray();
-          cb=new MyCallback(outCount.get(),config,lineList);
+          String[] correctedLine=lineList.toArray(new String[0]);
+          cb=new MyCallback(totalLineCount.get() + 1,config,lineList);
           String lineCheckResult;
           if ((lineCheckResult=checkparams_trimspace(correctedLine,columnCnt)) != null) {
             String[] info={lineList.toString(),lineCheckResult};
-            synchronizeErrorInfo(info);
+            synchronizeErrorInfo(totalLineCount.get() + 1,info);
             break;
           }
           queued=csvClient.callProcedure(cb,insertProcedure,(Object[])correctedLine);
+          outCount.incrementAndGet();
           if (queued == false) {
             ++waits;
             if (lastOK == false) {
@@ -91,9 +96,9 @@
         }
       }
  catch (      SuperCsvException e) {
-        outCount.incrementAndGet();
+        totalRowCount.getAndIncrement();
         String[] info={e.getMessage(),""};
-        synchronizeErrorInfo(info);
+        synchronizeErrorInfo(totalLineCount.get() + 1,info);
       }
     }
     csvClient.drain();
