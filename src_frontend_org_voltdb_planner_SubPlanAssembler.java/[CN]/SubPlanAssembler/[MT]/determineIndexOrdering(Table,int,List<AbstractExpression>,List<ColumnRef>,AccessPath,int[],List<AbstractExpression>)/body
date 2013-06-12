@@ -1,0 +1,44 @@
+{
+  if (!(m_parsedStmt instanceof ParsedSelectStmt)) {
+    return 0;
+  }
+  int nSpoilers=0;
+  ParsedSelectStmt parsedSelectStmt=(ParsedSelectStmt)m_parsedStmt;
+  int countOrderBys=parsedSelectStmt.orderColumns.size();
+  if (countOrderBys > 0 && countOrderBys <= keyComponentCount) {
+    boolean ascending=parsedSelectStmt.orderColumns.get(0).ascending;
+    retval.sortDirection=ascending ? SortDirectionType.ASC : SortDirectionType.DESC;
+    int jj=0;
+    for (    ParsedColInfo colInfo : parsedSelectStmt.orderColumns) {
+      for (; jj < keyComponentCount; ++jj) {
+        if (colInfo.ascending == ascending) {
+          if (indexedExprs == null) {
+            ColumnRef nextColRef=indexedColRefs.get(jj);
+            if (colInfo.expression instanceof TupleValueExpression && colInfo.tableName.equals(table.getTypeName()) && colInfo.columnName.equals(nextColRef.getColumn().getTypeName())) {
+              break;
+            }
+          }
+ else {
+            assert(jj < indexedExprs.size());
+            AbstractExpression nextExpr=indexedExprs.get(jj);
+            List<AbstractExpression> moreBindings=colInfo.expression.bindingToIndexedExpression(nextExpr);
+            if (moreBindings != null) {
+              bindingsForOrder.addAll(moreBindings);
+              break;
+            }
+          }
+        }
+        orderSpoilers[nSpoilers++]=jj;
+      }
+      if (jj < keyComponentCount) {
+        ++jj;
+      }
+ else {
+        retval.sortDirection=SortDirectionType.INVALID;
+        bindingsForOrder.clear();
+        return 0;
+      }
+    }
+  }
+  return nSpoilers;
+}

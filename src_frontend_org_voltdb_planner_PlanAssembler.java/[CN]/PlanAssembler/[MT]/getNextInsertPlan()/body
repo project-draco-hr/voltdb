@@ -5,7 +5,6 @@
   Table targetTable=m_parsedInsert.tableList.get(0);
   InsertPlanNode insertNode=new InsertPlanNode();
   insertNode.setTargetTableName(targetTable.getTypeName());
-  insertNode.setMultiPartition(m_partitioning.wasSpecifiedAsSingle() == false);
   MaterializePlanNode materializeNode=new MaterializePlanNode();
   NodeSchema mat_schema=new NodeSchema();
   List<Column> columns=CatalogUtil.getSortedCatalogItems(targetTable.getColumns(),"index");
@@ -45,14 +44,15 @@
   materializeNode.setOutputSchema(mat_schema);
   insertNode.addAndLinkChild(materializeNode);
   insertNode.generateOutputSchema(m_catalogDb);
-  if (m_partitioning.wasSpecifiedAsSingle() || m_partitioning.hasPartitioningConstantLockedIn()) {
+  if (m_partitioning.wasSpecifiedAsSingle() || (m_partitioning.effectivePartitioningExpression() != null)) {
+    insertNode.setMultiPartition(false);
     return insertNode;
   }
+  insertNode.setMultiPartition(true);
   SendPlanNode sendNode=new SendPlanNode();
-  sendNode.isMultiPartition=true;
   sendNode.addAndLinkChild(insertNode);
   AbstractPlanNode recvNode=new ReceivePlanNode();
   recvNode.addAndLinkChild(sendNode);
   recvNode.generateOutputSchema(m_catalogDb);
-  return addSumAndSendToDMLNode(recvNode);
+  return addSumOrLimitAndSendToDMLNode(recvNode,targetTable.getIsreplicated());
 }

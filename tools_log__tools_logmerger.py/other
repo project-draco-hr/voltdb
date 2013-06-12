@@ -1,0 +1,84 @@
+import copy
+from datetime import datetime
+import heapq
+from optparse import OptionParser
+import os.path
+import re
+import sys
+import tarfile
+import time
+if (__name__ == '__main__'):
+    parser = OptionParser(usage='usage: %prog [options] FILE...')
+    parser.add_option('-o', '--output', dest='outputfile', help='write to ')
+    parser.add_option('-t', '--tzoffset', type='string', default='0', nargs=1, action='callback', callback=tz_offset_callback, help="Change the timestamps by [-|+]hh:mm to timezones. EST is -05:00, PDT is -08:00. Don't forget daylight savings.")
+    parser.add_option('-e', '--exclude', type='string', default=os.path.join(os.path.dirname(os.path.realpath(__file__)), 'exclude.txt'), nargs=1, dest='exclude_file', action='callback', callback=exclude_callback, help="Exclude file to use. Default it exclude.txt.  If 'None' is specified, no exclude file will be used")
+    (options, args) = parser.parse_args()
+    offsets = {}
+    tar = None
+    if (len(args) == 0):
+        parser.error('You must provide at least one logfile or apprunner archive')
+    if (len(args) >= 1):
+        try:
+            tarfiles = [f for f in args if tarfile.is_tarfile(f)]
+        except IOError as e:
+            sys.exit(('Cannot open input file: ' + str(e)))
+        if ((len(tarfiles) >= 1) and (len(args) > 1)):
+            parser.error('There can only specify 1 apprunner archive')
+    if ((len(args) == 1) and tarfile.is_tarfile(args[0])):
+        try:
+            tar = ApprunnerTarFile(args[0])
+        except IOError as e:
+            sys.exit(e)
+        serverlogs = tar.get_serverlogs()
+        for f in serverlogs:
+            offsets[f] = int(tar.get_server_tzoffset())
+        otherlogs = tar.get_otherlogs()
+        for f in otherlogs:
+            offsets[f] = 0
+        files = map(tar.tar.extractfile, (serverlogs + otherlogs))
+    else:
+        try:
+            files = map(open, args)
+        except IOError as e:
+            sys.exit(('Cannot open input file: ' + str(e)))
+        for f in files:
+            offsets[f.name] = int(options.tzoffset)
+    if options.outputfile:
+        try:
+            sys.stdout = open(options.outputfile, 'w')
+        except IOError as e:
+            sys.exit(('Cannot write output file %s: %s ' % (options.outputfile, str(e))))
+    excludes = []
+    if options.exclude_file:
+        try:
+            with open(options.exclude_file) as ef:
+                excludes = [l.rstrip() for l in ef if (l[0] != '#')]
+        except IOError as e:
+            sys.exit(('Cannot read exclude file %s: %s' % (options.exclude_file, str(e))))
+    name_dict = {'(volt\\w*)-.*.txt': '  ', 'org.voltdb.dr.VoltDB(ReplicationAgent)': '%%', '(apprunner).log': '&&', '(.*)\\.Benchmark\\.': '--', }
+    print '------ Files merged'
+    print '\n'.join(sorted([('  ' + f.name) for f in files]))
+    print '------'
+    for (time_str, entry) in merge_logs(files, offsets):
+        if tar:
+            for key in name_dict:
+                fmatch = re.match(key, entry['filename'])
+                if fmatch:
+                    entry['filename'] = ('%s %s %s' % (name_dict[key], fmatch.group(1), name_dict[key]))
+        ematch = None
+        for e in excludes:
+            if e:
+                ematch = re.search(e, entry['message'])
+                if ematch:
+                    break
+        if ematch:
+            continue
+        new_logline = ('%s\t%s\t%s' % (entry['newdatetime'], entry['filename'], entry['message']))
+        try:
+            print new_logline
+        except IOError as e:
+            import errno
+            if (e.errno == errno.EPIPE):
+                sys.exit(0)
+            else:
+                sys.exit(('Error writing output: ' + str(e)))

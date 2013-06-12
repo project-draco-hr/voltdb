@@ -1,0 +1,35 @@
+{
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println(" Setup & Initialization");
+  System.out.println(HORIZONTAL_RULE);
+  connect(config.servers);
+  System.out.println("\nPopulating Static Tables\n");
+  final CallableStatement initializeCS=client.prepareCall("{call Initialize(?,?)}");
+  initializeCS.setInt(1,config.contestants);
+  initializeCS.setString(2,CONTESTANT_NAMES_CSV);
+  initializeCS.executeUpdate();
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println("Starting Benchmark");
+  System.out.println(HORIZONTAL_RULE);
+  Thread[] voterThreads=new Thread[config.threads];
+  for (int i=0; i < config.threads; ++i) {
+    voterThreads[i]=new Thread(new VoterThread());
+    voterThreads[i].start();
+  }
+  System.out.println("Warming up...");
+  Thread.sleep(1000l * config.warmup);
+  warmupComplete.set(true);
+  fullStatsContext.fetchAndResetBaseline();
+  periodicStatsContext.fetchAndResetBaseline();
+  benchmarkStartTS=System.currentTimeMillis();
+  schedulePeriodicStats();
+  System.out.println("\nRunning benchmark...");
+  Thread.sleep(1000l * config.duration);
+  benchmarkComplete.set(true);
+  timer.cancel();
+  for (  Thread t : voterThreads) {
+    t.join();
+  }
+  printResults();
+  client.close();
+}

@@ -11,38 +11,20 @@
     @Override public void deliver(    final VoltMessage message){
       if (m_isIV2Enabled) {
         if (message instanceof InitiateResponseMessage) {
-          final InitiateResponseMessage response=(InitiateResponseMessage)message;
+          final CatalogContext catalogContext=m_catalogContext.get();
+          InitiateResponseMessage response=(InitiateResponseMessage)message;
+          StoredProcedureInvocation invocation=response.getInvocation();
           Iv2Trace.logFinishTransaction(response,m_mailbox.getHSId());
-          final ClientInterfaceHandleManager cihm=m_cihm.get(response.getClientConnectionId());
-          if (cihm != null) {
-            cihm.connection.writeStream().enqueue(new DeferredSerialization(){
-              @Override public ByteBuffer[] serialize() throws IOException {
-                ClientResponseImpl clientResponse=response.getClientResponseData();
-                ClientInterfaceHandleManager.Iv2InFlight clientData;
-                if (clientResponse.getStatusString() != null && clientResponse.getStatusString().equals(ClientResponseImpl.IGNORED_TRANSACTION)) {
-                  clientData=cihm.removeHandle(response.getClientInterfaceHandle());
-                }
- else {
-                  clientData=cihm.findHandle(response.getClientInterfaceHandle());
-                }
-                if (clientData == null) {
-                  return new ByteBuffer[]{};
-                }
-                final long now=System.currentTimeMillis();
-                final int delta=(int)(now - clientData.m_creationTime);
-                cihm.m_acg.logTransactionCompleted(cihm.connection.connectionId(),cihm.connection.getHostnameOrIP(),clientData.m_procName,delta,clientResponse.getStatus());
-                clientResponse.setClientHandle(clientData.m_clientHandle);
-                clientResponse.setClusterRoundtrip(delta);
-                clientResponse.setHash(null);
-                ByteBuffer results=ByteBuffer.allocate(clientResponse.getSerializedSize() + 4);
-                results.putInt(results.capacity() - 4);
-                clientResponse.flattenToBuffer(results);
-                return new ByteBuffer[]{results};
-              }
-              @Override public void cancel(){
-              }
+          ClientInterfaceHandleManager cihm=m_cihm.get(response.getClientConnectionId());
+          Procedure procedure=null;
+          if (invocation != null) {
+            procedure=catalogContext.procedures.get(invocation.getProcName());
+            if (procedure == null) {
+              procedure=SystemProcedureCatalog.listing.get(invocation.getProcName()).asCatalogProcedure();
             }
-);
+          }
+          if (cihm != null) {
+            cihm.connection.writeStream().enqueue(new ClientResponseWork(response,cihm,procedure));
           }
         }
  else         if (message instanceof BinaryPayloadMessage) {

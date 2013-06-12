@@ -25,7 +25,7 @@ synchronized (m_startAndStopLock) {
     m_deployment=null;
     m_messenger=null;
     m_startMode=null;
-    m_statsAgent=new StatsAgent();
+    m_opsRegistrar=new OpsRegistrar();
     m_asyncCompilerAgent=new AsyncCompilerAgent();
     m_faultManager=null;
     m_snapshotCompletionMonitor=null;
@@ -45,12 +45,12 @@ synchronized (m_startAndStopLock) {
     final int computationThreads=Math.max(2,CoreUtils.availableProcessors() / 4);
     m_computationService=CoreUtils.getListeningExecutorService("Computation service thread",computationThreads,m_config.m_computationCoreBindings);
     boolean isRejoin=false;
-    if (config.m_startAction == START_ACTION.REJOIN || config.m_startAction == START_ACTION.LIVE_REJOIN) {
+    if (config.m_startAction.doesRejoin()) {
       isRejoin=true;
     }
     m_rejoining=isRejoin;
-    m_rejoinDataPending=isRejoin;
-    m_joining=config.m_startAction == START_ACTION.JOIN;
+    m_rejoinDataPending=isRejoin || config.m_startAction == StartAction.JOIN;
+    m_joining=config.m_startAction == StartAction.JOIN;
     try {
       System.setOut(new PrintStream(System.out,true,"UTF-8"));
       System.setErr(new PrintStream(System.err,true,"UTF-8"));
@@ -79,21 +79,20 @@ synchronized (m_startAndStopLock) {
       VoltDB.crashLocalVoltDB("Failed to initialize license verifier. " + "See previous log message for details.",false,null);
     }
     m_globalServiceElector=new GlobalServiceElector(m_messenger.getZK(),m_messenger.getHostId());
-    Joiner joinCoordinator=null;
     if (m_joining) {
-      Class<?> joinerClass=MiscUtils.loadProClass("org.voltdb.JoinerImpl","Elastic",false);
+      Class<?> elasticJoinCoordClass=MiscUtils.loadProClass("org.voltdb.join.ElasticJoinCoordinator","Elastic",false);
       try {
-        Constructor<?> constructor=joinerClass.getConstructor(HostMessenger.class);
-        joinCoordinator=(Joiner)constructor.newInstance(m_messenger);
-        m_rejoinCoordinator=joinCoordinator;
-        m_messenger.registerMailbox(m_rejoinCoordinator);
+        Constructor<?> constructor=elasticJoinCoordClass.getConstructor(HostMessenger.class);
+        m_joinCoordinator=(JoinCoordinator)constructor.newInstance(m_messenger);
+        m_messenger.registerMailbox(m_joinCoordinator);
+        m_joinCoordinator.initialize(m_deployment.getCluster().getKfactor());
       }
  catch (      Exception e) {
-        VoltDB.crashLocalVoltDB("Failed to instantiate joiner",true,e);
+        VoltDB.crashLocalVoltDB("Failed to instantiate join coordinator",true,e);
       }
     }
     ClusterConfig clusterConfig=null;
-    JSONObject topo=getTopology(config.m_startAction,joinCoordinator);
+    JSONObject topo=getTopology(config.m_startAction,m_joinCoordinator);
     m_partitionsToSitesAtStartupForExportInit=new ArrayList<Pair<Integer,Long>>();
     try {
       clusterConfig=new ClusterConfig(topo);
@@ -108,7 +107,7 @@ synchronized (m_startAndStopLock) {
           }
         }
  else         if (m_joining) {
-          partitions=joinCoordinator.getPartitionsToAdd();
+          partitions=m_joinCoordinator.getPartitionsToAdd();
         }
  else {
           partitions=ClusterConfig.partitionsForHost(topo,m_messenger.getHostId());
@@ -120,25 +119,22 @@ synchronized (m_startAndStopLock) {
         m_iv2Initiators=createIv2Initiators(partitions,m_config.m_startAction,m_partitionsToSitesAtStartupForExportInit);
         m_iv2InitiatorStartingTxnIds.put(MpInitiator.MP_INIT_PID,TxnEgo.makeZero(MpInitiator.MP_INIT_PID).getTxnId());
         long mpiBuddyHSId=m_iv2Initiators.get(0).getInitiatorHSId();
-        m_MPI=new MpInitiator(m_messenger,mpiBuddyHSId,m_statsAgent);
+        m_MPI=new MpInitiator(m_messenger,mpiBuddyHSId,getStatsAgent());
         m_iv2Initiators.add(m_MPI);
       }
       clusterConfig=new ClusterConfig(topo);
-      final long statsHSId=m_messenger.getHSIdForLocalSite(HostMessenger.STATS_SITE_ID);
-      m_messenger.generateMailboxId(statsHSId);
-      hostLog.info("Registering stats mailbox id " + CoreUtils.hsIdToString(statsHSId));
-      List<Long> hsidsToRejoin=new ArrayList<Long>();
+      Map<Integer,Long> partsToHSIdsToRejoin=new HashMap<Integer,Long>();
       for (      Initiator init : m_iv2Initiators) {
         if (init.isRejoinable()) {
-          hsidsToRejoin.add(init.getInitiatorHSId());
+          partsToHSIdsToRejoin.put(init.getPartitionId(),init.getInitiatorHSId());
         }
       }
       if (isRejoin && isIV2Enabled()) {
-        SnapshotSaveAPI.recoveringSiteCount.set(hsidsToRejoin.size());
-        hostLog.info("Set recovering site count to " + hsidsToRejoin.size());
-        m_rejoinCoordinator=new Iv2RejoinCoordinator(m_messenger,hsidsToRejoin,m_catalogContext.cluster.getVoltroot(),m_config.m_startAction == START_ACTION.LIVE_REJOIN);
-        m_messenger.registerMailbox(m_rejoinCoordinator);
-        if (m_config.m_startAction == START_ACTION.LIVE_REJOIN) {
+        SnapshotSaveAPI.recoveringSiteCount.set(partsToHSIdsToRejoin.size());
+        hostLog.info("Set recovering site count to " + partsToHSIdsToRejoin.size());
+        m_joinCoordinator=new Iv2RejoinCoordinator(m_messenger,partsToHSIdsToRejoin.values(),m_catalogContext.cluster.getVoltroot(),m_config.m_startAction == StartAction.LIVE_REJOIN);
+        m_messenger.registerMailbox(m_joinCoordinator);
+        if (m_config.m_startAction == StartAction.LIVE_REJOIN) {
           hostLog.info("Using live rejoin.");
         }
  else {
@@ -146,7 +142,7 @@ synchronized (m_startAndStopLock) {
         }
       }
  else       if (m_joining) {
-        joinCoordinator.setSites(hsidsToRejoin);
+        m_joinCoordinator.setPartitionsToHSIds(partsToHSIdsToRejoin);
       }
     }
  catch (    Exception e) {
@@ -175,13 +171,15 @@ synchronized (m_startAndStopLock) {
       }
     }
     m_ioStats=new IOStats();
-    m_statsAgent.registerStatsSource(SysProcSelector.IOSTATS,0,m_ioStats);
+    getStatsAgent().registerStatsSource(StatsSelector.IOSTATS,0,m_ioStats);
     m_memoryStats=new MemoryStats();
-    m_statsAgent.registerStatsSource(SysProcSelector.MEMORY,0,m_memoryStats);
-    m_statsAgent.registerStatsSource(SysProcSelector.TOPO,0,m_cartographer);
+    getStatsAgent().registerStatsSource(StatsSelector.MEMORY,0,m_memoryStats);
+    getStatsAgent().registerStatsSource(StatsSelector.TOPO,0,m_cartographer);
     m_partitionCountStats=new PartitionCountStats(m_cartographer);
-    m_statsAgent.registerStatsSource(SysProcSelector.PARTITIONCOUNT,0,m_partitionCountStats);
+    getStatsAgent().registerStatsSource(StatsSelector.PARTITIONCOUNT,0,m_partitionCountStats);
     m_initiatorStats=new InitiatorStats(m_myHostId);
+    m_liveClientsStats=new LiveClientsStats();
+    getStatsAgent().registerStatsSource(StatsSelector.LIVECLIENTS,0,m_liveClientsStats);
     m_latencyStats=new LatencyStats(m_myHostId);
     if (m_commandLog != null && isRejoin) {
       m_commandLog.initForRejoin(m_catalogContext,Long.MIN_VALUE,m_iv2InitiatorStartingTxnIds,true,m_config.m_commandLogBinding);
@@ -191,7 +189,7 @@ synchronized (m_startAndStopLock) {
       m_leaderAppointer=new LeaderAppointer(m_messenger,clusterConfig.getPartitionCount(),m_deployment.getCluster().getKfactor(),m_catalogContext.cluster.getNetworkpartition(),m_catalogContext.cluster.getFaultsnapshots().get("CLUSTER_PARTITION"),usingCommandLog,topo,m_MPI);
       m_globalServiceElector.registerService(m_leaderAppointer);
       for (      Initiator iv2init : m_iv2Initiators) {
-        iv2init.configure(getBackendTargetType(),m_serializedCatalog,m_catalogContext,m_deployment.getCluster().getKfactor(),csp,clusterConfig.getPartitionCount(),m_config.m_startAction,m_statsAgent,m_memoryStats,m_commandLog,m_nodeDRGateway,m_config.m_executionCoreBindings.poll());
+        iv2init.configure(getBackendTargetType(),m_serializedCatalog,m_catalogContext,m_deployment.getCluster().getKfactor(),csp,clusterConfig.getPartitionCount(),m_config.m_startAction,getStatsAgent(),m_memoryStats,m_commandLog,m_nodeDRGateway,m_config.m_executionCoreBindings.poll());
       }
     }
  catch (    Exception e) {
@@ -207,6 +205,7 @@ synchronized (m_startAndStopLock) {
  catch (    Exception e) {
       VoltDB.crashLocalVoltDB("Unable to start GlobalServiceElector",true,e);
     }
+    m_opsRegistrar.registerMailboxes(m_messenger);
     int portOffset=0;
     for (int i=0; i < 1; i++) {
       try {
@@ -237,7 +236,7 @@ synchronized (m_startAndStopLock) {
           MPHSId=null;
         }
         m_statsManager=(StatsManager)statsManagerClass.newInstance();
-        m_statsManager.initialize(localHSIds,MPHSId);
+        m_statsManager.initialize();
       }
     }
  catch (    Exception e) {
@@ -266,11 +265,11 @@ synchronized (m_startAndStopLock) {
         VoltDB.crashLocalVoltDB("Failed to announce ready state.",false,null);
       }
     }
-    if (!m_joining && (m_cartographer.getPartitions().size() - 1) != m_configuredNumberOfPartitions) {
+    if (!m_joining && (m_cartographer.getPartitionCount()) != m_configuredNumberOfPartitions) {
       for (      Map.Entry<Integer,ImmutableList<Long>> entry : getSiteTrackerForSnapshot().m_partitionsToSitesImmutable.entrySet()) {
         hostLog.info(entry.getKey() + " -- " + CoreUtils.hsIdCollectionToString(entry.getValue()));
       }
-      VoltDB.crashGlobalVoltDB("Mismatch between configured number of partitions (" + m_configuredNumberOfPartitions + ") and actual ("+ (m_cartographer.getPartitions().size() - 1)+ ")",true,null);
+      VoltDB.crashGlobalVoltDB("Mismatch between configured number of partitions (" + m_configuredNumberOfPartitions + ") and actual ("+ m_cartographer.getPartitionCount()+ ")",true,null);
     }
     schedulePeriodicWorks();
     m_clientInterfaces.get(0).schedulePeriodicWorks();

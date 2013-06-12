@@ -1,37 +1,58 @@
 {
-  long requestId=obj.getLong("requestId");
-  long returnAddress=obj.getLong("returnAddress");
   VoltTable[] stats=null;
-  String selectorString=obj.getString("selector");
-  SysProcSelector selector=SysProcSelector.valueOf(selectorString);
-  if (selector == SysProcSelector.DRNODE) {
+  String subselectorString=obj.getString("subselector");
+  boolean interval=obj.getBoolean("interval");
+  StatsSelector subselector=StatsSelector.valueOf(subselectorString);
+switch (subselector) {
+case DR:
     stats=collectDRStats();
-  }
- else   if (selector == SysProcSelector.SNAPSHOTSTATUS) {
-    stats=collectSnapshotStatusStats();
-  }
-  if (stats == null) {
-    ByteBuffer responseBuffer=ByteBuffer.allocate(8);
-    responseBuffer.putLong(requestId);
-    byte responseBytes[]=CompressionService.compressBytes(responseBuffer.array());
-    BinaryPayloadMessage bpm=new BinaryPayloadMessage(new byte[]{STATS_PAYLOAD},responseBytes);
-    m_mailbox.send(returnAddress,bpm);
-    return;
-  }
-  ByteBuffer[] bufs=new ByteBuffer[stats.length];
-  int statbytes=0;
-  for (int i=0; i < stats.length; i++) {
-    bufs[i]=stats[i].getBuffer();
-    bufs[i].position(0);
-    statbytes+=bufs[i].remaining();
-  }
-  ByteBuffer responseBuffer=ByteBuffer.allocate(8 + 4 * stats.length + +statbytes);
-  responseBuffer.putLong(requestId);
-  for (int i=0; i < bufs.length; i++) {
-    responseBuffer.putInt(bufs[i].remaining());
-    responseBuffer.put(bufs[i]);
-  }
-  byte responseBytes[]=CompressionService.compressBytes(responseBuffer.array());
-  BinaryPayloadMessage bpm=new BinaryPayloadMessage(new byte[]{STATS_PAYLOAD},responseBytes);
-  m_mailbox.send(returnAddress,bpm);
+  break;
+case DRNODE:
+stats=collectDRNodeStats();
+break;
+case DRPARTITION:
+stats=collectDRPartitionStats();
+break;
+case SNAPSHOTSTATUS:
+stats=collectSnapshotStatusStats();
+break;
+case MEMORY:
+stats=collectMemoryStats(interval);
+break;
+case IOSTATS:
+stats=collectIOStats(interval);
+break;
+case INITIATOR:
+stats=collectInitiatorStats(interval);
+break;
+case TABLE:
+stats=collectTableStats(interval);
+break;
+case INDEX:
+stats=collectIndexStats(interval);
+break;
+case PROCEDURE:
+case PROCEDUREPROFILE:
+stats=collectProcedureStats(interval);
+break;
+case STARVATION:
+stats=collectStarvationStats(interval);
+break;
+case PLANNER:
+stats=collectPlannerStats(interval);
+break;
+case LIVECLIENTS:
+stats=collectLiveClientsStats(interval);
+break;
+case LATENCY:
+stats=collectLatencyStats(interval);
+break;
+case MANAGEMENT:
+stats=collectManagementStats(interval);
+break;
+default :
+hostLog.warn("Received unknown stats selector in StatsAgent: " + subselector.name() + ", this should be impossible.");
+stats=null;
+}
+return stats;
 }

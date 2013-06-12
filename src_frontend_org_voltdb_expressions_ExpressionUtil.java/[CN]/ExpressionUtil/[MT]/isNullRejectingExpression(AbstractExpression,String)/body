@@ -1,0 +1,52 @@
+{
+  ExpressionType exprType=expr.getExpressionType();
+  if (exprType == ExpressionType.CONJUNCTION_AND) {
+    assert(expr.m_left != null && expr.m_right != null);
+    return isNullRejectingExpression(expr.m_left,tableName) || isNullRejectingExpression(expr.m_right,tableName);
+  }
+ else   if (exprType == ExpressionType.CONJUNCTION_OR) {
+    assert(expr.m_left != null && expr.m_right != null);
+    return isNullRejectingExpression(expr.m_left,tableName) && isNullRejectingExpression(expr.m_right,tableName);
+  }
+ else   if (exprType == ExpressionType.OPERATOR_NOT) {
+    assert(expr.m_left != null);
+    if (expr.m_left.getExpressionType() == ExpressionType.OPERATOR_IS_NULL) {
+      return containsMatchingTVE(expr,tableName);
+    }
+ else     if (expr.m_left.getExpressionType() == ExpressionType.CONJUNCTION_AND || expr.m_left.getExpressionType() == ExpressionType.CONJUNCTION_OR) {
+      assert(expr.m_left.m_left != null && expr.m_left.m_right != null);
+      AbstractExpression tempLeft=null;
+      if (expr.m_left.m_left.getExpressionType() != ExpressionType.OPERATOR_NOT) {
+        tempLeft=new OperatorExpression(ExpressionType.OPERATOR_NOT,expr.m_left.m_left,null);
+      }
+ else {
+        assert(expr.m_left.m_left.m_left != null);
+        tempLeft=expr.m_left.m_left.m_left;
+      }
+      AbstractExpression tempRight=null;
+      if (expr.m_left.m_right.getExpressionType() != ExpressionType.OPERATOR_NOT) {
+        tempRight=new OperatorExpression(ExpressionType.OPERATOR_NOT,expr.m_left.m_right,null);
+      }
+ else {
+        assert(expr.m_left.m_right.m_left != null);
+        tempRight=expr.m_left.m_right.m_left;
+      }
+      ExpressionType type=(expr.m_left.getExpressionType() == ExpressionType.CONJUNCTION_AND) ? ExpressionType.CONJUNCTION_OR : ExpressionType.CONJUNCTION_AND;
+      AbstractExpression tempExpr=new OperatorExpression(type,tempLeft,tempRight);
+      return isNullRejectingExpression(tempExpr,tableName);
+    }
+ else     if (expr.m_left.getExpressionType() == ExpressionType.OPERATOR_NOT) {
+      assert(expr.m_left.m_left != null);
+      return isNullRejectingExpression(expr.m_left.m_left,tableName);
+    }
+ else {
+      return isNullRejectingExpression(expr.m_left,tableName);
+    }
+  }
+ else   if (exprType == ExpressionType.OPERATOR_IS_NULL) {
+    return false;
+  }
+ else {
+    return containsMatchingTVE(expr,tableName);
+  }
+}
