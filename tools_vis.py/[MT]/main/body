@@ -1,5 +1,5 @@
 def main():
-    if (len(sys.argv) < 4):
+    if (len(sys.argv) < 3):
         usage()
         exit((-1))
     if (not os.path.exists(sys.argv[1])):
@@ -7,28 +7,34 @@ def main():
         exit((-1))
     prefix = sys.argv[2]
     path = os.path.join(sys.argv[1], sys.argv[2])
-    branch = sys.argv[3]
     ndays = 1000
-    if (len(sys.argv) >= 5):
-        ndays = int(sys.argv[4])
+    if (len(sys.argv) >= 4):
+        ndays = int(sys.argv[3])
     width = None
     height = None
+    if (len(sys.argv) >= 5):
+        width = int(sys.argv[4])
     if (len(sys.argv) >= 6):
-        width = int(sys.argv[5])
-    if (len(sys.argv) >= 7):
-        height = int(sys.argv[6])
-    stats = get_stats(STATS_SERVER, 21212, ndays, branch)
+        height = int(sys.argv[7])
+    branches = get_branches(STATS_SERVER, 21212, ndays)
+    root_path = path
     filenames = []
-    for (app, data) in stats.iteritems():
-        app_filename = app.replace(' ', '_')
-        latency95_filename = ('%s-latency95-%s.png' % (prefix, app_filename))
-        latency99_filename = ('%s-latency99-%s.png' % (prefix, app_filename))
-        throughput_filename = ('%s-throughput-%s.png' % (prefix, app_filename))
-        filenames.append((app, latency95_filename, latency99_filename, throughput_filename))
-        plot((app + ' latency95'), 'Time', 'Latency (ms)', (((path + '-latency95-') + app_filename) + '.png'), width, height, app, data, 'lat95')
-        plot((app + ' latency99'), 'Time', 'Latency (ms)', (((path + '-latency99-') + app_filename) + '.png'), width, height, app, data, 'lat99')
-        plot((app + ' throughput(best)'), 'Time', 'Throughput (txns/sec)', (((path + '-throughput-') + app_filename) + '.png'), width, height, app, data, 'tps')
-    index_file = open((path + '-index.html'), 'w')
-    sorted_filenames = sorted(filenames, key=(lambda f: f[0].lower()))
+    iorder = 0
+    for branch in branches:
+        iorder += 1
+        stats = get_stats(STATS_SERVER, 21212, ndays, branch)
+        prefix = ((sys.argv[2] + '-') + branch)
+        path = ((root_path + '-') + branch)
+        for (app, data) in stats.iteritems():
+            app_filename = app.replace(' ', '_')
+            latency95_filename = ('%s-latency95-%s.png' % (prefix, app_filename))
+            latency99_filename = ('%s-latency99-%s.png' % (prefix, app_filename))
+            throughput_filename = ('%s-throughput-%s.png' % (prefix, app_filename))
+            filenames.append((app, latency95_filename, latency99_filename, throughput_filename, branch, iorder))
+            plot((app + ' latency95'), 'Time', 'Latency (ms)', (((path + '-latency95-') + app_filename) + '.png'), width, height, app, data, 'lat95')
+            plot((app + ' latency99'), 'Time', 'Latency (ms)', (((path + '-latency99-') + app_filename) + '.png'), width, height, app, data, 'lat99')
+            plot((app + ' throughput(best)'), 'Time', 'Throughput (txns/sec)', (((path + '-throughput-') + app_filename) + '.png'), width, height, app, data, 'tps')
+    index_file = open((root_path + '-index.html'), 'w')
+    sorted_filenames = sorted(filenames, key=(lambda f: (f[0].lower() + str(f[5]))))
     index_file.write(generate_index_file(sorted_filenames))
     index_file.close()
