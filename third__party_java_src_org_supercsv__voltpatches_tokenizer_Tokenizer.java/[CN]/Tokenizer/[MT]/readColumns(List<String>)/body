@@ -12,7 +12,7 @@
       return false;
     }
   }
- while (line.length() == 0 || (commentMatcher != null && commentMatcher.isComment(line)));
+ while (line.length() == 0 || (commentMatcher != null && commentMatcher.isComment(line)) || skip >= getLineNumber());
   currentRow.append(line);
   line+=NEWLINE;
   TokenizerState state=TokenizerState.NORMAL;
@@ -21,6 +21,7 @@
   int charIndex=0;
   boolean espectQuote=false;
   boolean isEscape=false;
+  boolean sawNewLineInQuote=false;
   while (true) {
     final char c=line.charAt(charIndex);
     if (TokenizerState.NORMAL.equals(state)) {
@@ -78,10 +79,20 @@
       }
     }
  else {
-      if (c == NEWLINE) {
+      if (sawNewLineInQuote) {
         if (currentColumn.length() > columnSizeLimit) {
+          state=TokenizerState.NORMAL;
+          sawNewLineInQuote=false;
           throw new SuperCsvException(String.format("oversized column while reading quoted column beginning on line %d and ending on line %d",quoteScopeStartingLine,getLineNumber()));
         }
+      }
+      if (c == NEWLINE) {
+        if (currentColumn.length() > columnSizeLimit) {
+          state=TokenizerState.NORMAL;
+          sawNewLineInQuote=false;
+          throw new SuperCsvException(String.format("oversized column while reading quoted column beginning on line %d and ending on line %d",quoteScopeStartingLine,getLineNumber()));
+        }
+        sawNewLineInQuote=true;
         currentColumn.append(NEWLINE);
         currentRow.append(NEWLINE);
         charIndex=-1;
@@ -99,6 +110,7 @@
         }
  else {
           state=TokenizerState.NORMAL;
+          sawNewLineInQuote=false;
           quoteScopeStartingLine=-1;
         }
       }
