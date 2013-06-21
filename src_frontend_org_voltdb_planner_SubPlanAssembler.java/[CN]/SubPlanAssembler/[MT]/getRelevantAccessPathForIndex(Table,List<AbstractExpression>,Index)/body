@@ -36,6 +36,7 @@
   int nRecoveredSpoilers=0;
   AbstractExpression coveringExpr=null;
   int coveringColId=-1;
+  IndexableExpression inListExpr=null;
   for (; coveredCount < keyComponentCount; ++coveredCount) {
     if (indexedExprs == null) {
       coveringColId=indexedColIds[coveredCount];
@@ -43,16 +44,34 @@
  else {
       coveringExpr=indexedExprs.get(coveredCount);
     }
-    IndexableExpression eqExpr=getIndexableExpressionFromFilters(ExpressionType.COMPARE_EQUAL,ExpressionType.COMPARE_EQUAL,coveringExpr,coveringColId,table,filtersToCover,EXCLUDE_FROM_POST_FILTERS);
+    boolean allowIndexedJoinFilters=(inListExpr == null);
+    IndexableExpression eqExpr=getIndexableExpressionFromFilters(ExpressionType.COMPARE_EQUAL,ExpressionType.COMPARE_EQUAL,coveringExpr,coveringColId,table,filtersToCover,allowIndexedJoinFilters,EXCLUDE_FROM_POST_FILTERS);
     if (eqExpr == null) {
-      break;
+      if (inListExpr == null) {
+        inListExpr=getIndexableExpressionFromFilters(ExpressionType.COMPARE_IN,ExpressionType.COMPARE_IN,coveringExpr,coveringColId,table,filtersToCover,false,EXCLUDE_FROM_POST_FILTERS);
+        if (inListExpr != null) {
+          for (          AbstractExpression comparator : retval.indexExprs) {
+            AbstractExpression otherExpr=comparator.getRight();
+            if (otherExpr.hasAnySubexpressionOfType(ExpressionType.VALUE_TUPLE)) {
+              inListExpr=null;
+              break;
+            }
+          }
+          eqExpr=inListExpr;
+        }
+      }
+      if (eqExpr == null) {
+        break;
+      }
     }
     AbstractExpression comparator=eqExpr.getFilter();
     retval.indexExprs.add(comparator);
     retval.bindings.addAll(eqExpr.getBindings());
     retval.endExprs.add(comparator);
     if (nRecoveredSpoilers < nSpoilers && orderSpoilers[nRecoveredSpoilers] == coveredCount) {
-      ++nRecoveredSpoilers;
+      if (eqExpr != inListExpr) {
+        ++nRecoveredSpoilers;
+      }
     }
   }
   if (coveredCount == keyComponentCount) {
@@ -79,14 +98,15 @@
   IndexableExpression startingBoundExpr=null;
   IndexableExpression endingBoundExpr=null;
   if (!filtersToCover.isEmpty()) {
-    IndexableExpression doubleBoundExpr=getIndexableExpressionFromFilters(ExpressionType.COMPARE_LIKE,ExpressionType.COMPARE_LIKE,coveringExpr,coveringColId,table,filtersToCover,EXCLUDE_FROM_POST_FILTERS);
+    IndexableExpression doubleBoundExpr=getIndexableExpressionFromFilters(ExpressionType.COMPARE_LIKE,ExpressionType.COMPARE_LIKE,coveringExpr,coveringColId,table,filtersToCover,false,EXCLUDE_FROM_POST_FILTERS);
     if (doubleBoundExpr != null) {
       startingBoundExpr=doubleBoundExpr.extractStartFromPrefixLike();
       endingBoundExpr=doubleBoundExpr.extractEndFromPrefixLike();
     }
  else {
-      startingBoundExpr=getIndexableExpressionFromFilters(ExpressionType.COMPARE_GREATERTHAN,ExpressionType.COMPARE_GREATERTHANOREQUALTO,coveringExpr,coveringColId,table,filtersToCover,EXCLUDE_FROM_POST_FILTERS);
-      endingBoundExpr=getIndexableExpressionFromFilters(ExpressionType.COMPARE_LESSTHAN,ExpressionType.COMPARE_LESSTHANOREQUALTO,coveringExpr,coveringColId,table,filtersToCover,EXCLUDE_FROM_POST_FILTERS);
+      boolean allowIndexedJoinFilters=(inListExpr == null);
+      startingBoundExpr=getIndexableExpressionFromFilters(ExpressionType.COMPARE_GREATERTHAN,ExpressionType.COMPARE_GREATERTHANOREQUALTO,coveringExpr,coveringColId,table,filtersToCover,allowIndexedJoinFilters,EXCLUDE_FROM_POST_FILTERS);
+      endingBoundExpr=getIndexableExpressionFromFilters(ExpressionType.COMPARE_LESSTHAN,ExpressionType.COMPARE_LESSTHANOREQUALTO,coveringExpr,coveringColId,table,filtersToCover,allowIndexedJoinFilters,EXCLUDE_FROM_POST_FILTERS);
     }
   }
   if (retval.sortDirection == SortDirectionType.DESC) {
