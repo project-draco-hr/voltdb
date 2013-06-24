@@ -3,8 +3,12 @@
   whereClauses.addAll(joinNode.m_whereInnerList);
   whereClauses.addAll(joinNode.m_whereInnerOuterList);
   AccessPath innerAccessPath=joinNode.m_rightNode.m_currentAccessPath;
-  AbstractJoinPlanNode retval=null;
-  if (innerPlan instanceof IndexScanPlanNode && hasInnerOuterIndexExpression(joinNode.m_joinInnerOuterList,innerAccessPath.otherExprs)) {
+  AbstractJoinPlanNode ajNode=null;
+  AbstractPlanNode retval=null;
+  assert(joinNode.m_rightNode != null);
+  boolean needInnerSendReceive=joinNode.m_rightNode.m_table != null && (!joinNode.m_rightNode.m_table.getIsreplicated() && !canDeferSendReceivePairForNode());
+  boolean canHaveNLIJ=innerPlan instanceof IndexScanPlanNode && hasInnerOuterIndexExpression(joinNode.m_joinInnerOuterList,innerAccessPath.otherExprs) && (joinNode.m_joinType == JoinType.INNER || !needInnerSendReceive);
+  if (canHaveNLIJ) {
     NestLoopIndexPlanNode nlijNode=new NestLoopIndexPlanNode();
     nlijNode.setJoinType(joinNode.m_joinType);
     @SuppressWarnings("unused") IndexScanPlanNode innerNode=(IndexScanPlanNode)innerPlan;
@@ -12,7 +16,8 @@
     nlijNode.addInlinePlanNode(innerPlan);
     nlijNode.addAndLinkChild(outerPlan);
     nlijNode.generateOutputSchema(m_db);
-    retval=nlijNode;
+    ajNode=nlijNode;
+    retval=(needInnerSendReceive) ? addSendReceivePair(ajNode) : ajNode;
   }
  else {
     ArrayList<AbstractExpression> joinClauses=innerAccessPath.joinExprs;
@@ -26,11 +31,15 @@
     nljNode.setJoinPredicate(ExpressionUtil.combine(joinClauses));
     nljNode.setJoinType(joinNode.m_joinType);
     nljNode.addAndLinkChild(outerPlan);
+    if (needInnerSendReceive) {
+      innerPlan=addSendReceivePair(innerPlan);
+    }
     nljNode.addAndLinkChild(innerPlan);
     nljNode.generateOutputSchema(m_db);
-    retval=nljNode;
+    ajNode=nljNode;
+    retval=ajNode;
   }
-  retval.setPreJoinPredicate(ExpressionUtil.combine(joinNode.m_joinOuterList));
-  retval.setWherePredicate(ExpressionUtil.combine(whereClauses));
+  ajNode.setPreJoinPredicate(ExpressionUtil.combine(joinNode.m_joinOuterList));
+  ajNode.setWherePredicate(ExpressionUtil.combine(whereClauses));
   return retval;
 }
