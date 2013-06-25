@@ -1,0 +1,168 @@
+{
+  if (param == null) {
+    return nullValueForType(paramType);
+  }
+  Class<?> pclass=param.getClass();
+  Number numberParam=null;
+  if (pclass == Long.class) {
+    if (paramType == long.class)     return param;
+    if (param == VoltType.BIGINT.getNullValue())     return nullValueForType(paramType);
+    numberParam=(Number)param;
+  }
+ else   if (pclass == Integer.class) {
+    if (paramType == int.class)     return param;
+    if (param == VoltType.INTEGER.getNullValue())     return nullValueForType(paramType);
+    if (paramType == long.class)     return ((Integer)param).longValue();
+    numberParam=(Number)param;
+  }
+ else   if (pclass == Short.class) {
+    if (paramType == short.class)     return param;
+    if (param == VoltType.SMALLINT.getNullValue())     return nullValueForType(paramType);
+    if (paramType == long.class)     return ((Short)param).longValue();
+    if (paramType == int.class)     return ((Short)param).intValue();
+    numberParam=(Number)param;
+  }
+ else   if (pclass == Byte.class) {
+    if (paramType == byte.class)     return param;
+    if (param == VoltType.TINYINT.getNullValue())     return nullValueForType(paramType);
+    if (paramType == long.class)     return ((Byte)param).longValue();
+    if (paramType == int.class)     return ((Byte)param).intValue();
+    if (paramType == short.class)     return ((Byte)param).shortValue();
+    numberParam=(Number)param;
+  }
+ else   if (pclass == Double.class) {
+    if (paramType == double.class)     return param;
+    if (param == VoltType.FLOAT.getNullValue())     return nullValueForType(paramType);
+  }
+ else   if (pclass == String.class) {
+    if (((String)param).equals(VoltTable.CSV_NULL))     return nullValueForType(paramType);
+ else     if (paramType == String.class)     return param;
+ else     if (paramType == byte[].class) {
+      return Encoder.hexDecode((String)param);
+    }
+    if (paramType.isPrimitive()) {
+      return convertStringToPrimitive((String)param,paramType);
+    }
+  }
+ else   if (pclass == byte[].class) {
+    if (paramType == byte[].class)     return param;
+ else     if (paramType == String.class) {
+      String value=new String((byte[])param,Charsets.UTF_8);
+      if (value.equals(VoltTable.CSV_NULL))       return nullValueForType(paramType);
+ else       return value;
+    }
+  }
+ else   if (param == VoltType.NULL_STRING_OR_VARBINARY) {
+    return nullValueForType(paramType);
+  }
+ else   if (param == VoltType.NULL_DECIMAL) {
+    return nullValueForType(paramType);
+  }
+ else   if (param instanceof SystemProcedureExecutionContext) {
+    return param;
+  }
+  if (paramType.isArray() != pclass.isArray()) {
+    throw new Exception(String.format("Array / Scalar parameter mismatch (%s to %s)",pclass.getName(),paramType.getName()));
+  }
+  if (paramType.isArray()) {
+    return tryToMakeCompatibleArray(paramType.getComponentType(),pclass,param);
+  }
+  if ((paramType == int.class) && (numberParam != null)) {
+    long val=numberParam.longValue();
+    if ((val <= Integer.MAX_VALUE) && (val >= Integer.MIN_VALUE))     return numberParam.intValue();
+  }
+ else   if ((paramType == short.class) && (numberParam != null)) {
+    if ((pclass == Long.class) || (pclass == Integer.class)) {
+      long val=numberParam.longValue();
+      if ((val <= Short.MAX_VALUE) && (val >= Short.MIN_VALUE))       return numberParam.shortValue();
+    }
+  }
+ else   if ((paramType == byte.class) && (numberParam != null)) {
+    if ((pclass == Long.class) || (pclass == Integer.class) || (pclass == Short.class)) {
+      long val=numberParam.longValue();
+      if ((val <= Byte.MAX_VALUE) && (val >= Byte.MIN_VALUE))       return numberParam.byteValue();
+    }
+  }
+ else   if ((paramType == Double.class) && (numberParam != null)) {
+    return numberParam.doubleValue();
+  }
+ else   if (paramType == TimestampType.class) {
+    if (pclass == Long.class)     return new TimestampType((Long)param);
+    if (pclass == TimestampType.class)     return param;
+    if (pclass == Date.class)     return new TimestampType((Date)param);
+    if (pclass == String.class) {
+      String longtime=((String)param).trim();
+      try {
+        return new TimestampType(Long.parseLong(longtime));
+      }
+ catch (      IllegalArgumentException e) {
+      }
+      try {
+        return new TimestampType(longtime);
+      }
+ catch (      IllegalArgumentException e) {
+      }
+    }
+  }
+ else   if (paramType == java.sql.Timestamp.class) {
+    if (param instanceof java.sql.Timestamp)     return param;
+    if (param instanceof java.util.Date)     return new java.sql.Timestamp(((java.util.Date)param).getTime());
+    if (param instanceof TimestampType)     return ((TimestampType)param).asJavaTimestamp();
+    if (pclass == String.class) {
+      String longtime=((String)param).trim();
+      try {
+        return new java.sql.Timestamp(Long.parseLong(longtime));
+      }
+ catch (      IllegalArgumentException e) {
+      }
+      try {
+        return java.sql.Timestamp.valueOf(longtime);
+      }
+ catch (      IllegalArgumentException e) {
+      }
+    }
+  }
+ else   if (paramType == java.sql.Date.class) {
+    if (param instanceof java.sql.Date)     return param;
+    if (param instanceof java.util.Date)     return new java.sql.Date(((java.util.Date)param).getTime());
+    if (param instanceof TimestampType)     return ((TimestampType)param).asExactJavaSqlDate();
+    if (pclass == String.class) {
+      try {
+        return new java.sql.Date(TimestampType.millisFromJDBCformat((String)param));
+      }
+ catch (      IllegalArgumentException e) {
+      }
+    }
+  }
+ else   if (paramType == java.util.Date.class) {
+    if (param instanceof java.util.Date)     return param;
+    if (param instanceof TimestampType)     return ((TimestampType)param).asExactJavaDate();
+    if (pclass == String.class) {
+      try {
+        return new java.util.Date(TimestampType.millisFromJDBCformat((String)param));
+      }
+ catch (      IllegalArgumentException e) {
+      }
+    }
+  }
+ else   if (paramType == BigDecimal.class) {
+    if (numberParam != null) {
+      BigInteger bi=new BigInteger(param.toString());
+      BigDecimal bd=new BigDecimal(bi);
+      bd=bd.setScale(12,BigDecimal.ROUND_HALF_EVEN);
+      return bd;
+    }
+    if (pclass == BigDecimal.class) {
+      BigDecimal bd=(BigDecimal)param;
+      bd=bd.setScale(12,BigDecimal.ROUND_HALF_EVEN);
+      return bd;
+    }
+    if (paramType == BigDecimal.class) {
+      return VoltDecimalHelper.deserializeBigDecimalFromString((String)param);
+    }
+  }
+ else   if (paramType == VoltTable.class && pclass == VoltTable.class) {
+    return param;
+  }
+  throw new Exception("tryToMakeCompatible: The provided value: (" + param.toString() + ") of type: "+ pclass.getName()+ " is not a match or is out of range for the target parameter type: "+ paramType.getName());
+}
