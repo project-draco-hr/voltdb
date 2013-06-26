@@ -3,16 +3,69 @@
   int indexSize=m_catalogIndex.getColumns().size();
   int keySize=m_searchkeyExpressions.size();
   if (keySize == 0 && m_endExpression != null) {
-    keySize=1;
+    keySize=ExpressionUtil.uncombineAny(m_endExpression).size();
   }
-  String scanType="unique-scan";
-  if (m_lookupType != IndexLookupType.EQ)   scanType="range-scan";
-  String cover="covering";
-  if (indexSize > keySize)   cover=String.format("%d/%d cols",keySize,indexSize);
-  String usageInfo=String.format("(%s %s)",scanType,cover);
-  if (keySize == 0)   usageInfo="(for sort order only)";
+  String usageInfo;
+  String predicatePrefix;
+  if (keySize == 0) {
+    if (m_forDeterminismOnly) {
+      usageInfo=" (for deterministic order only)";
+    }
+ else {
+      usageInfo=" (for sort order only)";
+    }
+    predicatePrefix="\n" + indent + " filter by ";
+  }
+ else {
+    String[] asIndexed=new String[indexSize];
+    for (int ii=0; ii < keySize; ++ii) {
+      asIndexed[ii]="(index key " + ii + ")";
+    }
+    String jsonExpr=m_catalogIndex.getExpressionsjson();
+    if (jsonExpr.isEmpty()) {
+      for (      ColumnRef cref : m_catalogIndex.getColumns()) {
+        Column col=cref.getColumn();
+        asIndexed[cref.getIndex()]=col.getName();
+      }
+    }
+ else {
+      try {
+        List<AbstractExpression> indexExpressions=AbstractExpression.fromJSONArrayString(jsonExpr,null);
+        int ii=0;
+        for (        AbstractExpression ae : indexExpressions) {
+          asIndexed[ii++]=ae.explain(m_targetTableName);
+        }
+      }
+ catch (      JSONException e) {
+      }
+    }
+    String start=explainSearchKeys(asIndexed,keySize);
+    if (m_lookupType == IndexLookupType.EQ) {
+      if (m_catalogIndex.getUnique()) {
+        usageInfo="\n" + indent + " uniquely match "+ start;
+      }
+ else {
+        usageInfo="\n" + indent + " scan matches for "+ start;
+      }
+    }
+ else {
+      if (indexSize == keySize) {
+        usageInfo="\n" + indent + " range-scan covering from "+ start;
+      }
+ else {
+        usageInfo=String.format("\n%s range-scan on %d of %d cols from %s",indent,keySize,indexSize,start);
+      }
+      usageInfo+=explainEndKeys(asIndexed);
+    }
+    predicatePrefix=", filter by ";
+  }
+  String predicate=explainPredicate(predicatePrefix);
   String retval="INDEX SCAN of \"" + m_targetTableName + "\"";
-  retval+=" using \"" + m_targetIndexName + "\"";
-  retval+=" " + usageInfo;
+  String indexDescription=" using \"" + m_targetIndexName + "\"";
+  if (m_targetIndexName.startsWith("SYS_IDX_PK_") || m_targetIndexName.startsWith("SYS_IDX_SYS_PK_") || m_targetIndexName.startsWith("MATVIEW_PK_INDEX")) {
+    indexDescription=" using its primary key index";
+  }
+  retval+=indexDescription;
+  retval+=usageInfo + predicate;
   return retval;
 }

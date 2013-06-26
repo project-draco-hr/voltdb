@@ -1,0 +1,78 @@
+{
+  Statement catalogStmt=proc.getStatements().add("stmt-" + String.valueOf(compileCounter++));
+  catalogStmt.setSqltext(sql);
+  catalogStmt.setSinglepartition(partitionParameter != null);
+  catalogStmt.setBatched(false);
+  catalogStmt.setParamnum(paramCount);
+  QueryType qtype=QueryType.SELECT;
+  catalogStmt.setReadonly(true);
+  if (sql.toLowerCase().startsWith("insert")) {
+    qtype=QueryType.INSERT;
+    catalogStmt.setReadonly(false);
+  }
+  if (sql.toLowerCase().startsWith("update")) {
+    qtype=QueryType.UPDATE;
+    catalogStmt.setReadonly(false);
+  }
+  if (sql.toLowerCase().startsWith("delete")) {
+    qtype=QueryType.DELETE;
+    catalogStmt.setReadonly(false);
+  }
+  catalogStmt.setQuerytype(qtype.getValue());
+  String name=catalogStmt.getParent().getTypeName() + "-" + catalogStmt.getTypeName();
+  DatabaseEstimates estimates=new DatabaseEstimates();
+  TrivialCostModel costModel=new TrivialCostModel();
+  PartitioningForStatement partitioning=new PartitioningForStatement(partitionParameter,true,true);
+  QueryPlanner planner=new QueryPlanner(catalogStmt.getSqltext(),catalogStmt.getTypeName(),catalogStmt.getParent().getTypeName(),catalog.getClusters().get("cluster"),db,partitioning,hsql,estimates,false,StatementCompiler.DEFAULT_MAX_JOIN_TABLES,costModel,null,joinOrder,detMode);
+  CompiledPlan plan=null;
+  planner.parse();
+  plan=planner.plan();
+  assert(plan != null);
+  for (int i=0; i < plan.parameters.length; ++i) {
+    StmtParameter catalogParam=catalogStmt.getParameters().add(String.valueOf(i));
+    catalogParam.setJavatype(plan.parameters[i].getValue());
+    catalogParam.setIndex(i);
+  }
+  int index=0;
+  for (  SchemaColumn col : plan.columns.getColumns()) {
+    Column catColumn=catalogStmt.getOutput_columns().add(String.valueOf(index));
+    catColumn.setNullable(false);
+    catColumn.setIndex(index);
+    catColumn.setName(col.getColumnName());
+    catColumn.setType(col.getType().getValue());
+    catColumn.setSize(col.getSize());
+    index++;
+  }
+  List<PlanNodeList> nodeLists=new ArrayList<PlanNodeList>();
+  nodeLists.add(new PlanNodeList(plan.rootPlanGraph));
+  if (plan.subPlanGraph != null) {
+    nodeLists.add(new PlanNodeList(plan.subPlanGraph));
+  }
+  List<Pair<Integer,VoltType>> parameters=nodeLists.get(0).getParameters();
+  for (int i=0; i < plan.parameters.length; ++i) {
+    Pair<Integer,VoltType> parameter=new Pair<Integer,VoltType>(i,plan.parameters[i]);
+    parameters.add(parameter);
+  }
+  String json=null;
+  try {
+    JSONObject jobj=new JSONObject(nodeLists.get(0).toJSONString());
+    json=jobj.toString(4);
+  }
+ catch (  JSONException e2) {
+    e2.printStackTrace();
+    System.exit(-1);
+  }
+  try {
+    BuildDirectoryUtils.writeFile("statement-plans",name + "_json.txt",json,true);
+    BuildDirectoryUtils.writeFile("statement-plans",name + ".dot",nodeLists.get(0).toDOTString("name"),true);
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+  }
+  List<AbstractPlanNode> plannodes=new ArrayList<AbstractPlanNode>();
+  for (  PlanNodeList nodeList : nodeLists) {
+    plannodes.add(nodeList.getRootPlanNode());
+  }
+  m_currentPlan=plan;
+  return plannodes;
+}
