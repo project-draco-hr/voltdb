@@ -1,0 +1,30 @@
+import sys
+import os
+import glob
+import re
+import shutil
+import time
+import signal
+RE_SNAP = re.compile('and took ([0-9.]+)')
+RE_THROUGHPUT = re.compile('Average throughput:\\s*([0-9,]+)')
+RE_LATENCY = re.compile('Average latency:\\s*([0-9.]+)')
+if (__name__ == '__main__'):
+    outroot = sys.argv[1]
+    editions = ('old', 'new')
+    tests = ('nosnap', 'snap')
+    metrics = ('throughput', 'latency')
+    results = []
+    for edition in editions:
+        for test in tests:
+            results.append(analyze(outroot, ('%s-%s' % (edition, test))))
+    print '\n\n'.join([str(result) for result in results])
+    deltas = []
+    for metric in metrics:
+        for i in range(len(editions)):
+            deltas.append(delta_attr(results[((i * len(editions)) + 0)], results[((i * len(editions)) + 1)], metric))
+    print '\n===== Snapshot performance impact ====='
+    for i in range(len(deltas)):
+        print ('   %10s (%d): %s' % (metrics[(i / len(metrics))], ((i % len(metrics)) + 1), format_delta(deltas[i])))
+    print '\n===== Change in snapshot performance impact ====='
+    for i in range(len(metrics)):
+        print ('   %10s: %s' % (metrics[i], format_delta(delta(deltas[((i * len(editions)) + 0)], deltas[((i * len(editions)) + 1)]))))
