@@ -17,15 +17,20 @@
   }
   Map<Integer,Pair<Table,SnapshotPredicates>> tablesAndPredicates=makeTablesAndPredicatesToSnapshot(tasks);
   activateTableStreams(ee,tablesAndPredicates);
-  if (m_isIV2Enabled) {
-    for (int ii=0; ii < m_availableSnapshotBuffers.size(); ii++) {
-      VoltDB.instance().schedulePriorityWork(new Runnable(){
-        @Override public void run(){
-          m_siteTaskerQueue.offer(new SnapshotTask());
-        }
-      }
-,(m_quietUntil + (5 * m_snapshotPriority) - now),0,TimeUnit.MILLISECONDS);
-      m_quietUntil+=5 * m_snapshotPriority;
-    }
+  int maxTableTaskSize=0;
+  for (  Collection<SnapshotTableTask> perTableTasks : m_snapshotTableTasks.asMap().values()) {
+    maxTableTaskSize=Math.max(maxTableTaskSize,perTableTasks.size());
+  }
+  if (maxTableTaskSize == 1) {
+    resizeBufferPool(m_bufferCountMultiplier);
+  }
+ else {
+    resizeBufferPool(maxTableTaskSize);
+  }
+  if (tasks.isEmpty()) {
+    queueInitialSnapshotTasks(1,now);
+  }
+ else {
+    queueInitialSnapshotTasks(m_availableSnapshotBuffers.size(),now);
   }
 }

@@ -1,0 +1,25 @@
+{
+  if (fragmentId == SysProcFragmentId.PF_validatePartitioning) {
+    final VoltTable results=constructPartitioningResultsTable();
+    List<Integer> tableIds=new ArrayList<Integer>();
+    List<String> tableNames=new ArrayList<String>();
+    for (    Table t : context.getDatabase().getTables()) {
+      if (!t.getIsreplicated() && t.getMaterializer() == null) {
+        tableIds.add(t.getRelativeIndex());
+        tableNames.add(t.getTypeName());
+      }
+    }
+    long mispartitionedCounts[]=context.getSiteProcedureConnection().validatePartitioning(Longs.toArray(tableIds),(Integer)params.toArray()[0],(byte[])params.toArray()[1]);
+    for (int ii=0; ii < tableNames.size(); ii++) {
+      results.addRow(context.getHostId(),CoreUtils.getSiteIdFromHSId(context.getSiteId()),context.getPartitionId(),tableNames.get(ii),mispartitionedCounts[ii]);
+    }
+    return new DependencyPair(DEP_validatePartitioning,results);
+  }
+ else   if (fragmentId == SysProcFragmentId.PF_validatePartitioningResults) {
+    assert(dependencies.size() > 0);
+    final VoltTable results=VoltTableUtil.unionTables(dependencies.get(DEP_validatePartitioning));
+    return new DependencyPair(DEP_validatePartitioningResults,results);
+  }
+  assert(false);
+  return null;
+}
