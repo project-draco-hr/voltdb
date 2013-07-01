@@ -1,6 +1,14 @@
 {
-  Pair<Integer,ByteBuffer> tableBlock=m_dataSinks.get(0).poll();
-  if (tableBlock == null && !m_dataSinks.get(0).isEOF()) {
+  Pair<Integer,ByteBuffer> tableBlock=null;
+  boolean retry=true;
+  for (  StreamSnapshotSink dataSink : m_dataSinks) {
+    tableBlock=dataSink.poll();
+    if (tableBlock != null || m_dataSinks.get(0).isEOF()) {
+      retry=false;
+      break;
+    }
+  }
+  if (retry) {
     m_taskQueue.offer(this);
     return;
   }
@@ -34,7 +42,7 @@
   JOINLOG.debug(m_whoami + " partitioned table snapshot transfer is finished");
   SnapshotCompletionEvent event=null;
   try {
-    event=m_partitionedCompletionMonitor.get();
+    event=m_snapshotCompletionMonitor.get();
     assert(event != null);
     JOINLOG.debug("P" + m_partitionId + " noticed partitioned table snapshot completion");
     m_completionAction.setSnapshotTxnId(event.multipartTxnId);
@@ -47,6 +55,5 @@ catch (  ExecutionException e) {
   }
   RejoinMessage rm=new RejoinMessage(m_mailbox.getHSId(),RejoinMessage.Type.SNAPSHOT_FINISHED);
   m_mailbox.send(m_coordinatorHsId,rm);
-  m_partitionedStreamFinished=true;
   setJoinComplete(siteConnection,event.exportSequenceNumbers);
 }

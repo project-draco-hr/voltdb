@@ -1,0 +1,36 @@
+{
+  ZKUtil.StringCallback cb1=new ZKUtil.StringCallback();
+  try {
+    assert(VoltDB.instance().getHostMessenger().getZK().exists(VoltZK.nodes_currently_snapshotting + "/" + VoltDB.instance().getHostMessenger().getHostId(),false) == null);
+    ByteBuffer snapshotTxnId=ByteBuffer.allocate(8);
+    snapshotTxnId.putLong(txnId);
+    VoltDB.instance().getHostMessenger().getZK().create(VoltZK.nodes_currently_snapshotting + "/" + VoltDB.instance().getHostMessenger().getHostId(),snapshotTxnId.array(),Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL,cb1,null);
+  }
+ catch (  NodeExistsException e) {
+    SNAP_LOG.warn("Didn't expect the snapshot node to already exist",e);
+  }
+catch (  Exception e) {
+    VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
+  }
+  boolean isTruncation=false;
+  String clSnapshotPathStr=context.getCluster().getLogconfig().get("log").getInternalsnapshotpath();
+  if (clSnapshotPathStr != null) {
+    File clSnapshotPath=new File(clSnapshotPathStr);
+    File thisSnapshotPath=new File(path);
+    if (clSnapshotPath.equals(thisSnapshotPath)) {
+      isTruncation=true;
+    }
+  }
+  if (!createSnapshotCompletionNode(path,nonce,txnId,context.getHostId(),isTruncation,truncReqId)) {
+    increaseParticipateHost(txnId,context.getHostId());
+  }
+  try {
+    cb1.get();
+  }
+ catch (  NodeExistsException e) {
+    SNAP_LOG.warn("Didn't expect the snapshot node to already exist",e);
+  }
+catch (  Exception e) {
+    VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
+  }
+}
