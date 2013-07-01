@@ -326,6 +326,93 @@ catch (    VoltTypeException e) {
     VoltTable result=VoltTableUtil.unionTables(table_list);
     return new DependencyPair(dependency_id,result);
   }
+ else   if (fragmentId == SysProcFragmentId.PF_restoreLoadPartitionedTable) {
+    Object paramsA[]=params.toArray();
+    assert(paramsA[0] != null);
+    assert(paramsA[1] != null);
+    assert(paramsA[2] != null);
+    assert(paramsA[3] != null);
+    String table_name=(String)paramsA[0];
+    int originalHosts[]=(int[])paramsA[1];
+    int relevantPartitions[]=(int[])paramsA[2];
+    int dependency_id=(Integer)paramsA[3];
+    for (    int partition_id : relevantPartitions) {
+      TRACE_LOG.trace("Loading partitioned-to-replicated table: " + table_name + " partition id: "+ partition_id);
+    }
+    VoltTable result=performLoadPartitionedTable(table_name,originalHosts,relevantPartitions,context);
+    return new DependencyPair(dependency_id,result);
+  }
+ else   if (fragmentId == SysProcFragmentId.PF_restoreDistributeSendPartitionedTable) {
+    assert(params.toArray()[0] != null);
+    assert(params.toArray()[1] != null);
+    assert(params.toArray()[2] != null);
+    assert(params.toArray()[3] != null);
+    String table_name=(String)params.toArray()[0];
+    int[] partition_ids=(int[])params.toArray()[1];
+    int dependency_id=(Integer)params.toArray()[2];
+    byte compressedTable[]=(byte[])params.toArray()[3];
+    TRACE_LOG.trace("Received partitioned-to-replicated table: " + table_name + " for ["+ partition_ids.toString()+ "]");
+    String result_str="SUCCESS";
+    String error_msg="";
+    try {
+      VoltTable table=PrivateVoltTableFactory.createVoltTableFromBuffer(ByteBuffer.wrap(CompressionService.decompressBytes(compressedTable)),true);
+      voltLoadTable(context.getCluster().getTypeName(),context.getDatabase().getTypeName(),table_name,table);
+    }
+ catch (    Exception e) {
+      result_str="FAILURE";
+      error_msg=e.getMessage();
+    }
+    VoltTable result=constructResultsTable();
+    result.addRow(m_hostId,CoreUtils.getHostnameOrAddress(),CoreUtils.getSiteIdFromHSId(m_siteId),table_name,-1,result_str,error_msg);
+    return new DependencyPair(dependency_id,result);
+  }
+ else   if (fragmentId == SysProcFragmentId.PF_restoreDistributeSendPartitionedTableResult) {
+    assert(params.toArray()[0] != null);
+    int dependency_id=(Integer)params.toArray()[0];
+    TRACE_LOG.trace("Received confirmation of successful partitioned-to-replicated table load");
+    List<VoltTable> table_list=new ArrayList<VoltTable>();
+    for (    int dep_id : dependencies.keySet()) {
+      table_list.addAll(dependencies.get(dep_id));
+    }
+    assert(table_list.size() == dependencies.size());
+    VoltTable result=VoltTableUtil.unionTables(table_list);
+    return new DependencyPair(dependency_id,result);
+  }
+ else   if (fragmentId == SysProcFragmentId.PF_restoreLoadPartitionedTableResult) {
+    TRACE_LOG.trace("Aggregating partitioned-to-replicated table restore results");
+    assert(params.toArray()[0] != null);
+    int dependency_id=(Integer)params.toArray()[0];
+    assert(dependencies.size() > 0);
+    List<VoltTable> table_list=new ArrayList<VoltTable>();
+    for (    int dep_id : dependencies.keySet()) {
+      table_list.addAll(dependencies.get(dep_id));
+    }
+    assert(table_list.size() == dependencies.size());
+    VoltTable result=VoltTableUtil.unionTables(table_list);
+    return new DependencyPair(dependency_id,result);
+  }
+ else   if (fragmentId == SysProcFragmentId.PF_restoreDispatchReplicatedTable) {
+    assert(params.toArray()[0] != null);
+    assert(params.toArray()[1] != null);
+    String table_name=(String)params.toArray()[0];
+    int dependency_id=(Integer)params.toArray()[1];
+    TRACE_LOG.trace("Loading replicated-to-partitioned table: " + table_name);
+    VoltTable result=performDispatchReplicatedTable(table_name,context);
+    return new DependencyPair(dependency_id,result);
+  }
+ else   if (fragmentId == SysProcFragmentId.PF_restoreDispatchReplicatedTableResult) {
+    TRACE_LOG.trace("Aggregating replicated-to-partitioned table restore results");
+    assert(params.toArray()[0] != null);
+    int dependency_id=(Integer)params.toArray()[0];
+    assert(dependencies.size() > 0);
+    List<VoltTable> table_list=new ArrayList<VoltTable>();
+    for (    int dep_id : dependencies.keySet()) {
+      table_list.addAll(dependencies.get(dep_id));
+    }
+    assert(table_list.size() == dependencies.size());
+    VoltTable result=VoltTableUtil.unionTables(table_list);
+    return new DependencyPair(dependency_id,result);
+  }
  else   if (fragmentId == SysProcFragmentId.PF_restoreAsyncRunLoop) {
     Object paramsArray[]=params.toArray();
     assert(paramsArray.length == 1);

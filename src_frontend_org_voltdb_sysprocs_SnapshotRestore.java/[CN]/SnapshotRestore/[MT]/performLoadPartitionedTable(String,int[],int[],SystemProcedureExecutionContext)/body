@@ -1,0 +1,73 @@
+{
+  String hostname=CoreUtils.getHostnameOrAddress();
+  Map<Long,Integer> sites_to_partitions=new HashMap<Long,Integer>();
+  SiteTracker tracker=ctx.getSiteTrackerForSnapshot();
+  sites_to_partitions.putAll(tracker.getSitesToPartitions());
+  try {
+    initializeTableSaveFiles(m_filePath,m_fileNonce,tableName,originalHostIds,relevantPartitionIds,tracker);
+  }
+ catch (  IOException e) {
+    VoltTable result=constructResultsTable();
+    result.addRow(m_hostId,hostname,CoreUtils.getSiteIdFromHSId(m_siteId),tableName,relevantPartitionIds[0],"FAILURE","Unable to load table: " + tableName + " error: "+ e.getMessage());
+    return result;
+  }
+  VoltTable[] results=new VoltTable[]{constructResultsTable()};
+  results[0].addRow(m_hostId,hostname,CoreUtils.getSiteIdFromHSId(m_siteId),tableName,0,"SUCCESS","NO DATA TO DISTRIBUTE");
+  final Table new_catalog_table=getCatalogTable(tableName);
+  Boolean needsConversion=null;
+  org.voltcore.utils.DBBPool.BBContainer c=null;
+  try {
+    while (hasMoreChunks()) {
+      c=null;
+      c=getNextChunk();
+      if (c == null) {
+        continue;
+      }
+      if (needsConversion == null) {
+        VoltTable old_table=PrivateVoltTableFactory.createVoltTableFromBuffer(c.b.duplicate(),true);
+        needsConversion=SavedTableConverter.needsConversion(old_table,new_catalog_table);
+      }
+      byte compressedTable[];
+      if (needsConversion.booleanValue()) {
+        VoltTable old_table=PrivateVoltTableFactory.createVoltTableFromBuffer(c.b,true);
+        VoltTable new_table=SavedTableConverter.convertTable(old_table,new_catalog_table);
+        compressedTable=new_table.getCompressedBytes();
+      }
+ else {
+        compressedTable=PrivateVoltTableFactory.createVoltTableFromBuffer(c.b,true).getCompressedBytes();
+      }
+      if (c != null) {
+        c.discard();
+      }
+      int[] dependencyIds=new int[sites_to_partitions.size()];
+      SynthesizedPlanFragment[] pfs=new SynthesizedPlanFragment[sites_to_partitions.size() + 1];
+      int pfs_index=0;
+      for (      long site_id : sites_to_partitions.keySet()) {
+        dependencyIds[pfs_index]=TableSaveFileState.getNextDependencyId();
+        pfs[pfs_index]=new SynthesizedPlanFragment();
+        pfs[pfs_index].fragmentId=SysProcFragmentId.PF_restoreDistributeSendPartitionedTable;
+        pfs[pfs_index].siteId=m_actualToGenerated.get(site_id);
+        pfs[pfs_index].multipartition=false;
+        pfs[pfs_index].outputDepId=dependencyIds[pfs_index];
+        pfs[pfs_index].inputDepIds=new int[]{};
+        pfs[pfs_index].parameters=ParameterSet.fromArrayNoCopy(tableName,relevantPartitionIds,dependencyIds[pfs_index],compressedTable);
+        ++pfs_index;
+      }
+      int result_dependency_id=TableSaveFileState.getNextDependencyId();
+      pfs[sites_to_partitions.size()]=new SynthesizedPlanFragment();
+      pfs[sites_to_partitions.size()].fragmentId=SysProcFragmentId.PF_restoreDistributeSendPartitionedTableResult;
+      pfs[sites_to_partitions.size()].multipartition=false;
+      pfs[sites_to_partitions.size()].outputDepId=result_dependency_id;
+      pfs[sites_to_partitions.size()].inputDepIds=dependencyIds;
+      pfs[sites_to_partitions.size()].parameters=ParameterSet.fromArrayNoCopy(result_dependency_id);
+      results=executeSysProcPlanFragments(pfs,m_mbox);
+    }
+  }
+ catch (  Exception e) {
+    VoltTable result=PrivateVoltTableFactory.createUninitializedVoltTable();
+    result=constructResultsTable();
+    result.addRow(m_hostId,hostname,CoreUtils.getSiteIdFromHSId(m_siteId),tableName,relevantPartitionIds[0],"FAILURE","Unable to load table: " + tableName + " error: "+ e.getMessage());
+    return result;
+  }
+  return results[0];
+}

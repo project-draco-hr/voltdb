@@ -1,0 +1,79 @@
+{
+  if (isValgrind())   return;
+  System.out.println("Starting testSaveReplicatedAndRestorePArtitionedTable");
+  int num_replicated_items_per_chunk=200;
+  int num_replicated_chunks=10;
+  Client client=getClient();
+  loadLargeReplicatedTable(client,"REPLICATED_TESTER",num_replicated_items_per_chunk,num_replicated_chunks);
+  Thread.sleep(1000);
+  VoltTable orig_mem=null;
+  try {
+    orig_mem=client.callProcedure("@Statistics","memory",0).getResults()[0];
+    System.out.println("STATS: " + orig_mem.toString());
+  }
+ catch (  Exception ex) {
+    ex.printStackTrace();
+    fail("Statistics exception: " + ex.getMessage());
+  }
+  VoltTable[] results=null;
+  results=saveTablesWithDefaultOptions(client);
+  m_config.shutDown();
+  CatalogChangeSingleProcessServer config=(CatalogChangeSingleProcessServer)m_config;
+  SaveRestoreTestProjectBuilder project=new SaveRestoreTestProjectBuilder();
+  project.addDefaultProcedures();
+  project.addDefaultPartitioning();
+  project.addPartitionInfo("REPLICATED_TESTER","RT_ID");
+  project.addSchema(SaveRestoreTestProjectBuilder.class.getResource("saverestore-ddl.sql"));
+  config.recompile(project);
+  m_config.startUp();
+  client=getClient();
+  try {
+    client.callProcedure("@SnapshotRestore",TMPDIR,TESTNONCE);
+    while (results[0].advanceRow()) {
+      if (results[0].getString("RESULT").equals("FAILURE")) {
+        fail(results[0].getString("ERR_MSG"));
+      }
+    }
+  }
+ catch (  Exception ex) {
+    ex.printStackTrace();
+    fail("SnapshotRestore exception: " + ex.getMessage());
+  }
+  Thread.sleep(1000);
+  VoltTable final_mem=null;
+  try {
+    final_mem=client.callProcedure("@Statistics","memory",0).getResults()[0];
+    System.out.println("STATS: " + final_mem.toString());
+  }
+ catch (  Exception ex) {
+    ex.printStackTrace();
+    fail("Statistics exception: " + ex.getMessage());
+  }
+  checkTable(client,"REPLICATED_TESTER","RT_ID",num_replicated_items_per_chunk * num_replicated_chunks);
+  results=client.callProcedure("@Statistics","table",0).getResults();
+  System.out.println("@Statistics after restore:");
+  System.out.println(results[0]);
+  boolean ok=false;
+  int foundItem=0;
+  long tupleCounts[]=null;
+  while (!ok) {
+    ok=true;
+    foundItem=0;
+    tupleCounts=new long[3];
+    results=client.callProcedure("@Statistics","table",0).getResults();
+    while (results[0].advanceRow()) {
+      if (results[0].getString("TABLE_NAME").equals("REPLICATED_TESTER")) {
+        tupleCounts[foundItem]=results[0].getLong("TUPLE_COUNT");
+        ++foundItem;
+      }
+    }
+    ok=ok & (foundItem == 3);
+  }
+  long totalTupleCount=0;
+  for (  long c : tupleCounts) {
+    totalTupleCount+=c;
+  }
+  assertEquals((num_replicated_chunks * num_replicated_items_per_chunk),totalTupleCount);
+  validateSnapshot(true);
+  config.revertCompile();
+}
