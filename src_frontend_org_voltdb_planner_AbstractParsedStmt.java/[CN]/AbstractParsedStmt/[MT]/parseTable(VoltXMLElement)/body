@@ -2,27 +2,24 @@
   String tableName=tableNode.attributes.get("table");
   Table table=getTableFromDB(tableName);
   assert(table != null);
-  JoinType joinType=JoinType.get(tableNode.attributes.get("jointype"));
-  assert(joinType != JoinType.INVALID);
-  if (joinType == JoinType.FULL) {
-    throw new PlanningErrorException("VoltDB does not support full outer joins");
-  }
   AbstractExpression joinExpr=parseJoinCondition(tableNode);
   AbstractExpression whereExpr=parseWhereCondition(tableNode);
   tableList.add(table);
-  if (joinTree == null) {
-    joinTree=new JoinTree();
-  }
   int nodeId=(joinTree.m_root == null) ? 0 : joinTree.m_root.m_id + 1;
-  JoinNode joinNode=new JoinNode(table,JoinType.INNER,joinExpr,whereExpr,nodeId);
+  JoinNode leafNode=new JoinNode(nodeId,JoinType.INNER,table,joinExpr,whereExpr);
   if (joinTree.m_root == null) {
-    joinTree.m_root=joinNode;
+    joinTree.m_root=leafNode;
   }
  else {
-    JoinNode node=new JoinNode(joinType,joinTree.m_root,joinNode,nodeId + 1);
-    joinTree.m_root=node;
-  }
-  if (joinType != JoinType.INNER) {
-    joinTree.m_hasOuterJoin=true;
+    JoinType joinType=JoinType.get(tableNode.attributes.get("jointype"));
+    assert(joinType != JoinType.INVALID);
+    if (joinType == JoinType.FULL) {
+      throw new PlanningErrorException("VoltDB does not support full outer joins");
+    }
+    JoinNode joinNode=new JoinNode(nodeId + 1,joinType,joinTree.m_root,leafNode);
+    joinTree.m_root=joinNode;
+    if (joinType != JoinType.INNER) {
+      joinTree.m_hasOuterJoin=true;
+    }
   }
 }
