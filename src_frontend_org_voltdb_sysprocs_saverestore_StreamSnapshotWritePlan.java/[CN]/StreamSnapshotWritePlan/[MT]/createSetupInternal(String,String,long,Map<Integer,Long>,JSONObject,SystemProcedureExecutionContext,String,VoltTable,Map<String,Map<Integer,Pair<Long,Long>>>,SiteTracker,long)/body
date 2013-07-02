@@ -1,10 +1,14 @@
 {
   assert(SnapshotSiteProcessor.ExecutionSitesCurrentlySnapshotting.isEmpty());
-  final List<Long> localHSIds=Longs.asList(tracker.getLocalSites());
-  final StreamSnapshotRequestConfig config=new StreamSnapshotRequestConfig(jsData,context.getDatabase(),localHSIds);
+  final StreamSnapshotRequestConfig config=new StreamSnapshotRequestConfig(jsData,context.getDatabase());
+  final List<StreamSnapshotRequestConfig.Stream> localStreams=filterRemoteStreams(config.streams,Longs.asList(tracker.getLocalSites()));
+  final Map<Long,Integer> tokensToAdd=createTokensToAdd(localStreams);
+  if (config.shouldTruncate) {
+    final int newPartitionCount=calculateNewPartitionCount(context.getNumberOfPartitions(),tokensToAdd);
+    coalesceTruncationSnapshotPlan(file_path,file_nonce,txnId,partitionTransactionIds,jsData,context,hostname,result,exportSequenceNumbers,tracker,timestamp,newPartitionCount);
+  }
   List<Integer> localPartitions=tracker.getPartitionsForHost(context.getHostId());
-  if (!config.partitionsToAdd.isEmpty()) {
-    Map<Long,Integer> tokensToAdd=createTokensToAdd(config.partitionsToAdd);
+  if (!tokensToAdd.isEmpty()) {
     createUpdateHashinatorTasksForSites(localPartitions,tokensToAdd,txnId);
   }
   final AtomicInteger numTables=new AtomicInteger(config.tables.length);
@@ -14,22 +18,21 @@
     VoltTable schemaTable=CatalogUtil.getVoltTable(table);
     schemas.put(table.getRelativeIndex(),schemaTable.getSchemaBytes());
   }
-  ArrayListMultimap<Long,SnapshotDataTarget> sdts=ArrayListMultimap.create();
-  if (config.streamPairs.size() > 0) {
-    SNAP_LOG.debug("Sites to stream from: " + CoreUtils.hsIdCollectionToString(config.streamPairs.keySet()));
-    for (    Entry<Long,Collection<Long>> entry : config.streamPairs.entrySet()) {
+  List<DataTargetInfo> sdts=Lists.newArrayList();
+  for (  StreamSnapshotRequestConfig.Stream stream : localStreams) {
+    SNAP_LOG.debug("Sites to stream from: " + CoreUtils.hsIdCollectionToString(stream.streamPairs.keySet()));
+    for (    Entry<Long,Long> entry : stream.streamPairs.entries()) {
       long srcHSId=entry.getKey();
-      Collection<Long> destHSIds=entry.getValue();
-      for (      long destHSId : destHSIds) {
-        sdts.put(srcHSId,new StreamSnapshotDataTarget(destHSId,schemas));
-      }
+      long destHSId=entry.getValue();
+      sdts.add(new DataTargetInfo(stream,srcHSId,destHSId,new StreamSnapshotDataTarget(destHSId,schemas)));
     }
   }
- else {
-    return false;
+  Multimap<Long,Long> replicatedSrcToDst=pickOnePairPerStream(config.streams);
+  if (SNAP_LOG.isDebugEnabled()) {
+    SNAP_LOG.debug("Picked the following sites to transfer replicated table: " + CoreUtils.hsIdEntriesToString(replicatedSrcToDst.entries()));
   }
   for (  final Table table : config.tables) {
-    createTasksForTable(table,sdts.asMap(),config,numTables,snapshotRecord);
+    createTasksForTable(table,sdts,replicatedSrcToDst,numTables,snapshotRecord);
     result.addRow(context.getHostId(),hostname,table.getTypeName(),"SUCCESS","");
   }
   return false;
