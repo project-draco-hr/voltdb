@@ -17,9 +17,10 @@
   }
   orderByNode.addAndLinkChild(root);
   orderByNode.generateOutputSchema(m_catalogDb);
-  if (m_parsedSelect.tableList.size() == 1) {
-    Table table=m_parsedSelect.tableList.get(0);
-    List<AbstractExpression> orderExpressions=orderByNode.getSortExpressions();
+  List<AbstractExpression> orderExpressions=orderByNode.getSortExpressions();
+  boolean allScansAreDeterministic=true;
+  for (  Table table : m_parsedSelect.tableList) {
+    allScansAreDeterministic=false;
     for (    Index index : table.getIndexes()) {
       if (!index.getUnique()) {
         continue;
@@ -51,9 +52,16 @@
         }
       }
       if (orderExpressions.containsAll(indexExpressions)) {
-        orderByNode.setOrderingByUniqueColumns();
+        allScansAreDeterministic=true;
+        break;
       }
     }
+    if (!allScansAreDeterministic) {
+      break;
+    }
+  }
+  if (allScansAreDeterministic) {
+    orderByNode.setOrderingByUniqueColumns();
   }
   return orderByNode;
 }

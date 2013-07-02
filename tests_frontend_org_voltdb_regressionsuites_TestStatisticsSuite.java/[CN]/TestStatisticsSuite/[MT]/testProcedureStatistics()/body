@@ -1,0 +1,75 @@
+{
+  System.out.println("\n\nTESTING PROCEDURE STATS\n\n\n");
+  Client client=getFullyConnectedClient();
+  ColumnInfo[] expectedSchema=new ColumnInfo[19];
+  expectedSchema[0]=new ColumnInfo("TIMESTAMP",VoltType.BIGINT);
+  expectedSchema[1]=new ColumnInfo("HOST_ID",VoltType.INTEGER);
+  expectedSchema[2]=new ColumnInfo("HOSTNAME",VoltType.STRING);
+  expectedSchema[3]=new ColumnInfo("SITE_ID",VoltType.INTEGER);
+  expectedSchema[4]=new ColumnInfo("PARTITION_ID",VoltType.INTEGER);
+  expectedSchema[5]=new ColumnInfo("PROCEDURE",VoltType.STRING);
+  expectedSchema[6]=new ColumnInfo("INVOCATIONS",VoltType.BIGINT);
+  expectedSchema[7]=new ColumnInfo("TIMED_INVOCATIONS",VoltType.BIGINT);
+  expectedSchema[8]=new ColumnInfo("MIN_EXECUTION_TIME",VoltType.BIGINT);
+  expectedSchema[9]=new ColumnInfo("MAX_EXECUTION_TIME",VoltType.BIGINT);
+  expectedSchema[10]=new ColumnInfo("AVG_EXECUTION_TIME",VoltType.BIGINT);
+  expectedSchema[11]=new ColumnInfo("MIN_RESULT_SIZE",VoltType.INTEGER);
+  expectedSchema[12]=new ColumnInfo("MAX_RESULT_SIZE",VoltType.INTEGER);
+  expectedSchema[13]=new ColumnInfo("AVG_RESULT_SIZE",VoltType.INTEGER);
+  expectedSchema[14]=new ColumnInfo("MIN_PARAMETER_SET_SIZE",VoltType.INTEGER);
+  expectedSchema[15]=new ColumnInfo("MAX_PARAMETER_SET_SIZE",VoltType.INTEGER);
+  expectedSchema[16]=new ColumnInfo("AVG_PARAMETER_SET_SIZE",VoltType.INTEGER);
+  expectedSchema[17]=new ColumnInfo("ABORTS",VoltType.BIGINT);
+  expectedSchema[18]=new ColumnInfo("FAILURES",VoltType.BIGINT);
+  VoltTable expectedTable=new VoltTable(expectedSchema);
+  VoltTable[] results=null;
+  for (int i=0; i < HOSTS * SITES; i++) {
+    client.callProcedure("NEW_ORDER.insert",i);
+  }
+  for (int ii=0; ii < 3; ii++) {
+    results=client.callProcedure("GoSleep",3000,0,null).getResults();
+  }
+  results=client.callProcedure("@Statistics","procedure",0).getResults();
+  System.out.println("Test procedures table: " + results[0].toString());
+  assertEquals(1,results.length);
+  validateSchema(results[0],expectedTable);
+  validateRowSeenAtAllHosts(results[0],"PROCEDURE","NEW_ORDER.insert",false);
+  validateRowSeenAtAllPartitions(results[0],"PROCEDURE","NEW_ORDER.insert",false);
+  results[0].resetRowPosition();
+  VoltTable stats=results[0];
+  String procname="blerg";
+  while (!procname.equals("org.voltdb_testprocs.regressionsuites.malicious.GoSleep")) {
+    stats.advanceRow();
+    procname=(String)stats.get("PROCEDURE",VoltType.STRING);
+  }
+  long min_time=(Long)stats.get("MIN_EXECUTION_TIME",VoltType.BIGINT);
+  long max_time=(Long)stats.get("MAX_EXECUTION_TIME",VoltType.BIGINT);
+  long avg_time=(Long)stats.get("AVG_EXECUTION_TIME",VoltType.BIGINT);
+  long min_result_size=(Long)stats.get("MIN_RESULT_SIZE",VoltType.BIGINT);
+  long max_result_size=(Long)stats.get("MAX_RESULT_SIZE",VoltType.BIGINT);
+  long avg_result_size=(Long)stats.get("AVG_RESULT_SIZE",VoltType.BIGINT);
+  long min_parameter_set_size=(Long)stats.get("MIN_PARAMETER_SET_SIZE",VoltType.BIGINT);
+  long max_parameter_set_size=(Long)stats.get("MAX_PARAMETER_SET_SIZE",VoltType.BIGINT);
+  long avg_parameter_set_size=(Long)stats.get("AVG_PARAMETER_SET_SIZE",VoltType.BIGINT);
+  assertTrue("Failed MIN_EXECUTION_TIME > 0, value was: " + min_time,min_time > 0);
+  assertTrue("Failed MAX_EXECUTION_TIME > 0, value was: " + max_time,max_time > 0);
+  assertTrue("Failed AVG_EXECUTION_TIME > 0, value was: " + avg_time,avg_time > 0);
+  assertTrue("Failed MIN_RESULT_SIZE > 0, value was: " + min_result_size,min_result_size >= 0);
+  assertTrue("Failed MAX_RESULT_SIZE > 0, value was: " + max_result_size,max_result_size >= 0);
+  assertTrue("Failed AVG_RESULT_SIZE > 0, value was: " + avg_result_size,avg_result_size >= 0);
+  assertTrue("Failed MIN_PARAMETER_SET_SIZE > 0, value was: " + min_parameter_set_size,min_parameter_set_size >= 0);
+  assertTrue("Failed MAX_PARAMETER_SET_SIZE > 0, value was: " + max_parameter_set_size,max_parameter_set_size >= 0);
+  assertTrue("Failed AVG_PARAMETER_SET_SIZE > 0, value was: " + avg_parameter_set_size,avg_parameter_set_size >= 0);
+  assertTrue("Failed MIN_EXECUTION_TIME > 2,400,000,000ns, value was: " + min_time,min_time > 2400000000L);
+  assertTrue("Failed MAX_EXECUTION_TIME > 2,400,000,000ns, value was: " + max_time,max_time > 2400000000L);
+  assertTrue("Failed AVG_EXECUTION_TIME > 2,400,000,000ns, value was: " + avg_time,avg_time > 2400000000L);
+  assertTrue("Failed MIN_RESULT_SIZE < 1,000,000, value was: " + min_result_size,min_result_size < 1000000L);
+  assertTrue("Failed MAX_RESULT_SIZE < 1,000,000, value was: " + max_result_size,max_result_size < 1000000L);
+  assertTrue("Failed AVG_RESULT_SIZE < 1,000,000, value was: " + avg_result_size,avg_result_size < 1000000L);
+  assertTrue("Failed MIN_PARAMETER_SET_SIZE < 1,000,000, value was: " + min_parameter_set_size,min_parameter_set_size < 1000000L);
+  assertTrue("Failed MAX_PARAMETER_SET_SIZE < 1,000,000, value was: " + max_parameter_set_size,max_parameter_set_size < 1000000L);
+  assertTrue("Failed AVG_PARAMETER_SET_SIZE < 1,000,000, value was: " + avg_parameter_set_size,avg_parameter_set_size < 1000000L);
+  results=client.callProcedure("@Statistics","procedureprofile",0).getResults();
+  System.out.println("\n\n\n" + results[0].toString() + "\n\n\n");
+  assertEquals("Validate site filtering for PROCEDUREPROFILE",2,results[0].getRowCount());
+}

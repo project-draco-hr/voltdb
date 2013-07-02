@@ -1,66 +1,9 @@
 {
-  long seenTxnId=m_transactionQueue.getEarliestSeenTxnIdAcrossInitiatorsWhenEmpty();
-  if (m_currentTransactionState != null) {
-    if (seenTxnId == 0 || seenTxnId > m_currentTransactionState.txnId) {
-      seenTxnId=m_currentTransactionState.txnId;
-    }
-  }
-  long seenTxnTime=TransactionIdManager.getTimestampFromTransactionId(seenTxnId);
-  if (seenTxnTime > m_startupTime) {
-    m_partitionDRGateway.tick(seenTxnId);
-  }
   final long time=EstTime.currentTimeMillis();
-  final long prevLastTickTime=lastTickTime;
   if ((time - lastTickTime) >= 1000) {
     if ((lastTickTime != 0) && (ee != null)) {
       ee.tick(time,lastCommittedTxnId);
     }
     lastTickTime=time;
-  }
-  m_snapshotter.doSnapshotWork(ee,false);
-  if (m_tableStats != null && (time - prevLastTickTime) >= StatsManager.POLL_INTERVAL * 2) {
-    CatalogMap<Table> tables=m_context.database.getTables();
-    int[] tableIds=new int[tables.size()];
-    int i=0;
-    for (    Table table : tables) {
-      tableIds[i++]=table.getRelativeIndex();
-    }
-    long tupleCount=0;
-    int tupleDataMem=0;
-    int tupleAllocatedMem=0;
-    int indexMem=0;
-    int stringMem=0;
-    final VoltTable[] s1=ee.getStats(SysProcSelector.TABLE,tableIds,false,time);
-    if (s1 != null) {
-      VoltTable stats=s1[0];
-      assert(stats != null);
-      while (stats.advanceRow()) {
-        assert(stats.getColumnName(7).equals("TUPLE_COUNT"));
-        tupleCount+=stats.getLong(7);
-        assert(stats.getColumnName(8).equals("TUPLE_ALLOCATED_MEMORY"));
-        tupleAllocatedMem+=(int)stats.getLong(8);
-        assert(stats.getColumnName(9).equals("TUPLE_DATA_MEMORY"));
-        tupleDataMem+=(int)stats.getLong(9);
-        assert(stats.getColumnName(10).equals("STRING_DATA_MEMORY"));
-        stringMem+=(int)stats.getLong(10);
-      }
-      stats.resetRowPosition();
-      m_tableStats.setStatsTable(stats);
-    }
-    final VoltTable[] s2=ee.getStats(SysProcSelector.INDEX,tableIds,false,time);
-    if ((s2 != null) && (s2.length > 0)) {
-      VoltTable stats=s2[0];
-      assert(stats != null);
-      while (stats.advanceRow()) {
-        assert(stats.getColumnName(11).equals("MEMORY_ESTIMATE"));
-        indexMem+=stats.getLong(11);
-      }
-      stats.resetRowPosition();
-      m_indexStats.setStatsTable(stats);
-    }
-    MemoryStats memoryStats=VoltDB.instance().getMemoryStatsSource();
-    if (memoryStats != null) {
-      memoryStats.eeUpdateMemStats(m_siteId,tupleCount,tupleDataMem,tupleAllocatedMem,indexMem,stringMem,ee.getThreadLocalPoolAllocations());
-    }
   }
 }

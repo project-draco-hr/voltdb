@@ -1,0 +1,58 @@
+{
+  assert(joinNode != null);
+  if (joinNode.m_table != null) {
+    return;
+  }
+  assert(joinNode.m_leftNode != null);
+  assert(joinNode.m_rightNode != null);
+  JoinNode leftNode=joinNode.m_leftNode;
+  JoinNode rightNode=joinNode.m_rightNode;
+  JoinNode innerNode=null;
+  if (joinNode.m_joinType == JoinType.LEFT) {
+    innerNode=rightNode;
+  }
+ else   if (joinNode.m_joinType == JoinType.RIGHT) {
+    innerNode=leftNode;
+  }
+ else   if (joinNode.m_joinType == JoinType.FULL) {
+    assert(false);
+  }
+  if (innerNode != null) {
+    for (    AbstractExpression expr : exprs) {
+      if (innerNode.m_table != null) {
+        if (ExpressionUtil.isNullRejectingExpression(expr,innerNode.m_table.getTypeName())) {
+          joinNode.m_joinType=JoinType.INNER;
+          break;
+        }
+      }
+ else {
+        List<Table> tables=innerNode.generateTableJoinOrder();
+        boolean rejectNull=false;
+        for (        Table table : tables) {
+          if (ExpressionUtil.isNullRejectingExpression(expr,table.getTypeName())) {
+            joinNode.m_joinType=JoinType.INNER;
+            rejectNull=true;
+            break;
+          }
+        }
+        if (rejectNull) {
+          break;
+        }
+      }
+    }
+  }
+  if (leftNode.m_joinExpr != null) {
+    exprs.add(leftNode.m_joinExpr);
+  }
+  if (leftNode.m_whereExpr != null) {
+    exprs.add(leftNode.m_whereExpr);
+  }
+  if (rightNode.m_joinExpr != null) {
+    exprs.add(rightNode.m_joinExpr);
+  }
+  if (rightNode.m_whereExpr != null) {
+    exprs.add(rightNode.m_whereExpr);
+  }
+  simplifyOuterJoinRecursively(joinNode.m_leftNode,exprs);
+  simplifyOuterJoinRecursively(joinNode.m_rightNode,exprs);
+}

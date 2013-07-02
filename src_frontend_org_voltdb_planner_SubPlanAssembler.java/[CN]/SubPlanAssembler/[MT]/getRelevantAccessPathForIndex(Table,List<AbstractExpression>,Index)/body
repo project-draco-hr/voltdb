@@ -3,16 +3,16 @@
   filtersToCover.addAll(exprs);
   String exprsjson=index.getExpressionsjson();
   List<AbstractExpression> indexedExprs=null;
-  List<ColumnRef> sortedColumns=null;
-  int[] colIds=null;
+  List<ColumnRef> indexedColRefs=null;
+  int[] indexedColIds=null;
   int keyComponentCount;
   if (exprsjson.isEmpty()) {
-    sortedColumns=CatalogUtil.getSortedCatalogItems(index.getColumns(),"index");
-    keyComponentCount=sortedColumns.size();
-    colIds=new int[keyComponentCount];
+    indexedColRefs=CatalogUtil.getSortedCatalogItems(index.getColumns(),"index");
+    keyComponentCount=indexedColRefs.size();
+    indexedColIds=new int[keyComponentCount];
     int ii=0;
-    for (    ColumnRef cr : sortedColumns) {
-      colIds[ii++]=cr.getColumn().getIndex();
+    for (    ColumnRef cr : indexedColRefs) {
+      indexedColIds[ii++]=cr.getColumn().getIndex();
     }
   }
  else {
@@ -29,58 +29,50 @@
   AccessPath retval=new AccessPath();
   retval.use=IndexUseType.COVERING_UNIQUE_EQUALITY;
   retval.index=index;
+  int orderSpoilers[]=new int[keyComponentCount];
   List<AbstractExpression> bindingsForOrder=new ArrayList<AbstractExpression>();
-  if (m_parsedStmt instanceof ParsedSelectStmt) {
-    ParsedSelectStmt parsedSelectStmt=(ParsedSelectStmt)m_parsedStmt;
-    int countOrderBys=parsedSelectStmt.orderColumns.size();
-    if (countOrderBys > 0 && countOrderBys <= keyComponentCount) {
-      Iterator<ColumnRef> colRefIter=(indexedExprs == null) ? sortedColumns.iterator() : null;
-      boolean ascending=parsedSelectStmt.orderColumns.get(0).ascending;
-      retval.sortDirection=ascending ? SortDirectionType.ASC : SortDirectionType.DESC;
-      int jj=0;
-      for (      ParsedColInfo colInfo : parsedSelectStmt.orderColumns) {
-        if (colInfo.ascending == ascending) {
-          if (indexedExprs == null) {
-            assert(colRefIter.hasNext());
-            ColumnRef colRef=colRefIter.next();
-            if (colInfo.expression instanceof TupleValueExpression && colInfo.tableName.equals(table.getTypeName()) && colInfo.columnName.equals(colRef.getColumn().getTypeName())) {
-              continue;
-            }
-          }
- else {
-            assert(jj < indexedExprs.size());
-            AbstractExpression nextExpr=indexedExprs.get(jj++);
-            List<AbstractExpression> moreBindings=colInfo.expression.bindingToIndexedExpression(nextExpr);
-            if (moreBindings != null) {
-              bindingsForOrder.addAll(moreBindings);
-              continue;
-            }
-          }
-        }
-        retval.sortDirection=SortDirectionType.INVALID;
-        bindingsForOrder=null;
-        break;
-      }
-    }
-  }
+  int nSpoilers=determineIndexOrdering(table,keyComponentCount,indexedExprs,indexedColRefs,retval,orderSpoilers,bindingsForOrder);
   int coveredCount=0;
+  int nRecoveredSpoilers=0;
   AbstractExpression coveringExpr=null;
   int coveringColId=-1;
+  IndexableExpression inListExpr=null;
   for (; coveredCount < keyComponentCount; ++coveredCount) {
     if (indexedExprs == null) {
-      coveringColId=colIds[coveredCount];
+      coveringColId=indexedColIds[coveredCount];
     }
  else {
       coveringExpr=indexedExprs.get(coveredCount);
     }
-    IndexableExpression eqExpr=getIndexableExpressionFromFilters(ExpressionType.COMPARE_EQUAL,ExpressionType.COMPARE_EQUAL,coveringExpr,coveringColId,table,filtersToCover);
+    boolean allowIndexedJoinFilters=(inListExpr == null);
+    IndexableExpression eqExpr=getIndexableExpressionFromFilters(ExpressionType.COMPARE_EQUAL,ExpressionType.COMPARE_EQUAL,coveringExpr,coveringColId,table,filtersToCover,allowIndexedJoinFilters,EXCLUDE_FROM_POST_FILTERS);
     if (eqExpr == null) {
-      break;
+      if (inListExpr == null) {
+        inListExpr=getIndexableExpressionFromFilters(ExpressionType.COMPARE_IN,ExpressionType.COMPARE_IN,coveringExpr,coveringColId,table,filtersToCover,false,EXCLUDE_FROM_POST_FILTERS);
+        if (inListExpr != null) {
+          for (          AbstractExpression comparator : retval.indexExprs) {
+            AbstractExpression otherExpr=comparator.getRight();
+            if (otherExpr.hasAnySubexpressionOfType(ExpressionType.VALUE_TUPLE)) {
+              inListExpr=null;
+              break;
+            }
+          }
+          eqExpr=inListExpr;
+        }
+      }
+      if (eqExpr == null) {
+        break;
+      }
     }
     AbstractExpression comparator=eqExpr.getFilter();
     retval.indexExprs.add(comparator);
     retval.bindings.addAll(eqExpr.getBindings());
     retval.endExprs.add(comparator);
+    if (nRecoveredSpoilers < nSpoilers && orderSpoilers[nRecoveredSpoilers] == coveredCount) {
+      if (eqExpr != inListExpr) {
+        ++nRecoveredSpoilers;
+      }
+    }
   }
   if (coveredCount == keyComponentCount) {
     retval.otherExprs.addAll(filtersToCover);
@@ -92,17 +84,29 @@
   if (!IndexType.isScannable(index.getType())) {
     return null;
   }
+  if (nRecoveredSpoilers < nSpoilers) {
+    assert(retval.sortDirection != SortDirectionType.INVALID);
+    List<AbstractExpression> otherBindingsForOrder=recoverOrderSpoilers(orderSpoilers,nSpoilers,nRecoveredSpoilers,indexedExprs,indexedColIds,table,filtersToCover);
+    if (otherBindingsForOrder == null) {
+      retval.sortDirection=SortDirectionType.INVALID;
+      bindingsForOrder.clear();
+    }
+ else {
+      bindingsForOrder.addAll(otherBindingsForOrder);
+    }
+  }
   IndexableExpression startingBoundExpr=null;
   IndexableExpression endingBoundExpr=null;
   if (!filtersToCover.isEmpty()) {
-    IndexableExpression doubleBoundExpr=getIndexableExpressionFromFilters(ExpressionType.COMPARE_LIKE,ExpressionType.COMPARE_LIKE,coveringExpr,coveringColId,table,filtersToCover);
+    IndexableExpression doubleBoundExpr=getIndexableExpressionFromFilters(ExpressionType.COMPARE_LIKE,ExpressionType.COMPARE_LIKE,coveringExpr,coveringColId,table,filtersToCover,false,EXCLUDE_FROM_POST_FILTERS);
     if (doubleBoundExpr != null) {
       startingBoundExpr=doubleBoundExpr.extractStartFromPrefixLike();
       endingBoundExpr=doubleBoundExpr.extractEndFromPrefixLike();
     }
  else {
-      startingBoundExpr=getIndexableExpressionFromFilters(ExpressionType.COMPARE_GREATERTHAN,ExpressionType.COMPARE_GREATERTHANOREQUALTO,coveringExpr,coveringColId,table,filtersToCover);
-      endingBoundExpr=getIndexableExpressionFromFilters(ExpressionType.COMPARE_LESSTHAN,ExpressionType.COMPARE_LESSTHANOREQUALTO,coveringExpr,coveringColId,table,filtersToCover);
+      boolean allowIndexedJoinFilters=(inListExpr == null);
+      startingBoundExpr=getIndexableExpressionFromFilters(ExpressionType.COMPARE_GREATERTHAN,ExpressionType.COMPARE_GREATERTHANOREQUALTO,coveringExpr,coveringColId,table,filtersToCover,allowIndexedJoinFilters,EXCLUDE_FROM_POST_FILTERS);
+      endingBoundExpr=getIndexableExpressionFromFilters(ExpressionType.COMPARE_LESSTHAN,ExpressionType.COMPARE_LESSTHANOREQUALTO,coveringExpr,coveringColId,table,filtersToCover,allowIndexedJoinFilters,EXCLUDE_FROM_POST_FILTERS);
     }
   }
   if (retval.sortDirection == SortDirectionType.DESC) {
@@ -145,7 +149,7 @@
       retval.lookupType=IndexLookupType.GTE;
     }
  else     if (retval.lookupType == IndexLookupType.GT) {
-      AbstractExpression comparator=startingBoundExpr.getFilter();
+      AbstractExpression comparator=startingBoundExpr.getOriginalFilter();
       retval.otherExprs.add(comparator);
     }
   }

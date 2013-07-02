@@ -1,0 +1,107 @@
+{
+  CatalogBuilder builder=new CatalogBuilder();
+  VoltTable t2=null;
+  String currentName=t1 == null ? "B" : TableHelper.getTableName(t1);
+  String newName=currentName;
+  VoltTable versionT=TableHelper.quickTable(String.format("V%s (BIGINT)",schemaVersionNo + 1));
+  if (newTable) {
+    newName=currentName.equals("A") ? "B" : "A";
+    t2=TableHelper.getTotallyRandomTable(newName,rand);
+  }
+ else {
+    t2=TableHelper.mutateTable(t1,true,rand);
+  }
+  log.info(_F("New Schema:\n%s",TableHelper.ddlForTable(t2)));
+  if (view == null) {
+    view=TableHelper.ViewRep.viewRepForTable("MV",t2,rand);
+  }
+ else {
+    if (!view.compatibleWithTable(t2)) {
+      view=null;
+    }
+  }
+  if (view != null) {
+    log.info(_F("New View:\n%s",view.ddlForView()));
+  }
+ else {
+    log.info("New View: NULL");
+  }
+  builder.addLiteralSchema(TableHelper.ddlForTable(t2));
+  if (view != null) {
+    builder.addLiteralSchema(view.ddlForView());
+  }
+  builder.addLiteralSchema(TableHelper.ddlForTable(versionT));
+  if (newName.equalsIgnoreCase("A")) {
+    int pkeyIndex=TableHelper.getBigintPrimaryKeyIndexIfExists(t2);
+    builder.addPartitionInfo(newName,t2.getColumnName(pkeyIndex));
+    builder.addProcedures(VerifySchemaChangedA.class);
+  }
+ else {
+    builder.addProcedures(VerifySchemaChangedB.class);
+  }
+  byte[] catalogData=builder.compileToBytes();
+  assert(catalogData != null);
+  long count=tupleCount(t1);
+  long start=System.nanoTime();
+  if (newTable) {
+    log.info(_F("Starting catalog update to swap tables."));
+  }
+ else {
+    log.info(_F("Starting catalog update to change schema."));
+  }
+  boolean success=false;
+  ClientResponse cr=null;
+  try {
+    cr=client.callProcedure("@UpdateApplicationCatalog",catalogData,null);
+  }
+ catch (  NoConnectionsException e) {
+  }
+catch (  IOException e) {
+    logStackTrace(e);
+    System.exit(-1);
+  }
+catch (  ProcCallException e) {
+    cr=e.getClientResponse();
+  }
+  if (cr != null) {
+switch (cr.getStatus()) {
+case ClientResponse.SUCCESS:
+      success=true;
+    log.info("Catalog update was reported to be successful");
+  break;
+case ClientResponse.CONNECTION_LOST:
+case ClientResponse.CONNECTION_TIMEOUT:
+case ClientResponse.RESPONSE_UNKNOWN:
+case ClientResponse.SERVER_UNAVAILABLE:
+break;
+case ClientResponse.UNEXPECTED_FAILURE:
+case ClientResponse.GRACEFUL_FAILURE:
+case ClientResponse.USER_ABORT:
+assert(false);
+System.exit(-1);
+}
+}
+int obsCatVersion=verifyAndGetSchemaVersion();
+if (obsCatVersion == schemaVersionNo) {
+if (success == true) {
+log.error(_F("Catalog update was reported to be successful but did not pass verification: expected V%d, observed V%d",schemaVersionNo + 1,obsCatVersion));
+assert(false);
+System.exit(-1);
+}
+return null;
+}
+if (obsCatVersion == schemaVersionNo + 1) schemaVersionNo++;
+ else {
+assert(false);
+System.exit(-1);
+}
+long end=System.nanoTime();
+double seconds=(end - start) / 1000000000.0;
+if (newTable) {
+log.info(_F("Completed catalog update that swapped tables in %.4f seconds",seconds));
+}
+ else {
+log.info(_F("Completed catalog update of %d tuples in %.4f seconds (%d tuples/sec)",count,seconds,(long)(count / seconds)));
+}
+return new Pair<VoltTable,TableHelper.ViewRep>(t2,view,false);
+}

@@ -1,0 +1,27 @@
+{
+  Multimap<Long,SnapshotTableTask> tasks=ArrayListMultimap.create();
+  for (  DataTargetInfo targetInfo : dataTargets) {
+    AbstractExpression predicate=null;
+    boolean deleteTuples=false;
+    if (!table.getIsreplicated()) {
+      predicate=createPredicateForTableStream(table,targetInfo.stream);
+      if (predicate != null) {
+        deleteTuples=true;
+      }
+    }
+ else {
+      if (!replicatedSrcToDst.containsEntry(targetInfo.srcHSId,targetInfo.dstHSId)) {
+        if (SNAP_LOG.isDebugEnabled()) {
+          SNAP_LOG.debug("Skipping replicated table " + table.getTypeName() + " for source destination pair "+ CoreUtils.hsIdToString(targetInfo.srcHSId)+ " -> "+ CoreUtils.hsIdToString(targetInfo.dstHSId));
+        }
+        continue;
+      }
+    }
+    final Runnable onClose=new TargetStatsClosure(targetInfo.dataTarget,table.getTypeName(),numTables,snapshotRecord);
+    targetInfo.dataTarget.setOnCloseHandler(onClose);
+    final SnapshotTableTask task=new SnapshotTableTask(table,targetInfo.dataTarget,new SnapshotDataFilter[0],predicate,deleteTuples);
+    tasks.put(targetInfo.srcHSId,task);
+    m_targets.add(targetInfo.dataTarget);
+  }
+  placeTasksForTable(table,tasks);
+}

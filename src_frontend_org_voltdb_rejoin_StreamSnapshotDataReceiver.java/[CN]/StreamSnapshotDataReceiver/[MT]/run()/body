@@ -1,28 +1,38 @@
 {
+  LinkedBlockingQueue<BBContainer> bufferQueue=m_bufferPool.getQueue(SnapshotSiteProcessor.m_snapshotBufferLength);
+  LinkedBlockingQueue<BBContainer> compressionBufferQueue=m_bufferPool.getQueue(SnapshotSiteProcessor.m_snapshotBufferCompressedLen);
   try {
-    final ByteBuffer compressionBuffer=ByteBuffer.allocateDirect(CompressionService.maxCompressedLength(1024 * 1024 * 2 + (1024 * 256)));
     while (true) {
-      BBContainer container=m_buffers.take();
-      ByteBuffer messageBuffer=container.b;
-      messageBuffer.clear();
-      compressionBuffer.clear();
+      BBContainer container=null;
+      BBContainer compressionBuffer=null;
       boolean success=false;
       try {
         VoltMessage msg=m_mb.recvBlocking();
+        if (msg == null) {
+          break;
+        }
         assert(msg instanceof RejoinDataMessage);
         RejoinDataMessage dataMsg=(RejoinDataMessage)msg;
         byte[] data=dataMsg.getData();
-        compressionBuffer.limit(data.length);
-        compressionBuffer.put(data);
-        compressionBuffer.flip();
-        int uncompressedSize=CompressionService.decompressBuffer(compressionBuffer,messageBuffer);
+        container=bufferQueue.take();
+        ByteBuffer messageBuffer=container.b;
+        messageBuffer.clear();
+        compressionBuffer=compressionBufferQueue.take();
+        compressionBuffer.b.clear();
+        compressionBuffer.b.limit(data.length);
+        compressionBuffer.b.put(data);
+        compressionBuffer.b.flip();
+        int uncompressedSize=CompressionService.decompressBuffer(compressionBuffer.b,messageBuffer);
         messageBuffer.limit(uncompressedSize);
         m_queue.offer(Pair.of(dataMsg.m_sourceHSId,container));
         success=true;
       }
   finally {
-        if (!success) {
+        if (!success && container != null) {
           container.discard();
+        }
+        if (compressionBuffer != null) {
+          compressionBuffer.discard();
         }
       }
     }

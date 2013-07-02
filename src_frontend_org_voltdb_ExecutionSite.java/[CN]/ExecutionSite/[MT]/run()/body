@@ -4,28 +4,18 @@
   Thread.currentThread().setName(name);
   try {
     while (m_shouldContinue) {
-      if (m_rejoining && !m_haveRecoveryPermit && VoltDB.instance().getConfig().m_startAction == START_ACTION.REJOIN) {
-        Long safeTxnId=m_transactionQueue.safeToRecover();
-        if (safeTxnId != null && m_recoveryPermit.tryAcquire()) {
-          m_haveRecoveryPermit=true;
-          m_recoveryStartTime=System.currentTimeMillis();
-          m_recoveryProcessor=RecoverySiteProcessorDestination.createProcessor(m_context.database,m_tracker,ee,m_mailbox,m_siteId,m_onRejoinCompletion,m_recoveryMessageHandler);
-        }
-      }
-      TransactionState currentTxnState=(TransactionState)m_transactionQueue.poll();
+      TransactionState currentTxnState=null;
       m_currentTransactionState=currentTxnState;
       if (currentTxnState == null) {
         VoltMessage message=m_mailbox.recv();
         if (message == null) {
-          boolean hadWork=(m_snapshotter.doSnapshotWork(ee,EstTime.currentTimeMillis() - lastCommittedTxnTime > 5) != null);
+          boolean hadWork=(m_snapshotter.doSnapshotWork(m_systemProcedureContext,ee) != null);
           hadWork=doRejoinWork();
           if (hadWork) {
             continue;
           }
  else {
-            m_starvationTracker.beginStarvation();
             message=m_mailbox.recvBlocking(5);
-            m_starvationTracker.endStarvation();
           }
         }
         tick();
@@ -33,20 +23,8 @@
           handleMailboxMessage(message);
         }
  else {
-          m_snapshotter.doSnapshotWork(ee,EstTime.currentTimeMillis() - lastCommittedTxnTime > 5);
+          m_snapshotter.doSnapshotWork(m_systemProcedureContext,ee);
           doRejoinWork();
-        }
-      }
-      if (currentTxnState != null) {
-        if (m_recoveryProcessor != null) {
-          m_recoveryProcessor.doRecoveryWork(currentTxnState.txnId);
-        }
-        recursableRun(currentTxnState);
-      }
- else       if (m_recoveryProcessor != null) {
-        Long foo=m_transactionQueue.safeToRecover();
-        if (foo != null) {
-          m_recoveryProcessor.doRecoveryWork(foo);
         }
       }
     }

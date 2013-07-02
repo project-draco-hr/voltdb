@@ -1,0 +1,24 @@
+{
+  if (LOG.isTraceEnabled()) {
+    LOG.trace("loading table id=" + tableId + "...");
+  }
+  byte[] serialized_table=table.getTableDataReference().array();
+  if (LOG.isTraceEnabled()) {
+    LOG.trace("passing " + serialized_table.length + " bytes to EE...");
+  }
+  final int errorCode=nativeLoadTable(pointer,tableId,serialized_table,txnId,lastCommittedTxnId,returnUniqueViolations);
+  checkErrorCode(errorCode);
+  deserializer.clear();
+  try {
+    int length=deserializer.readInt();
+    if (length == 0)     return null;
+    if (length < 0)     VoltDB.crashLocalVoltDB("Length shouldn't be < 0",true,null);
+    byte uniqueViolations[]=new byte[length];
+    deserializer.readFully(uniqueViolations);
+    return uniqueViolations;
+  }
+ catch (  final IOException ex) {
+    LOG.error("Failed to retrieve unique violations: " + tableId,ex);
+    throw new EEException(ERRORCODE_WRONG_SERIALIZED_BYTES);
+  }
+}

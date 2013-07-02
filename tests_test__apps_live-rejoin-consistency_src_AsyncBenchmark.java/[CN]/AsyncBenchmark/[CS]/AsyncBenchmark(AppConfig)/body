@@ -1,0 +1,46 @@
+{
+  this.config=config;
+  try {
+    testCase=Tests.valueOf(config.testcase);
+  }
+ catch (  Exception e) {
+    if (!config.testcase.equalsIgnoreCase("ALL")) {
+      log.error(_F("ERROR Unknown testcase: %s\n",config.testcase));
+      System.exit(1);
+    }
+  }
+  ClientConfig clientConfig=new ClientConfig(config.user,config.password,new StatusListener());
+  if (config.autotune) {
+    clientConfig.enableAutoTune();
+    clientConfig.setAutoTuneTargetInternalLatency(config.latencytarget);
+  }
+ else {
+    clientConfig.setMaxTransactionsPerSecond(config.ratelimit);
+  }
+  clientConfig.setMaxOutstandingTxns(200);
+  client=ClientFactory.createClient(clientConfig);
+  periodicStatsContext=client.createStatsContext();
+  fullStatsContext=client.createStatsContext();
+  log.info(HORIZONTAL_RULE);
+  log.info(" Command Line Configuration");
+  log.info(HORIZONTAL_RULE);
+  log.info(config.getConfigDumpString());
+  Signal.handle(new Signal("TERM"),new SignalHandler(){
+    public void handle(    Signal sig){
+      log.error("Received SIGTERM signal. Will teardown.");
+      runBenchmark=false;
+      timer.cancel();
+      benchmarkThread.interrupt();
+    }
+  }
+);
+  Signal.handle(new Signal("INT"),new SignalHandler(){
+    public void handle(    Signal sig){
+      log.error("Received SIGINT signal. Will teardown.");
+      runBenchmark=false;
+      timer.cancel();
+      benchmarkThread.interrupt();
+    }
+  }
+);
+}

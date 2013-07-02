@@ -1,0 +1,40 @@
+{
+  Table catTable=ctx.getDatabase().getTables().getIgnoreCase(tableName);
+  if (catTable == null) {
+    throw new VoltAbortException("Table not present in catalog.");
+  }
+  if (catTable.getIsreplicated()) {
+    throw new VoltAbortException(String.format("LoadSinglepartitionTable incompatible with replicated table %s.",tableName));
+  }
+  tableName=catTable.getTypeName();
+  int columnCount=table.getColumnCount();
+  String insertProcName=String.format("%s.insert",tableName);
+  Procedure p=ctx.getDatabase().getProcedures().get(insertProcName);
+  if (p == null) {
+    throw new VoltAbortException(String.format("Unable to locate auto-generated CRUD insert statement for table %s",tableName));
+  }
+  Statement catStmt=p.getStatements().get("sql");
+  if (catStmt == null) {
+    throw new VoltAbortException(String.format("Unable to find SQL statement for found table %s: BAD",tableName));
+  }
+  SQLStmt stmt=new SQLStmt(catStmt.getSqltext());
+  m_runner.initSQLStmt(stmt,catStmt);
+  long queued=0;
+  long executed=0;
+  table.resetRowPosition();
+  for (int i=0; table.advanceRow(); ++i) {
+    Object[] params=new Object[columnCount];
+    for (int col=0; col < columnCount; ++col) {
+      params[col]=table.get(col,table.getColumnType(col));
+    }
+    voltQueueSQL(stmt,params);
+    ++queued;
+    if ((i % 100) == 0) {
+      executed+=executeSQL();
+    }
+  }
+  if (queued > executed) {
+    executed+=executeSQL();
+  }
+  return executed;
+}

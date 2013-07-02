@@ -1,0 +1,45 @@
+{
+  ArrayList<AbstractExpression> whereClauses=new ArrayList<AbstractExpression>();
+  whereClauses.addAll(joinNode.m_whereInnerList);
+  whereClauses.addAll(joinNode.m_whereInnerOuterList);
+  AccessPath innerAccessPath=joinNode.m_rightNode.m_currentAccessPath;
+  AbstractJoinPlanNode ajNode=null;
+  AbstractPlanNode retval=null;
+  assert(joinNode.m_rightNode != null);
+  boolean needInnerSendReceive=joinNode.m_rightNode.m_table != null && (!joinNode.m_rightNode.m_table.getIsreplicated() && !canDeferSendReceivePairForNode());
+  boolean canHaveNLIJ=innerPlan instanceof IndexScanPlanNode && hasInnerOuterIndexExpression(joinNode.m_joinInnerOuterList,innerAccessPath.otherExprs) && (joinNode.m_joinType == JoinType.INNER || !needInnerSendReceive);
+  if (canHaveNLIJ) {
+    NestLoopIndexPlanNode nlijNode=new NestLoopIndexPlanNode();
+    nlijNode.setJoinType(joinNode.m_joinType);
+    @SuppressWarnings("unused") IndexScanPlanNode innerNode=(IndexScanPlanNode)innerPlan;
+    innerNode.setPredicate(ExpressionUtil.combine(innerAccessPath.otherExprs));
+    nlijNode.addInlinePlanNode(innerPlan);
+    nlijNode.addAndLinkChild(outerPlan);
+    nlijNode.generateOutputSchema(m_db);
+    ajNode=nlijNode;
+    retval=(needInnerSendReceive) ? addSendReceivePair(ajNode) : ajNode;
+  }
+ else {
+    ArrayList<AbstractExpression> joinClauses=innerAccessPath.joinExprs;
+    if (innerPlan instanceof IndexScanPlanNode) {
+      List<AbstractExpression> innerExpr=filterSingleTVEExpressions(innerAccessPath.otherExprs);
+      joinClauses.addAll(innerAccessPath.otherExprs);
+      AbstractExpression indexScanPredicate=ExpressionUtil.combine(innerExpr);
+      ((IndexScanPlanNode)innerPlan).setPredicate(indexScanPredicate);
+    }
+    NestLoopPlanNode nljNode=new NestLoopPlanNode();
+    nljNode.setJoinPredicate(ExpressionUtil.combine(joinClauses));
+    nljNode.setJoinType(joinNode.m_joinType);
+    nljNode.addAndLinkChild(outerPlan);
+    if (needInnerSendReceive) {
+      innerPlan=addSendReceivePair(innerPlan);
+    }
+    nljNode.addAndLinkChild(innerPlan);
+    nljNode.generateOutputSchema(m_db);
+    ajNode=nljNode;
+    retval=ajNode;
+  }
+  ajNode.setPreJoinPredicate(ExpressionUtil.combine(joinNode.m_joinOuterList));
+  ajNode.setWherePredicate(ExpressionUtil.combine(whereClauses));
+  return retval;
+}

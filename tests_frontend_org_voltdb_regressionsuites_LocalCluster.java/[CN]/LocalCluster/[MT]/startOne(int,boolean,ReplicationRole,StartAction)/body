@@ -1,0 +1,85 @@
+{
+  PipeToFile ptf=null;
+  CommandLine cmdln=(templateCmdLine.makeCopy());
+  try {
+    cmdln.internalPort(portGenerator.next());
+    cmdln.drAgentStartPort(portGenerator.next());
+    portGenerator.next();
+    portGenerator.next();
+    if (m_target == BackendTarget.NATIVE_EE_IPC) {
+      for (int i=0; i < m_siteCount; i++) {
+        cmdln.ipcPort(portGenerator.next());
+      }
+    }
+    if (m_target == BackendTarget.NATIVE_EE_VALGRIND_IPC) {
+      EEProcess proc=m_eeProcs.get(hostId);
+      assert(proc != null);
+      cmdln.m_ipcPort=proc.port();
+    }
+    cmdln.port(portGenerator.nextClient());
+    cmdln.adminPort(portGenerator.nextAdmin());
+    cmdln.replicaMode(replicaMode);
+    cmdln.timestampSalt(getRandomTimestampSalt());
+    if (m_debug) {
+      cmdln.debugPort(portGenerator.next());
+    }
+    cmdln.zkport(portGenerator.next());
+    if (startAction == StartAction.JOIN) {
+      cmdln.startCommand(startAction);
+      int portNoToRejoin=m_cmdLines.get(0).internalPort();
+      cmdln.leader(":" + portNoToRejoin);
+    }
+    File subroot=null;
+    if (clearLocalDataDirectories) {
+      subroot=VoltFile.getNewSubroot();
+      m_subRoots.add(subroot);
+    }
+ else {
+      subroot=m_subRoots.get(hostId);
+    }
+    cmdln.voltFilePrefix(subroot.getPath());
+    m_cmdLines.add(cmdln);
+    m_procBuilder.command().clear();
+    List<String> cmdlnList=cmdln.createCommandLine();
+    String cmdLineFull="Start cmd host=" + String.valueOf(hostId) + " :";
+    for (    String element : cmdlnList) {
+      cmdLineFull+=" " + element;
+    }
+    log.info(cmdLineFull);
+    m_procBuilder.command().addAll(cmdlnList);
+    Process proc=m_procBuilder.start();
+    m_cluster.add(proc);
+    String testoutputdir=cmdln.buildDir() + File.separator + "testoutput";
+    File dir=new File(testoutputdir);
+    if (dir.exists()) {
+      assert(dir.isDirectory());
+    }
+ else {
+      boolean status=dir.mkdirs();
+      assert(status);
+    }
+    File dirFile=new VoltFile(testoutputdir);
+    if (dirFile.listFiles() != null) {
+      for (      File f : dirFile.listFiles()) {
+        if (f.getName().startsWith(getName() + "-" + hostId)) {
+          f.delete();
+        }
+      }
+    }
+    ptf=new PipeToFile(testoutputdir + File.separator + "LC-"+ getFileName()+ "-"+ hostId+ "-"+ "idx"+ String.valueOf(perLocalClusterExtProcessIndex++)+ ".txt",proc.getInputStream(),startAction == StartAction.JOIN ? PipeToFile.m_rejoinToken : PipeToFile.m_initToken,false,proc);
+    m_pipes.add(ptf);
+    ptf.setName("ClusterPipe:" + String.valueOf(hostId));
+    ptf.start();
+  }
+ catch (  IOException ex) {
+    log.error("Failed to start cluster process:" + ex.getMessage(),ex);
+    assert(false);
+  }
+  if (startAction == StartAction.JOIN) {
+    waitOnPTFReady(ptf,true,System.currentTimeMillis(),System.currentTimeMillis(),hostId);
+  }
+  if (hostId > (m_hostCount - 1)) {
+    m_hostCount++;
+    this.m_compiled=false;
+  }
+}

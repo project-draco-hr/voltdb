@@ -1,14 +1,26 @@
 {
   List<String> cmdline=new ArrayList<String>(50);
   cmdline.add(javaExecutable);
-  cmdline.add("-XX:-ReduceInitialCardMarks");
   cmdline.add("-XX:+HeapDumpOnOutOfMemoryError");
   cmdline.add("-Djava.library.path=" + java_library_path);
+  if (rmi_host_name != null)   cmdline.add("-Djava.rmi.server.hostname=" + rmi_host_name);
   cmdline.add("-Dlog4j.configuration=" + log4j);
   if (m_vemTag != null) {
     cmdline.add("-D" + VEM_TAG_PROPERTY + "="+ m_vemTag);
   }
+  if (gcRollover) {
+    cmdline.add("-Xloggc:" + volt_root + "/"+ VEM_GC_ROLLOVER_FILE_NAME+ " -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+PrintGCTimeStamps -XX:+UseGCLogFileRotation -XX:NumberOfGCLogFiles="+ VEM_GC_ROLLOVER_FILE_COUNT+ " -XX:GCLogFileSize="+ VEM_GC_ROLLOVER_FILE_SIZE);
+  }
   cmdline.add(maxHeap);
+  cmdline.add("-XX:+UseParNewGC");
+  cmdline.add("-XX:+UseConcMarkSweepGC");
+  cmdline.add("-XX:+CMSParallelRemarkEnabled");
+  cmdline.add("-XX:+UseTLAB");
+  cmdline.add("-XX:CMSInitiatingOccupancyFraction=75");
+  cmdline.add("-XX:+UseCMSInitiatingOccupancyOnly");
+  if (conditionalCardMark) {
+    cmdline.add("-XX:+UseCondCardMark");
+  }
   cmdline.add("-classpath");
   cmdline.add(classPath);
   if (includeTestOpts) {
@@ -44,11 +56,11 @@
   String nonJvmOptions=AdditionalJvmOptionsProcessor.getJvmOptionsFromVoltDbOptsEnvironmentVariable(additionalJvmOptions);
   cmdline.addAll(additionalJvmOptions);
   cmdline.add("org.voltdb.VoltDB");
-  if (m_startAction == START_ACTION.LIVE_REJOIN) {
-    cmdline.add("live rejoin");
+  if (m_startAction == StartAction.JOIN) {
+    cmdline.add("add");
   }
  else {
-    cmdline.add(m_startAction.toString().toLowerCase());
+    cmdline.add(m_startAction.verb());
   }
   cmdline.add("host");
   cmdline.add(m_leader);
@@ -56,7 +68,7 @@
   cmdline.add(jarFileName());
   cmdline.add("deployment");
   cmdline.add(pathToDeployment());
-  if (m_startAction != START_ACTION.REJOIN && m_startAction != START_ACTION.LIVE_REJOIN) {
+  if (!m_startAction.doesRejoin()) {
     if (m_replicationRole == ReplicationRole.REPLICA) {
       cmdline.add("replica");
     }

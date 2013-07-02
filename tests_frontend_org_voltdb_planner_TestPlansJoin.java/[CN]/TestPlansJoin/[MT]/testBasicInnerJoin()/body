@@ -1,0 +1,38 @@
+{
+  AbstractPlanNode pn=compile("select * FROM R1 JOIN R2 ON R1.C = R2.C");
+  AbstractPlanNode n=pn.getChild(0).getChild(0);
+  assertTrue(n instanceof NestLoopPlanNode);
+  NestLoopPlanNode nlj=(NestLoopPlanNode)n;
+  for (int ii=0; ii < 2; ii++) {
+    assertTrue(n.getChild(ii) instanceof SeqScanPlanNode);
+  }
+  assertTrue(pn.getOutputSchema().getColumns().size() == 5);
+  pn=compile("select * FROM R1 JOIN R2 USING(C)");
+  assertTrue(pn.getChild(0).getChild(0) instanceof NestLoopPlanNode);
+  assertTrue(pn.getOutputSchema().getColumns().size() == 4);
+  pn=compile("select A,C,D FROM R1 JOIN R2 ON R1.C = R2.C");
+  n=pn.getChild(0).getChild(0);
+  assertTrue(n instanceof NestLoopPlanNode);
+  assertTrue(pn.getOutputSchema().getColumns().size() == 3);
+  pn=compile("select A,C,D FROM R1 JOIN R2 USING(C)");
+  n=pn.getChild(0).getChild(0);
+  assertTrue(n instanceof NestLoopPlanNode);
+  assertTrue(pn.getOutputSchema().getColumns().size() == 3);
+  pn=compile("select R1.A, R2.C, R1.D FROM R1 JOIN R2 ON R1.C = R2.C");
+  n=pn.getChild(0).getChild(0);
+  assertTrue(n instanceof NestLoopPlanNode);
+  assertTrue(pn.getOutputSchema().getColumns().size() == 3);
+  assertTrue("R1".equalsIgnoreCase(pn.getOutputSchema().getColumns().get(0).getTableName()));
+  assertTrue("R2".equalsIgnoreCase(pn.getOutputSchema().getColumns().get(1).getTableName()));
+  pn=compile("select R1.A, C, R1.D FROM R1 JOIN R2 USING(C)");
+  n=pn.getChild(0).getChild(0);
+  String table=pn.getOutputSchema().getColumns().get(1).getTableName();
+  assertTrue(n instanceof NestLoopPlanNode);
+  assertTrue(pn.getOutputSchema().getColumns().size() == 3);
+  assertTrue(pn.getOutputSchema().getColumns().get(0).getTableName().equalsIgnoreCase("R1"));
+  assertTrue("R2".equalsIgnoreCase(table) || "R1".equalsIgnoreCase(table));
+  failToCompile("select R1.C FROM R1 JOIN R2 USING(C)","user lacks privilege or object not found: R1.C");
+  failToCompile("select R2.C FROM R1 JOIN R2 USING(C)","user lacks privilege or object not found: R2.C");
+  failToCompile("select R2.C FROM R1 JOIN R2 USING(X)","user lacks privilege or object not found: X");
+  failToCompile("select R2.C FROM R1 JOIN R2 ON R1.X = R2.X","user lacks privilege or object not found: R1.X");
+}

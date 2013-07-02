@@ -1,0 +1,37 @@
+{
+  if (m_predicates.isEmpty() || m_predicates.get(0) == null) {
+    return serializeEmpty();
+  }
+  byte[][] predicates=new byte[m_predicates.size()][];
+  int i=0;
+  int size=0;
+  try {
+    for (    Pair<AbstractExpression,Boolean> p : m_predicates) {
+      final AbstractExpression predicate=p.getFirst();
+      JSONStringer stringer=new JSONStringer();
+      stringer.object();
+      stringer.key("triggersDelete").value(p.getSecond());
+      stringer.key("predicateExpression").object();
+      if (predicate == null) {
+        createAcceptAllPredicate().toJSONString(stringer);
+      }
+ else {
+        predicate.toJSONString(stringer);
+      }
+      stringer.endObject().endObject();
+      predicates[i]=stringer.toString().getBytes(Charsets.UTF_8);
+      size+=predicates[i].length;
+      i++;
+    }
+  }
+ catch (  Exception e) {
+    VoltDB.crashLocalVoltDB("Failed to serialize snapshot predicates",true,e);
+  }
+  ByteBuffer buf=ByteBuffer.allocate(4 + 4 * predicates.length + size);
+  buf.putInt(m_predicates.size());
+  for (  byte[] predicate : predicates) {
+    buf.putInt(predicate.length);
+    buf.put(predicate);
+  }
+  return buf.array();
+}

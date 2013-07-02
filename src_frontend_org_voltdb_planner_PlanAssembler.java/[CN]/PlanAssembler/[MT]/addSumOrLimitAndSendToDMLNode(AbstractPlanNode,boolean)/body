@@ -1,0 +1,37 @@
+{
+  AbstractPlanNode sumOrLimitNode;
+  SendPlanNode sendNode=new SendPlanNode();
+  if (isReplicated) {
+    LimitPlanNode limitNode=new LimitPlanNode();
+    sumOrLimitNode=limitNode;
+    limitNode.setLimit(1);
+  }
+ else {
+    AggregatePlanNode countNode=new AggregatePlanNode();
+    sumOrLimitNode=countNode;
+    TupleValueExpression count_tve=new TupleValueExpression();
+    count_tve.setValueType(VoltType.BIGINT);
+    count_tve.setValueSize(VoltType.BIGINT.getLengthInBytesForFixedTypes());
+    count_tve.setColumnIndex(0);
+    count_tve.setColumnName("modified_tuples");
+    count_tve.setColumnAlias("modified_tuples");
+    count_tve.setTableName("VOLT_TEMP_TABLE");
+    countNode.addAggregate(ExpressionType.AGGREGATE_SUM,false,0,count_tve);
+    TupleValueExpression tve=new TupleValueExpression();
+    tve.setValueType(VoltType.BIGINT);
+    tve.setValueSize(VoltType.BIGINT.getLengthInBytesForFixedTypes());
+    tve.setColumnIndex(0);
+    tve.setColumnName("modified_tuples");
+    tve.setColumnAlias("modified_tuples");
+    tve.setTableName("VOLT_TEMP_TABLE");
+    NodeSchema count_schema=new NodeSchema();
+    SchemaColumn col=new SchemaColumn("VOLT_TEMP_TABLE","modified_tuples","modified_tuples",tve);
+    count_schema.addColumn(col);
+    countNode.setOutputSchema(count_schema);
+  }
+  sumOrLimitNode.addAndLinkChild(dmlRoot);
+  sumOrLimitNode.generateOutputSchema(m_catalogDb);
+  sendNode.addAndLinkChild(sumOrLimitNode);
+  sendNode.generateOutputSchema(m_catalogDb);
+  return sendNode;
+}
