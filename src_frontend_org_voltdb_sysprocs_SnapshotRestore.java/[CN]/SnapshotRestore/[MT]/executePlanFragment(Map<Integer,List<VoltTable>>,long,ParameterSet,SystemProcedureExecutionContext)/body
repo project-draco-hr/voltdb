@@ -82,6 +82,10 @@
     String hostname=CoreUtils.getHostnameOrAddress();
     VoltTable result=ClusterSaveFileState.constructEmptySaveFileStateVoltTable();
     if (context.isLowestSiteId()) {
+      m_duplicateRowHandler=null;
+      if (params.toArray()[2] != null) {
+        m_duplicateRowHandler=new DuplicateRowHandler((String)params.toArray()[2],getTransactionTime());
+      }
       m_initializedTableSaveFileNames.clear();
       m_saveFiles.clear();
       m_filePath=(String)params.toArray()[0];
@@ -172,7 +176,7 @@ catch (        IOException e) {
         }
         c.discard();
         try {
-          voltLoadTable(context.getCluster().getTypeName(),context.getDatabase().getTypeName(),table_name,table);
+          voltLoadTable(context.getCluster().getTypeName(),context.getDatabase().getTypeName(),table_name,table,false);
         }
  catch (        VoltAbortException e) {
           result_str="FAILURE";
@@ -227,7 +231,7 @@ catch (    VoltTypeException e) {
     String error_msg="";
     try {
       VoltTable table=PrivateVoltTableFactory.createVoltTableFromBuffer(ByteBuffer.wrap(CompressionService.decompressBytes(compressedTable)),true);
-      voltLoadTable(context.getCluster().getTypeName(),context.getDatabase().getTypeName(),table_name,table);
+      voltLoadTable(context.getCluster().getTypeName(),context.getDatabase().getTypeName(),table_name,table,false);
     }
  catch (    Exception e) {
       result_str="FAILURE";
@@ -304,7 +308,10 @@ catch (    VoltTypeException e) {
     String error_msg="";
     try {
       VoltTable table=PrivateVoltTableFactory.createVoltTableFromBuffer(ByteBuffer.wrap(CompressionService.decompressBytes(compressedTable)),true);
-      voltLoadTable(context.getCluster().getTypeName(),context.getDatabase().getTypeName(),table_name,table);
+      byte uniqueViolations[]=voltLoadTable(context.getCluster().getTypeName(),context.getDatabase().getTypeName(),table_name,table,m_duplicateRowHandler != null);
+      if (uniqueViolations != null && m_duplicateRowHandler != null) {
+        m_duplicateRowHandler.handleDuplicates(table_name,uniqueViolations);
+      }
     }
  catch (    Exception e) {
       result_str="FAILURE";
@@ -450,6 +457,14 @@ catch (    VoltTypeException e) {
         m.send(ftm.getCoordinatorHSId(),frm);
       }
  else       if (vm instanceof BinaryPayloadMessage) {
+        if (context.isLowestSiteId() && m_duplicateRowHandler != null) {
+          try {
+            m_duplicateRowHandler.close();
+          }
+ catch (          Exception e) {
+            VoltDB.crashLocalVoltDB("Error closing duplicate row handler during snapshot restore",true,e);
+          }
+        }
         return new DependencyPair(DEP_restoreAsyncRunLoop,constructResultsTable());
       }
     }
