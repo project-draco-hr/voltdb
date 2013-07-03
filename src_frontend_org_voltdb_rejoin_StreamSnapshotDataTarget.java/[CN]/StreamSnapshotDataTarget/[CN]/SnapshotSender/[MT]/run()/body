@@ -1,22 +1,23 @@
 {
   rejoinLog.trace("Starting stream sender thread");
-  try {
-    while (!m_closed.get()) {
+  while (true) {
+    SendWork work=null;
+    try {
       rejoinLog.trace("Blocking on sending work queue");
-      SendWork work=m_sendQueue.poll(5,TimeUnit.SECONDS);
-      if (work != null) {
-        work.call();
+      work=m_workQueue.poll(10,TimeUnit.MINUTES);
+      if (work == null) {
+        rejoinLog.warn("No stream snapshot send work was produced in the past 10 minutes");
+        break;
       }
+ else       if (work.m_isEmpty) {
+        break;
+      }
+      m_bytesSent.get(work.m_targetId).addAndGet(work.doWork(m_mb));
+    }
+ catch (    Exception e) {
+      m_lastException=e;
+      rejoinLog.error("Error sending a recovery stream message",e);
     }
   }
- catch (  Exception e) {
-    if (m_closed.get()) {
-      return;
-    }
-    m_lastSenderException=e;
-    rejoinLog.error("Error sending a recovery stream message",e);
-  }
- finally {
-    rejoinLog.trace("Stream sender thread exiting");
-  }
+  rejoinLog.trace("Stream sender thread exiting");
 }
