@@ -1,9 +1,17 @@
 {
   Index index=path.index;
   IndexScanPlanNode scanNode=new IndexScanPlanNode();
+  AbstractPlanNode resultNode=scanNode;
   for (  AbstractExpression expr : path.indexExprs) {
     AbstractExpression expr2=expr.getRight();
     assert(expr2 != null);
+    if (expr.getExpressionType() == ExpressionType.COMPARE_IN) {
+      resultNode=injectIndexedJoinWithMaterializedScan(expr2,scanNode);
+      MaterializedScanPlanNode matscan=(MaterializedScanPlanNode)resultNode.getChild(0);
+      AbstractExpression elemExpr=matscan.getOutputExpression();
+      replaceInListFilterWithEqualityFilter(path.endExprs,expr2,elemExpr);
+      expr2=elemExpr;
+    }
     scanNode.addSearchKeyExpression(expr2);
   }
   scanNode.setCatalogIndex(index);
@@ -14,7 +22,10 @@
   scanNode.setEndExpression(ExpressionUtil.combine(path.endExprs));
   scanNode.setPredicate(ExpressionUtil.combine(path.otherExprs));
   scanNode.setTargetTableName(table.getTypeName());
+  if (m_parsedStmt.scanColumns != null) {
+    scanNode.setScanColumns(m_parsedStmt.scanColumns.get(table.getTypeName()));
+  }
   scanNode.setTargetTableAlias(table.getTypeName());
   scanNode.setTargetIndexName(index.getTypeName());
-  return scanNode;
+  return resultNode;
 }
