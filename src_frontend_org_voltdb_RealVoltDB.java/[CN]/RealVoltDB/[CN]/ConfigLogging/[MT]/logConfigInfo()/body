@@ -1,29 +1,68 @@
 {
+  hostLog.info("Logging config info");
   File voltDbRoot=CatalogUtil.getVoltDbRoot(m_deployment.getPaths());
   String pathToConfigInfoDir=voltDbRoot.getPath() + File.separator + "config_log";
   File configInfoDir=new File(pathToConfigInfoDir);
   configInfoDir.mkdirs();
   String pathToConfigInfo=pathToConfigInfoDir + File.separator + "config.log";
   File configInfo=new File(pathToConfigInfo);
+  byte jsonBytes[]=null;
   try {
-    BufferedWriter bw=new BufferedWriter(new FileWriter(configInfo));
-    bw.write("[WorkingDirectory]\n");
-    bw.write(System.getProperty("user.dir"));
-    bw.newLine();
-    bw.write("[PID]\n");
-    byte[] bo=new byte[10];
-    String[] cmd={"bash","-c","echo $PPID"};
-    Process p=Runtime.getRuntime().exec(cmd);
-    p.getInputStream().read(bo);
-    bw.write(new String(bo).trim());
-    bw.newLine();
-    bw.write("[Log4jDestination]\n");
-    Logger logger=LogManager.getRootLogger();
-    FileAppender appender=(FileAppender)logger.getAppender("file");
-    String log4jFile=appender.getFile();
-    bw.write(log4jFile);
-    bw.newLine();
-    bw.write("[Deployment]\n");
+    JSONStringer stringer=new JSONStringer();
+    stringer.object();
+    stringer.key("workingDir").value(System.getProperty("user.dir"));
+    stringer.key("pid").value(CLibrary.getpid());
+    stringer.key("log4jDst").array();
+    Enumeration appenders=Logger.getRootLogger().getAllAppenders();
+    while (appenders.hasMoreElements()) {
+      Appender appender=(Appender)appenders.nextElement();
+      if (appender instanceof FileAppender) {
+        stringer.object();
+        stringer.key("path").value(((FileAppender)appender).getFile());
+        if (appender instanceof DailyRollingFileAppender) {
+          stringer.key("format").value(((DailyRollingFileAppender)appender).getDatePattern());
+        }
+        stringer.endObject();
+      }
+    }
+    Enumeration loggers=Logger.getRootLogger().getLoggerRepository().getCurrentLoggers();
+    while (loggers.hasMoreElements()) {
+      Logger logger=(Logger)loggers.nextElement();
+      appenders=logger.getAllAppenders();
+      while (appenders.hasMoreElements()) {
+        Appender appender=(Appender)appenders.nextElement();
+        if (appender instanceof FileAppender) {
+          stringer.object();
+          stringer.key("path").value(((FileAppender)appender).getFile());
+          if (appender instanceof DailyRollingFileAppender) {
+            stringer.key("format").value(((DailyRollingFileAppender)appender).getDatePattern());
+          }
+          stringer.endObject();
+        }
+      }
+    }
+    stringer.endArray();
+    stringer.endObject();
+    JSONObject jsObj=new JSONObject(stringer.toString());
+    jsonBytes=jsObj.toString(4).getBytes(Charsets.UTF_8);
+  }
+ catch (  JSONException e) {
+    Throwables.propagate(e);
+  }
+  try {
+    FileOutputStream fos=new FileOutputStream(configInfo);
+    fos.write(jsonBytes);
+    fos.getFD().sync();
+    fos.close();
+  }
+ catch (  IOException e) {
+    hostLog.error("Failed to log config info: " + e.getMessage());
+    e.printStackTrace();
+  }
+  String pathToDeploymentInfo=pathToConfigInfoDir + File.separator + "deployment.xml";
+  File deploymentInfo=new File(pathToDeploymentInfo);
+  try {
+    BufferedWriter bw=new BufferedWriter(new FileWriter(deploymentInfo));
     File deploymentXMLFile=new File(m_config.m_pathToDeployment);
     BufferedReader br=new BufferedReader(new FileReader(deploymentXMLFile));
     String line=null;
@@ -36,7 +75,7 @@
     bw.close();
   }
  catch (  IOException e) {
-    hostLog.error("Failed to log config info: " + e.getMessage());
+    hostLog.error("Failed to log deployment file: " + e.getMessage());
     e.printStackTrace();
   }
 }
