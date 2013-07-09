@@ -1,0 +1,48 @@
+{
+  if (msg == null) {
+    return null;
+  }
+  long hsId=msg.getFirst();
+  long targetId=msg.getSecond().getFirst();
+  BBContainer container=msg.getSecond().getSecond();
+  try {
+    ByteBuffer block=container.b;
+    byte typeByte=block.get(StreamSnapshotDataTarget.typeOffset);
+    StreamSnapshotMessageType type=StreamSnapshotMessageType.values()[typeByte];
+    if (type == StreamSnapshotMessageType.FAILURE) {
+      VoltDB.crashLocalVoltDB("Rejoin source sent failure message.",false,null);
+      if (m_expectedEOFs.decrementAndGet() == 0) {
+        m_EOF=true;
+      }
+      return null;
+    }
+    if (type == StreamSnapshotMessageType.END) {
+      rejoinLog.trace("Got END message");
+      if (m_expectedEOFs.decrementAndGet() == 0) {
+        m_EOF=true;
+      }
+      return null;
+    }
+ else     if (type == StreamSnapshotMessageType.SCHEMA) {
+      rejoinLog.trace("Got SCHEMA message");
+      block.position(block.position() + 1 + 4);
+      byte[] schemaBytes=new byte[block.remaining()];
+      block.get(schemaBytes);
+      m_schemas.put(block.getInt(StreamSnapshotDataTarget.tableIdOffset),schemaBytes);
+      return null;
+    }
+    final int tableId=block.getInt(StreamSnapshotDataTarget.tableIdOffset);
+    final int blockIndex=block.getInt(StreamSnapshotDataTarget.blockIndexOffset);
+    if (!m_schemas.containsKey(tableId)) {
+      VoltDB.crashLocalVoltDB("No schema for table with ID " + tableId,false,null);
+    }
+    block.position(StreamSnapshotDataTarget.contentOffset);
+    ByteBuffer nextChunk=getNextChunk(tableId,block,resultBufferAllocator);
+    m_bytesReceived+=nextChunk.remaining();
+    m_ack.ack(hsId,targetId,blockIndex);
+    return Pair.of(tableId,nextChunk);
+  }
+  finally {
+    container.discard();
+  }
+}
