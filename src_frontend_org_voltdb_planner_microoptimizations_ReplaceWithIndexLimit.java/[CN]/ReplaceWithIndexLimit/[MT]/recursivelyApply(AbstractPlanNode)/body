@@ -1,0 +1,86 @@
+{
+  assert(plan != null);
+  ArrayList<AbstractPlanNode> children=new ArrayList<AbstractPlanNode>();
+  for (int i=0; i < plan.getChildCount(); i++)   children.add(plan.getChild(i));
+  for (  AbstractPlanNode child : children) {
+    AbstractPlanNode newChild=recursivelyApply(child);
+    if (newChild == child) {
+      continue;
+    }
+    child.removeFromGraph();
+    plan.addAndLinkChild(newChild);
+  }
+  if ((plan instanceof AggregatePlanNode) == false)   return plan;
+  assert(plan.getChildCount() == 1);
+  AggregatePlanNode aggplan=(AggregatePlanNode)plan;
+  if (aggplan.isTableMin() == false && aggplan.isTableMax() == false) {
+    return plan;
+  }
+  AbstractPlanNode child=plan.getChild(0);
+  if (child instanceof SeqScanPlanNode) {
+    if (((SeqScanPlanNode)child).getPredicate() != null) {
+      return plan;
+    }
+    CatalogMap<Index> allIndexes=db.getTables().get(((SeqScanPlanNode)child).getTargetTableName()).getIndexes();
+    if (allIndexes.isEmpty()) {
+      return plan;
+    }
+    Index ret=findQualifiedIndex(allIndexes,aggplan.getAggregateExpressions().get(0),null);
+    if (ret == null) {
+      return plan;
+    }
+ else {
+      IndexScanPlanNode ispn=new IndexScanPlanNode((SeqScanPlanNode)child,aggplan);
+      ispn.setCatalogIndex(ret);
+      ispn.setTargetIndexName(ret.getTypeName());
+      ispn.setLookupType(IndexLookupType.GTE);
+      if (aggplan.isTableMin()) {
+        ispn.setSortDirection(SortDirectionType.ASC);
+      }
+      if (aggplan.isTableMax()) {
+        ispn.setSortDirection(SortDirectionType.DESC);
+      }
+      LimitPlanNode lpn=new LimitPlanNode();
+      lpn.setLimit(1);
+      lpn.setOffset(0);
+      for (      AbstractPlanNode inlineChild : child.getInlinePlanNodes().values()) {
+        ispn.addInlinePlanNode(inlineChild);
+      }
+      ispn.addInlinePlanNode(lpn);
+      ispn.generateOutputSchema(db);
+      plan.clearChildren();
+      plan.addAndLinkChild(ispn);
+      return plan;
+    }
+  }
+  if ((child instanceof IndexScanPlanNode) == false) {
+    return plan;
+  }
+  if (((IndexScanPlanNode)child).getPredicate() != null) {
+    return plan;
+  }
+  IndexScanPlanNode ispn=(IndexScanPlanNode)child;
+  if (ispn.getLookupType() != IndexLookupType.EQ && ispn.getSearchKeyExpressions().size() != ExpressionUtil.uncombine(ispn.getEndExpression()).size()) {
+    return plan;
+  }
+  AbstractExpression aggExpr=aggplan.getAggregateExpressions().get(0);
+  Index origIndex=ispn.getCatalogIndex();
+  List<AbstractExpression> exprs=ExpressionUtil.uncombine(ispn.getEndExpression());
+  if (!checkIndex(origIndex,aggExpr,exprs)) {
+    return plan;
+  }
+ else {
+    if (aggplan.isTableMin()) {
+      ispn.setSortDirection(SortDirectionType.ASC);
+    }
+    if (aggplan.isTableMax()) {
+      ispn.setSortDirection(SortDirectionType.DESC);
+    }
+    LimitPlanNode lpn=new LimitPlanNode();
+    lpn.setLimit(1);
+    lpn.setOffset(0);
+    ispn.addInlinePlanNode(lpn);
+    plan.generateOutputSchema(db);
+    return plan;
+  }
+}
