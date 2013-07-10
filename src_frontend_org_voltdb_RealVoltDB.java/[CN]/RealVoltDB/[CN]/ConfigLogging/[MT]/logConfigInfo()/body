@@ -4,21 +4,30 @@
   String pathToConfigInfoDir=voltDbRoot.getPath() + File.separator + "config_log";
   File configInfoDir=new File(pathToConfigInfoDir);
   configInfoDir.mkdirs();
-  String pathToConfigInfo=pathToConfigInfoDir + File.separator + "config.log";
+  String pathToConfigInfo=pathToConfigInfoDir + File.separator + "config.json";
   File configInfo=new File(pathToConfigInfo);
+  String deploymentPath=null;
+  File deploymentFile=new File(m_config.m_pathToDeployment);
+  try {
+    deploymentPath=deploymentFile.getCanonicalPath();
+  }
+ catch (  IOException e) {
+    e.printStackTrace();
+  }
   byte jsonBytes[]=null;
   try {
     JSONStringer stringer=new JSONStringer();
     stringer.object();
     stringer.key("workingDir").value(System.getProperty("user.dir"));
     stringer.key("pid").value(CLibrary.getpid());
+    stringer.key("deployment").value(deploymentPath);
     stringer.key("log4jDst").array();
     Enumeration appenders=Logger.getRootLogger().getAllAppenders();
     while (appenders.hasMoreElements()) {
       Appender appender=(Appender)appenders.nextElement();
       if (appender instanceof FileAppender) {
         stringer.object();
-        stringer.key("path").value(((FileAppender)appender).getFile());
+        stringer.key("path").value(new File(((FileAppender)appender).getFile()).getCanonicalPath());
         if (appender instanceof DailyRollingFileAppender) {
           stringer.key("format").value(((DailyRollingFileAppender)appender).getDatePattern());
         }
@@ -33,7 +42,7 @@
         Appender appender=(Appender)appenders.nextElement();
         if (appender instanceof FileAppender) {
           stringer.object();
-          stringer.key("path").value(((FileAppender)appender).getFile());
+          stringer.key("path").value(new File(((FileAppender)appender).getFile()).getCanonicalPath());
           if (appender instanceof DailyRollingFileAppender) {
             stringer.key("format").value(((DailyRollingFileAppender)appender).getDatePattern());
           }
@@ -49,6 +58,9 @@
  catch (  JSONException e) {
     Throwables.propagate(e);
   }
+catch (  IOException e) {
+    e.printStackTrace();
+  }
   try {
     FileOutputStream fos=new FileOutputStream(configInfo);
     fos.write(jsonBytes);
@@ -57,25 +69,6 @@
   }
  catch (  IOException e) {
     hostLog.error("Failed to log config info: " + e.getMessage());
-    e.printStackTrace();
-  }
-  String pathToDeploymentInfo=pathToConfigInfoDir + File.separator + "deployment.xml";
-  File deploymentInfo=new File(pathToDeploymentInfo);
-  try {
-    BufferedWriter bw=new BufferedWriter(new FileWriter(deploymentInfo));
-    File deploymentXMLFile=new File(m_config.m_pathToDeployment);
-    BufferedReader br=new BufferedReader(new FileReader(deploymentXMLFile));
-    String line=null;
-    while ((line=br.readLine()) != null) {
-      bw.write(line);
-      bw.newLine();
-    }
-    br.close();
-    bw.flush();
-    bw.close();
-  }
- catch (  IOException e) {
-    hostLog.error("Failed to log deployment file: " + e.getMessage());
     e.printStackTrace();
   }
 }
