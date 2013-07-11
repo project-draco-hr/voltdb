@@ -1,0 +1,37 @@
+{
+  if (!(txnId > 0)) {
+    VoltDB.crashGlobalVoltDB("Txnid must be greather than 0",true,null);
+  }
+  byte nodeBytes[]=null;
+  try {
+    JSONStringer stringer=new JSONStringer();
+    stringer.object();
+    stringer.key("txnId").value(txnId);
+    stringer.key("hosts").array().value(hostId).endArray();
+    stringer.key("isTruncation").value(isTruncation);
+    stringer.key("hostCount").value(-1);
+    stringer.key("path").value(path);
+    stringer.key("nonce").value(nonce);
+    stringer.key("truncReqId").value(truncReqId);
+    stringer.key("exportSequenceNumbers").object().endObject();
+    stringer.endObject();
+    JSONObject jsonObj=new JSONObject(stringer.toString());
+    nodeBytes=jsonObj.toString(4).getBytes(Charsets.UTF_8);
+  }
+ catch (  Exception e) {
+    VoltDB.crashLocalVoltDB("Error serializing snapshot completion node JSON",true,e);
+  }
+  ZKUtil.StringCallback cb=new ZKUtil.StringCallback();
+  final String snapshotPath=VoltZK.completed_snapshots + "/" + txnId;
+  VoltDB.instance().getHostMessenger().getZK().create(snapshotPath,nodeBytes,Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT,cb,null);
+  try {
+    cb.get();
+    return true;
+  }
+ catch (  KeeperException.NodeExistsException e) {
+  }
+catch (  Exception e) {
+    VoltDB.crashLocalVoltDB("Unexpected exception logging snapshot completion to ZK",true,e);
+  }
+  return false;
+}
