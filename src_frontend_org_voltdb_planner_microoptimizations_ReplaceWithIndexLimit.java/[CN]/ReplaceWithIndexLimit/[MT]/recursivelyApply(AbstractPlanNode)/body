@@ -13,39 +13,32 @@
   if ((plan instanceof AggregatePlanNode) == false)   return plan;
   assert(plan.getChildCount() == 1);
   AggregatePlanNode aggplan=(AggregatePlanNode)plan;
-  if (aggplan.isTableMin() == false && aggplan.isTableMax() == false) {
+  SortDirectionType sortDirection=SortDirectionType.INVALID;
+  if (aggplan.isTableMin()) {
+    sortDirection=SortDirectionType.ASC;
+  }
+ else   if (aggplan.isTableMax()) {
+    sortDirection=SortDirectionType.DESC;
+  }
+ else {
     return plan;
   }
   AbstractPlanNode child=plan.getChild(0);
+  AbstractExpression aggExpr=aggplan.getFirstAggregateExpression();
   if (child instanceof SeqScanPlanNode) {
     if (((SeqScanPlanNode)child).getPredicate() != null) {
       return plan;
     }
     CatalogMap<Index> allIndexes=db.getTables().get(((SeqScanPlanNode)child).getTargetTableName()).getIndexes();
-    if (allIndexes.isEmpty()) {
-      return plan;
-    }
-    Index ret=findQualifiedIndex(allIndexes,aggplan.getAggregateExpressions().get(0),null);
+    Index ret=findQualifiedIndex(allIndexes,aggExpr);
     if (ret == null) {
       return plan;
     }
  else {
-      IndexScanPlanNode ispn=new IndexScanPlanNode((SeqScanPlanNode)child,aggplan);
-      ispn.setCatalogIndex(ret);
-      ispn.setTargetIndexName(ret.getTypeName());
-      ispn.setLookupType(IndexLookupType.GTE);
-      if (aggplan.isTableMin()) {
-        ispn.setSortDirection(SortDirectionType.ASC);
-      }
-      if (aggplan.isTableMax()) {
-        ispn.setSortDirection(SortDirectionType.DESC);
-      }
+      IndexScanPlanNode ispn=new IndexScanPlanNode((SeqScanPlanNode)child,aggplan,ret,sortDirection);
       LimitPlanNode lpn=new LimitPlanNode();
       lpn.setLimit(1);
       lpn.setOffset(0);
-      for (      AbstractPlanNode inlineChild : child.getInlinePlanNodes().values()) {
-        ispn.addInlinePlanNode(inlineChild);
-      }
       ispn.addInlinePlanNode(lpn);
       ispn.generateOutputSchema(db);
       plan.clearChildren();
@@ -63,19 +56,16 @@
   if (ispn.getLookupType() != IndexLookupType.EQ && ispn.getSearchKeyExpressions().size() != ExpressionUtil.uncombine(ispn.getEndExpression()).size()) {
     return plan;
   }
-  AbstractExpression aggExpr=aggplan.getAggregateExpressions().get(0);
+  if (sortDirection == SortDirectionType.DESC && ispn.getSortDirection() == SortDirectionType.INVALID) {
+    return plan;
+  }
   Index origIndex=ispn.getCatalogIndex();
   List<AbstractExpression> exprs=ExpressionUtil.uncombine(ispn.getEndExpression());
   if (!checkIndex(origIndex,aggExpr,exprs)) {
     return plan;
   }
  else {
-    if (aggplan.isTableMin()) {
-      ispn.setSortDirection(SortDirectionType.ASC);
-    }
-    if (aggplan.isTableMax()) {
-      ispn.setSortDirection(SortDirectionType.DESC);
-    }
+    ispn.setSortDirection(sortDirection);
     LimitPlanNode lpn=new LimitPlanNode();
     lpn.setLimit(1);
     lpn.setOffset(0);
