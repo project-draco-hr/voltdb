@@ -30,12 +30,14 @@
       return plan;
     }
     CatalogMap<Index> allIndexes=db.getTables().get(((SeqScanPlanNode)child).getTargetTableName()).getIndexes();
-    Index ret=findQualifiedIndex(allIndexes,aggExpr);
+    IndexScanPlanNode emptyNode=new IndexScanPlanNode();
+    Index ret=findQualifiedIndex(emptyNode,allIndexes,aggExpr);
     if (ret == null) {
       return plan;
     }
  else {
       IndexScanPlanNode ispn=new IndexScanPlanNode((SeqScanPlanNode)child,aggplan,ret,sortDirection);
+      ispn.setBindings(emptyNode.getBindings());
       LimitPlanNode lpn=new LimitPlanNode();
       lpn.setLimit(1);
       lpn.setOffset(0);
@@ -53,15 +55,34 @@
     return plan;
   }
   IndexScanPlanNode ispn=(IndexScanPlanNode)child;
-  if (ispn.getLookupType() != IndexLookupType.EQ && ispn.getSearchKeyExpressions().size() != ExpressionUtil.uncombine(ispn.getEndExpression()).size()) {
+  if (ispn.getLookupType() != IndexLookupType.EQ && Math.abs(ispn.getSearchKeyExpressions().size() - ExpressionUtil.uncombine(ispn.getEndExpression()).size()) > 1) {
     return plan;
   }
   if (sortDirection == SortDirectionType.DESC && ispn.getSortDirection() == SortDirectionType.INVALID) {
-    return plan;
+    List<AbstractExpression> endExprs=ExpressionUtil.uncombine(ispn.getEndExpression());
+    if (endExprs.size() > 1 || (!endExprs.isEmpty() && aggExpr.bindingToIndexedExpression(endExprs.get(0).getLeft()) == null)) {
+      return plan;
+    }
   }
-  Index origIndex=ispn.getCatalogIndex();
-  List<AbstractExpression> exprs=ExpressionUtil.uncombine(ispn.getEndExpression());
-  if (!checkIndex(origIndex,aggExpr,exprs)) {
+  List<AbstractExpression> exprs=null;
+  if (ExpressionUtil.uncombine(ispn.getEndExpression()).size() > ispn.getSearchKeyExpressions().size()) {
+    if (sortDirection == SortDirectionType.DESC) {
+      return plan;
+    }
+    List<AbstractExpression> endExprs=ExpressionUtil.uncombine(ispn.getEndExpression());
+    AbstractExpression lastEndExpr=endExprs.get(ispn.getSearchKeyExpressions().size());
+    if ((lastEndExpr.getExpressionType() == ExpressionType.COMPARE_LESSTHAN || lastEndExpr.getExpressionType() == ExpressionType.COMPARE_LESSTHANOREQUALTO) && lastEndExpr.getLeft().equals(aggExpr)) {
+      exprs=new ArrayList<AbstractExpression>(endExprs);
+      exprs.remove(lastEndExpr);
+    }
+  }
+  if (ispn.getSearchKeyExpressions().size() > ExpressionUtil.uncombine(ispn.getEndExpression()).size()) {
+    if (ispn.getLookupType() != IndexLookupType.GT && ispn.getLookupType() != IndexLookupType.GTE) {
+      return plan;
+    }
+  }
+  exprs=(exprs == null) ? ExpressionUtil.uncombine(ispn.getEndExpression()) : exprs;
+  if (!checkIndex(ispn,ispn.getCatalogIndex(),aggExpr,exprs,ispn.getBindings())) {
     return plan;
   }
  else {
@@ -70,6 +91,16 @@
     lpn.setLimit(1);
     lpn.setOffset(0);
     ispn.addInlinePlanNode(lpn);
+    if (sortDirection == SortDirectionType.DESC && !ispn.getSearchKeyExpressions().isEmpty() && exprs.isEmpty()) {
+      AbstractExpression newPredicate=new ComparisonExpression();
+      if (ispn.getLookupType() == IndexLookupType.GT)       newPredicate.setExpressionType(ExpressionType.COMPARE_GREATERTHAN);
+      if (ispn.getLookupType() == IndexLookupType.GTE)       newPredicate.setExpressionType(ExpressionType.COMPARE_GREATERTHANOREQUALTO);
+      newPredicate.setRight(ispn.getSearchKeyExpressions().get(0));
+      newPredicate.setLeft(aggExpr);
+      newPredicate.setValueType(aggExpr.getValueType());
+      ispn.clearSearchKeyExpression();
+      aggplan.setPredicate(newPredicate);
+    }
     plan.generateOutputSchema(db);
     return plan;
   }
