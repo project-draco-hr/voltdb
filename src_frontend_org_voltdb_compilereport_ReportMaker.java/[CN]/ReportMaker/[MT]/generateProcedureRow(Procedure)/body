@@ -1,0 +1,115 @@
+{
+  StringBuilder sb=new StringBuilder();
+  sb.append("<tr class='primaryrow'>");
+  String anchor=procedure.getTypeName().toLowerCase();
+  sb.append("<td style='white-space: nowrap'><i id='p-" + anchor + "--icon' class='icon-chevron-right'></i> <a href='#p-");
+  sb.append(anchor).append("' id='p-").append(anchor).append("' class='togglex'>");
+  sb.append(procedure.getTypeName());
+  sb.append("</a></td>");
+  sb.append("<td>");
+  List<ProcParameter> params=CatalogUtil.getSortedCatalogItems(procedure.getParameters(),"index");
+  List<String> paramTypes=new ArrayList<String>();
+  for (  ProcParameter param : params) {
+    String paramType=VoltType.get((byte)param.getType()).name();
+    if (param.getIsarray()) {
+      paramType+="[]";
+    }
+    paramTypes.add(paramType);
+  }
+  if (paramTypes.size() == 0) {
+    sb.append("<i>None</i>");
+  }
+  sb.append(StringUtils.join(paramTypes,", "));
+  sb.append("</td>");
+  sb.append("<td>");
+  if (procedure.getSinglepartition()) {
+    tag(sb,"success","Single");
+  }
+ else {
+    tag(sb,"warning","Multi");
+  }
+  sb.append("</td>");
+  sb.append("<td>");
+  if (procedure.getReadonly()) {
+    tag(sb,"success","Read");
+  }
+ else {
+    tag(sb,"warning","Write");
+  }
+  sb.append("</td>");
+  sb.append("<td>");
+  List<String> groupNames=new ArrayList<String>();
+  for (  GroupRef groupRef : procedure.getAuthgroups()) {
+    groupNames.add(groupRef.getGroup().getTypeName());
+  }
+  if (groupNames.size() == 0) {
+    sb.append("<i>None</i>");
+  }
+  sb.append(StringUtils.join(groupNames,", "));
+  sb.append("</td>");
+  sb.append("<td>");
+  if (procedure.getHasjava()) {
+    tag(sb,"info","Java");
+  }
+ else {
+    tag(sb,null,"Single-Stmt");
+  }
+  boolean isND=false;
+  int scanCount=0;
+  for (  Statement stmt : procedure.getStatements()) {
+    scanCount+=stmt.getSeqscancount();
+    if (!stmt.getIscontentdeterministic() || !stmt.getIsorderdeterministic()) {
+      isND=false;
+    }
+  }
+  if (isND) {
+    tag(sb,"inverse","Determinism");
+  }
+  if (scanCount > 0) {
+    tag(sb,"important","Scans");
+  }
+  sb.append("</td>");
+  sb.append("</tr>\n");
+  sb.append("<tr class='tablesorter-childRow'><td class='invert' colspan='6' id='p-" + procedure.getTypeName().toLowerCase() + "--dropdown'>\n");
+  if (procedure.getSinglepartition()) {
+    String pTable=procedure.getPartitioncolumn().getParent().getTypeName();
+    String pColumn=procedure.getPartitioncolumn().getTypeName();
+    int pIndex=procedure.getPartitionparameter();
+    sb.append(String.format("<p>Partitioned on parameter %d which maps to column %s" + " of table <a class='invert' href='#s-%s'>%s</a>.</p>",pIndex,pColumn,pTable,pTable));
+  }
+  ProcedureAnnotation annotation=(ProcedureAnnotation)procedure.getAnnotation();
+  if (annotation != null) {
+    annotation.tablesRead.removeAll(annotation.tablesUpdated);
+    if (annotation.tablesRead.size() > 0) {
+      sb.append("<p>Read-only access to tables: ");
+      List<String> tables=new ArrayList<String>();
+      for (      Table table : annotation.tablesRead) {
+        tables.add("<a href='#s-" + table.getTypeName() + "'>"+ table.getTypeName()+ "</a>");
+      }
+      sb.append(StringUtils.join(tables,", "));
+      sb.append("</p>");
+    }
+    if (annotation.tablesUpdated.size() > 0) {
+      sb.append("<p>Read/Write access to tables: ");
+      List<String> tables=new ArrayList<String>();
+      for (      Table table : annotation.tablesUpdated) {
+        tables.add("<a href='#s-" + table.getTypeName() + "'>"+ table.getTypeName()+ "</a>");
+      }
+      sb.append(StringUtils.join(tables,", "));
+      sb.append("</p>");
+    }
+    if (annotation.indexesUsed.size() > 0) {
+      sb.append("<p>Uses indexes: ");
+      List<String> indexes=new ArrayList<String>();
+      for (      Index index : annotation.indexesUsed) {
+        Table table=(Table)index.getParent();
+        indexes.add("<a href='#s-" + table.getTypeName() + "-"+ index.getTypeName()+ "'>"+ index.getTypeName()+ "</a>");
+      }
+      sb.append(StringUtils.join(indexes,", "));
+      sb.append("</p>");
+    }
+  }
+  sb.append(generateStatementsTable(procedure));
+  sb.append("</td></tr>\n");
+  return sb.toString();
+}
