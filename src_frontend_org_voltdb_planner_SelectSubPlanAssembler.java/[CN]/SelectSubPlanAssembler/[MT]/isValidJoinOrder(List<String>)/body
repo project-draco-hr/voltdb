@@ -1,14 +1,56 @@
 {
-  if (!m_parsedStmt.joinTree.m_hasOuterJoin) {
-    return true;
-  }
-  Table[] joinOrder=m_parsedStmt.joinTree.generateJoinOrder().toArray(new Table[0]);
-  assert(joinOrder.length == tableNames.size());
-  int i=0;
-  for (  Table table : joinOrder) {
-    if (!table.getTypeName().equalsIgnoreCase(tableNames.get(i))) {
-      return false;
+  assert(m_parsedStmt.joinTree != null);
+  List<JoinNode> subTrees=new ArrayList<JoinNode>();
+  extractSubTrees(m_parsedStmt.joinTree,subTrees);
+  int tableNameIdx=0;
+  List<JoinNode> finalSubTrees=new ArrayList<JoinNode>();
+  for (int i=subTrees.size() - 1; i >= 0; --i) {
+    JoinNode subTree=subTrees.get(i);
+    List<JoinNode> subTableNodes=subTree.generateLeafNodesJoinOrder();
+    if (subTree.m_joinType == JoinType.INNER) {
+      Map<String,JoinNode> nodeNameMap=new HashMap<String,JoinNode>();
+      for (      JoinNode tableNode : subTableNodes) {
+        assert(tableNode.m_table != null);
+        if (tableNode.m_id >= 0) {
+          nodeNameMap.put(tableNode.m_table.getTypeName(),tableNode);
+        }
+      }
+      List<JoinNode> joinOrderSubNodes=new ArrayList<JoinNode>();
+      for (int j=0; j < subTableNodes.size(); ++j) {
+        if (subTableNodes.get(j).m_id >= 0) {
+          assert(tableNameIdx < tableNames.size());
+          String tableName=tableNames.get(tableNameIdx);
+          if (!nodeNameMap.containsKey(tableName)) {
+            return false;
+          }
+          joinOrderSubNodes.add(nodeNameMap.get(tableName));
+          ++tableNameIdx;
+        }
+ else {
+          joinOrderSubNodes.add(subTableNodes.get(j));
+        }
+      }
+      JoinNode joinOrderSubTree=reconstructJoinTreeFromTableNodes(joinOrderSubNodes);
+      Collection<AbstractExpression> combinedExprs=subTree.getAllExpressions();
+      AbstractExpression combinedWhereExpr=ExpressionUtil.combine(combinedExprs);
+      if (combinedWhereExpr != null) {
+        joinOrderSubTree.m_whereExpr=(AbstractExpression)combinedWhereExpr.clone();
+      }
+      joinOrderSubTree.m_id=subTree.m_id;
+      finalSubTrees.add(0,joinOrderSubTree);
+    }
+ else {
+      for (      JoinNode tableNode : subTableNodes) {
+        assert(tableNode.m_table != null && tableNameIdx < tableNames.size());
+        if (tableNode.m_id >= 0) {
+          if (!tableNames.get(tableNameIdx++).equals(tableNode.m_table.getTypeName())) {
+            return false;
+          }
+        }
+      }
+      finalSubTrees.add(0,subTree);
     }
   }
+  m_parsedStmt.joinTree=reconstructJoinTreeFromSubTrees(finalSubTrees);
   return true;
 }
