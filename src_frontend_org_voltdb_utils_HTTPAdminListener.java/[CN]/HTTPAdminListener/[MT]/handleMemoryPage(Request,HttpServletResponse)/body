@@ -1,0 +1,65 @@
+{
+  try {
+    SiteTracker st=VoltDB.instance().getSiteTrackerForSnapshot();
+    String clusterinfo=st.getAllHosts().size() + " hosts ";
+    clusterinfo+=" with " + st.getAllSites().size() + " sites ";
+    clusterinfo+=" (" + st.getAllSites().size() / st.getAllHosts().size();
+    clusterinfo+=" per host)";
+    long t=SystemStatsCollector.getStartTime();
+    Date date=new Date(t);
+    long duration=System.currentTimeMillis() - t;
+    long minutes=duration / 60000;
+    long hours=minutes / 60;
+    minutes-=hours * 60;
+    long days=hours / 24;
+    hours-=days * 24;
+    String starttime=String.format("%s (%dd %dh %dm)",date.toString(),days,hours,minutes);
+    String hostname="&lt;unknownhost&gt;";
+    try {
+      InetAddress addr=InetAddress.getLocalHost();
+      hostname=addr.getHostName();
+    }
+ catch (    Exception e) {
+      try {
+        InetAddress addr=InetAddress.getLocalHost();
+        hostname=addr.getHostAddress();
+      }
+ catch (      Exception e2) {
+      }
+    }
+    SystemStatsCollector.Datum d=SystemStatsCollector.getRecentSample();
+    double totalmemory=SystemStatsCollector.memorysize;
+    double used=d.rss / (double)(SystemStatsCollector.memorysize * 1024 * 1024);
+    double javaclaimed=d.javatotalheapmem + d.javatotalsysmem;
+    double javaused=d.javausedheapmem + d.javausedsysmem;
+    double javaunused=SystemStatsCollector.javamaxheapmem - d.javatotalheapmem;
+    double risk=(d.rss + javaunused) / (SystemStatsCollector.memorysize * 1024 * 1024);
+    String csvFilename=String.format("memstats-%s-%s.csv",hostname,new Date(System.currentTimeMillis()).toString());
+    Map<String,String> params=new HashMap<String,String>();
+    params.put("hostname",hostname);
+    params.put("version",VoltDB.instance().getVersionString());
+    params.put("buildstring",VoltDB.instance().getBuildString());
+    params.put("cluster",clusterinfo);
+    params.put("starttime",starttime);
+    params.put("csvfilename",csvFilename);
+    params.put("2mincharturl",SystemStatsCollector.getGoogleChartURL(2,320,240,"-2min"));
+    params.put("30mincharturl",SystemStatsCollector.getGoogleChartURL(30,640,240,"-30min"));
+    params.put("24hrcharturl",SystemStatsCollector.getGoogleChartURL(1440,640,240,"-24hrs"));
+    params.put("totalmemory",String.format("%.1f",totalmemory));
+    params.put("used",String.format("%.1f",used * 100.0));
+    params.put("risk",String.format("%.1f",risk * 100.0));
+    params.put("rss",String.format("%.1f",d.rss / 1024.0 / 1024.0));
+    params.put("usedjava",String.format("%.1f",javaused / 1024.0 / 1024.0));
+    params.put("claimedjava",String.format("%.1f",javaclaimed / 1024.0 / 1024.0));
+    params.put("javamaxheap",String.format("%.1f",SystemStatsCollector.javamaxheapmem / 1024.0 / 1024.0));
+    String msg=getHTMLForAdminPage(params);
+    response.setContentType("text/html;charset=utf-8");
+    response.setStatus(HttpServletResponse.SC_OK);
+    baseRequest.setHandled(true);
+    response.getWriter().print(msg);
+  }
+ catch (  IOException e) {
+    e.printStackTrace();
+    throw new RuntimeException(e);
+  }
+}
