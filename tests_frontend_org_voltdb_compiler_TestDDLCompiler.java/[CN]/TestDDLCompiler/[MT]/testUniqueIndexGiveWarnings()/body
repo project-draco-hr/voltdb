@@ -1,0 +1,21 @@
+{
+  File jarOut=new File("checkCompilerWarnings.jar");
+  jarOut.deleteOnExit();
+  String schema="create table t0 (id bigint not null, name varchar(32),  primary key (id));\n" + "PARTITION TABLE t0 ON COLUMN id;\n" + "CREATE UNIQUE INDEX user_index ON t0 (name) ;";
+  final String simpleProject="<?xml version=\"1.0\"?>\n" + "<project><database><schemas>" + "<schema path='%s' />"+ "</schemas></database></project>";
+  File schemaFile=VoltProjectBuilder.writeStringToTempFile(schema);
+  String schemaPath=schemaFile.getPath();
+  File projectFile=VoltProjectBuilder.writeStringToTempFile(String.format(simpleProject,schemaPath));
+  String projectPath=projectFile.getPath();
+  VoltCompiler compiler=new VoltCompiler();
+  boolean success=compiler.compileWithProjectXML(projectPath,jarOut.getPath());
+  assertTrue(success);
+  int foundPCWarnings=0;
+  for (  VoltCompiler.Feedback f : compiler.m_warnings) {
+    if (f.message.toLowerCase().contains("unique index")) {
+      foundPCWarnings++;
+    }
+  }
+  assertEquals(1,foundPCWarnings);
+  jarOut.delete();
+}
