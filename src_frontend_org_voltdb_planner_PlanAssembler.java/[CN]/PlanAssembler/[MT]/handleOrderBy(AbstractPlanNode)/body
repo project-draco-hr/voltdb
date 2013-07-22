@@ -6,14 +6,23 @@
   if (m_parsedSelect.guaranteesUniqueRow()) {
     return root;
   }
+  boolean canSkip=false;
   if (root.getPlanNodeType() == PlanNodeType.INDEXSCAN) {
     if (((IndexScanPlanNode)root).getSortDirection() != SortDirectionType.INVALID) {
-      return root;
+      canSkip=true;
     }
   }
   OrderByPlanNode orderByNode=new OrderByPlanNode();
   for (  ParsedSelectStmt.ParsedColInfo col : m_parsedSelect.orderColumns) {
     orderByNode.addSort(col.expression,col.ascending ? SortDirectionType.ASC : SortDirectionType.DESC);
+    if (canSkip) {
+      if (((IndexScanPlanNode)root).getSortDirection() != (col.ascending ? SortDirectionType.ASC : SortDirectionType.DESC)) {
+        canSkip=false;
+      }
+    }
+  }
+  if (canSkip) {
+    return root;
   }
   orderByNode.addAndLinkChild(root);
   orderByNode.generateOutputSchema(m_catalogDb);
