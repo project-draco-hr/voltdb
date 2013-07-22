@@ -1,7 +1,9 @@
 {
   try {
-    TarGenerator tarGenerator=new TarGenerator(new File(m_outputTgzPath),true,null);
-    File deploymentXmlFile=new File(m_deployment);
+    ByteArrayOutputStream byteOutputStream=new ByteArrayOutputStream();
+    GZIPOutputStream outputStream=new GZIPOutputStream(byteOutputStream,TarFileOutputStream.Compression.DEFAULT_BLOCKS_PER_RECORD * 512);
+    TarGenerator tarGenerator=new TarGenerator(outputStream);
+    File deploymentXmlFile=new File(m_deploymentPath);
     tarGenerator.queueEntry(deploymentXmlFile.getName(),deploymentXmlFile);
     File catalogJar=new File(m_catalogJarPath);
     tarGenerator.queueEntry(catalogJar.getName(),catalogJar);
@@ -25,9 +27,11 @@
         tarGenerator.queueEntry(file.getName(),file);
       }
     }
-    for (    File file : new File("/tmp").listFiles()) {
-      if (file.getName().equals("java_pid" + m_pid + ".hprof")) {
-        tarGenerator.queueEntry(file.getName(),file);
+    if (!skipheapdump) {
+      for (      File file : new File("/tmp").listFiles()) {
+        if (file.getName().equals("java_pid" + m_pid + ".hprof")) {
+          tarGenerator.queueEntry(file.getName(),file);
+        }
       }
     }
     File tempSarFile=File.createTempFile("sar",null);
@@ -44,12 +48,48 @@
     writer.flush();
     writer.close();
     tarGenerator.queueEntry("sardata",tempSarFile);
-    tarGenerator.write();
-  }
- catch (  IOException e) {
-    m_log.error(e.getMessage());
-  }
-catch (  TarMalformatException e) {
-    m_log.error(e.getMessage());
-  }
+    tarGenerator.write(true);
+    if (!upload) {
+      boolean loop=true;
+      while (loop) {
+        System.out.print("Upload collection to VoltDB server [y/n]? ");
+switch (System.console().readLine().charAt(0)) {
+case 'Y':
+case 'y':
+          upload=true;
+        loop=false;
+      break;
+case 'N':
+case 'n':
+    loop=false;
+  break;
+default :
+break;
+}
+}
+}
+if (upload) {
+if (org.voltdb.utils.MiscUtils.isPro()) {
+InputStream inputStream=new ByteArrayInputStream(byteOutputStream.toByteArray());
+uploadToServer(inputStream);
+m_log.info("Uploaded " + new File(m_outputTgzPath).getName() + " to VoltDB server");
+}
+ else {
+m_log.info("Uploading is only available in the Enterprise Edition");
+upload=false;
+}
+}
+if (!upload) {
+FileOutputStream fileOutputStream=new FileOutputStream(m_outputTgzPath);
+fileOutputStream.write(byteOutputStream.toByteArray());
+fileOutputStream.close();
+m_log.info("Created collection file at " + m_outputTgzPath);
+}
+}
+ catch (IOException e) {
+m_log.error(e.getMessage());
+}
+catch (TarMalformatException e) {
+m_log.error(e.getMessage());
+}
 }
