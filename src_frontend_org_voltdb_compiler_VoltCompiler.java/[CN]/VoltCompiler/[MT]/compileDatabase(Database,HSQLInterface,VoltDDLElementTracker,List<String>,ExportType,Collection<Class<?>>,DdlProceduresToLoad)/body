@@ -61,16 +61,38 @@ default :
 }
 t.setPartitioncolumn(c);
 t.setIsreplicated(false);
-for (Index idx : t.getIndexes()) {
+for (Index index : t.getIndexes()) {
+  if (!index.getUnique()) {
+    continue;
+  }
   boolean contain=false;
-  for (  ColumnRef col : idx.getColumns()) {
-    if (col.getColumn().equals(c)) {
-      contain=true;
-      break;
+  String jsonExpr=index.getExpressionsjson();
+  if (jsonExpr.isEmpty()) {
+    for (    ColumnRef cref : index.getColumns()) {
+      Column col=cref.getColumn();
+      if (col.equals(c)) {
+        contain=true;
+        break;
+      }
+    }
+  }
+ else {
+    try {
+      List<AbstractExpression> indexExpressions=AbstractExpression.fromJSONArrayString(jsonExpr,null);
+      for (      AbstractExpression expr : indexExpressions) {
+        if (expr instanceof TupleValueExpression && ((TupleValueExpression)expr).getColumnName().equals(c.getName())) {
+          contain=true;
+          break;
+        }
+      }
+    }
+ catch (    JSONException e) {
+      e.printStackTrace();
+      assert(false);
     }
   }
   if (!contain) {
-    String indexName=idx.getTypeName();
+    String indexName=index.getTypeName();
     if (indexName.startsWith("SYS_IDX_PK_") || indexName.startsWith("SYS_IDX_SYS_PK_") || indexName.startsWith("MATVIEW_PK_INDEX")) {
       indexName="PRIMARY KEY index";
     }
