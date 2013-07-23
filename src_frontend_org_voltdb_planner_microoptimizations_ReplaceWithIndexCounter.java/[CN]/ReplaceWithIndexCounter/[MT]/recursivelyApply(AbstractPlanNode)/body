@@ -26,13 +26,55 @@
   if ((child instanceof IndexScanPlanNode) == false)   return plan;
   IndexScanPlanNode isp=(IndexScanPlanNode)child;
   if (isp.getPredicate() != null) {
-    return plan;
+    List<AbstractExpression> predicates=ExpressionUtil.uncombine(isp.getPredicate());
+    if (predicates.size() != 2) {
+      return plan;
+    }
+    AbstractExpression expr=predicates.get(0);
+    if (expr.getExpressionType() != ExpressionType.COMPARE_LESSTHAN && expr.getExpressionType() != ExpressionType.COMPARE_LESSTHANOREQUALTO) {
+      return plan;
+    }
+    int searchKeyCount=isp.getSearchKeyExpressions().size();
+    String exprsjson=isp.getCatalogIndex().getExpressionsjson();
+    AbstractExpression left=expr.getLeft();
+    if (exprsjson.isEmpty()) {
+      if (left.getExpressionType() != ExpressionType.VALUE_TUPLE) {
+        return plan;
+      }
+      if (((TupleValueExpression)left).getColumnIndex() != CatalogUtil.getSortedCatalogItems(isp.getCatalogIndex().getColumns(),"index").get(searchKeyCount - 1).getColumn().getIndex()) {
+        return plan;
+      }
+    }
+ else {
+      List<AbstractExpression> indexedExprs=null;
+      try {
+        indexedExprs=AbstractExpression.fromJSONArrayString(exprsjson,null);
+      }
+ catch (      JSONException e) {
+        e.printStackTrace();
+        assert(false);
+        return plan;
+      }
+      if (left.equals(indexedExprs.get(searchKeyCount - 1))) {
+        return plan;
+      }
+    }
+    if (!expr.getRight().equals(isp.getSearchKeyExpressions().get(searchKeyCount - 1))) {
+      return plan;
+    }
+    expr=predicates.get(1);
+    if (expr.getExpressionType() != ExpressionType.OPERATOR_NOT) {
+      return plan;
+    }
+    if (expr.getLeft().getExpressionType() != ExpressionType.OPERATOR_IS_NULL) {
+      return plan;
+    }
+    if (!expr.getLeft().getLeft().equals(predicates.get(0).getLeft())) {
+      return plan;
+    }
   }
   if (isp.getEndExpression() == null && isp.getSearchKeyExpressions().size() == 0) {
     return new TableCountPlanNode(isp,aggplan);
-  }
-  if (isp.getSortDirection() == SortDirectionType.DESC) {
-    return plan;
   }
   Index idx=isp.getCatalogIndex();
   if (!idx.getCountable()) {
