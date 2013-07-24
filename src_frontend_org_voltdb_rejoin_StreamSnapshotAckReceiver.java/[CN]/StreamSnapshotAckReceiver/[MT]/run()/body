@@ -1,0 +1,40 @@
+{
+  rejoinLog.trace("Starting ack receiver thread");
+  try {
+    while (true) {
+      rejoinLog.trace("Blocking on receiving mailbox");
+      VoltMessage msg=m_mb.recvBlocking(10 * 60 * 1000);
+      if (msg == null) {
+        rejoinLog.warn("No stream snapshot ack message was received in the past 10 minutes" + " or the thread was interrupted");
+        continue;
+      }
+      assert(msg instanceof RejoinDataAckMessage);
+      RejoinDataAckMessage ackMsg=(RejoinDataAckMessage)msg;
+      if (ackMsg.isEOS()) {
+        if (m_expectedEOFs.decrementAndGet() == 0) {
+          break;
+        }
+ else {
+          continue;
+        }
+      }
+      if (StreamSnapshotDataTarget.m_rejoinDeathTestMode && (ackMsg.getTargetId() == 1)) {
+        continue;
+      }
+      AckCallback ackCallback=m_callbacks.get(ackMsg.getTargetId());
+      if (ackCallback == null) {
+        rejoinLog.error("Unknown target ID " + ackMsg.getTargetId() + " in stream snapshot ack message");
+      }
+ else {
+        ackCallback.receiveAck(ackMsg.getBlockIndex());
+      }
+    }
+  }
+ catch (  Exception e) {
+    m_lastException=e;
+    rejoinLog.error("Error reading a message from a recovery stream",e);
+  }
+ finally {
+    rejoinLog.trace("Ack receiver thread exiting");
+  }
+}
