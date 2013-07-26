@@ -52,53 +52,8 @@
     return plan;
   }
   IndexScanPlanNode ispn=(IndexScanPlanNode)child;
-  if (((IndexScanPlanNode)child).getPredicate() != null) {
-    List<AbstractExpression> predicates=ExpressionUtil.uncombine(ispn.getPredicate());
-    if (predicates.size() != 2) {
-      return plan;
-    }
-    AbstractExpression expr=predicates.get(0);
-    if (expr.getExpressionType() != ExpressionType.COMPARE_LESSTHAN && expr.getExpressionType() != ExpressionType.COMPARE_LESSTHANOREQUALTO) {
-      return plan;
-    }
-    int searchKeyCount=ispn.getSearchKeyExpressions().size();
-    String exprsjson=ispn.getCatalogIndex().getExpressionsjson();
-    AbstractExpression left=expr.getLeft();
-    if (exprsjson.isEmpty()) {
-      if (left.getExpressionType() != ExpressionType.VALUE_TUPLE) {
-        return plan;
-      }
-      if (((TupleValueExpression)left).getColumnIndex() != CatalogUtil.getSortedCatalogItems(ispn.getCatalogIndex().getColumns(),"index").get(searchKeyCount - 1).getColumn().getIndex()) {
-        return plan;
-      }
-    }
- else {
-      List<AbstractExpression> indexedExprs=null;
-      try {
-        indexedExprs=AbstractExpression.fromJSONArrayString(exprsjson,null);
-      }
- catch (      JSONException e) {
-        e.printStackTrace();
-        assert(false);
-        return plan;
-      }
-      if (left.equals(indexedExprs.get(searchKeyCount - 1))) {
-        return plan;
-      }
-    }
-    if (!expr.getRight().equals(ispn.getSearchKeyExpressions().get(searchKeyCount - 1))) {
-      return plan;
-    }
-    expr=predicates.get(1);
-    if (expr.getExpressionType() != ExpressionType.OPERATOR_NOT) {
-      return plan;
-    }
-    if (expr.getLeft().getExpressionType() != ExpressionType.OPERATOR_IS_NULL) {
-      return plan;
-    }
-    if (!expr.getLeft().getLeft().equals(predicates.get(0).getLeft())) {
-      return plan;
-    }
+  if (((IndexScanPlanNode)child).getPredicate() != null && ((IndexScanPlanNode)child).isPredicatesOptimizableForAggregate()) {
+    return plan;
   }
   if (ispn.getLookupType() != IndexLookupType.EQ && Math.abs(ispn.getSearchKeyExpressions().size() - ExpressionUtil.uncombine(ispn.getEndExpression()).size()) > 1) {
     return plan;
@@ -122,11 +77,6 @@
     AbstractExpression lastEndExpr=exprs.get(numberOfExprs - 1);
     if ((lastEndExpr.getExpressionType() == ExpressionType.COMPARE_LESSTHAN || lastEndExpr.getExpressionType() == ExpressionType.COMPARE_LESSTHANOREQUALTO) && lastEndExpr.getLeft().equals(aggExpr)) {
       exprs.remove(lastEndExpr);
-    }
-  }
-  if (ispn.getSearchKeyExpressions().size() > numberOfExprs) {
-    if (ispn.getLookupType() != IndexLookupType.GT && ispn.getLookupType() != IndexLookupType.GTE) {
-      return plan;
     }
   }
   if (!checkIndex(ispn.getCatalogIndex(),aggExpr,exprs,ispn.getBindings())) {
