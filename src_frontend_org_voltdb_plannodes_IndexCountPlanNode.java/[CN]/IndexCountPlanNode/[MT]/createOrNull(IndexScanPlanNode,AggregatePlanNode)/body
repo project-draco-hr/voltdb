@@ -1,4 +1,5 @@
 {
+  boolean needPadding=false;
   List<AbstractExpression> endKeys=new ArrayList<AbstractExpression>();
   IndexLookupType endType=IndexLookupType.EQ;
   List<AbstractExpression> endComparisons=ExpressionUtil.uncombine(isp.getEndExpression());
@@ -15,7 +16,34 @@
     }
     endKeys.add((AbstractExpression)ae.getRight().clone());
   }
-  if ((endType != IndexLookupType.LT) && (endKeys.size() > 0) && (endKeys.size() < isp.getCatalogIndex().getColumns().size())) {
+  if (endType == IndexLookupType.EQ && endKeys.size() == isp.getCatalogIndex().getColumns().size() - 1 && isp.getSearchKeyExpressions().size() == isp.getCatalogIndex().getColumns().size()) {
+    Index index=isp.getCatalogIndex();
+    String jsonstring=index.getExpressionsjson();
+    VoltType missingKeyType=VoltType.INVALID;
+    if (jsonstring.isEmpty()) {
+      List<ColumnRef> indexedColRefs=CatalogUtil.getSortedCatalogItems(index.getColumns(),"index");
+      missingKeyType=VoltType.get((byte)(indexedColRefs.get(indexedColRefs.size() - 1).getColumn().getType()));
+    }
+ else {
+      List<AbstractExpression> exprs=null;
+      try {
+        exprs=AbstractExpression.fromJSONArrayString(jsonstring,null);
+      }
+ catch (      JSONException e) {
+        e.printStackTrace();
+      }
+      missingKeyType=exprs.get(exprs.size() - 1).getLeft().getValueType();
+    }
+    if (missingKeyType.isInteger()) {
+      ConstantValueExpression missingKey=new ConstantValueExpression();
+      missingKey.setValueType(missingKeyType);
+      missingKey.setValue(String.valueOf(VoltType.getMaxIntegralTypeValue(missingKeyType)));
+      endType=IndexLookupType.LTE;
+      endKeys.add(missingKey);
+      needPadding=true;
+    }
+  }
+  if (!needPadding && (endType != IndexLookupType.LT) && (endKeys.size() > 0)&& (endKeys.size() < isp.getCatalogIndex().getColumns().size())) {
     return null;
   }
   return new IndexCountPlanNode(isp,apn,endType,endKeys);
