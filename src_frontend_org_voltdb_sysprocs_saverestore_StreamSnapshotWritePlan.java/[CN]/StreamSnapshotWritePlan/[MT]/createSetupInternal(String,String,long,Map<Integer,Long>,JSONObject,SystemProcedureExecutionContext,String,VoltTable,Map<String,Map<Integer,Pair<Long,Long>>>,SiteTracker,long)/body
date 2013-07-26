@@ -2,14 +2,14 @@
   assert(SnapshotSiteProcessor.ExecutionSitesCurrentlySnapshotting.isEmpty());
   final StreamSnapshotRequestConfig config=new StreamSnapshotRequestConfig(jsData,context.getDatabase());
   final List<StreamSnapshotRequestConfig.Stream> localStreams=filterRemoteStreams(config.streams,Longs.asList(tracker.getLocalSites()));
-  final Map<Long,Integer> tokensToAdd=createTokensToAdd(localStreams);
+  final Set<Integer> partitionsToAdd=getPartitionsToAdd(localStreams);
   if (config.shouldTruncate) {
-    final int newPartitionCount=calculateNewPartitionCount(context.getNumberOfPartitions(),tokensToAdd);
+    final int newPartitionCount=context.getNumberOfPartitions() + partitionsToAdd.size();
     coalesceTruncationSnapshotPlan(file_path,file_nonce,txnId,partitionTransactionIds,jsData,context,hostname,result,exportSequenceNumbers,tracker,timestamp,newPartitionCount);
   }
   List<Integer> localPartitions=tracker.getPartitionsForHost(context.getHostId());
-  if (!tokensToAdd.isEmpty()) {
-    createUpdateHashinatorTasksForSites(localPartitions,tokensToAdd,txnId);
+  if (!partitionsToAdd.isEmpty()) {
+    createUpdatePartitionCountTasksForSites(localPartitions,partitionsToAdd);
   }
   final AtomicInteger numTables=new AtomicInteger(config.tables.length);
   final SnapshotRegistry.Snapshot snapshotRecord=SnapshotRegistry.startSnapshot(txnId,context.getHostId(),file_path,file_nonce,SnapshotFormat.STREAM,config.tables);
@@ -19,12 +19,8 @@
     schemas.put(table.getRelativeIndex(),schemaTable.getSchemaBytes());
   }
   List<DataTargetInfo> sdts=createDataTargets(localStreams,schemas);
-  Multimap<Long,Long> replicatedSrcToDst=pickOnePairPerStream(config.streams);
-  if (SNAP_LOG.isDebugEnabled()) {
-    SNAP_LOG.debug("Picked the following sites to transfer replicated table: " + CoreUtils.hsIdEntriesToString(replicatedSrcToDst.entries()));
-  }
   for (  final Table table : config.tables) {
-    createTasksForTable(table,sdts,replicatedSrcToDst,numTables,snapshotRecord);
+    createTasksForTable(table,sdts,numTables,snapshotRecord);
     result.addRow(context.getHostId(),hostname,table.getTypeName(),"SUCCESS","");
   }
   return false;
