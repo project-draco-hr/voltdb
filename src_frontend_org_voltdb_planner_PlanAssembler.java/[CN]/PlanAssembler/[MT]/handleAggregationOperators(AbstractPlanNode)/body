@@ -13,10 +13,12 @@
     }
     int outputColumnIndex=0;
     NodeSchema agg_schema=new NodeSchema();
+    NodeSchema top_agg_schema=new NodeSchema();
     for (    ParsedSelectStmt.ParsedColInfo col : m_parsedSelect.aggResultColumns) {
       AbstractExpression rootExpr=col.expression;
       AbstractExpression agg_input_expr=null;
       SchemaColumn schema_col=null;
+      SchemaColumn top_schema_col=null;
       if (rootExpr instanceof AggregateExpression) {
         ExpressionType agg_expression_type=rootExpr.getExpressionType();
         agg_input_expr=rootExpr.getLeft();
@@ -30,6 +32,7 @@
         boolean is_distinct=((AggregateExpression)rootExpr).isDistinct();
         aggNode.addAggregate(agg_expression_type,is_distinct,outputColumnIndex,agg_input_expr);
         schema_col=new SchemaColumn("VOLT_TEMP_TABLE","",col.alias,tve);
+        top_schema_col=new SchemaColumn("VOLT_TEMP_TABLE","",col.alias,tve);
         if (topAggNode != null) {
           ExpressionType top_expression_type=agg_expression_type;
           if (agg_expression_type == ExpressionType.AGGREGATE_COUNT_STAR || agg_expression_type == ExpressionType.AGGREGATE_COUNT || agg_expression_type == ExpressionType.AGGREGATE_SUM) {
@@ -53,8 +56,15 @@
       }
  else {
         schema_col=new SchemaColumn(col.tableName,col.columnName,col.alias,col.expression);
+        if (col.groupBy && col.tableName.equals("VOLT_TEMP_TABLE")) {
+          top_schema_col=new SchemaColumn(col.tableName,col.columnName,col.alias,m_parsedSelect.topGroupByExpressions.get(col.alias));
+        }
+ else {
+          top_schema_col=new SchemaColumn(col.tableName,col.columnName,col.alias,col.expression);
+        }
       }
       agg_schema.addColumn(schema_col);
+      top_agg_schema.addColumn(top_schema_col);
       outputColumnIndex++;
     }
     for (    ParsedSelectStmt.ParsedColInfo col : m_parsedSelect.groupByColumns) {
@@ -63,12 +73,22 @@
       }
       aggNode.addGroupByExpression(col.expression);
       if (topAggNode != null) {
-        topAggNode.addGroupByExpression(col.expression);
+        if (m_parsedSelect.hasComplexGroupby()) {
+          topAggNode.addGroupByExpression(m_parsedSelect.topGroupByExpressions.get(col.alias));
+        }
+ else {
+          topAggNode.addGroupByExpression(col.expression);
+        }
       }
     }
     aggNode.setOutputSchema(agg_schema);
     if (topAggNode != null) {
-      topAggNode.setOutputSchema(agg_schema);
+      if (m_parsedSelect.hasComplexGroupby()) {
+        topAggNode.setOutputSchema(top_agg_schema);
+      }
+ else {
+        topAggNode.setOutputSchema(agg_schema);
+      }
     }
     NodeSchema newSchema=m_parsedSelect.getNewSchema();
     root=pushDownAggregate(root,aggNode,topAggNode,m_parsedSelect.hasComplexAgg(),newSchema);
