@@ -1,0 +1,104 @@
+{
+  assert(plan != null);
+  ArrayList<AbstractPlanNode> children=new ArrayList<AbstractPlanNode>();
+  for (int i=0; i < plan.getChildCount(); i++)   children.add(plan.getChild(i));
+  for (  AbstractPlanNode child : children) {
+    AbstractPlanNode newChild=recursivelyApply(child);
+    if (newChild == child) {
+      continue;
+    }
+    child.removeFromGraph();
+    plan.addAndLinkChild(newChild);
+  }
+  if ((plan instanceof AggregatePlanNode) == false)   return plan;
+  assert(plan.getChildCount() == 1);
+  AggregatePlanNode aggplan=(AggregatePlanNode)plan;
+  SortDirectionType sortDirection=SortDirectionType.INVALID;
+  if (aggplan.isTableMin()) {
+    sortDirection=SortDirectionType.ASC;
+  }
+ else   if (aggplan.isTableMax()) {
+    sortDirection=SortDirectionType.DESC;
+  }
+ else {
+    return plan;
+  }
+  AbstractPlanNode child=plan.getChild(0);
+  AbstractExpression aggExpr=aggplan.getFirstAggregateExpression();
+  if (child instanceof SeqScanPlanNode) {
+    if (((SeqScanPlanNode)child).getPredicate() != null) {
+      return plan;
+    }
+    CatalogMap<Index> allIndexes=db.getTables().get(((SeqScanPlanNode)child).getTargetTableName()).getIndexes();
+    ArrayList<AbstractExpression> bindings=new ArrayList<AbstractExpression>();
+    Index ret=findQualifiedIndex(allIndexes,aggExpr,bindings);
+    if (ret == null) {
+      return plan;
+    }
+ else {
+      IndexScanPlanNode ispn=new IndexScanPlanNode((SeqScanPlanNode)child,aggplan,ret,sortDirection);
+      ispn.setBindings(bindings);
+      LimitPlanNode lpn=new LimitPlanNode();
+      lpn.setLimit(1);
+      lpn.setOffset(0);
+      ispn.addInlinePlanNode(lpn);
+      ispn.generateOutputSchema(db);
+      plan.clearChildren();
+      plan.addAndLinkChild(ispn);
+      return plan;
+    }
+  }
+  if ((child instanceof IndexScanPlanNode) == false) {
+    return plan;
+  }
+  if (((IndexScanPlanNode)child).getPredicate() != null) {
+    return plan;
+  }
+  IndexScanPlanNode ispn=(IndexScanPlanNode)child;
+  if (ispn.getLookupType() != IndexLookupType.EQ && Math.abs(ispn.getSearchKeyExpressions().size() - ExpressionUtil.uncombine(ispn.getEndExpression()).size()) > 1) {
+    return plan;
+  }
+  List<AbstractExpression> exprs=ExpressionUtil.uncombine(ispn.getEndExpression());
+  int numberOfEndExprs=exprs.size();
+  if (sortDirection == SortDirectionType.DESC && ispn.getSortDirection() == SortDirectionType.INVALID) {
+    if (numberOfEndExprs > 1 || (numberOfEndExprs == 1 && aggExpr.bindingToIndexedExpression(exprs.get(0).getLeft()) == null)) {
+      return plan;
+    }
+  }
+  if (numberOfEndExprs > ispn.getSearchKeyExpressions().size()) {
+    if (sortDirection == SortDirectionType.DESC) {
+      return plan;
+    }
+    AbstractExpression lastEndExpr=exprs.get(numberOfEndExprs - 1);
+    if ((lastEndExpr.getExpressionType() == ExpressionType.COMPARE_LESSTHAN || lastEndExpr.getExpressionType() == ExpressionType.COMPARE_LESSTHANOREQUALTO) && lastEndExpr.getLeft().equals(aggExpr)) {
+      exprs.remove(lastEndExpr);
+    }
+  }
+  if (ispn.getSearchKeyExpressions().size() > numberOfEndExprs) {
+    if (ispn.getLookupType() != IndexLookupType.GT && ispn.getLookupType() != IndexLookupType.GTE) {
+      return plan;
+    }
+  }
+  if (!checkIndex(ispn.getCatalogIndex(),aggExpr,exprs,ispn.getBindings())) {
+    return plan;
+  }
+ else {
+    ispn.setSortDirection(sortDirection);
+    LimitPlanNode lpn=new LimitPlanNode();
+    lpn.setLimit(1);
+    lpn.setOffset(0);
+    ispn.addInlinePlanNode(lpn);
+    if (sortDirection == SortDirectionType.DESC && !ispn.getSearchKeyExpressions().isEmpty() && exprs.isEmpty()) {
+      AbstractExpression newPredicate=new ComparisonExpression();
+      if (ispn.getLookupType() == IndexLookupType.GT)       newPredicate.setExpressionType(ExpressionType.COMPARE_GREATERTHAN);
+      if (ispn.getLookupType() == IndexLookupType.GTE)       newPredicate.setExpressionType(ExpressionType.COMPARE_GREATERTHANOREQUALTO);
+      newPredicate.setRight(ispn.getSearchKeyExpressions().get(0));
+      newPredicate.setLeft(aggExpr);
+      newPredicate.setValueType(aggExpr.getValueType());
+      ispn.clearSearchKeyExpression();
+      aggplan.setPredicate(newPredicate);
+    }
+    plan.generateOutputSchema(db);
+    return plan;
+  }
+}
