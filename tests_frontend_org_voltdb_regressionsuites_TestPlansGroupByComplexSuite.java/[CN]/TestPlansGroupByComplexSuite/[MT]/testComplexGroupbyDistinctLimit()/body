@@ -1,0 +1,69 @@
+{
+  loadData();
+  Client client=this.getClient();
+  ClientResponse cr=null;
+  VoltTable vt;
+  long[][] expected;
+  String[] procs={"R1.insert","P1.insert"};
+  for (  String tb : procs) {
+    cr=client.callProcedure(tb,6,10,2,"2013-07-18 02:00:00.123457");
+    cr=client.callProcedure(tb,7,40,2,"2013-09-18 02:00:00.123457");
+  }
+  String[] tbs={"R1","P1"};
+  for (  String tb : tbs) {
+    cr=client.callProcedure("@AdHoc","SELECT abs(wage) as tag, count(distinct dept) from " + tb + " GROUP BY abs(wage) ORDER BY tag ");
+    assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+    vt=cr.getResults()[0];
+    expected=new long[][]{{10,2},{20,1},{30,1},{40,1},{50,1}};
+    System.out.println(vt.toString());
+    compareTable(vt,expected);
+    cr=client.callProcedure("@AdHoc","SELECT abs(wage) as tag, count(dept) from " + tb + " GROUP BY abs(wage) ORDER BY tag limit 4");
+    assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+    vt=cr.getResults()[0];
+    expected=new long[][]{{10,2},{20,1},{30,1},{40,2}};
+    System.out.println(vt.toString());
+    compareTable(vt,expected);
+    cr=client.callProcedure("@AdHoc","SELECT abs(wage) as tag, count(distinct dept) from " + tb + " GROUP BY abs(wage) ORDER BY tag limit 4");
+    assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+    vt=cr.getResults()[0];
+    expected=new long[][]{{10,2},{20,1},{30,1},{40,1}};
+    System.out.println(vt.toString());
+    compareTable(vt,expected);
+    cr=client.callProcedure("@AdHoc","SELECT abs(wage) as tag, count(distinct dept)+1 from " + tb + " GROUP BY abs(wage) ORDER BY tag ");
+    assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+    vt=cr.getResults()[0];
+    expected=new long[][]{{10,3},{20,2},{30,2},{40,2},{50,2}};
+    System.out.println(vt.toString());
+    compareTable(vt,expected);
+    cr=client.callProcedure("@AdHoc","SELECT abs(wage) as tag, count(dept)+1 from " + tb + " GROUP BY abs(wage) ORDER BY tag limit 4");
+    assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+    vt=cr.getResults()[0];
+    expected=new long[][]{{10,3},{20,2},{30,2},{40,3}};
+    System.out.println(vt.toString());
+    compareTable(vt,expected);
+    cr=client.callProcedure("@AdHoc","SELECT abs(wage) as tag, count(distinct dept)+1 from " + tb + " GROUP BY abs(wage) ORDER BY tag limit 4 ");
+    assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+    vt=cr.getResults()[0];
+    expected=new long[][]{{10,3},{20,2},{30,2},{40,2}};
+    System.out.println(vt.toString());
+    compareTable(vt,expected);
+    cr=client.callProcedure("@AdHoc","SELECT abs(dept-2) as tag, wage, wage/2, count(distinct wage)*2, sum(id)/count(id)+1 from " + tb + " GROUP BY abs(dept-2), wage ORDER BY tag, wage;");
+    assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+    vt=cr.getResults()[0];
+    expected=new long[][]{{0,10,5,2,7},{0,40,20,2,6},{0,50,25,2,6},{1,10,5,2,2},{1,20,10,2,3},{1,30,15,2,4}};
+    System.out.println(vt.toString());
+    compareTable(vt,expected);
+    cr=client.callProcedure("@AdHoc","SELECT abs(dept-2) as tag, wage, wage/2, count(wage)*2, sum(id)/count(id)+1 from " + tb + " GROUP BY abs(dept-2), wage ORDER BY tag, wage LIMIT 5;");
+    assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+    vt=cr.getResults()[0];
+    expected=new long[][]{{0,10,5,2,7},{0,40,20,4,6},{0,50,25,2,6},{1,10,5,2,2},{1,20,10,2,3}};
+    System.out.println(vt.toString());
+    compareTable(vt,expected);
+    cr=client.callProcedure("@AdHoc","SELECT abs(dept-2) as tag, wage, wage/2, count(distinct wage)*2, sum(id)/count(id)+1 from " + tb + " GROUP BY abs(dept-2), wage ORDER BY tag, wage LIMIT 5;");
+    assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+    vt=cr.getResults()[0];
+    expected=new long[][]{{0,10,5,2,7},{0,40,20,2,6},{0,50,25,2,6},{1,10,5,2,2},{1,20,10,2,3}};
+    System.out.println(vt.toString());
+    compareTable(vt,expected);
+  }
+}
