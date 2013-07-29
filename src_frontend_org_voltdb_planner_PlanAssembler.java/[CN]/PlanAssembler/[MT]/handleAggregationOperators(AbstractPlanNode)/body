@@ -1,12 +1,6 @@
 {
-  boolean containsAggregateExpression=false;
   AggregatePlanNode aggNode=null;
-  for (  ParsedSelectStmt.ParsedColInfo col : m_parsedSelect.displayColumns) {
-    if (col.expression.hasAnySubexpressionOfClass(AggregateExpression.class)) {
-      containsAggregateExpression=true;
-      break;
-    }
-  }
+  boolean containsAggregateExpression=m_parsedSelect.hasAggregateExpression();
   if (containsAggregateExpression || m_parsedSelect.isGrouped()) {
     AggregatePlanNode topAggNode;
     if (m_parsedSelect.isGrouped() && (root.getPlanNodeType() != PlanNodeType.INDEXSCAN || ((IndexScanPlanNode)root).getSortDirection() == SortDirectionType.INVALID)) {
@@ -19,7 +13,7 @@
     }
     int outputColumnIndex=0;
     NodeSchema agg_schema=new NodeSchema();
-    for (    ParsedSelectStmt.ParsedColInfo col : m_parsedSelect.displayColumns) {
+    for (    ParsedSelectStmt.ParsedColInfo col : m_parsedSelect.aggResultColumns) {
       AbstractExpression rootExpr=col.expression;
       AbstractExpression agg_input_expr=null;
       SchemaColumn schema_col=null;
@@ -55,7 +49,7 @@
         }
       }
  else       if (rootExpr.hasAnySubexpressionOfClass(AggregateExpression.class)) {
-        throw new PlanningErrorException("Unsupported operation on the result of an aggregate function in a column expression");
+        assert(false);
       }
  else {
         schema_col=new SchemaColumn(col.tableName,col.columnName,col.alias,col.expression);
@@ -76,7 +70,8 @@
     if (topAggNode != null) {
       topAggNode.setOutputSchema(agg_schema);
     }
-    root=pushDownAggregate(root,aggNode,topAggNode);
+    NodeSchema newSchema=m_parsedSelect.getNewSchema();
+    root=pushDownAggregate(root,aggNode,topAggNode,m_parsedSelect.hasComplexAgg(),newSchema);
   }
   if (m_parsedSelect.isGrouped()) {
     if (m_parsedSelect.displayColumnsContainAllGroupByColumns()) {
