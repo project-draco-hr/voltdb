@@ -1,0 +1,65 @@
+{
+  hostLog.info("Logging config info");
+  File voltDbRoot=CatalogUtil.getVoltDbRoot(m_deployment.getPaths());
+  String pathToConfigInfoDir=voltDbRoot.getPath() + File.separator + "config_log";
+  File configInfoDir=new File(pathToConfigInfoDir);
+  configInfoDir.mkdirs();
+  String pathToConfigInfo=pathToConfigInfoDir + File.separator + "config.json";
+  File configInfo=new File(pathToConfigInfo);
+  byte jsonBytes[]=null;
+  try {
+    JSONStringer stringer=new JSONStringer();
+    stringer.object();
+    stringer.key("workingDir").value(System.getProperty("user.dir"));
+    stringer.key("pid").value(CLibrary.getpid());
+    stringer.key("log4jDst").array();
+    Enumeration appenders=Logger.getRootLogger().getAllAppenders();
+    while (appenders.hasMoreElements()) {
+      Appender appender=(Appender)appenders.nextElement();
+      if (appender instanceof FileAppender) {
+        stringer.object();
+        stringer.key("path").value(new File(((FileAppender)appender).getFile()).getCanonicalPath());
+        if (appender instanceof DailyRollingFileAppender) {
+          stringer.key("format").value(((DailyRollingFileAppender)appender).getDatePattern());
+        }
+        stringer.endObject();
+      }
+    }
+    Enumeration loggers=Logger.getRootLogger().getLoggerRepository().getCurrentLoggers();
+    while (loggers.hasMoreElements()) {
+      Logger logger=(Logger)loggers.nextElement();
+      appenders=logger.getAllAppenders();
+      while (appenders.hasMoreElements()) {
+        Appender appender=(Appender)appenders.nextElement();
+        if (appender instanceof FileAppender) {
+          stringer.object();
+          stringer.key("path").value(new File(((FileAppender)appender).getFile()).getCanonicalPath());
+          if (appender instanceof DailyRollingFileAppender) {
+            stringer.key("format").value(((DailyRollingFileAppender)appender).getDatePattern());
+          }
+          stringer.endObject();
+        }
+      }
+    }
+    stringer.endArray();
+    stringer.endObject();
+    JSONObject jsObj=new JSONObject(stringer.toString());
+    jsonBytes=jsObj.toString(4).getBytes(Charsets.UTF_8);
+  }
+ catch (  JSONException e) {
+    Throwables.propagate(e);
+  }
+catch (  IOException e) {
+    e.printStackTrace();
+  }
+  try {
+    FileOutputStream fos=new FileOutputStream(configInfo);
+    fos.write(jsonBytes);
+    fos.getFD().sync();
+    fos.close();
+  }
+ catch (  IOException e) {
+    hostLog.error("Failed to log config info: " + e.getMessage());
+    e.printStackTrace();
+  }
+}

@@ -1,0 +1,137 @@
+{
+  System.out.println("STARTING SINCE_EPOCH");
+  Client client=getClient();
+  ClientResponse cr;
+  VoltTable result;
+  cr=client.callProcedure("P2.insert",0,new Timestamp(0L));
+  assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+  cr=client.callProcedure("P2.insert",1,new Timestamp(1L));
+  assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+  cr=client.callProcedure("P2.insert",2,new Timestamp(1000L));
+  assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+  cr=client.callProcedure("P2.insert",3,new Timestamp(-1000L));
+  assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+  cr=client.callProcedure("P2.insert",4,new Timestamp(1371808830000L));
+  assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+  cr=client.callProcedure("P2.insert",5,"2013-07-18 02:00:00.123457");
+  assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+  cr=client.callProcedure("@AdHoc","select SINCE_EPOCH (SECOND, TM), TM from P2 where id = 4");
+  assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+  result=cr.getResults()[0];
+  assertEquals(1,result.getRowCount());
+  assertTrue(result.advanceRow());
+  assertEquals(1371808830L,result.getLong(0));
+  assertEquals(1371808830000000L,result.getTimestampAsLong(1));
+  cr=client.callProcedure("@AdHoc","select TM, TO_TIMESTAMP(MICROS, SINCE_EPOCH (MICROS, '2013-07-18 02:00:00.123457') ) from P2 where id = 5");
+  assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+  result=cr.getResults()[0];
+  assertEquals(1,result.getRowCount());
+  assertTrue(result.advanceRow());
+  assertEquals(result.getTimestampAsLong(0),result.getTimestampAsLong(1));
+  cr=client.callProcedure("@AdHoc","select TM, TM, TO_TIMESTAMP(MICROS, SINCE_EPOCH (MICROS, '2013-07-' || SUBSTRING('18', 0 , 2) || ' 02:00:00.123457') )  from P2 where id = 5;");
+  assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+  result=cr.getResults()[0];
+  assertEquals(1,result.getRowCount());
+  assertTrue(result.advanceRow());
+  assertEquals(result.getTimestampAsLong(0),result.getTimestampAsLong(1));
+  try {
+    cr=client.callProcedure("@AdHoc","select SINCE_EPOCH (MICROS, 'I am a timestamp')  from P2 where id = 5");
+  }
+ catch (  Exception ex) {
+    assertTrue(ex.getMessage().contains("PlanningErrorException"));
+    assertTrue(ex.getMessage().contains("incompatible data type in conversion"));
+  }
+  try {
+    cr=client.callProcedure("@AdHoc","select SINCE_EPOCH (MICROS, '2013-7-2 2:34:12')  from P2 where id = 5");
+  }
+ catch (  Exception ex) {
+    assertTrue(ex.getMessage().contains("PlanningErrorException"));
+    assertTrue(ex.getMessage().contains("incompatible data type in conversion"));
+  }
+  String[] procedures={"SINCE_EPOCH_SECOND","SINCE_EPOCH_MILLIS","SINCE_EPOCH_MILLISECOND","SINCE_EPOCH_MICROS","SINCE_EPOCH_MICROSECOND"};
+  for (int i=0; i < procedures.length; i++) {
+    String proc=procedures[i];
+    cr=client.callProcedure(proc,0);
+    assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+    result=cr.getResults()[0];
+    assertEquals(1,result.getRowCount());
+    assertTrue(result.advanceRow());
+    if (proc == "SINCE_EPOCH_SECOND") {
+      assertEquals(0,result.getLong(0));
+    }
+ else     if (proc == "SINCE_EPOCH_MILLIS" || proc == "SINCE_EPOCH_MILLISECOND") {
+      assertEquals(0,result.getLong(0));
+    }
+ else     if (proc == "SINCE_EPOCH_MICROS" || proc == "SINCE_EPOCH_MICROSECOND") {
+      assertEquals(0,result.getLong(0));
+    }
+    cr=client.callProcedure(proc,1);
+    assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+    result=cr.getResults()[0];
+    assertEquals(1,result.getRowCount());
+    assertTrue(result.advanceRow());
+    if (proc == "SINCE_EPOCH_SECOND") {
+      assertEquals(0,result.getLong(0));
+    }
+ else     if (proc == "SINCE_EPOCH_MILLIS" || proc == "SINCE_EPOCH_MILLISECOND") {
+      assertEquals(1,result.getLong(0));
+    }
+ else     if (proc == "SINCE_EPOCH_MICROS" || proc == "SINCE_EPOCH_MICROSECOND") {
+      assertEquals(1000,result.getLong(0));
+    }
+ else {
+      fail();
+    }
+    cr=client.callProcedure(proc,2);
+    assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+    result=cr.getResults()[0];
+    assertEquals(1,result.getRowCount());
+    assertTrue(result.advanceRow());
+    if (proc == "SINCE_EPOCH_SECOND") {
+      assertEquals(1,result.getLong(0));
+    }
+ else     if (proc == "SINCE_EPOCH_MILLIS" || proc == "SINCE_EPOCH_MILLISECOND") {
+      assertEquals(1000,result.getLong(0));
+    }
+ else     if (proc == "SINCE_EPOCH_MICROS" || proc == "SINCE_EPOCH_MICROSECOND") {
+      assertEquals(1000000,result.getLong(0));
+    }
+ else {
+      fail();
+    }
+    cr=client.callProcedure(proc,3);
+    assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+    result=cr.getResults()[0];
+    assertEquals(1,result.getRowCount());
+    assertTrue(result.advanceRow());
+    if (proc == "SINCE_EPOCH_SECOND") {
+      assertEquals(-1,result.getLong(0));
+    }
+ else     if (proc == "SINCE_EPOCH_MILLIS" || proc == "SINCE_EPOCH_MILLISECOND") {
+      assertEquals(-1000,result.getLong(0));
+    }
+ else     if (proc == "SINCE_EPOCH_MICROS" || proc == "SINCE_EPOCH_MICROSECOND") {
+      assertEquals(-1000000,result.getLong(0));
+    }
+ else {
+      fail();
+    }
+    cr=client.callProcedure(proc,4);
+    assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+    result=cr.getResults()[0];
+    assertEquals(1,result.getRowCount());
+    assertTrue(result.advanceRow());
+    if (proc == "SINCE_EPOCH_SECOND") {
+      assertEquals(1371808830L,result.getLong(0));
+    }
+ else     if (proc == "SINCE_EPOCH_MILLIS" || proc == "SINCE_EPOCH_MILLISECOND") {
+      assertEquals(1371808830000L,result.getLong(0));
+    }
+ else     if (proc == "SINCE_EPOCH_MICROS" || proc == "SINCE_EPOCH_MICROSECOND") {
+      assertEquals(1371808830000000L,result.getLong(0));
+    }
+ else {
+      fail();
+    }
+  }
+}

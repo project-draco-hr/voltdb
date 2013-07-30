@@ -1,0 +1,50 @@
+{
+  String name=exprNode.attributes.get("name").toLowerCase();
+  String disabled=exprNode.attributes.get("disabled");
+  if (disabled != null) {
+    throw new PlanningErrorException("Function '" + name + "' is not supported in VoltDB: "+ disabled);
+  }
+  String value_type_name=exprNode.attributes.get("valuetype");
+  VoltType value_type=VoltType.typeFromString(value_type_name);
+  String id=exprNode.attributes.get("function_id");
+  assert(id != null);
+  int idArg=0;
+  try {
+    idArg=Integer.parseInt(id);
+  }
+ catch (  NumberFormatException nfe) {
+  }
+  assert(idArg > 0);
+  String parameter=exprNode.attributes.get("parameter");
+  String volt_alias=exprNode.attributes.get("volt_alias");
+  if (volt_alias == null) {
+    volt_alias=name;
+  }
+  ArrayList<AbstractExpression> args=new ArrayList<AbstractExpression>();
+  for (  VoltXMLElement argNode : exprNode.children) {
+    assert(argNode != null);
+    AbstractExpression argExpr=parseExpressionTree(argNode);
+    assert(argExpr != null);
+    args.add(argExpr);
+  }
+  FunctionExpression expr=new FunctionExpression();
+  expr.setAttributes(name,volt_alias,idArg);
+  expr.setArgs(args);
+  if (value_type != null) {
+    expr.setValueType(value_type);
+    expr.setValueSize(value_type.getMaxLengthInBytes());
+  }
+  if (parameter != null) {
+    int parameter_idx=-1;
+    try {
+      parameter_idx=Integer.parseInt(parameter);
+    }
+ catch (    NumberFormatException nfe) {
+    }
+    assert(parameter_idx >= 0);
+    assert(parameter_idx < args.size());
+    expr.setParameterArg(parameter_idx);
+  }
+  expr.resolveForDB(m_db);
+  return expr;
+}
