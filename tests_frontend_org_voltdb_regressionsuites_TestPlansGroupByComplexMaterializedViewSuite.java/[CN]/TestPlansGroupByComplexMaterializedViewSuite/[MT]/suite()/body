@@ -1,0 +1,38 @@
+{
+  VoltServerConfig config=null;
+  MultiConfigSuiteBuilder builder=new MultiConfigSuiteBuilder(TestPlansGroupByComplexMaterializedViewSuite.class);
+  ByteArrayOutputStream capturer=new ByteArrayOutputStream();
+  PrintStream capturing=new PrintStream(capturer);
+  VoltProjectBuilder project1=new VoltProjectBuilder();
+  project1.setCompilerDebugPrintStream(capturing);
+  String literalSchema="CREATE TABLE F ( " + "F_PKEY INTEGER NOT NULL, " + "F_D1   INTEGER NOT NULL, "+ "F_D2   INTEGER NOT NULL, "+ "F_D3   INTEGER NOT NULL, "+ "F_VAL1 INTEGER NOT NULL, "+ "F_VAL2 INTEGER NOT NULL, "+ "F_VAL3 INTEGER NOT NULL, "+ "PRIMARY KEY (F_PKEY) ); "+ "CREATE VIEW V1 (V_D1_PKEY, V_D2_PKEY, V_D3_PKEY, V_F_PKEY, CNT, SUM_V1, SUM_V2, SUM_V3) "+ "AS SELECT F_D1, F_D2, F_D3, F_PKEY, COUNT(*) + 1, SUM(F_VAL1), SUM(F_VAL2), SUM(F_VAL3) "+ "FROM F  GROUP BY F_D1, F_D2, F_D3, F_PKEY;";
+  try {
+    project1.addLiteralSchema(literalSchema);
+  }
+ catch (  IOException e) {
+    assertFalse(true);
+  }
+  config=new LocalCluster("plansgroupby-onesite.jar",1,1,0,BackendTarget.NATIVE_EE_JNI);
+  boolean success=config.compile(project1);
+  assertFalse(success);
+  String captured=capturer.toString("UTF-8");
+  String[] lines=captured.split("\n");
+  assertTrue(foundLineMatching(lines,".*V1.*complex aggregation expressions not supported.*"));
+  VoltProjectBuilder project2=new VoltProjectBuilder();
+  project2.setCompilerDebugPrintStream(capturing);
+  literalSchema="CREATE TABLE F ( " + "F_PKEY INTEGER NOT NULL, " + "F_D1   INTEGER NOT NULL, "+ "F_D2   INTEGER NOT NULL, "+ "F_D3   INTEGER NOT NULL, "+ "F_VAL1 INTEGER NOT NULL, "+ "F_VAL2 INTEGER NOT NULL, "+ "F_VAL3 INTEGER NOT NULL, "+ "PRIMARY KEY (F_PKEY) ); "+ "CREATE VIEW V2 (V2_F_D1, V2_F_D2) "+ "AS SELECT ABS(F_D1), SUM(F_D2) FROM F  GROUP BY ABS(F_D1);";
+  try {
+    project2.addLiteralSchema(literalSchema);
+  }
+ catch (  IOException e) {
+    assertFalse(true);
+  }
+  config=new LocalCluster("plansgroupby-onesite.jar",1,1,0,BackendTarget.NATIVE_EE_JNI);
+  success=config.compile(project2);
+  assertFalse(success);
+  captured=capturer.toString("UTF-8");
+  lines=captured.split("\n");
+  assertTrue(foundLineMatching(lines,".*V2.*GROUP BY with complex expressions not supported.*"));
+  builder.addServerConfig(config);
+  return builder;
+}

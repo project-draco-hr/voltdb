@@ -10,21 +10,30 @@
     indexToColumnMap.put(index,col);
     index++;
   }
-  newAggSchema=new NodeSchema();
-  for (  ParsedColInfo col : displayColumns) {
-    AbstractExpression expr=col.expression.replaceWithTVE(aggTableIndexMap,indexToColumnMap);
-    SchemaColumn schema_col=new SchemaColumn(col.tableName,col.columnName,col.alias,expr);
-    newAggSchema.addColumn(schema_col);
-  }
-  for (  ParsedColInfo col : orderColumns) {
-    AbstractExpression expr=col.expression.replaceWithTVE(aggTableIndexMap,indexToColumnMap);
-    col.expression=expr;
-  }
-  if (hasComplexGroupby()) {
-    topGroupByExpressions=new HashMap<String,AbstractExpression>();
-    for (    ParsedColInfo col : groupByColumns) {
+  if (hasComplexAgg()) {
+    newAggSchema=new NodeSchema();
+    for (    ParsedColInfo col : displayColumns) {
       AbstractExpression expr=col.expression.replaceWithTVE(aggTableIndexMap,indexToColumnMap);
-      topGroupByExpressions.put(col.alias,expr);
+      SchemaColumn schema_col=new SchemaColumn(col.tableName,col.columnName,col.alias,expr);
+      newAggSchema.addColumn(schema_col);
     }
+  }
+  for (  ParsedColInfo orderCol : orderColumns) {
+    AbstractExpression expr=orderCol.expression.replaceWithTVE(aggTableIndexMap,indexToColumnMap);
+    if (hasComplexAgg()) {
+      orderCol.expression=expr;
+    }
+ else {
+      if (orderCol.expression.hasAnySubexpressionOfClass(AggregateExpression.class) || hasComplexGroupby()) {
+        orderCol.expression=expr;
+      }
+    }
+  }
+  groupByExpressions=new HashMap<String,AbstractExpression>();
+  for (  ParsedColInfo groupbyCol : groupByColumns) {
+    assert(aggTableIndexMap.get(groupbyCol.expression) != null);
+    assert(groupByExpressions.get(groupbyCol.alias) == null);
+    AbstractExpression expr=groupbyCol.expression.replaceWithTVE(aggTableIndexMap,indexToColumnMap);
+    groupByExpressions.put(groupbyCol.alias,expr);
   }
 }
