@@ -2,16 +2,13 @@
   Index index;
   Index primaryIndex;
   int[] primaryKey;
-  boolean isSeqScan;
   index=rangeIndex;
   primaryIndex=rangeTable.getPrimaryIndex();
   primaryKey=rangeTable.getPrimaryKey();
-  isSeqScan=indexCondition == null;
   if (rangeTable.tableType == TableBase.SYSTEM_SUBQUERY) {
     throw new HSQLParseException("VoltDB does not support subqueries, consider using views instead");
   }
   if (index == null)   index=primaryIndex;
-  if (index == primaryIndex && primaryKey.length == 0)   isSeqScan=true;
   VoltXMLElement scan=new VoltXMLElement("tablescan");
   scan.attributes.put("table",rangeTable.getName().name);
   if (tableAlias != null && !rangeTable.getName().name.equals(tableAlias)) {
@@ -38,23 +35,40 @@
       cond=indexEndCondition;
     }
   }
+  Expression joinConditions=null;
+  Expression whereConditions=null;
+  if (isJoinIndex) {
+    joinConditions=cond;
+  }
+ else {
+    whereConditions=cond;
+  }
   if (nonIndexJoinCondition != null) {
-    if (cond != null) {
-      cond=new ExpressionLogical(OpTypes.AND,cond,nonIndexJoinCondition);
+    if (joinConditions != null) {
+      joinConditions=new ExpressionLogical(OpTypes.AND,joinConditions,nonIndexJoinCondition);
     }
  else {
-      cond=nonIndexJoinCondition;
+      joinConditions=nonIndexJoinCondition;
     }
   }
-  if (cond != null) {
-    cond=cond.eliminateDuplicates(session);
+  if (joinConditions != null) {
+    joinConditions=joinConditions.eliminateDuplicates(session);
     VoltXMLElement joinCond=new VoltXMLElement("joincond");
-    joinCond.children.add(cond.voltGetXML(session));
+    joinCond.children.add(joinConditions.voltGetXML(session));
     scan.children.add(joinCond);
   }
   if (nonIndexWhereCondition != null) {
+    if (whereConditions != null) {
+      whereConditions=new ExpressionLogical(OpTypes.AND,whereConditions,nonIndexWhereCondition);
+    }
+ else {
+      whereConditions=nonIndexWhereCondition;
+    }
+  }
+  if (whereConditions != null) {
+    whereConditions=whereConditions.eliminateDuplicates(session);
     VoltXMLElement whereCond=new VoltXMLElement("wherecond");
-    whereCond.children.add(nonIndexWhereCondition.voltGetXML(session));
+    whereCond.children.add(whereConditions.voltGetXML(session));
     scan.children.add(whereCond);
   }
   return scan;
