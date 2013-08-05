@@ -1,0 +1,40 @@
+{
+  m_miniSite.start();
+  for (  long HSId : m_HSIds) {
+    if (HSId != m_HSId) {
+      m_deadTracker.startTracking(HSId);
+    }
+  }
+  m_nodeState.set(NodeState.RUN);
+  while (m_shouldContinue.get()) {
+    Message msg=m_recvQ.poll();
+synchronized (this) {
+      if (msg != null) {
+        if (msg.m_close) {
+          int failedHostId=CoreUtils.getHostIdFromHSId(msg.m_src);
+          long agreementHSId=CoreUtils.getHSIdFromHostAndSite(failedHostId,HostMessenger.AGREEMENT_SITE_ID);
+          m_miniSite.reportFault(agreementHSId);
+          m_deadTracker.stopTracking(msg.m_src);
+        }
+ else {
+          m_deadTracker.updateHSId(msg.m_src);
+          VoltMessage message=msg.m_msg;
+          if (message instanceof SiteFailureMessage && !(message instanceof SiteFailureForwardMessage)) {
+            SiteFailureMessage sfm=(SiteFailureMessage)message;
+            for (            FaultMessage fm : sfm.asFaultMessages()) {
+              m_miniSite.reportFault(fm);
+            }
+          }
+          m_mailbox.deliver(message);
+        }
+      }
+      Set<Long> deadHosts=m_deadTracker.checkTimeouts();
+      for (      long HSId : deadHosts) {
+        int failedHostId=CoreUtils.getHostIdFromHSId(HSId);
+        long agreementHSId=CoreUtils.getHSIdFromHostAndSite(failedHostId,HostMessenger.AGREEMENT_SITE_ID);
+        m_miniSite.reportFault(agreementHSId);
+        m_deadTracker.stopTracking(HSId);
+      }
+    }
+  }
+}
