@@ -1,9 +1,14 @@
 {
   PipeToFile ptf=null;
   CommandLine cmdln=(templateCmdLine.makeCopy());
+  if (this.m_additionalProcessEnv != null) {
+    for (    String name : this.m_additionalProcessEnv.keySet()) {
+      cmdln.setJavaProperty(name,this.m_additionalProcessEnv.get(name));
+    }
+  }
   try {
-    cmdln.internalPort(portGenerator.next());
-    cmdln.drAgentStartPort(portGenerator.next());
+    cmdln.internalPort(portGenerator.nextInternalPort());
+    cmdln.drAgentStartPort(portGenerator.nextReplicationPort());
     portGenerator.next();
     portGenerator.next();
     if (m_target == BackendTarget.NATIVE_EE_IPC) {
@@ -24,7 +29,7 @@
     if (m_debug) {
       cmdln.debugPort(portGenerator.next());
     }
-    cmdln.zkport(portGenerator.next());
+    cmdln.zkport(portGenerator.nextZkPort());
     if (startAction == StartAction.JOIN) {
       cmdln.startCommand(startAction);
       int portNoToRejoin=m_cmdLines.get(0).internalPort();
@@ -48,9 +53,8 @@
     }
     log.info(cmdLineFull);
     m_procBuilder.command().addAll(cmdlnList);
-    Process proc=m_procBuilder.start();
-    m_cluster.add(proc);
     String testoutputdir=cmdln.buildDir() + File.separator + "testoutput";
+    System.out.println("Process output will be redirected to: " + testoutputdir);
     File dir=new File(testoutputdir);
     if (dir.exists()) {
       assert(dir.isDirectory());
@@ -67,7 +71,11 @@
         }
       }
     }
-    ptf=new PipeToFile(testoutputdir + File.separator + "LC-"+ getFileName()+ "-"+ hostId+ "-"+ "idx"+ String.valueOf(perLocalClusterExtProcessIndex++)+ ".txt",proc.getInputStream(),startAction == StartAction.JOIN ? PipeToFile.m_rejoinToken : PipeToFile.m_initToken,false,proc);
+    Process proc=m_procBuilder.start();
+    m_cluster.add(proc);
+    String fileName=testoutputdir + File.separator + "LC-"+ getFileName()+ "-"+ hostId+ "-"+ "idx"+ String.valueOf(perLocalClusterExtProcessIndex++)+ ".txt";
+    System.out.println("Process output can be found in: " + fileName);
+    ptf=new PipeToFile(fileName,proc.getInputStream(),startAction == StartAction.JOIN ? PipeToFile.m_rejoinToken : PipeToFile.m_initToken,false,proc);
     m_pipes.add(ptf);
     ptf.setName("ClusterPipe:" + String.valueOf(hostId));
     ptf.start();
