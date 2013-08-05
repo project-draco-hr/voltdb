@@ -1,0 +1,62 @@
+{
+  ArrayList<AbstractExpression> whereClauses=new ArrayList<AbstractExpression>();
+  whereClauses.addAll(joinNode.m_whereInnerList);
+  whereClauses.addAll(joinNode.m_whereInnerOuterList);
+  assert(joinNode.m_rightNode != null);
+  AccessPath innerAccessPath=joinNode.m_rightNode.m_currentAccessPath;
+  boolean needInnerSendReceive=(!m_partitioning.wasSpecifiedAsSingle()) && (m_partitioning.getCountOfPartitionedTables() > 0) && (joinNode.m_joinType != JoinType.INNER)&& (!hasReplicatedResult(innerPlan))&& hasReplicatedResult(outerPlan);
+  boolean canHaveNLJ=true;
+  boolean canHaveNLIJ=true;
+  if (innerPlan instanceof IndexScanPlanNode) {
+    if (hasInnerOuterIndexExpression(joinNode.m_rightNode.m_table,innerAccessPath.indexExprs,innerAccessPath.initialExpr,innerAccessPath.endExprs)) {
+      canHaveNLJ=false;
+    }
+  }
+ else {
+    canHaveNLIJ=false;
+  }
+  if (needInnerSendReceive) {
+    canHaveNLIJ=false;
+  }
+  AbstractJoinPlanNode ajNode=null;
+  AbstractPlanNode retval=null;
+  if (canHaveNLJ) {
+    NestLoopPlanNode nljNode=new NestLoopPlanNode();
+    ArrayList<AbstractExpression> joinClauses=innerAccessPath.joinExprs;
+    if (innerPlan instanceof IndexScanPlanNode) {
+      List<AbstractExpression> innerExpr=filterSingleTVEExpressions(innerAccessPath.otherExprs);
+      joinClauses.addAll(innerAccessPath.otherExprs);
+      AbstractExpression indexScanPredicate=ExpressionUtil.combine(innerExpr);
+      ((IndexScanPlanNode)innerPlan).setPredicate(indexScanPredicate);
+    }
+    nljNode.setJoinPredicate(ExpressionUtil.combine(joinClauses));
+    nljNode.addAndLinkChild(outerPlan);
+    if (needInnerSendReceive) {
+      if (outerPlan.hasAnyNodeOfType(PlanNodeType.RECEIVE) || innerPlan.hasAnyNodeOfType(PlanNodeType.RECEIVE)) {
+        return null;
+      }
+      innerPlan=addSendReceivePair(innerPlan);
+    }
+    nljNode.addAndLinkChild(innerPlan);
+    nljNode.generateOutputSchema(m_db);
+    ajNode=nljNode;
+    retval=ajNode;
+  }
+ else   if (canHaveNLIJ) {
+    NestLoopIndexPlanNode nlijNode=new NestLoopIndexPlanNode();
+    IndexScanPlanNode innerNode=(IndexScanPlanNode)innerPlan;
+    innerNode.setPredicate(ExpressionUtil.combine(innerAccessPath.otherExprs));
+    nlijNode.addInlinePlanNode(innerPlan);
+    nlijNode.addAndLinkChild(outerPlan);
+    ajNode=nlijNode;
+  }
+ else {
+    m_recentErrorMsg="Unsupported special case of complex OUTER JOIN between replicated outer table and partitioned inner table.";
+    return null;
+  }
+  ajNode.setJoinType(joinNode.m_joinType);
+  ajNode.setPreJoinPredicate(ExpressionUtil.combine(joinNode.m_joinOuterList));
+  ajNode.setWherePredicate(ExpressionUtil.combine(whereClauses));
+  ajNode.generateOutputSchema(m_db);
+  return retval;
+}

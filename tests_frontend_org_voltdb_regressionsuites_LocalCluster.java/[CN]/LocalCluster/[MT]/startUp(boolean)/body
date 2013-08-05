@@ -1,3 +1,81 @@
 {
-  startUp(clearLocalDataDirectories,ReplicationRole.NONE);
+  assert(!m_running);
+  if (m_running) {
+    return;
+  }
+  VoltDB.setDefaultTimezone();
+  templateCmdLine.replicaMode(ReplicationRole.NONE);
+  boolean logtime=false;
+  long startTime=0;
+  printTiming(logtime,"Starting cluster at: " + System.currentTimeMillis());
+  if (clearLocalDataDirectories) {
+    try {
+      m_subRoots.clear();
+      VoltFile.deleteAllSubRoots();
+    }
+ catch (    IOException e) {
+      throw new RuntimeException(e);
+    }
+  }
+  portGenerator.reset();
+  templateCmdLine.leaderPort(portGenerator.next());
+  m_eeProcs.clear();
+  for (int ii=0; ii < m_hostCount; ii++) {
+    ArrayList<EEProcess> procs=new ArrayList<EEProcess>();
+    m_eeProcs.add(procs);
+    for (int zz=0; zz < m_siteCount; zz++) {
+      String logfile="LocalCluster_host_" + ii + "_site"+ zz+ ".log";
+      procs.add(new EEProcess(templateCmdLine.target(),logfile));
+    }
+  }
+  m_pipes.clear();
+  m_cluster.clear();
+  m_cmdLines.clear();
+  int oopStartIndex=0;
+  if (m_hasLocalServer) {
+    startLocalServer(clearLocalDataDirectories);
+    ++oopStartIndex;
+  }
+  for (int i=oopStartIndex; i < m_hostCount; i++) {
+    startOne(i,clearLocalDataDirectories,ReplicationRole.NONE,StartAction.CREATE);
+  }
+  printTiming(logtime,"Pre-witness: " + (System.currentTimeMillis() - startTime) + "ms");
+  boolean allReady=waitForAllReady();
+  printTiming(logtime,"Post-witness: " + (System.currentTimeMillis() - startTime) + "ms");
+  int downProcesses=0;
+  for (  Process proc : m_cluster) {
+    if ((proc != null) && (isProcessDead(proc))) {
+      downProcesses++;
+    }
+  }
+  if ((downProcesses > 0) || (allReady == false)) {
+    for (    Process proc : m_cluster) {
+      if (proc != null) {
+        try {
+          proc.destroy();
+        }
+ catch (        Exception e) {
+        }
+      }
+    }
+    if (downProcesses > 0) {
+      int expectedProcesses=m_hostCount - (m_hasLocalServer ? 1 : 0);
+      throw new RuntimeException(String.format("%d/%d external processes failed to start",downProcesses,expectedProcesses));
+    }
+    if (!allReady) {
+      throw new RuntimeException("One or more external processes failed to complete initialization.");
+    }
+  }
+  if (m_hasLocalServer) {
+    m_localServer.waitForInitialization();
+  }
+  printTiming(logtime,"DONE: " + (System.currentTimeMillis() - startTime) + " ms");
+  m_running=true;
+  if (m_failureState != FailureState.ALL_RUNNING) {
+    killOne();
+  }
+  if (m_failureState == FailureState.ONE_RECOVERING) {
+    int hostId=m_hasLocalServer ? 1 : 0;
+    recoverOne(logtime,startTime,hostId);
+  }
 }
