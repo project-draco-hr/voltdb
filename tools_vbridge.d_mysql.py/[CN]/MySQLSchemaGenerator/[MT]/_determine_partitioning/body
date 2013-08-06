@@ -1,22 +1,31 @@
 def _determine_partitioning(self):
-    max_row_count = 0
-    biggest_table = None
+    partition_table = None
+    if self.partition_table_name:
+        for table in self.iter_tables():
+            if (table.name == self.partition_table_name):
+                partition_table = table
+                reason_chosen = ('%s was explicitly specified for partitioning.' % table.name)
+                break
+        else:
+            utility.abort(('Partitioning table "%s" is not in the schema.' % self.partition_table_name))
+    else:
+        max_row_count = 0
+        for table in self.iter_tables():
+            if (table.row_count > max_row_count):
+                max_row_count = table.row_count
+                partition_table = table
+                reason_chosen = ('%s has the largest row count of %d.' % (table.name, max_row_count))
+    if (not partition_table):
+        utility.abort('Unable to generate partitioning without one of the following:', ('- A database populated with representative data.', '- A partitioning table specified on the command line.'))
+    pkey_column_name = partition_table.primary_key_columns[0].name
+    biggest_ptable = PartitionedTable(partition_table, pkey_column_name, reason_chosen)
+    self.partitioned_tables[partition_table.name] = biggest_ptable
     for table in self.iter_tables():
-        if (table.row_count > max_row_count):
-            max_row_count = table.row_count
-            biggest_table = table
-    if (not biggest_table):
-        utility.abort('No table has rows. The database must be populated')
-    pkey_column_name = biggest_table.primary_key_columns[0].name
-    reason_chosen = ('%s has the largest row count of %d.' % (biggest_table.name, max_row_count))
-    biggest_ptable = PartitionedTable(biggest_table, pkey_column_name, reason_chosen)
-    self.partitioned_tables[biggest_table.name] = biggest_ptable
-    for table in self.iter_tables():
-        if (table.name == biggest_table.name):
+        if (table.name == partition_table.name):
             continue
         for fk_name in table.schema.foreign_keys:
             fk = table.schema.foreign_keys[fk_name]
-            if (fk.referenced_table_name != biggest_table.name):
+            if (fk.referenced_table_name != partition_table.name):
                 continue
             for icolumn in range(len(fk.columns)):
                 if (fk.referenced_columns[icolumn] == biggest_ptable.pkey_column_name):
