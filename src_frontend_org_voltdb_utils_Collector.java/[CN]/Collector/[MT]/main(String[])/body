@@ -4,12 +4,12 @@
   m_host=args[2];
   m_username=args[3];
   m_password=args[4];
-  m_noprompt=Boolean.parseBoolean(args[5]);
-  m_dryrun=Boolean.parseBoolean(args[6]);
-  m_noheapdump=Boolean.parseBoolean(args[7]);
+  m_noPrompt=Boolean.parseBoolean(args[5]);
+  m_dryRun=Boolean.parseBoolean(args[6]);
+  m_noHeapDump=Boolean.parseBoolean(args[7]);
   if (args.length > 8) {
-    m_calledfromvem=Boolean.parseBoolean(args[8]);
-    m_fileinfoonly=Boolean.parseBoolean(args[9]);
+    m_calledFromVEM=Boolean.parseBoolean(args[8]);
+    m_fileInfoOnly=Boolean.parseBoolean(args[9]);
   }
   File voltDbRoot=new File(m_voltDbRootPath);
   if (!voltDbRoot.exists()) {
@@ -19,8 +19,8 @@
   locatePaths(m_voltDbRootPath);
   JSONObject jsonObject=parseJSONFile(m_configInfoPath);
   parseJSONObject(jsonObject);
-  List<String> collectionFilesList=listCollection(m_noheapdump);
-  if (m_dryrun) {
+  List<String> collectionFilesList=listCollection(m_noHeapDump);
+  if (m_dryRun) {
     System.out.println("List of the files to be collected:");
     for (    String path : collectionFilesList) {
       System.out.println("  " + path);
@@ -28,7 +28,7 @@
     System.out.println("[dry-run] A tgz file containing above files would be generated in current dir");
     System.out.println("          Use --upload option to enable uploading via SFTP");
   }
- else   if (m_fileinfoonly) {
+ else   if (m_fileInfoOnly) {
     String collectionFilesListPath=m_voltDbRootPath + File.separator + m_uniqueid;
     byte jsonBytes[]=null;
     try {
@@ -39,7 +39,7 @@
       for (      String path : collectionFilesList) {
         stringer.object();
         stringer.key("filename").value(path);
-        if (path.startsWith("sardata") || path.startsWith("dmesgdata")) {
+        if (Arrays.asList(cmdFilenames).contains(path.split(" ")[0])) {
           stringer.key("size").value(0);
         }
  else {
@@ -55,17 +55,25 @@
  catch (    JSONException e) {
       Throwables.propagate(e);
     }
+    FileOutputStream fos=null;
     try {
-      FileOutputStream fos=new FileOutputStream(collectionFilesListPath);
+      fos=new FileOutputStream(collectionFilesListPath);
       fos.write(jsonBytes);
       fos.getFD().sync();
-      fos.close();
     }
  catch (    IOException e) {
       Throwables.propagate(e);
     }
+ finally {
+      try {
+        fos.close();
+      }
+ catch (      IOException e) {
+        Throwables.propagate(e);
+      }
+    }
   }
  else {
-    generateCollection(collectionFilesList,m_calledfromvem);
+    generateCollection(collectionFilesList,m_calledFromVEM);
   }
 }
