@@ -1,0 +1,13 @@
+{
+  Maker<SiteFailureMessage> s1f=a(SiteFailureMessage,with(sfmSurvivors,Longs.asList(0,2,3)),with(sfmFailures,sfmFailed(1)),with(sfmSafeTxns,sfmSafe(0,10,1,11,2,22,3,33)));
+  Maker<SiteFailureMessage> s0f=a(SiteFailureMessage,with(sfmSurvivors,Longs.asList(1,2,3)),with(sfmFailures,sfmFailed(0)),with(sfmSafeTxns,sfmSafe(0,10,1,11,2,22,3,33)));
+  Maker<SiteFailureMessage> s23f=a(SiteFailureMessage,with(sfmSurvivors,Longs.asList(0,1,2,3)),with(sfmFailures,sfmFailed(0,1)),with(sfmSafeTxns,sfmSafe(0,10,1,11,2,22,3,33)));
+  Maker<SiteFailureForwardMessage> uf=a(FailureSiteForwardMessage);
+  when(aide.getNewestSafeTransactionForInitiator(0L)).thenReturn(10L);
+  when(aide.getNewestSafeTransactionForInitiator(1L)).thenReturn(11L);
+  when(mbox.recvBlocking(any(Subject[].class),eq(5L))).thenReturn(make(s23f.but(with(sfmSource,2L),with(sfmFailures,sfmFailed(0))))).thenReturn(new FaultMessage(2L,0L,ImmutableSet.of(1L,2L,3L))).thenReturn(make(s1f.but(with(sfmSource,0L)))).thenReturn(make(s23f.but(with(sfmSource,2L)))).thenReturn(make(s23f.but(with(sfmSource,3L)))).thenReturn(make(uf.but(with(fsfmSource,2L),with(fsfmMsg,s0f)))).thenReturn(make(uf.but(with(fsfmSource,3L),with(fsfmMsg,s0f))));
+  Map<Long,Long> decision=arbiter.reconfigureOnFault(hsids,new FaultMessage(0,1));
+  verify(mbox,times(0)).deliverFront(any(VoltMessage.class));
+  verify(mbox,times(2)).send(any(long[].class),argThat(siteFailureIs(sfmFailed(1),sfmSurvived(0,2,3))));
+  assertEquals(decision,ImmutableMap.<Long,Long>of(1L,11L));
+}
