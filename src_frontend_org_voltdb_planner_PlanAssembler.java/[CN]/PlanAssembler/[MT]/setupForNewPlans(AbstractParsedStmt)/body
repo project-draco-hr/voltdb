@@ -1,39 +1,17 @@
 {
-  m_insertPlanWasGenerated=false;
-  int countOfPartitionedTables=0;
-  Map<String,String> partitionColumnByTable=new HashMap<String,String>();
-  for (  Table table : parsedStmt.tableList) {
-    if (table.getIsreplicated()) {
-      continue;
-    }
-    ++countOfPartitionedTables;
-    String colName=null;
-    Column partitionCol=table.getPartitioncolumn();
-    if (partitionCol != null) {
-      colName=partitionCol.getTypeName();
-    }
-    String partitionedTable=table.getTypeName();
-    partitionColumnByTable.put(partitionedTable,colName);
-  }
-  m_partitioning.setPartitionedTables(partitionColumnByTable,countOfPartitionedTables);
-  if ((m_partitioning.wasSpecifiedAsSingle() == false) && m_partitioning.getCountOfPartitionedTables() > 0) {
-    m_partitioning.analyzeForMultiPartitionAccess(parsedStmt.tableList,parsedStmt.valueEquivalence);
-    int multiPartitionScanCount=m_partitioning.getCountOfIndependentlyPartitionedTables();
-    if (multiPartitionScanCount > 1) {
-      String msg="Join or union of multiple partitioned tables has insufficient join criteria.";
-      throw new PlanningErrorException(msg);
-    }
-  }
+  m_bestAndOnlyPlanWasGenerated=false;
+  m_partitioning.analyzeTablePartitioning(parsedStmt.tableList);
   if (parsedStmt instanceof ParsedUnionStmt) {
     m_parsedUnion=(ParsedUnionStmt)parsedStmt;
-    subAssembler=new UnionSubPlanAssembler(m_catalogDb,parsedStmt,m_partitioning);
+    return;
   }
- else   if (parsedStmt instanceof ParsedSelectStmt) {
+  if (parsedStmt instanceof ParsedSelectStmt) {
     if (tableListIncludesExportOnly(parsedStmt.tableList)) {
       throw new RuntimeException("Illegal to read an export table.");
     }
     m_parsedSelect=(ParsedSelectStmt)parsedStmt;
     subAssembler=new SelectSubPlanAssembler(m_catalogDb,parsedStmt,m_partitioning);
+    return;
   }
  else {
     if (tableListIncludesView(parsedStmt.tableList)) {
@@ -68,6 +46,10 @@
     }
  else {
       throw new RuntimeException("Unknown subclass of AbstractParsedStmt.");
+    }
+    if (!m_partitioning.wasSpecifiedAsSingle()) {
+      HashMap<AbstractExpression,Set<AbstractExpression>> valueEquivalence=parsedStmt.analyzeValueEquivalence();
+      m_partitioning.analyzeForMultiPartitionAccess(parsedStmt.tableList,valueEquivalence);
     }
     subAssembler=new WriterSubPlanAssembler(m_catalogDb,parsedStmt,m_partitioning);
   }

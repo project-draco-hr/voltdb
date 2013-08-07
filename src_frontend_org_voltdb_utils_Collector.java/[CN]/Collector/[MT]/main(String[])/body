@@ -1,19 +1,79 @@
 {
   m_voltDbRootPath=args[0];
-  m_nonce=args[1];
-  m_skipheapdump=Boolean.parseBoolean(args[2]);
-  m_upload=Boolean.parseBoolean(args[3]);
+  m_uniqueid=args[1];
+  m_host=args[2];
+  m_username=args[3];
+  m_password=args[4];
+  m_noPrompt=Boolean.parseBoolean(args[5]);
+  m_dryRun=Boolean.parseBoolean(args[6]);
+  m_noHeapDump=Boolean.parseBoolean(args[7]);
+  if (args.length > 8) {
+    m_calledFromVEM=Boolean.parseBoolean(args[8]);
+    m_fileInfoOnly=Boolean.parseBoolean(args[9]);
+  }
   File voltDbRoot=new File(m_voltDbRootPath);
   if (!voltDbRoot.exists()) {
     m_log.error("voltdbroot path '" + m_voltDbRootPath + "' does not exist.");
     System.exit(-1);
   }
-  TimestampType ts=new TimestampType(new java.util.Date());
-  m_configInfoPath=m_voltDbRootPath + File.separator + "config_log"+ File.separator+ "config.json";
-  m_catalogJarPath=m_voltDbRootPath + File.separator + "config_log"+ File.separator+ "catalog.jar";
-  m_deploymentPath=m_voltDbRootPath + File.separator + "config_log"+ File.separator+ "deployment.xml";
-  m_outputTgzPath=m_voltDbRootPath + File.separator + m_nonce+ ts.toString().replace(' ','-')+ ".tgz";
+  locatePaths(m_voltDbRootPath);
   JSONObject jsonObject=parseJSONFile(m_configInfoPath);
   parseJSONObject(jsonObject);
-  generateTgzFile(m_skipheapdump,m_upload);
+  List<String> collectionFilesList=listCollection(m_noHeapDump);
+  if (m_dryRun) {
+    System.out.println("List of the files to be collected:");
+    for (    String path : collectionFilesList) {
+      System.out.println("  " + path);
+    }
+    System.out.println("[dry-run] A tgz file containing above files would be generated in current dir");
+    System.out.println("          Use --upload option to enable uploading via SFTP");
+  }
+ else   if (m_fileInfoOnly) {
+    String collectionFilesListPath=m_voltDbRootPath + File.separator + m_uniqueid;
+    byte jsonBytes[]=null;
+    try {
+      JSONStringer stringer=new JSONStringer();
+      stringer.object();
+      stringer.key("server").value(m_uniqueid);
+      stringer.key("files").array();
+      for (      String path : collectionFilesList) {
+        stringer.object();
+        stringer.key("filename").value(path);
+        if (Arrays.asList(cmdFilenames).contains(path.split(" ")[0])) {
+          stringer.key("size").value(0);
+        }
+ else {
+          stringer.key("size").value(new File(path).length());
+        }
+        stringer.endObject();
+      }
+      stringer.endArray();
+      stringer.endObject();
+      JSONObject jsObj=new JSONObject(stringer.toString());
+      jsonBytes=jsObj.toString(4).getBytes(Charsets.UTF_8);
+    }
+ catch (    JSONException e) {
+      Throwables.propagate(e);
+    }
+    FileOutputStream fos=null;
+    try {
+      fos=new FileOutputStream(collectionFilesListPath);
+      fos.write(jsonBytes);
+      fos.getFD().sync();
+    }
+ catch (    IOException e) {
+      Throwables.propagate(e);
+    }
+ finally {
+      try {
+        fos.close();
+      }
+ catch (      IOException e) {
+        Throwables.propagate(e);
+      }
+    }
+  }
+ else {
+    generateCollection(collectionFilesList,m_calledFromVEM);
+  }
 }
