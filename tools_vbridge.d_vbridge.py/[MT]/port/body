@@ -6,14 +6,40 @@ def port(runner):
     source_type = config.source_type.lower()
     if (source_type != 'mysql'):
         utility.abort(('Unsupported source type "%s".' % source_type), 'Only "mysql" is valid.')
-    if (os.path.exists(config.ddl_file) and (not runner.opts.overwrite)):
-        utility.abort(('"%s" exists, delete the file or use the -O or --overwrite options.' % config.ddl_file))
+    output_files = [config.ddl_file, config.deployment_file, config.run_file]
+    overwrites = [p for p in output_files if os.path.exists(p)]
+    if (overwrites and (not runner.opts.overwrite)):
+        utility.abort('Output files exist, delete or use the -O or --overwrite options.', overwrites)
     generated_files = []
+    utility.info(('Generating "%s"...' % config.ddl_file))
     output_stream = utility.File(config.ddl_file, 'w')
     output_stream.open()
     try:
         mysqlutil.generate_schema(config.connection_string, config.partition_table, output_stream)
-        generated_files.append(output_stream.path)
+        generated_files.append(config.ddl_file)
     finally:
         output_stream.close()
+    utility.info(('Generating "%s"...' % config.deployment_file))
+    src_path = runner.find_resource('template/deployment.xml', required=True)
+    try:
+        shutil.copy(src_path, config.deployment_file)
+        generated_files.append(config.deployment_file)
+    except IOError as e:
+        utility.abort(('Failed to copy "%s" to "%s".' % (src_path, config.deployment_file)))
+    utility.info(('Generating "%s"...' % config.run_file))
+    src_path = runner.find_resource('template/run.sh', required=True)
+    src_file = utility.File(src_path)
+    src_file.open()
+    try:
+        template = string.Template(src_file.read())
+        s = template.safe_substitute(appname=config.package)
+    finally:
+        src_file.close()
+    tgt_file = utility.File(config.run_file, 'w')
+    tgt_file.open()
+    try:
+        tgt_file.write(s)
+        generated_files.append(config.run_file)
+    finally:
+        tgt_file.close()
     utility.info('Project files were successfully generated.', 'A thorough examination of their contents is recommended.', generated_files)
