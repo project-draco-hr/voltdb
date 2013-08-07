@@ -1,20 +1,23 @@
 {
   boolean retval=false;
-  if (m_currentReads.isEmpty() && m_currentWrites.isEmpty()) {
-    if (!m_backlog.isEmpty() || !m_readBacklog.isEmpty()) {
+  if (!m_backlog.isEmpty()) {
+    if (m_currentReads.isEmpty()) {
       TransactionTask task=m_backlog.pollFirst();
-      if (task == null) {
-        task=m_readBacklog.pollFirst();
-      }
-      if (task.getTransactionState().isReadOnly()) {
-        m_currentReads.put(task.getTxnId(),task);
-      }
- else {
-        assert(m_currentWrites.isEmpty());
-        m_currentWrites.put(task.getTxnId(),task);
-      }
+      assert(!task.getTransactionState().isReadOnly());
+      m_currentWrites.put(task.getTxnId(),task);
       taskQueueOffer(task);
       retval=true;
+    }
+  }
+ else   if (!m_readBacklog.isEmpty()) {
+    if (m_currentWrites.isEmpty()) {
+      if (m_sitePool.canAcceptWork()) {
+        TransactionTask task=m_readBacklog.pollFirst();
+        assert(task.getTransactionState().isReadOnly());
+        m_currentReads.put(task.getTxnId(),task);
+        taskQueueOffer(task);
+        retval=true;
+      }
     }
   }
   return retval;
