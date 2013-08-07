@@ -1,0 +1,46 @@
+def get_config(runner, reset=False):
+    '\n    Utility function to look for and validate a set of configuration properties.\n    '
+
+
+    class O(object):
+        pass
+    o = O()
+    missing = []
+    defaults = []
+    for name in sorted(G.config_properties.keys()):
+        config_property = G.config_properties[name]
+        key = config_key(name)
+        value = runner.config.get(key)
+        if ((not value) or reset):
+            if (config_property.default is None):
+                missing.append(name)
+                runner.config.set_permanent(key, '')
+            else:
+                defaults.append(name)
+                value = G.config_properties[name].default
+                runner.config.set_permanent(key, value)
+        else:
+            setattr(o, name, value)
+    samples = []
+    if ((not reset) and missing):
+        if (len(missing) > 1):
+            plural = 's'
+        else:
+            plural = ''
+        print ('\nThe following setting%s must be configured before proceeding:\n' % plural)
+        table = [(name, G.config_properties[name].description) for name in missing]
+        print utility.format_table(table, headings=['PROPERTY', 'DESCRIPTION'], indent=3, separator='  ')
+        samples.extend(missing)
+        o = None
+    if defaults:
+        if (len(defaults) > 1):
+            plural = 's were'
+        else:
+            plural = ' was'
+        print ('\nThe following setting default%s applied and saved permanently:\n' % plural)
+        print utility.format_table([(name, G.config_properties[name].default) for name in defaults], indent=3, separator='  ', headings=['PROPERTY', 'VALUE'])
+    if reset:
+        o = None
+    elif (o is None):
+        print ('\n%s' % config_help(samples=samples))
+    return o

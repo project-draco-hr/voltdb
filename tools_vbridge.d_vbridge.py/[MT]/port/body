@@ -1,0 +1,19 @@
+@VOLT.Command(description='Port a live database to a starter VoltDB project.', description2='\nRun from a project directory where new files can be generated.\nUse "config" sub-commands to set and get configuration properties.\n', options=(VOLT.BooleanOption('-O', '--overwrite', 'overwrite', 'overwrite existing files', default=False),))
+def port(runner):
+    config = get_config(runner)
+    if (config is None):
+        sys.exit(1)
+    source_type = config.source_type.lower()
+    if (source_type != 'mysql'):
+        utility.abort(('Unsupported source type "%s".' % source_type), 'Only "mysql" is valid.')
+    if (os.path.exists(config.ddl_file) and (not runner.opts.overwrite)):
+        utility.abort(('"%s" exists, delete the file or use the -O or --overwrite options.' % config.ddl_file))
+    generated_files = []
+    output_stream = utility.File(config.ddl_file, 'w')
+    output_stream.open()
+    try:
+        mysqlutil.generate_schema(config.connection_string, config.partition_table, output_stream)
+        generated_files.append(output_stream.path)
+    finally:
+        output_stream.close()
+    utility.info('Project files were successfully generated.', 'A thorough examination of their contents is recommended.', generated_files)
