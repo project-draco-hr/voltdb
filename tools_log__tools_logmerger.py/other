@@ -7,6 +7,8 @@ import re
 import sys
 import tarfile
 import time
+import gzip
+import tempfile
 if (__name__ == '__main__'):
     parser = OptionParser(usage='usage: %prog [options] FILE...')
     parser.add_option('-o', '--output', dest='outputfile', help='write to ')
@@ -25,17 +27,34 @@ if (__name__ == '__main__'):
         if ((len(tarfiles) >= 1) and (len(args) > 1)):
             parser.error('There can only specify 1 apprunner archive')
     if ((len(args) == 1) and tarfile.is_tarfile(args[0])):
-        try:
-            tar = ApprunnerTarFile(args[0])
-        except IOError as e:
-            sys.exit(e)
-        serverlogs = tar.get_serverlogs()
-        for f in serverlogs:
-            offsets[f] = int(tar.get_server_tzoffset())
-        otherlogs = tar.get_otherlogs()
-        for f in otherlogs:
-            offsets[f] = 0
-        files = map(tar.tar.extractfile, (serverlogs + otherlogs))
+        if re.match('.*\\d{4}-\\d{2}-\\d{2}-\\d{2}:\\d{2}:\\d{2}\\.\\d{6}\\.tgz', f):
+            try:
+                tar = LogfilePackage(args[0])
+            except IOError as e:
+                sys.exit(e)
+            logs = tar.get_logs()
+            for f in logs:
+                offsets[f] = int(tar.get_server_tzoffset())
+            syslogs = tar.get_syslogs()
+            for f in syslogs:
+                offsets[f] = 0
+            tar.get_file_creation_events()
+            files = [(gzip.GzipFile(fileobj=f) if f.name.endswith('.gz') else f) for f in map(tar.tar.extractfile, (logs + syslogs))]
+            if (os.path.getsize(tar.f.name) > 0):
+                files += [tar.f]
+                offsets[tar.f.name] = 0
+        else:
+            try:
+                tar = ApprunnerTarFile(args[0])
+            except IOError as e:
+                sys.exit(e)
+            serverlogs = tar.get_serverlogs()
+            for f in serverlogs:
+                offsets[f] = int(tar.get_server_tzoffset())
+            otherlogs = tar.get_otherlogs()
+            for f in otherlogs:
+                offsets[f] = 0
+            files = map(tar.tar.extractfile, (serverlogs + otherlogs))
     else:
         try:
             files = map(open, args)

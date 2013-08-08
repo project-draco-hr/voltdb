@@ -1,7 +1,8 @@
 def decorated_log_split(f, offset, keyfunc, fnamedict={}):
     ' Generator that splits on timestamps. This returns\n    (millis-since-epoch, {"datetime":<original timestamp> ,\n                          "newdatetime":<offset timestamp>,\n                          "message": <log message>\n                          "filename":<filename>})\n    '
     ts_format = '\\d{0,4}-?\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}:\\d{2},?\\d{0,3}'
-    log_re = re.compile(('(?P<datetime>%s)\n                             \\s+\n                             (?P<message>.*)\n                             ' % ts_format), re.VERBOSE)
+    ts_format_syslog = '\\w{3}\\s+\\d{1,2}\\s+\\d{2}:\\d{2}:\\d{2}'
+    log_re = re.compile(('(?P<datetime>%s|%s)\n                             \\s+\n                             (?P<message>.*)\n                             ' % (ts_format, ts_format_syslog)), re.VERBOSE)
     new_epoch_ms = None
     if hasattr(f, 'name'):
         fname = os.path.basename(f.name)
@@ -15,6 +16,9 @@ def decorated_log_split(f, offset, keyfunc, fnamedict={}):
                 yield (keyfunc(currentdict['newdatetime']), currentdict)
             currentdict = copy.deepcopy(m.groupdict())
             currentdict['filename'] = fname
+            if re.match(ts_format_syslog, currentdict['datetime']):
+                ts = time.strptime(((str(datetime.now().year) + ' ') + currentdict['datetime']), '%Y %b %d %H:%M:%S')
+                currentdict['datetime'] = time.strftime('%Y-%m-%d %H:%M:%S', ts)
             if (currentdict['datetime'][4] != '-'):
                 currentdict['datetime'] = ((str(datetime.now().year) + '-') + currentdict['datetime'])
             new_epoch_ms = (keyfunc(currentdict['datetime']) + offset)
