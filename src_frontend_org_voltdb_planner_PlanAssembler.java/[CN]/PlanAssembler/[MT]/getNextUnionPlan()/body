@@ -1,13 +1,14 @@
 {
-  AbstractPlanNode subUnionRoot=subAssembler.nextPlan();
-  if (subUnionRoot == null) {
+  if (m_bestAndOnlyPlanWasGenerated) {
     return null;
   }
+  m_bestAndOnlyPlanWasGenerated=true;
+  AbstractPlanNode subUnionRoot=new UnionPlanNode(m_parsedUnion.m_unionType);
   m_recentErrorMsg=null;
   ArrayList<CompiledPlan> childrenPlans=new ArrayList<CompiledPlan>();
   boolean orderIsDeterministic=true;
   boolean contentIsDeterministic=true;
-  ArrayList<PartitioningForStatement> partitioningList=new ArrayList<PartitioningForStatement>();
+  PartitioningForStatement commonPartitioning=null;
   int planId=0;
   for (  AbstractParsedStmt parsedChildStmt : m_parsedUnion.m_children) {
     PartitioningForStatement partitioning=(PartitioningForStatement)m_partitioning.clone();
@@ -24,8 +25,35 @@
     childrenPlans.add(bestChildPlan);
     orderIsDeterministic=orderIsDeterministic && bestChildPlan.isOrderDeterministic();
     contentIsDeterministic=contentIsDeterministic && bestChildPlan.isContentDeterministic();
-    partitioningList.add(partitioning);
     planId=processor.m_planId;
+    if (commonPartitioning == null) {
+      commonPartitioning=partitioning;
+      continue;
+    }
+    AbstractExpression statementPartitionExpression=partitioning.singlePartitioningExpression();
+    if (commonPartitioning.requiresTwoFragments()) {
+      if (partitioning.requiresTwoFragments() || statementPartitionExpression != null) {
+        throw new PlanningErrorException("Statements are too complex in set operation using multiple partitioned tables.");
+      }
+      continue;
+    }
+    AbstractExpression commonPartitionExpression=commonPartitioning.singlePartitioningExpression();
+    if (commonPartitionExpression == null) {
+      commonPartitioning=partitioning;
+      continue;
+    }
+    if (partitioning.requiresTwoFragments()) {
+      throw new PlanningErrorException("Statements are too complex in set operation using multiple partitioned tables.");
+    }
+    if (statementPartitionExpression == null) {
+      continue;
+    }
+    if (!commonPartitionExpression.equals(statementPartitionExpression)) {
+      throw new PlanningErrorException("Statements use conflicting partitioned table filters in set operation.");
+    }
+  }
+  if (commonPartitioning != null) {
+    m_partitioning=(PartitioningForStatement)commonPartitioning.clone();
   }
   m_planSelector.m_planId=planId;
   for (  CompiledPlan selectPlan : childrenPlans) {
