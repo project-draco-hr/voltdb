@@ -1,0 +1,34 @@
+{
+  try {
+    String simpleSchema="CREATE TABLE foo (\n" + "    bar BIGINT NOT NULL,\n" + "    PRIMARY KEY (bar)\n"+ ");";
+    File schemaFile=VoltProjectBuilder.writeStringToTempFile(simpleSchema);
+    String schemaPath=schemaFile.getPath();
+    schemaPath=URLEncoder.encode(schemaPath,"UTF-8");
+    VoltProjectBuilder builder=new VoltProjectBuilder();
+    builder.addSchema(schemaPath);
+    builder.addPartitionInfo("foo","bar");
+    builder.addProcedures(DelayProc.class);
+    builder.setHTTPDPort(8095);
+    boolean success=builder.compile(Configuration.getPathToCatalogForTest("json.jar"));
+    assertTrue(success);
+    VoltDB.Configuration config=new VoltDB.Configuration();
+    config.m_pathToCatalog=config.setPathToCatalogForTest("json.jar");
+    config.m_pathToDeployment=builder.getPathToDeployment();
+    server=new ServerThread(config);
+    server.start();
+    server.waitForInitialization();
+    ParameterSet pset=ParameterSet.emptyParameterSet();
+    String responseJSON=callProcOverJSON("@AdHoc",pset,null,null,false);
+    assertTrue(responseJSON.contains("Adhoc system procedure requires exactly one or two parameters"));
+    pset=ParameterSet.fromArrayNoCopy("select * from blah","foo","bar");
+    responseJSON=callProcOverJSON("@AdHoc",pset,null,null,false);
+    assertTrue(responseJSON.contains("Adhoc system procedure requires exactly one or two parameters"));
+  }
+  finally {
+    if (server != null) {
+      server.shutdown();
+      server.join();
+    }
+    server=null;
+  }
+}
