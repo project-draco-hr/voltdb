@@ -52,7 +52,6 @@
   try {
     int columnCnt=0;
     ProcedureCallback cb=null;
-    boolean lastOK=true;
     if (!cfg.check) {
       VoltTable procInfo=null;
       boolean isProcExist=false;
@@ -94,12 +93,14 @@
 class CSVFileReader implements Runnable {
       public CSVConfig config;
       public ICsvListReader listReader;
-      public BlockingQueue<List<String>> lineq;
+      public BlockingQueue<String[]> lineq;
       public boolean done=false;
       long parsingTimeSt=System.nanoTime();
       long parsingTimeEnd=System.nanoTime();
+      int columnCnt=0;
       @Override public void run(){
         List<String> lineList=new ArrayList<String>();
+        long ecnt=0;
         while ((config.limitrows-- > 0)) {
           try {
             if (listReader.getLineNumber() == 0) {
@@ -111,14 +112,27 @@ class CSVFileReader implements Runnable {
             long st=System.nanoTime();
             lineList=listReader.read();
             long end=System.nanoTime();
+            parsingTimeEnd+=(end - st);
             if (lineList == null) {
               if (totalLineCount.get() > listReader.getLineNumber()) {
                 totalLineCount.set(listReader.getLineNumber());
               }
               break;
             }
-            lineq.put(lineList);
-            parsingTimeEnd+=(end - st);
+            String lineCheckResult;
+            String[] correctedLine=lineList.toArray(new String[0]);
+            if (!config.check) {
+              if ((lineCheckResult=checkparams_trimspace(correctedLine,columnCnt)) != null) {
+                String[] info={lineList.toString(),lineCheckResult};
+                synchronizeErrorInfoForFuture(totalLineCount.get() + 1,info);
+                if (++ecnt > config.maxerrors) {
+                  break;
+                }
+                totalRowCount.getAndIncrement();
+                continue;
+              }
+            }
+            lineq.put(correctedLine);
             totalRowCount.getAndIncrement();
           }
  catch (          SuperCsvException e) {
@@ -131,6 +145,7 @@ class CSVFileReader implements Runnable {
             }
 catch (            InterruptedException ex) {
             }
+            break;
           }
 catch (          Throwable ex) {
             totalRowCount.getAndIncrement();
@@ -156,8 +171,9 @@ catch (            InterruptedException ex2) {
       }
     }
     CSVFileReader rdr=new CSVFileReader();
-    BlockingQueue<List<String>> lineq=new ArrayBlockingQueue<List<String>>(20000);
+    BlockingQueue<String[]> lineq=new ArrayBlockingQueue<String[]>(20000);
     rdr.config=config;
+    rdr.columnCnt=columnCnt;
     rdr.lineq=lineq;
     rdr.listReader=listReader;
     Thread th=new Thread(rdr);
@@ -169,7 +185,7 @@ catch (            InterruptedException ex2) {
       if (rdr.done && lineq.size() == 0) {
         break;
       }
-      List<String> lineList=lineq.poll(50,TimeUnit.MILLISECONDS);
+      String[] lineList=lineq.poll(50,TimeUnit.MILLISECONDS);
       if (lineList == null) {
         if (!rdr.done) {
           m_log.info("Waited no data to pull reader is slower than processor.");
@@ -177,31 +193,18 @@ catch (            InterruptedException ex2) {
         continue;
       }
       pcnt++;
-      boolean queued=false;
-      while (queued == false) {
-        String[] correctedLine=lineList.toArray(new String[0]);
-        if (!config.check) {
-          cb=new MyCallback(pcnt,config,lineList);
-          String lineCheckResult;
-          if ((lineCheckResult=checkparams_trimspace(correctedLine,columnCnt)) != null) {
-            String[] info={lineList.toString(),lineCheckResult};
-            synchronizeErrorInfo(pcnt,info);
-            break;
-          }
-          if (config.ping) {
-            queued=csvClient.callProcedure(cb,"@Ping",(Object[])correctedLine);
-          }
- else           if (config.dnp) {
-            queued=csvClient.callProcedure(cb,"DoNothingProcedure",(Object[])correctedLine);
-          }
- else {
-            queued=csvClient.callProcedure(cb,insertProcedure,(Object[])correctedLine);
-          }
-          outCount.incrementAndGet();
+      if (!config.check) {
+        cb=new MyCallback(pcnt,config,lineList);
+        if (config.ping) {
+          csvClient.callProcedure(cb,"@Ping",(Object[])lineList);
+        }
+ else         if (config.dnp) {
+          csvClient.callProcedure(cb,"DoNothingProcedure",(Object[])lineList);
         }
  else {
-          queued=true;
+          csvClient.callProcedure(cb,insertProcedure,(Object[])lineList);
         }
+        outCount.incrementAndGet();
       }
     }
     if (csvClient != null) {
