@@ -1,0 +1,229 @@
+{
+  start=System.currentTimeMillis();
+  long insertTimeStart=start;
+  long insertTimeEnd;
+  int waits=0;
+  int shortWaits=0;
+  ClientStatsContext periodicStatsContext=null;
+  Timer timer=null;
+  CSVConfig cfg=new CSVConfig();
+  cfg.parse(CSVLoaderMT.class.getName(),args);
+  config=cfg;
+  configuration();
+  Tokenizer tokenizer=null;
+  ICsvListReader listReader=null;
+  try {
+    long st=System.currentTimeMillis();
+    if (CSVLoaderMT.standin) {
+      tokenizer=new Tokenizer(new BufferedReader(new InputStreamReader(System.in)),csvPreference,config.strictquotes,config.escape,config.columnsizelimit,config.skip);
+      listReader=new CsvListReader(tokenizer,csvPreference);
+    }
+ else {
+      tokenizer=new Tokenizer(new FileReader(config.file),csvPreference,config.strictquotes,config.escape,config.columnsizelimit,config.skip);
+      listReader=new CsvListReader(tokenizer,csvPreference);
+    }
+  }
+ catch (  FileNotFoundException e) {
+    m_log.error("CSV file '" + config.file + "' could not be found.");
+    System.exit(-1);
+  }
+  String[] serverlist=config.servers.split(",");
+  ClientConfig c_config=new ClientConfig(config.user,config.password);
+  c_config.setProcedureCallTimeout(0);
+  Client csvClient=null;
+  if (!config.check) {
+    try {
+      csvClient=CSVLoaderMT.getClient(c_config,serverlist,config.port);
+      periodicStatsContext=csvClient.createStatsContext();
+      timer=schedulePeriodicStats(periodicStatsContext,start);
+    }
+ catch (    Exception e) {
+      m_log.error("Error to connect to the servers:" + config.servers);
+      close_cleanup();
+      System.exit(-1);
+    }
+    assert(csvClient != null);
+  }
+  try {
+    int columnCnt=0;
+    ProcedureCallback cb=null;
+    boolean lastOK=true;
+    if (!cfg.check) {
+      VoltTable procInfo=null;
+      boolean isProcExist=false;
+      try {
+        procInfo=csvClient.callProcedure("@SystemCatalog","PROCEDURECOLUMNS").getResults()[0];
+        while (procInfo.advanceRow()) {
+          if (insertProcedure.matches((String)procInfo.get("PROCEDURE_NAME",VoltType.STRING))) {
+            columnCnt++;
+            isProcExist=true;
+            String typeStr=(String)procInfo.get("TYPE_NAME",VoltType.STRING);
+            typeList.add(VoltType.typeFromString(typeStr));
+          }
+        }
+      }
+ catch (      Exception e) {
+        m_log.error(e.getMessage(),e);
+        close_cleanup();
+        System.exit(-1);
+      }
+      if (isProcExist == false) {
+        m_log.error("No matching insert procedure available");
+        close_cleanup();
+        System.exit(-1);
+      }
+      try {
+        if (isProcedureMp(csvClient)) {
+          m_log.warn("Using a multi-partitioned procedure to load data will be slow. " + "If loading a partitioned table, use a single-partitioned procedure " + "for best performance.");
+        }
+      }
+ catch (      Exception e) {
+        m_log.fatal(e.getMessage(),e);
+        close_cleanup();
+        System.exit(-1);
+      }
+    }
+    if (config.ping) {
+      m_log.info("Running Roundtrip PING only. No Data will be inserted.");
+    }
+class CSVFileReader implements Runnable {
+      public CSVConfig config;
+      public ICsvListReader listReader;
+      public BlockingQueue<List<String>> lineq;
+      public boolean done=false;
+      long parsingTimeSt=System.nanoTime();
+      long parsingTimeEnd=System.nanoTime();
+      @Override public void run(){
+        List<String> lineList=new ArrayList<String>();
+        while ((config.limitrows-- > 0)) {
+          try {
+            if (listReader.getLineNumber() == 0) {
+              totalLineCount.set(config.skip);
+            }
+ else {
+              totalLineCount.set(listReader.getLineNumber());
+            }
+            long st=System.nanoTime();
+            lineList=listReader.read();
+            long end=System.nanoTime();
+            if (lineList == null) {
+              if (totalLineCount.get() > listReader.getLineNumber()) {
+                totalLineCount.set(listReader.getLineNumber());
+              }
+              break;
+            }
+            lineq.put(lineList);
+            parsingTimeEnd+=(end - st);
+            totalRowCount.getAndIncrement();
+          }
+ catch (          SuperCsvException e) {
+            totalRowCount.getAndIncrement();
+            String[] info={e.getMessage(),""};
+            try {
+              synchronizeErrorInfo(totalLineCount.get() + 1,info);
+            }
+ catch (            IOException ex) {
+            }
+catch (            InterruptedException ex) {
+            }
+          }
+catch (          Throwable ex) {
+            totalRowCount.getAndIncrement();
+            String[] info={ex.getMessage(),""};
+            try {
+              synchronizeErrorInfo(totalLineCount.get() + 1,info);
+            }
+ catch (            IOException ex1) {
+            }
+catch (            InterruptedException ex2) {
+            }
+            break;
+          }
+        }
+        try {
+          listReader.close();
+        }
+ catch (        IOException ex) {
+          m_log.error("Error cloging Reader: " + ex);
+        }
+        done=true;
+        m_log.info("Rows Queued by Reader: " + totalRowCount.get());
+      }
+    }
+    CSVFileReader rdr=new CSVFileReader();
+    BlockingQueue<List<String>> lineq=new ArrayBlockingQueue<List<String>>(20000);
+    rdr.config=config;
+    rdr.lineq=lineq;
+    rdr.listReader=listReader;
+    Thread th=new Thread(rdr);
+    th.setName("CSVReader");
+    th.setDaemon(true);
+    th.start();
+    int pcnt=0;
+    while (true) {
+      if (rdr.done && lineq.size() == 0) {
+        break;
+      }
+      List<String> lineList=lineq.poll(100,TimeUnit.MILLISECONDS);
+      if (lineList == null) {
+        m_log.info("Waited no data to pull reader is slower than processor.");
+        continue;
+      }
+      pcnt++;
+      boolean queued=false;
+      while (queued == false) {
+        String[] correctedLine=lineList.toArray(new String[0]);
+        if (!config.check) {
+          cb=new MyCallback(pcnt,config,lineList);
+          String lineCheckResult;
+          if ((lineCheckResult=checkparams_trimspace(correctedLine,columnCnt)) != null) {
+            String[] info={lineList.toString(),lineCheckResult};
+            synchronizeErrorInfo(pcnt,info);
+            break;
+          }
+          if (config.ping) {
+            queued=csvClient.callProcedure(cb,"@Ping",(Object[])correctedLine);
+          }
+ else           if (config.dnp) {
+            queued=csvClient.callProcedure(cb,"DoNothingProcedure",(Object[])correctedLine);
+          }
+ else {
+            queued=csvClient.callProcedure(cb,insertProcedure,(Object[])correctedLine);
+          }
+          outCount.incrementAndGet();
+        }
+ else {
+          queued=true;
+        }
+      }
+    }
+    if (csvClient != null) {
+      csvClient.drain();
+    }
+    insertTimeEnd=System.currentTimeMillis();
+    m_log.info("Parsing CSV file took " + (rdr.parsingTimeEnd - rdr.parsingTimeSt) / 1000000 + " milliseconds.");
+    if (!config.check) {
+      m_log.info("Inserting Data took " + ((insertTimeEnd - insertTimeStart) - ((rdr.parsingTimeEnd - rdr.parsingTimeSt) / 1000000)) + " milliseconds.");
+    }
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+  }
+  if (!config.check) {
+    m_log.info("Inserted " + outCount.get() + " and acknowledged "+ inCount.get()+ " rows (final)");
+  }
+ else {
+    m_log.info("Verification of CSV input completed.");
+  }
+  if (!config.check) {
+    produceFiles();
+  }
+  close_cleanup();
+  if (timer != null) {
+    timer.cancel();
+    printStatistics(periodicStatsContext,start);
+  }
+  if (csvClient != null) {
+    csvClient.close();
+  }
+}
