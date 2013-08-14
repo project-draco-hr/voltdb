@@ -6,6 +6,8 @@
   long insertTimeEnd=start;
   int waits=0;
   int shortWaits=0;
+  ClientStatsContext periodicStatsContext=null;
+  Timer timer=null;
   CSVConfig cfg=new CSVConfig();
   cfg.parse(CSVLoader.class.getName(),args);
   config=cfg;
@@ -32,10 +34,15 @@
   String[] serverlist=config.servers.split(",");
   ClientConfig c_config=new ClientConfig(config.user,config.password);
   c_config.setProcedureCallTimeout(0);
+  if (config.mct) {
+    c_config.setHeavyweight(true);
+  }
   Client csvClient=null;
   if (!config.check) {
     try {
       csvClient=CSVLoader.getClient(c_config,serverlist,config.port);
+      periodicStatsContext=csvClient.createStatsContext();
+      timer=schedulePeriodicStats(periodicStatsContext,start);
     }
  catch (    Exception e) {
       m_log.error("Error to connect to the servers:" + config.servers);
@@ -165,6 +172,10 @@
   }
   close_cleanup();
   listReader.close();
+  if (timer != null) {
+    timer.cancel();
+    printStatistics(periodicStatsContext,start);
+  }
   if (csvClient != null) {
     csvClient.close();
   }
