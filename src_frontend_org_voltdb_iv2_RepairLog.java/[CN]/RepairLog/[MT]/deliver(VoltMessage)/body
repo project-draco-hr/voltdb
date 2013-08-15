@@ -9,20 +9,30 @@
   }
  else   if (msg instanceof FragmentTaskMessage) {
     final TransactionInfoBaseMessage m=(TransactionInfoBaseMessage)msg;
-    truncate(m.getTruncationHandle(),Long.MIN_VALUE);
-    if (m.getTxnId() > m_lastMpHandle || m_lastMpHandle == Long.MAX_VALUE) {
-      m_log.add(new Item(IS_MP,m,m.getSpHandle(),m.getTxnId()));
-      m_lastMpHandle=m.getTxnId();
-      m_lastSpHandle=m.getSpHandle();
+    if (!m.isReadOnly()) {
+      truncate(m.getTruncationHandle(),Long.MIN_VALUE);
+      if (m.getTxnId() > m_lastMpHandle || m_lastMpHandle == Long.MAX_VALUE) {
+        m_log.add(new Item(IS_MP,m,m.getSpHandle(),m.getTxnId()));
+        m_lastMpHandle=m.getTxnId();
+        m_lastSpHandle=m.getSpHandle();
+      }
     }
   }
  else   if (msg instanceof CompleteTransactionMessage) {
-    if (!((CompleteTransactionMessage)msg).isRestart()) {
-      final TransactionInfoBaseMessage m=(TransactionInfoBaseMessage)msg;
-      truncate(m.getTruncationHandle(),Long.MIN_VALUE);
-      m_log.add(new Item(IS_MP,m,m.getSpHandle(),m.getTxnId()));
-      m_lastMpHandle=Math.max(m_lastMpHandle,m.getTxnId());
-      m_lastSpHandle=m.getSpHandle();
+    CompleteTransactionMessage ctm=(CompleteTransactionMessage)msg;
+    if (!ctm.isReadOnly() && !ctm.isRestart()) {
+      truncate(ctm.getTruncationHandle(),Long.MIN_VALUE);
+      m_log.add(new Item(IS_MP,ctm,ctm.getSpHandle(),ctm.getTxnId()));
+      m_lastMpHandle=Math.max(m_lastMpHandle,ctm.getTxnId());
+      m_lastSpHandle=ctm.getSpHandle();
+    }
+  }
+ else   if (msg instanceof DumpMessage) {
+    String who=CoreUtils.hsIdToString(m_HSId);
+    tmLog.warn("Repair log dump for site: " + who + ", isLeader: "+ m_isLeader);
+    tmLog.warn("" + who + ": lastSpHandle: "+ m_lastSpHandle+ ", lastMpHandle: "+ m_lastMpHandle);
+    for (    Iv2RepairLogResponseMessage il : contents(0l,false)) {
+      tmLog.warn("" + who + ": msg: "+ il);
     }
   }
 }

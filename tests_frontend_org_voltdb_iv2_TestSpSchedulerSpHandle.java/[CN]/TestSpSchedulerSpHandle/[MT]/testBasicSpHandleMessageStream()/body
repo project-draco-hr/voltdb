@@ -1,0 +1,20 @@
+{
+  TxnEgo currentHandle=TxnEgo.makeZero(0);
+  createObjs();
+  dut.setLeaderState(true);
+  List<Long> replicas=new ArrayList<Long>();
+  replicas.add(2l);
+  dut.updateReplicas(replicas);
+  int msgcount=0;
+  for (int i=0; i < 4000; i++) {
+    TransactionInfoBaseMessage msg=msgGen.generateRandomMessageInStream();
+    dut.deliver(msg);
+    currentHandle=currentHandle.makeNext();
+    if (!msg.isReadOnly() || msg instanceof CompleteTransactionMessage) {
+      msgcount++;
+      ArgumentCaptor<TransactionInfoBaseMessage> replmsg=ArgumentCaptor.forClass(TransactionInfoBaseMessage.class);
+      verify(mbox,times(msgcount)).send(eq(new long[]{2l}),replmsg.capture());
+      assertEquals("Failed on msg: " + replmsg.getValue(),currentHandle.getTxnId(),replmsg.getValue().getSpHandle());
+    }
+  }
+}
