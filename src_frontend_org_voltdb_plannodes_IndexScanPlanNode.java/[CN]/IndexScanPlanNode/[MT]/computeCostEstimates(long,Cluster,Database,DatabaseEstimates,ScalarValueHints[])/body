@@ -2,7 +2,7 @@
   Table target=db.getTables().getIgnoreCase(m_targetTableName);
   assert(target != null);
   DatabaseEstimates.TableEstimates tableEstimates=estimates.getEstimatesForTable(target.getTypeName());
-  double colCount=m_catalogIndex.getColumns().size();
+  double colCount=CatalogUtil.getCatalogIndexSize(m_catalogIndex);
   double keyWidth=m_searchkeyExpressions.size();
   assert(keyWidth <= colCount);
   if (keyWidth > 0.0 && m_lookupType != IndexLookupType.EQ) {
@@ -29,5 +29,12 @@
   m_estimatedProcessedTupleCount=tuplesToRead;
   if (m_catalogIndex.getUnique() && (colCount == keyWidth)) {
     m_estimatedOutputTupleCount=1;
+  }
+  LimitPlanNode limit=(LimitPlanNode)m_inlineNodes.get(PlanNodeType.LIMIT);
+  if (limit != null && limit.getLimit() > 0) {
+    m_estimatedOutputTupleCount=Math.min(m_estimatedOutputTupleCount,limit.getLimit());
+    if (m_predicate == null) {
+      m_estimatedProcessedTupleCount=limit.getLimit() + limit.getOffset();
+    }
   }
 }

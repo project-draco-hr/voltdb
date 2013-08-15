@@ -40,6 +40,7 @@ synchronized (m_startAndStopLock) {
     m_pathToStartupCatalog=m_config.m_pathToCatalog;
     m_replicationActive=false;
     m_configLogger=null;
+    ActivePlanRepository.clear();
     m_localSites=new COWMap<Long,ExecutionSite>();
     m_siteThreads=new HashMap<Long,Thread>();
     m_runners=new ArrayList<ExecutionSiteRunner>();
@@ -214,7 +215,11 @@ synchronized (m_startAndStopLock) {
     int portOffset=0;
     for (int i=0; i < 1; i++) {
       try {
-        ClientInterface ci=ClientInterface.create(m_messenger,m_catalogContext,m_config.m_replicationRole,m_cartographer,clusterConfig.getPartitionCount(),config.m_port + portOffset,config.m_adminPort + portOffset,m_config.m_timestampTestingSalt);
+        InetAddress externalInterface=null;
+        if (!m_config.m_externalInterface.trim().equals("")) {
+          externalInterface=InetAddress.getByName(m_config.m_externalInterface);
+        }
+        ClientInterface ci=ClientInterface.create(m_messenger,m_catalogContext,m_config.m_replicationRole,m_cartographer,clusterConfig.getPartitionCount(),externalInterface,config.m_port + portOffset,config.m_adminPort + portOffset,m_config.m_timestampTestingSalt);
         portOffset+=2;
         m_clientInterfaces.add(ci);
       }
@@ -227,26 +232,11 @@ synchronized (m_startAndStopLock) {
     try {
       final Class<?> statsManagerClass=MiscUtils.loadProClass("org.voltdb.management.JMXStatsManager","JMX",true);
       if (statsManagerClass != null) {
-        ArrayList<Long> localHSIds;
-        Long MPHSId;
-        if (isIV2Enabled()) {
-          localHSIds=new ArrayList<Long>();
-          for (          Initiator iv2Initiator : m_iv2Initiators) {
-            localHSIds.add(iv2Initiator.getInitiatorHSId());
-          }
-          MPHSId=m_MPI.getInitiatorHSId();
-        }
- else {
-          localHSIds=new ArrayList<Long>(m_localSites.keySet());
-          MPHSId=null;
-        }
         m_statsManager=(StatsManager)statsManagerClass.newInstance();
         m_statsManager.initialize();
       }
     }
  catch (    Exception e) {
-      hostLog.error("Failed to instantiate the JMX stats manager: " + e.getMessage() + ". Disabling JMX.");
-      e.printStackTrace();
     }
     try {
       m_snapshotCompletionMonitor.init(m_messenger.getZK());

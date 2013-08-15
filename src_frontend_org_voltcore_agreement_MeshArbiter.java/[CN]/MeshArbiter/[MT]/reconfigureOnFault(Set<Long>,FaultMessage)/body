@@ -1,0 +1,43 @@
+{
+  boolean proceed=false;
+  do {
+    Discard ignoreIt=mayIgnore(hsIds,fm);
+    if (Discard.DoNot == ignoreIt) {
+      m_inTrouble.put(fm.failedSite,fm.witnessed || fm.decided);
+      m_recoveryLog.info("Agreement, Processing " + fm);
+      proceed=true;
+    }
+ else {
+      ignoreIt.log(fm);
+    }
+    fm=(FaultMessage)m_mailbox.recv(justFailures);
+  }
+ while (fm != null);
+  if (!proceed) {
+    return ImmutableMap.of();
+  }
+  m_inTroubleCount=m_inTrouble.size();
+  m_seeker.startSeekingFor(Sets.difference(hsIds,m_failedSites),m_inTrouble);
+  discoverGlobalFaultData_send(hsIds);
+  if (discoverGlobalFaultData_rcv(hsIds)) {
+    Map<Long,Long> lastTxnIdByFailedSite=extractGlobalFaultData(hsIds);
+    if (lastTxnIdByFailedSite.isEmpty()) {
+      return ImmutableMap.of();
+    }
+    Set<Long> witnessed=Maps.filterValues(m_inTrouble,equalTo(Boolean.TRUE)).keySet();
+    Set<Long> notClosed=Sets.difference(witnessed,lastTxnIdByFailedSite.keySet());
+    if (!notClosed.isEmpty()) {
+      m_recoveryLog.warn("Agreement, witnessed but not decided: [" + CoreUtils.hsIdCollectionToString(notClosed) + "] seeker: "+ m_seeker);
+    }
+    notifyOnKill(hsIds,lastTxnIdByFailedSite);
+    m_failedSites.addAll(lastTxnIdByFailedSite.keySet());
+    m_failedSitesCount=m_failedSites.size();
+    m_recoveryLog.info("Agreement, Adding " + CoreUtils.hsIdCollectionToString(lastTxnIdByFailedSite.keySet()) + " to failed sites history");
+    clearInTrouble(lastTxnIdByFailedSite.keySet());
+    m_seeker.clear();
+    return lastTxnIdByFailedSite;
+  }
+ else {
+    return ImmutableMap.of();
+  }
+}
