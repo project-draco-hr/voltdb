@@ -1,0 +1,41 @@
+{
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println(" Setup & Initialization");
+  System.out.println(HORIZONTAL_RULE);
+  connect(config.servers);
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println("Loading Tuples");
+  System.out.println(HORIZONTAL_RULE);
+  for (long i=0; i < config.rows; i++) {
+    client.callProcedure(new NullCallback(),"NARROW_P.insert",i % 509,i);
+    client.callProcedure(new NullCallback(),"NARROW_INDEX_P.insert",i % 509,i);
+    if ((i % 100000) == 0) {
+      System.out.printf("Loading row at index %d.\n",i);
+    }
+  }
+  client.drain();
+  ClientResponse cr=client.callProcedure("@AdHoc","select count(*) from narrow_p;");
+  long rows1=cr.getResults()[0].asScalarLong();
+  cr=client.callProcedure("@AdHoc","select count(*) from narrow_index_p;");
+  long rows2=cr.getResults()[0].asScalarLong();
+  System.out.printf("Loaded %d,%d rows.\n",rows1,rows2);
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println("Starting Benchmark");
+  System.out.println(HORIZONTAL_RULE);
+  fullStatsContext.fetchAndResetBaseline();
+  periodicStatsContext.fetchAndResetBaseline();
+  benchmark1StartTS=System.currentTimeMillis();
+  System.out.println("\nRunning seq scan benchmark...");
+  for (int i=0; i < config.runs; i++) {
+    client.callProcedure("MinSeqScan");
+  }
+  benchmark1EndTS=System.currentTimeMillis();
+  benchmark2StartTS=System.currentTimeMillis();
+  System.out.println("\nRunning index scan benchmark...");
+  for (int i=0; i < config.runs; i++) {
+    client.callProcedure("MinIndexScan");
+  }
+  benchmark2EndTS=System.currentTimeMillis();
+  printResults();
+  client.close();
+}
