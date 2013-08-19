@@ -194,7 +194,7 @@ catch (        IOException e) {
     byte compressedTable[]=(byte[])params.toArray()[2];
     int checkUniqueViolations=(Integer)params.toArray()[3];
     int[] partition_ids=(int[])params.toArray()[4];
-    if (checkUniqueViolations > 0) {
+    if (checkUniqueViolations == K_CHECK_UNIQUE_VIOLATIONS_PARTITIONED) {
       assert(partition_ids != null && partition_ids.length == 1);
     }
     TRACE_LOG.trace("Received table: " + table_name + (partition_ids == null ? "[REPLICATED]" : "of partition [" + partition_ids.toString())+ "]");
@@ -202,10 +202,17 @@ catch (        IOException e) {
     String error_msg="";
     try {
       VoltTable table=PrivateVoltTableFactory.createVoltTableFromBuffer(ByteBuffer.wrap(CompressionService.decompressBytes(compressedTable)),true);
-      if (checkUniqueViolations > 0) {
+      if (m_duplicateRowHandler != null) {
         byte uniqueViolations[]=voltLoadTable(context.getCluster().getTypeName(),context.getDatabase().getTypeName(),table_name,table,m_duplicateRowHandler != null);
-        if (uniqueViolations != null && m_duplicateRowHandler != null) {
-          m_duplicateRowHandler.handleDuplicates(table_name,uniqueViolations);
+        if (uniqueViolations != null) {
+          if (checkUniqueViolations == K_CHECK_UNIQUE_VIOLATIONS_REPLICATED) {
+            if (context.isLowestSiteId() && context.getHostId() == 0) {
+              m_duplicateRowHandler.handleDuplicates(table_name,uniqueViolations);
+            }
+          }
+ else {
+            m_duplicateRowHandler.handleDuplicates(table_name,uniqueViolations);
+          }
         }
       }
  else {
@@ -217,7 +224,7 @@ catch (        IOException e) {
       error_msg=e.getMessage();
     }
     VoltTable result=constructResultsTable();
-    result.addRow(m_hostId,CoreUtils.getHostnameOrAddress(),CoreUtils.getSiteIdFromHSId(m_siteId),table_name,((checkUniqueViolations > 0) ? partition_ids[0] : -1),result_str,error_msg);
+    result.addRow(m_hostId,CoreUtils.getHostnameOrAddress(),CoreUtils.getSiteIdFromHSId(m_siteId),table_name,((checkUniqueViolations == K_CHECK_UNIQUE_VIOLATIONS_PARTITIONED) ? partition_ids[0] : -1),result_str,error_msg);
     return new DependencyPair(dependency_id,result);
   }
  else   if (fragmentId == SysProcFragmentId.PF_restoreReceiveResultTables) {
@@ -278,7 +285,10 @@ catch (        IOException e) {
         }
         c.discard();
         try {
-          voltLoadTable(context.getCluster().getTypeName(),context.getDatabase().getTypeName(),table_name,table,false);
+          byte uniqueViolations[]=voltLoadTable(context.getCluster().getTypeName(),context.getDatabase().getTypeName(),table_name,table,m_duplicateRowHandler != null);
+          if (m_duplicateRowHandler != null && context.isLowestSiteId() && context.getHostId() == 0) {
+            m_duplicateRowHandler.handleDuplicates(table_name,uniqueViolations);
+          }
         }
  catch (        VoltAbortException e) {
           result_str="FAILURE";
