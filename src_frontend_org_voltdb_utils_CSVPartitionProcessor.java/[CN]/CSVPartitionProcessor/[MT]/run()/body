@@ -1,0 +1,41 @@
+{
+  VoltTable table=new VoltTable(colInfo);
+  while (true) {
+    CSVLineWithMetaData lineList=null;
+    try {
+      lineList=lineq.poll(50,TimeUnit.MILLISECONDS);
+    }
+ catch (    InterruptedException ex) {
+      Logger.getLogger(CSVLoaderMT.class.getName()).log(Level.SEVERE,null,ex);
+    }
+    if (lineList == dummy) {
+      System.out.println("Done Processing partition: " + partitionId);
+      if (table.getRowCount() > 0) {
+        CSVLoaderMT.MyMTCallback cbmt=new CSVLoaderMT.MyMTCallback(table.getRowCount());
+        try {
+          csvClient.callProcedure(cbmt,"@LoadPartitionData",partitionId,tableName,table);
+          CSVFileReader.inCount.addAndGet(table.getRowCount());
+        }
+ catch (        IOException ex) {
+          Logger.getLogger(CSVPartitionProcessor.class.getName()).log(Level.SEVERE,null,ex);
+        }
+      }
+      break;
+    }
+    if (lineList == null) {
+      continue;
+    }
+    VoltTableUtil.toVoltTableFromLine(table,lineList.line,colNames,columnTypes);
+    if (table.getRowCount() > batchmax) {
+      try {
+        CSVLoaderMT.MyMTCallback cbmt=new CSVLoaderMT.MyMTCallback(table.getRowCount());
+        csvClient.callProcedure(cbmt,"@LoadPartitionData",partitionId,tableName,table);
+        CSVFileReader.inCount.addAndGet(table.getRowCount());
+        table=new VoltTable(colInfo);
+      }
+ catch (      IOException ex) {
+        Logger.getLogger(CSVPartitionProcessor.class.getName()).log(Level.SEVERE,null,ex);
+      }
+    }
+  }
+}
