@@ -1,0 +1,85 @@
+{
+  InitiatorMailbox mbox=mock(InitiatorMailbox.class);
+  Map<Long,List<TransactionInfoBaseMessage>> finalStreams=new HashMap<Long,List<TransactionInfoBaseMessage>>();
+  Random rand=new Random(System.currentTimeMillis());
+  TxnEgo sphandle=TxnEgo.makeZero(0);
+  sphandle=sphandle.makeNext();
+  RandomMsgGenerator msgGen=new RandomMsgGenerator();
+  boolean[] stops=new boolean[3];
+  RepairLog[] logs=new RepairLog[3];
+  for (int i=0; i < 3; i++) {
+    logs[i]=new RepairLog();
+    stops[i]=false;
+    finalStreams.put((long)i,new ArrayList<TransactionInfoBaseMessage>());
+  }
+  for (int i=0; i < 4000; i++) {
+    TransactionInfoBaseMessage msg=msgGen.generateRandomMessageInStream();
+    msg.setSpHandle(sphandle.getTxnId());
+    sphandle=sphandle.makeNext();
+    if (!msg.isReadOnly() || msg instanceof CompleteTransactionMessage) {
+      if (!stops[0]) {
+        logs[0].deliver(msg);
+      }
+      if (!stops[1]) {
+        logs[1].deliver(msg);
+      }
+      logs[2].deliver(msg);
+      for (int j=0; j < 2; j++) {
+        if (rand.nextDouble() < (.01 / ((j + 1) * 5))) {
+          stops[j]=true;
+        }
+      }
+    }
+  }
+  List<Long> survivors=new ArrayList<Long>();
+  survivors.add(0l);
+  survivors.add(1l);
+  survivors.add(2l);
+  SpPromoteAlgo dut=new SpPromoteAlgo(survivors,mbox,"bleh ",0);
+  Future<Pair<Boolean,Long>> result=dut.start();
+  for (int i=0; i < 3; i++) {
+    List<Iv2RepairLogResponseMessage> stuff=logs[i].contents(dut.getRequestId(),false);
+    System.out.println("Repair log size from: " + i + ": "+ stuff.size());
+    for (    Iv2RepairLogResponseMessage msg : stuff) {
+      msg.m_sourceHSId=(long)i;
+      dut.deliver(msg);
+      if (msg.getSequence() > 0) {
+        finalStreams.get((long)i).add((TransactionInfoBaseMessage)msg.getPayload());
+      }
+    }
+  }
+  assertFalse(result.isCancelled());
+  assertTrue(result.isDone());
+  for (  Iv2RepairLogResponseMessage li : dut.m_repairLogUnion) {
+    for (    Entry<Long,SpPromoteAlgo.ReplicaRepairStruct> entry : dut.m_replicaRepairStructs.entrySet()) {
+      if (entry.getValue().needs(li.getHandle())) {
+        finalStreams.get(entry.getKey()).add((TransactionInfoBaseMessage)li.getPayload());
+      }
+    }
+  }
+  int longest=Integer.MIN_VALUE;
+  for (  Entry<Long,List<TransactionInfoBaseMessage>> entry : finalStreams.entrySet()) {
+    System.out.println("SIZE: " + entry.getValue().size());
+    if (entry.getValue().size() > longest) {
+      if (longest == Integer.MIN_VALUE) {
+        longest=entry.getValue().size();
+      }
+ else {
+        fail("Mismatch in repair stream size!");
+      }
+    }
+  }
+  for (int i=0; i < longest; i++) {
+    TransactionInfoBaseMessage current=null;
+    for (    Entry<Long,List<TransactionInfoBaseMessage>> entry : finalStreams.entrySet()) {
+      TransactionInfoBaseMessage msg=entry.getValue().get(i);
+      if (current == null) {
+        current=msg;
+      }
+ else {
+        assertEquals(current.getSpHandle(),msg.getSpHandle());
+        assertEquals(current.getClass(),msg.getClass());
+      }
+    }
+  }
+}
