@@ -1,5 +1,14 @@
 {
   VoltTable table=new VoltTable(colInfo);
+  String procName=(isMP ? "@LoadMultipartitionTable" : (isLoadTable ? "@LoadPartitionData" : "@LoadSinglepartitionTable"));
+  if (config.ping) {
+    procName="@Ping";
+  }
+ else   if (config.legacy) {
+    procName=insertProcedure;
+    table=null;
+  }
+  System.out.println("Using Procedure: " + procName);
   while (true) {
     CSVLineWithMetaData lineList=null;
     try {
@@ -9,12 +18,26 @@
       Logger.getLogger(CSVLoaderMT.class.getName()).log(Level.SEVERE,null,ex);
     }
     if (lineList == dummy) {
+      if (config.legacy) {
+        System.out.println("Done Processing partition: " + partitionId + " Processed: "+ partitionProcessedCount);
+        break;
+      }
       if (table.getRowCount() > 0) {
-        CSVLoaderMT.MyMTCallback cbmt=new CSVLoaderMT.MyMTCallback(table.getRowCount());
+        CSVLoaderMT.MyMTCallback cbmt=new CSVLoaderMT.MyMTCallback(table.getRowCount(),lineList.line);
         try {
-          byte pparam[]=new byte[1];
-          pparam[0]=((Integer)partitionId).byteValue();
-          csvClient.callProcedure(cbmt,"@LoadPartitionData",partitionId,tableName,table);
+          if (!isMP) {
+            Object param1;
+            if (isLoadTable) {
+              param1=partitionId;
+            }
+ else {
+              param1=TheHashinator.valueToBytes(partitionId);
+            }
+            csvClient.callProcedure(cbmt,procName,param1,tableName,table);
+          }
+ else {
+            csvClient.callProcedure(cbmt,procName,tableName,table);
+          }
           CSVFileReader.inCount.addAndGet(table.getRowCount());
           partitionProcessedCount+=table.getRowCount();
         }
@@ -28,16 +51,38 @@
     if (lineList == null) {
       continue;
     }
-    VoltTableUtil.toVoltTableFromLine(table,lineList.line,colNames,columnTypes);
-    if (table.getRowCount() > batchmax) {
+    if (!config.legacy) {
+      VoltTableUtil.toVoltTableFromLine(table,lineList.line,colNames,columnTypes);
+      if (table.getRowCount() > batchmax) {
+        try {
+          CSVLoaderMT.MyMTCallback cbmt=new CSVLoaderMT.MyMTCallback(table.getRowCount(),lineList.line);
+          if (!isMP) {
+            Object param1;
+            if (isLoadTable) {
+              param1=partitionId;
+            }
+ else {
+              param1=TheHashinator.valueToBytes(partitionId);
+            }
+            csvClient.callProcedure(cbmt,procName,param1,tableName,table);
+          }
+ else {
+            csvClient.callProcedure(cbmt,procName,tableName,table);
+          }
+          CSVFileReader.inCount.addAndGet(table.getRowCount());
+          partitionProcessedCount+=table.getRowCount();
+          table.clearRowData();
+        }
+ catch (        IOException ex) {
+          Logger.getLogger(CSVPartitionProcessor.class.getName()).log(Level.SEVERE,null,ex);
+        }
+      }
+    }
+ else {
       try {
-        CSVLoaderMT.MyMTCallback cbmt=new CSVLoaderMT.MyMTCallback(table.getRowCount());
-        byte pparam[]=new byte[1];
-        pparam[0]=((Integer)partitionId).byteValue();
-        csvClient.callProcedure(cbmt,"@LoadPartitionData",partitionId,tableName,table);
-        CSVFileReader.inCount.addAndGet(table.getRowCount());
-        partitionProcessedCount+=table.getRowCount();
-        table.clearRowData();
+        CSVLoaderMT.MyCallback cbmt=new CSVLoaderMT.MyCallback(0,config,lineList.line);
+        csvClient.callProcedure(cbmt,procName,(Object[])lineList.line);
+        CSVFileReader.inCount.incrementAndGet();
       }
  catch (      IOException ex) {
         Logger.getLogger(CSVPartitionProcessor.class.getName()).log(Level.SEVERE,null,ex);
