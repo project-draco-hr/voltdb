@@ -1,0 +1,50 @@
+def run_csvloader(schema, data_file):
+    rowcount = get_filesize(data_file)
+    elapsed_results = []
+    parsing_results = []
+    loading_results = []
+    for I in range(0, options.TRIES):
+        home = os.getenv('VOLTDB_HOME')
+        cmd = ('%s --servers=%s' % (os.path.join(home, CSVLOADER), ','.join(options.servers)))
+        if options.csvoptions:
+            cmd += (' -o ' + ','.join(options.csvoptions))
+        cmd += (' %s -f %s' % (schema, data_file))
+        if options.VERBOSE:
+            print ('starting csvloader with command: ' + cmd)
+        p = Popen(shlex.split(cmd), stdout=PIPE, stderr=PIPE)
+        (stdout, stderr) = p.communicate()
+        stdout_lines = stdout.split('\n')
+        if options.VERBOSE:
+            for l in stdout_lines:
+                print ('[csvloader stdout] ' + l)
+        rc = p.returncode
+        if (rc != 0):
+            print ('CSVLoader failed with rc %d' % rc)
+            for l in stderr.split('\n'):
+                print ('[csvloader stderr] ' + l)
+            raise RuntimeError('CSV Loader failed')
+        m = re.search('^Inserted (\\d+) and acknowledged (\\d+) rows \\(final\\)$', stdout, flags=re.M)
+        if ((m is None) or (int(m.group(1)) != rowcount) or (m.group(1) != m.group(2))):
+            raise RuntimeError('CSV Loader failed to load all rows')
+        stats = csvloader_getstatistics(stdout)
+        print ('try %d %s elapsed: %f parsing: %f inserting: %f' % ((I, schema) + stats))
+        elapsed_results.append(stats[0])
+        parsing_results.append(stats[1])
+        loading_results.append(stats[2])
+
+    def analyze_results(perf_results):
+        pr = sorted(perf_results)[1:(-1)]
+        if (len(pr) == 0):
+            pr = perf_results
+        avg = average(perf_results)
+        stddev = std(perf_results)
+        return (average(perf_results), std(perf_results))
+    (avg, stddev) = analyze_results(elapsed_results)
+    (parsing, foo) = analyze_results(parsing_results)
+    (loading, foo) = analyze_results(loading_results)
+    print ('statistics for %s execution time avg: %f stddev: %f rows/sec: %f rows: %d file size: %d tries: %d parsing: %f inserting: %f' % (schema, avg, stddev, ((rowcount / avg) * 1000.0), rowcount, os.path.getsize(data_file), options.TRIES, parsing, loading))
+    if options.statsfile:
+        with open(options.statsfile, 'a') as sf:
+            print ('%s,%d,%d,0,0,0,0' % (schema, int(round(avg)), rowcount))
+            print  >> sf, ('%s,%d,%d,0,0,0,0' % (schema, int(round(avg)), rowcount))
+    return (rowcount, avg, stddev)
