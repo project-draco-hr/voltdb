@@ -6,6 +6,7 @@
   m_lastSnapshotTxnId=txnId;
   m_lastSnapshotNumHosts=numHosts;
   m_snapshotTableTasks=MiscUtils.sortedArrayListMultimap();
+  m_streamers=Maps.newHashMap();
   m_snapshotTargets=new ArrayList<SnapshotDataTarget>();
   m_snapshotTargetTerminators=new ArrayList<Thread>();
   m_exportSequenceNumbersToLogOnCompletion=exportSequenceNumbers;
@@ -15,8 +16,12 @@
       m_snapshotTargets.add(target);
     }
   }
-  Map<Integer,SnapshotPredicates> tablesAndPredicates=makeTablesAndPredicatesToSnapshot(tasks);
-  activateTableStreams(ee,tablesAndPredicates);
+  for (  Map.Entry<Integer,byte[]> tablePredicates : makeTablesAndPredicatesToSnapshot(tasks).entrySet()) {
+    int tableId=tablePredicates.getKey();
+    TableStreamer streamer=new TableStreamer(tableId,format.getStreamType(),m_snapshotTableTasks.get(tableId));
+    streamer.activate(context,tablePredicates.getValue());
+    m_streamers.put(tableId,streamer);
+  }
   int maxTableTaskSize=0;
   for (  Collection<SnapshotTableTask> perTableTasks : m_snapshotTableTasks.asMap().values()) {
     maxTableTaskSize=Math.max(maxTableTaskSize,perTableTasks.size());

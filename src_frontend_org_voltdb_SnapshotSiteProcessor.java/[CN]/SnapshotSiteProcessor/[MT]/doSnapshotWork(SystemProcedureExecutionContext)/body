@@ -12,22 +12,30 @@
     if (outputBuffers == null) {
       break;
     }
-    final int[] serialized=ee.tableStreamSerializeMore(tableId,TableStreamType.SNAPSHOT,outputBuffers);
-    for (    int serializedBytes : serialized) {
-      if (serializedBytes < 0) {
-        VoltDB.crashLocalVoltDB("Failure while serialize data from a table for COW snapshot",false,null);
+    Pair<ListenableFuture,Boolean> streamResult=m_streamers.get(tableId).streamMore(context,outputBuffers);
+    if (streamResult.getFirst() != null) {
+      final ListenableFuture writeFutures=streamResult.getFirst();
+      writeFutures.addListener(new Runnable(){
+        @Override public void run(){
+          try {
+            writeFutures.get();
+          }
+ catch (          Throwable t) {
+            if (m_lastSnapshotSucceded) {
+              SNAP_LOG.error("Error while attempting to write snapshot data",t);
+              m_lastSnapshotSucceded=false;
+            }
+          }
+        }
       }
+,MoreExecutors.sameThreadExecutor());
     }
-    if (serialized[0] == 0) {
+    if (!streamResult.getSecond()) {
       asyncTerminateReplicatedTableTasks(tableTasks);
       taskIter.remove();
       SNAP_LOG.debug("Finished snapshot tasks for table " + tableId + ": "+ tableTasks);
-      for (      BBContainer container : outputBuffers) {
-        m_availableSnapshotBuffers.offer(container);
-      }
     }
  else {
-      retval=writeSnapshotBlocksToTargets(tableId,outputBuffers,serialized);
       break;
     }
   }
