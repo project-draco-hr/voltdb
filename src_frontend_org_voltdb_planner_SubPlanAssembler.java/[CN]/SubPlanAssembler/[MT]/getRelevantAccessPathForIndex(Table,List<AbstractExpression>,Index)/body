@@ -109,15 +109,6 @@
       endingBoundExpr=getIndexableExpressionFromFilters(ExpressionType.COMPARE_LESSTHAN,ExpressionType.COMPARE_LESSTHANOREQUALTO,coveringExpr,coveringColId,table,filtersToCover,allowIndexedJoinFilters,EXCLUDE_FROM_POST_FILTERS);
     }
   }
-  if (retval.sortDirection == SortDirectionType.DESC) {
-    if ((endingBoundExpr != null) || (!retval.endExprs.isEmpty())) {
-      retval.sortDirection=SortDirectionType.INVALID;
-    }
- else {
-      endingBoundExpr=startingBoundExpr;
-      startingBoundExpr=null;
-    }
-  }
   if (startingBoundExpr != null) {
     AbstractExpression comparator=startingBoundExpr.getFilter();
     retval.indexExprs.add(comparator);
@@ -133,11 +124,35 @@
   }
   if (endingBoundExpr != null) {
     AbstractExpression comparator=endingBoundExpr.getFilter();
-    retval.endExprs.add(comparator);
-    retval.bindings.addAll(endingBoundExpr.getBindings());
     retval.use=IndexUseType.INDEX_SCAN;
-    if (retval.lookupType == IndexLookupType.EQ) {
-      retval.lookupType=IndexLookupType.GTE;
+    retval.bindings.addAll(endingBoundExpr.getBindings());
+    if (startingBoundExpr != null || retval.sortDirection == SortDirectionType.ASC) {
+      retval.endExprs.add(comparator);
+      if (retval.lookupType == IndexLookupType.EQ) {
+        retval.lookupType=IndexLookupType.GTE;
+      }
+    }
+ else {
+      if (comparator.getExpressionType() == ExpressionType.COMPARE_LESSTHAN) {
+        retval.lookupType=IndexLookupType.LT;
+      }
+ else       if (comparator.getExpressionType() == ExpressionType.COMPARE_LESSTHANOREQUALTO) {
+        retval.lookupType=IndexLookupType.LTE;
+      }
+      if (retval.lookupType == IndexLookupType.EQ) {
+        retval.lookupType=IndexLookupType.GTE;
+        retval.endExprs.add(comparator);
+      }
+ else {
+        retval.indexExprs.add(comparator);
+        retval.otherExprs.add(comparator);
+        AbstractExpression newComparator=new OperatorExpression(ExpressionType.OPERATOR_NOT,new OperatorExpression(ExpressionType.OPERATOR_IS_NULL),null);
+        newComparator.getLeft().setLeft(comparator.getLeft());
+        newComparator.finalizeValueTypes();
+        retval.otherExprs.add(newComparator);
+        retval.initialExpr.addAll(retval.indexExprs);
+        retval.sortDirection=SortDirectionType.DESC;
+      }
     }
   }
   if (retval.indexExprs.size() == 0 && retval.endExprs.size() == 0 && retval.sortDirection == SortDirectionType.INVALID) {
@@ -147,6 +162,9 @@
     if (retval.use == IndexUseType.COVERING_UNIQUE_EQUALITY) {
       retval.use=IndexUseType.INDEX_SCAN;
       retval.lookupType=IndexLookupType.GTE;
+      if (retval.sortDirection == SortDirectionType.DESC && retval.indexExprs.size() > 0) {
+        retval.sortDirection=SortDirectionType.INVALID;
+      }
     }
  else     if (retval.lookupType == IndexLookupType.GT) {
       AbstractExpression comparator=startingBoundExpr.getOriginalFilter();
