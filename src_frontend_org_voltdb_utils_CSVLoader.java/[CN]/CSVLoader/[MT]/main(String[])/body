@@ -1,13 +1,7 @@
 {
   start=System.currentTimeMillis();
-  long parsingTimeStart=start;
-  long parsingTimeEnd=start;
-  long insertTimeStart=start;
-  long insertTimeEnd=start;
   int waits=0;
   int shortWaits=0;
-  ClientStatsContext periodicStatsContext=null;
-  Timer timer=null;
   CSVConfig cfg=new CSVConfig();
   cfg.parse(CSVLoader.class.getName(),args);
   config=cfg;
@@ -15,17 +9,14 @@
   Tokenizer tokenizer=null;
   ICsvListReader listReader=null;
   try {
-    long st=System.currentTimeMillis();
     if (CSVLoader.standin) {
       tokenizer=new Tokenizer(new BufferedReader(new InputStreamReader(System.in)),csvPreference,config.strictquotes,config.escape,config.columnsizelimit,config.skip);
       listReader=new CsvListReader(tokenizer,csvPreference);
     }
  else {
-      tokenizer=new Tokenizer(new BufferedReader(new FileReader(config.file)),csvPreference,config.strictquotes,config.escape,config.columnsizelimit,config.skip);
+      tokenizer=new Tokenizer(new FileReader(config.file),csvPreference,config.strictquotes,config.escape,config.columnsizelimit,config.skip);
       listReader=new CsvListReader(tokenizer,csvPreference);
     }
-    long end=System.currentTimeMillis();
-    parsingTimeEnd+=(end - st);
   }
  catch (  FileNotFoundException e) {
     m_log.error("CSV file '" + config.file + "' could not be found.");
@@ -34,71 +25,59 @@
   String[] serverlist=config.servers.split(",");
   ClientConfig c_config=new ClientConfig(config.user,config.password);
   c_config.setProcedureCallTimeout(0);
-  if (config.mct) {
-    c_config.setHeavyweight(true);
-  }
   Client csvClient=null;
-  if (!config.check) {
+  try {
+    csvClient=CSVLoader.getClient(c_config,serverlist,config.port);
+  }
+ catch (  Exception e) {
+    m_log.error("Error to connect to the servers:" + config.servers);
+    close_cleanup();
+    System.exit(-1);
+  }
+  assert(csvClient != null);
+  try {
+    ProcedureCallback cb=null;
+    boolean lastOK=true;
+    int columnCnt=0;
+    VoltTable procInfo=null;
+    boolean isProcExist=false;
     try {
-      csvClient=CSVLoader.getClient(c_config,serverlist,config.port);
-      periodicStatsContext=csvClient.createStatsContext();
-      timer=schedulePeriodicStats(periodicStatsContext,start);
+      procInfo=csvClient.callProcedure("@SystemCatalog","PROCEDURECOLUMNS").getResults()[0];
+      while (procInfo.advanceRow()) {
+        if (insertProcedure.matches((String)procInfo.get("PROCEDURE_NAME",VoltType.STRING))) {
+          columnCnt++;
+          isProcExist=true;
+          String typeStr=(String)procInfo.get("TYPE_NAME",VoltType.STRING);
+          typeList.add(VoltType.typeFromString(typeStr));
+        }
+      }
     }
  catch (    Exception e) {
-      m_log.error("Error to connect to the servers:" + config.servers);
+      m_log.error(e.getMessage(),e);
       close_cleanup();
       System.exit(-1);
     }
-    assert(csvClient != null);
-  }
-  try {
-    int columnCnt=0;
-    ProcedureCallback cb=null;
-    boolean lastOK=true;
-    if (!cfg.check) {
-      VoltTable procInfo=null;
-      boolean isProcExist=false;
-      try {
-        procInfo=csvClient.callProcedure("@SystemCatalog","PROCEDURECOLUMNS").getResults()[0];
-        while (procInfo.advanceRow()) {
-          if (insertProcedure.matches((String)procInfo.get("PROCEDURE_NAME",VoltType.STRING))) {
-            columnCnt++;
-            isProcExist=true;
-            String typeStr=(String)procInfo.get("TYPE_NAME",VoltType.STRING);
-            typeList.add(VoltType.typeFromString(typeStr));
-          }
-        }
+    if (isProcExist == false) {
+      m_log.error("No matching insert procedure available");
+      close_cleanup();
+      System.exit(-1);
+    }
+    try {
+      if (isProcedureMp(csvClient)) {
+        m_log.warn("Using a multi-partitioned procedure to load data will be slow. " + "If loading a partitioned table, use a single-partitioned procedure " + "for best performance.");
       }
- catch (      Exception e) {
-        m_log.error(e.getMessage(),e);
-        close_cleanup();
-        System.exit(-1);
-      }
-      if (isProcExist == false) {
-        m_log.error("No matching insert procedure available");
-        close_cleanup();
-        System.exit(-1);
-      }
-      try {
-        if (isProcedureMp(csvClient)) {
-          m_log.warn("Using a multi-partitioned procedure to load data will be slow. " + "If loading a partitioned table, use a single-partitioned procedure " + "for best performance.");
-        }
-      }
- catch (      Exception e) {
-        m_log.fatal(e.getMessage(),e);
-        close_cleanup();
-        System.exit(-1);
-      }
+    }
+ catch (    Exception e) {
+      m_log.fatal(e.getMessage(),e);
+      close_cleanup();
+      System.exit(-1);
     }
     List<String> lineList=new ArrayList<String>();
     while ((config.limitrows-- > 0)) {
       try {
         if (listReader.getLineNumber() == 0)         totalLineCount.set(cfg.skip);
  else         totalLineCount.set(listReader.getLineNumber());
-        long st=System.currentTimeMillis();
         lineList=listReader.read();
-        long end=System.currentTimeMillis();
-        parsingTimeEnd+=(end - st);
         if (lineList == null) {
           if (totalLineCount.get() > listReader.getLineNumber())           totalLineCount.set(listReader.getLineNumber());
           break;
@@ -107,28 +86,15 @@
         boolean queued=false;
         while (queued == false) {
           String[] correctedLine=lineList.toArray(new String[0]);
-          if (!config.check) {
-            cb=new MyCallback(totalLineCount.get() + 1,config,lineList);
-            String lineCheckResult;
-            if ((lineCheckResult=checkparams_trimspace(correctedLine,columnCnt)) != null) {
-              String[] info={lineList.toString(),lineCheckResult};
-              synchronizeErrorInfo(totalLineCount.get() + 1,info);
-              break;
-            }
-            if (config.ping) {
-              queued=csvClient.callProcedure(cb,"@Ping",(Object[])correctedLine);
-            }
- else             if (config.dnp) {
-              queued=csvClient.callProcedure(cb,"DoNothingProcedure",(Object[])correctedLine);
-            }
- else {
-              queued=csvClient.callProcedure(cb,insertProcedure,(Object[])correctedLine);
-            }
-            outCount.incrementAndGet();
+          cb=new MyCallback(totalLineCount.get() + 1,config,lineList);
+          String lineCheckResult;
+          if ((lineCheckResult=checkparams_trimspace(correctedLine,columnCnt)) != null) {
+            String[] info={lineList.toString(),lineCheckResult};
+            synchronizeErrorInfo(totalLineCount.get() + 1,info);
+            break;
           }
- else {
-            queued=true;
-          }
+          queued=csvClient.callProcedure(cb,insertProcedure,(Object[])correctedLine);
+          outCount.incrementAndGet();
           if (queued == false) {
             ++waits;
             if (lastOK == false) {
@@ -145,38 +111,20 @@
         synchronizeErrorInfo(totalLineCount.get() + 1,info);
       }
     }
-    if (csvClient != null) {
-      csvClient.drain();
-    }
-    insertTimeEnd=System.currentTimeMillis();
+    csvClient.drain();
   }
  catch (  Exception e) {
     e.printStackTrace();
   }
-  m_log.info("Parsing CSV file took " + (parsingTimeEnd - parsingTimeStart) + " milliseconds.");
-  if (!config.check) {
-    m_log.info("Inserting Data took " + ((insertTimeEnd - insertTimeStart) - (parsingTimeEnd - parsingTimeStart)) + " milliseconds.");
-    m_log.info("Inserted " + outCount.get() + " and acknowledged "+ inCount.get()+ " rows (final)");
-  }
- else {
-    m_log.info("Verification of CSV input completed.");
-  }
+  m_log.info("Inserted " + outCount.get() + " and acknowledged "+ inCount.get()+ " rows (final)");
   if (waits > 0) {
     m_log.info("Waited " + waits + " times");
     if (shortWaits > 0) {
       m_log.info("Waited too briefly? " + shortWaits + " times");
     }
   }
-  if (!config.check) {
-    produceFiles();
-  }
+  produceFiles();
   close_cleanup();
   listReader.close();
-  if (timer != null) {
-    timer.cancel();
-    printStatistics(periodicStatsContext,start);
-  }
-  if (csvClient != null) {
-    csvClient.close();
-  }
+  csvClient.close();
 }
