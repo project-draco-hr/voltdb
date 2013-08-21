@@ -1,0 +1,39 @@
+{
+  String my_schema="create table BLAH (" + "clm_integer integer default 0 not null," + "clm_string varchar(20) default null"+ ");";
+  try {
+    pathToCatalog=Configuration.getPathToCatalogForTest("csv.jar");
+    pathToDeployment=Configuration.getPathToCatalogForTest("csv.xml");
+    builder=new VoltProjectBuilder();
+    builder.addLiteralSchema(my_schema);
+    boolean success=builder.compile(pathToCatalog,2,1,0);
+    assertTrue(success);
+    MiscUtils.copyFile(builder.getPathToDeployment(),pathToDeployment);
+    config=new VoltDB.Configuration();
+    config.m_pathToCatalog=pathToCatalog;
+    config.m_pathToDeployment=pathToDeployment;
+    localServer=new ServerThread(config);
+    client=null;
+    localServer.start();
+    localServer.waitForInitialization();
+    client=ClientFactory.createClient();
+    client.createConnection("localhost");
+    VoltTable warehousedata=new VoltTable(new VoltTable.ColumnInfo("clm_integer",VoltType.INTEGER),new VoltTable.ColumnInfo("clm_tinyint",VoltType.STRING));
+    for (int i=0; i < 10001; ++i) {
+      warehousedata.addRow(i,"name" + i);
+    }
+    VoltTable modCount;
+    modCount=client.callProcedure("@AdHoc","SELECT * FROM BLAH;").getResults()[0];
+    System.out.println("data inserted to table BLAH:\n" + modCount);
+    int rowct=modCount.getRowCount();
+  }
+  finally {
+    if (client != null)     client.close();
+    client=null;
+    if (localServer != null) {
+      localServer.shutdown();
+      localServer.join();
+    }
+    localServer=null;
+    System.gc();
+  }
+}
