@@ -3,8 +3,11 @@
   System.out.println("Starting testSaveAndRestorePartitionedTable");
   int num_partitioned_items_per_chunk=120;
   int num_partitioned_chunks=10;
+  int num_replicated_items_per_chunk=200;
+  int num_replicated_chunks=10;
   Client client=getClient();
   loadLargePartitionedTable(client,"PARTITION_TESTER",num_partitioned_items_per_chunk,num_partitioned_chunks);
+  loadLargeReplicatedTable(client,"REPLICATED_TESTER",num_replicated_items_per_chunk,num_replicated_chunks);
   VoltTable[] results=null;
   Thread.sleep(1000);
   VoltTable orig_mem=null;
@@ -67,36 +70,26 @@
     threwException=true;
   }
   assertTrue(threwException);
-  VoltDB.instance().getHostMessenger().getZK().delete(VoltZK.restoreMarker,-1);
-  VoltDB.instance().getHostMessenger().getZK().delete(VoltZK.perPartitionTxnIds,-1);
-  threwException=false;
-  try {
-    JSONObject jsObj=new JSONObject();
-    jsObj.put(SnapshotRestore.JSON_NONCE,TESTNONCE);
-    jsObj.put(SnapshotRestore.JSON_PATH,TMPDIR);
-    jsObj.put(SnapshotRestore.JSON_DUPLICATES_PATH,TMPDIR);
-    results=client.callProcedure("@SnapshotRestore",jsObj.toString()).getResults();
-    while (results[0].advanceRow()) {
-      if (results[0].getString("RESULT").equals("FAILURE")) {
-        fail(results[0].getString("ERR_MSG"));
-      }
-    }
-  }
- catch (  Exception ex) {
-    threwException=true;
-  }
-  assertFalse(threwException);
-  boolean haveCSVFile=false;
+  doDupRestore(client);
+  boolean havePartitionedCSVFile=false;
+  boolean haveReplicatedCSVFile=false;
   for (  File f : new File(TMPDIR).listFiles()) {
     final String name=f.getName();
     if (name.startsWith("PARTITION_TESTER") && name.endsWith(".csv")) {
-      haveCSVFile=true;
+      havePartitionedCSVFile=true;
       if (!(f.length() > 30000)) {
-        fail("Duplicates file is not as large as expected");
+        fail("Duplicates file is not as large as expected " + f.length());
+      }
+    }
+    if (name.startsWith("REPLICATED_TESTER") && name.endsWith(".csv")) {
+      haveReplicatedCSVFile=true;
+      if (!(f.length() > 60000)) {
+        fail("Duplicates file is not as large as expected " + f.length());
       }
     }
   }
-  assertTrue(haveCSVFile);
+  assertTrue(havePartitionedCSVFile);
+  assertTrue(haveReplicatedCSVFile);
   checkTable(client,"PARTITION_TESTER","PT_ID",num_partitioned_items_per_chunk * num_partitioned_chunks);
   boolean ok=false;
   int foundItem=0;
