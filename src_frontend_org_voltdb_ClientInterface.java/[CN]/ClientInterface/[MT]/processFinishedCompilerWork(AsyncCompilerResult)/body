@@ -13,7 +13,18 @@
             processExplainPlannedStmtBatch(plannedStmtBatch);
           }
  else {
-            createAdHocTransaction(plannedStmtBatch);
+            try {
+              createAdHocTransaction(plannedStmtBatch);
+            }
+ catch (            VoltTypeException vte) {
+              String msg="Unable to hash the partition for adhoc partition value: " + plannedStmtBatch.partitionParam + ", msg: "+ vte.getMessage();
+              ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.GRACEFUL_FAILURE,new VoltTable[0],msg,result.clientHandle);
+              ByteBuffer buf=ByteBuffer.allocate(errorResponse.getSerializedSize() + 4);
+              buf.putInt(buf.capacity() - 4);
+              errorResponse.flattenToBuffer(buf);
+              buf.flip();
+              c.writeStream().enqueue(buf);
+            }
           }
         }
  else         if (result instanceof CatalogChangeResult) {
