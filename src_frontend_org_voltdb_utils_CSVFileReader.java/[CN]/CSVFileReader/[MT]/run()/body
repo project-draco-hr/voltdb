@@ -21,7 +21,7 @@
       }
       String lineCheckResult;
       String[] correctedLine=lineList.toArray(new String[0]);
-      if ((lineCheckResult=CSVLoaderMT.checkparams_trimspace(correctedLine,columnCnt)) != null) {
+      if ((lineCheckResult=checkparams_trimspace(correctedLine,columnCnt)) != null) {
         String[] info={lineList.toString(),lineCheckResult};
         CSVLoaderMT.synchronizeErrorInfoForFuture(totalLineCount.get() + 1,info);
         if (++ecnt > config.maxerrors) {
@@ -39,8 +39,8 @@
           partitionId=TheHashinator.getPartitionForParameter(VoltType.BIGINT.getValue(),(Object)lineData.line[partitionedColumnIndex - 1]);
         }
         if (lineq.get(partitionId) == null) {
-          ArrayBlockingQueue<CSVLineWithMetaData> q=new ArrayBlockingQueue<CSVLineWithMetaData>(2000);
-          q.put(lineData);
+          BlockingQueue<CSVLineWithMetaData> q=new LinkedBlockingQueue<CSVLineWithMetaData>();
+          q.offer(lineData);
           lineq.put(partitionId,q);
           CSVPartitionProcessor pp=new CSVPartitionProcessor();
           pp.csvClient=csvClient;
@@ -58,7 +58,7 @@
         }
  else {
           BlockingQueue<CSVLineWithMetaData> q=lineq.get(partitionId);
-          q.put(lineData);
+          q.offer(lineData);
         }
       }
       totalRowCount.getAndIncrement();
@@ -96,14 +96,16 @@ catch (      InterruptedException ex2) {
  catch (  IOException ex) {
     m_log.error("Error cloging Reader: " + ex);
   }
-  done=true;
-  for (  BlockingQueue<CSVLineWithMetaData> q : lineq.values()) {
-    try {
-      q.put(dummy);
+ finally {
+    done=true;
+    for (    BlockingQueue<CSVLineWithMetaData> q : lineq.values()) {
+      try {
+        q.put(dummy);
+      }
+ catch (      InterruptedException ex) {
+        Logger.getLogger(CSVLoaderMT.class.getName()).log(Level.SEVERE,null,ex);
+      }
     }
- catch (    InterruptedException ex) {
-      Logger.getLogger(CSVLoaderMT.class.getName()).log(Level.SEVERE,null,ex);
-    }
+    m_log.info("Rows Queued by Reader: " + totalRowCount.get());
   }
-  m_log.info("Rows Queued by Reader: " + totalRowCount.get());
 }

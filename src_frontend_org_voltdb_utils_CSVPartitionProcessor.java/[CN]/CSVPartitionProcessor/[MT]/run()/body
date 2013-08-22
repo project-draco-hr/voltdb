@@ -1,4 +1,18 @@
 {
+  Client lcsvClient=csvClient;
+  if (config.ppc) {
+    System.out.println("Using per partition client connection.");
+    String[] serverlist=config.servers.split(",");
+    ClientConfig c_config=new ClientConfig(config.user,config.password);
+    c_config.setProcedureCallTimeout(0);
+    try {
+      lcsvClient=CSVLoaderMT.getClient(c_config,serverlist,config.port);
+    }
+ catch (    Exception e) {
+      m_log.error("Error to connect to the servers:" + config.servers);
+    }
+    assert(lcsvClient != null);
+  }
   VoltTable table=new VoltTable(colInfo);
   String procName=(isMP ? "@LoadMultipartitionTable" : (isLoadTable ? "@LoadPartitionData" : "@LoadSinglepartitionTable"));
   if (config.ping) {
@@ -9,6 +23,8 @@
     table=null;
   }
   System.out.println("Using Procedure: " + procName);
+  long batch_start=System.currentTimeMillis();
+  long batch_process_time=batch_start + processBatchEveryMilliseconds;
   while (true) {
     CSVLineWithMetaData lineList=null;
     try {
@@ -33,10 +49,10 @@
  else {
               param1=TheHashinator.valueToBytes(partitionId);
             }
-            csvClient.callProcedure(cbmt,procName,param1,tableName,table);
+            lcsvClient.callProcedure(cbmt,procName,param1,tableName,table);
           }
  else {
-            csvClient.callProcedure(cbmt,procName,tableName,table);
+            lcsvClient.callProcedure(cbmt,procName,tableName,table);
           }
           CSVFileReader.inCount.addAndGet(table.getRowCount());
           partitionProcessedCount+=table.getRowCount();
@@ -52,7 +68,7 @@
       continue;
     }
     if (!config.legacy) {
-      VoltTableUtil.toVoltTableFromLine(table,lineList.line,colNames,columnTypes);
+      VoltTableUtil.toVoltTableFromLine(table,lineList.line,columnTypes);
       if (table.getRowCount() > config.batch) {
         try {
           CSVLoaderMT.MyMTCallback cbmt=new CSVLoaderMT.MyMTCallback(table.getRowCount(),lineList.line);
@@ -64,10 +80,10 @@
  else {
               param1=TheHashinator.valueToBytes(partitionId);
             }
-            csvClient.callProcedure(cbmt,procName,param1,tableName,table);
+            lcsvClient.callProcedure(cbmt,procName,param1,tableName,table);
           }
  else {
-            csvClient.callProcedure(cbmt,procName,tableName,table);
+            lcsvClient.callProcedure(cbmt,procName,tableName,table);
           }
           CSVFileReader.inCount.addAndGet(table.getRowCount());
           partitionProcessedCount+=table.getRowCount();
@@ -76,6 +92,9 @@
  catch (        IOException ex) {
           Logger.getLogger(CSVPartitionProcessor.class.getName()).log(Level.SEVERE,null,ex);
         }
+        batch_start=System.currentTimeMillis();
+        ;
+        batch_process_time=batch_start + processBatchEveryMilliseconds;
       }
     }
  else {
@@ -87,6 +106,18 @@
  catch (      IOException ex) {
         Logger.getLogger(CSVPartitionProcessor.class.getName()).log(Level.SEVERE,null,ex);
       }
+    }
+  }
+  if (config.ppc) {
+    try {
+      lcsvClient.drain();
+      lcsvClient.close();
+    }
+ catch (    NoConnectionsException ex) {
+      Logger.getLogger(CSVPartitionProcessor.class.getName()).log(Level.SEVERE,null,ex);
+    }
+catch (    InterruptedException ex) {
+      Logger.getLogger(CSVPartitionProcessor.class.getName()).log(Level.SEVERE,null,ex);
     }
   }
 }
