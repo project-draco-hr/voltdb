@@ -1,39 +1,33 @@
 {
-  String my_schema="create table BLAH (" + "clm_integer integer default 0 not null," + "clm_string varchar(20) default null"+ ");";
-  try {
-    pathToCatalog=Configuration.getPathToCatalogForTest("csv.jar");
-    pathToDeployment=Configuration.getPathToCatalogForTest("csv.xml");
-    builder=new VoltProjectBuilder();
-    builder.addLiteralSchema(my_schema);
-    boolean success=builder.compile(pathToCatalog,2,1,0);
-    assertTrue(success);
-    MiscUtils.copyFile(builder.getPathToDeployment(),pathToDeployment);
-    config=new VoltDB.Configuration();
-    config.m_pathToCatalog=pathToCatalog;
-    config.m_pathToDeployment=pathToDeployment;
-    localServer=new ServerThread(config);
-    client=null;
-    localServer.start();
-    localServer.waitForInitialization();
-    client=ClientFactory.createClient();
-    client.createConnection("localhost");
-    VoltTable warehousedata=new VoltTable(new VoltTable.ColumnInfo("clm_integer",VoltType.INTEGER),new VoltTable.ColumnInfo("clm_tinyint",VoltType.STRING));
-    for (int i=0; i < 10001; ++i) {
-      warehousedata.addRow(i,"name" + i);
-    }
-    VoltTable modCount;
-    modCount=client.callProcedure("@AdHoc","SELECT * FROM BLAH;").getResults()[0];
-    System.out.println("data inserted to table BLAH:\n" + modCount);
-    int rowct=modCount.getRowCount();
+  TPCCProjectBuilder builder=new TPCCProjectBuilder();
+  Catalog catalog=builder.createTPCCSchemaCatalog();
+  int WAREHOUSE_TABLEID=catalog.getClusters().get("cluster").getDatabases().get("database").getTables().get("WAREHOUSE").getRelativeIndex();
+  m_ee.loadCatalog(0,catalog.serialize());
+  int tableSize=10001;
+  int longOpThreshold=10000;
+  VoltTable warehousedata=new VoltTable(new VoltTable.ColumnInfo("W_ID",VoltType.SMALLINT),new VoltTable.ColumnInfo("W_NAME",VoltType.STRING),new VoltTable.ColumnInfo("W_STREET_1",VoltType.STRING),new VoltTable.ColumnInfo("W_STREET_2",VoltType.STRING),new VoltTable.ColumnInfo("W_CITY",VoltType.STRING),new VoltTable.ColumnInfo("W_STATE",VoltType.STRING),new VoltTable.ColumnInfo("W_ZIP",VoltType.STRING),new VoltTable.ColumnInfo("W_TAX",VoltType.FLOAT),new VoltTable.ColumnInfo("W_YTD",VoltType.FLOAT));
+  for (int i=0; i < tableSize; ++i) {
+    warehousedata.addRow(i,"name" + i,"st1","st2","city","ST","zip",0,0);
   }
-  finally {
-    if (client != null)     client.close();
-    client=null;
-    if (localServer != null) {
-      localServer.shutdown();
-      localServer.join();
-    }
-    localServer=null;
-    System.gc();
+  m_ee.loadTable(WAREHOUSE_TABLEID,warehousedata,0,0,false,Long.MAX_VALUE);
+  assertEquals(tableSize,m_ee.serializeTable(WAREHOUSE_TABLEID).getRowCount());
+  System.out.println("Rows loaded to table " + m_ee.serializeTable(WAREHOUSE_TABLEID).getRowCount());
+  Cluster cluster=catalog.getClusters().get("cluster");
+  CatalogMap<Procedure> procedures=cluster.getDatabases().get("database").getProcedures();
+  Procedure selectProc=procedures.getIgnoreCase("SelectAll");
+  Statement selectStmt=selectProc.getStatements().getIgnoreCase("warehouse");
+  PlanFragment selectTopFrag=null;
+  PlanFragment selectBottomFrag=null;
+  int i=0;
+  for (  PlanFragment f : selectStmt.getFragments()) {
+    if (i == 0)     selectTopFrag=f;
+ else     selectBottomFrag=f;
+    i++;
   }
+  ActivePlanRepository.clear();
+  ActivePlanRepository.addFragmentForTest(CatalogUtil.getUniqueIdForFragment(selectBottomFrag),Encoder.base64Decode(selectBottomFrag.getPlannodetree()));
+  ParameterSet params=ParameterSet.emptyParameterSet();
+  m_ee.executePlanFragments(1,new long[]{CatalogUtil.getUniqueIdForFragment(selectBottomFrag)},null,new ParameterSet[]{params},3,2,42,Long.MAX_VALUE,new RunningProcedureContext());
+  assertEquals(1,m_ee.m_callsFromEE);
+  assertEquals(longOpThreshold,m_ee.m_lastTuplesAccessed);
 }
