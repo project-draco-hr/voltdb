@@ -6,36 +6,41 @@
   System.out.print(HORIZONTAL_RULE);
   System.out.println("Loading Tuples");
   System.out.println(HORIZONTAL_RULE);
+  String loadproc=null;
+  String tablename=null;
+  String scanproc=null;
+  if (config.test.equals("sequential")) {
+    loadproc="NARROW_P.insert";
+    tablename="narrow_p";
+    scanproc="MinSeqScan";
+  }
+ else   if (config.test.equals("index")) {
+    loadproc="NARROW_INDEX_P.insert";
+    tablename="narrow_index_p";
+    scanproc="MinIndexScan";
+  }
   for (long i=0; i < config.rows; i++) {
-    client.callProcedure(new NullCallback(),"NARROW_P.insert",i % 509,i);
-    client.callProcedure(new NullCallback(),"NARROW_INDEX_P.insert",i % 509,i);
+    client.callProcedure(new NullCallback(),loadproc,i % 509,i);
     if ((i % 100000) == 0) {
       System.out.printf("Loading row at index %d.\n",i);
     }
   }
   client.drain();
-  ClientResponse cr=client.callProcedure("@AdHoc","select count(*) from narrow_p;");
-  long rows1=cr.getResults()[0].asScalarLong();
-  cr=client.callProcedure("@AdHoc","select count(*) from narrow_index_p;");
-  long rows2=cr.getResults()[0].asScalarLong();
-  System.out.printf("Loaded %d,%d rows.\n",rows1,rows2);
+  ClientResponse cr=client.callProcedure("@AdHoc","select count(*) from " + tablename + ";");
+  long rows=cr.getResults()[0].asScalarLong();
+  System.out.printf("Loaded %d rows.\n",rows);
+  assert(rows == config.rows);
   System.out.print(HORIZONTAL_RULE);
   System.out.println("Starting Benchmark");
   System.out.println(HORIZONTAL_RULE);
   fullStatsContext.fetchAndResetBaseline();
   periodicStatsContext.fetchAndResetBaseline();
-  benchmark1StartTS=System.currentTimeMillis();
-  System.out.println("\nRunning seq scan benchmark...");
+  benchmarkStartTS=System.currentTimeMillis();
+  System.out.printf("\nRunning %s scan benchmark...\n",config.test);
   for (int i=0; i < config.runs; i++) {
-    client.callProcedure("MinSeqScan");
+    client.callProcedure(scanproc);
   }
-  benchmark1EndTS=System.currentTimeMillis();
-  benchmark2StartTS=System.currentTimeMillis();
-  System.out.println("\nRunning index scan benchmark...");
-  for (int i=0; i < config.runs; i++) {
-    client.callProcedure("MinIndexScan");
-  }
-  benchmark2EndTS=System.currentTimeMillis();
+  benchmarkEndTS=System.currentTimeMillis();
   printResults();
   client.close();
 }
