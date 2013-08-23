@@ -1,6 +1,4 @@
 {
-  List<String> lineList=new ArrayList<String>();
-  long ecnt=0;
   while ((config.limitrows-- > 0)) {
     try {
       if (listReader.getLineNumber() == 0) {
@@ -10,7 +8,7 @@
         totalLineCount.set(listReader.getLineNumber());
       }
       long st=System.nanoTime();
-      lineList=listReader.read();
+      List<String> lineList=listReader.read();
       long end=System.nanoTime();
       parsingTimeEnd+=(end - st);
       if (lineList == null) {
@@ -19,74 +17,42 @@
         }
         break;
       }
+      totalRowCount.incrementAndGet();
       String lineCheckResult;
       String[] correctedLine=lineList.toArray(new String[0]);
       if ((lineCheckResult=checkparams_trimspace(correctedLine,columnCnt)) != null) {
         String[] info={lineList.toString(),lineCheckResult};
-        CSVLoaderMT.synchronizeErrorInfoForFuture(totalLineCount.get() + 1,info);
-        if (++ecnt > config.maxerrors) {
+        if (synchronizeErrorInfo(totalLineCount.get() + 1,info)) {
+          errored=true;
           break;
         }
-        totalRowCount.getAndIncrement();
         continue;
       }
       CSVLineWithMetaData lineData=new CSVLineWithMetaData();
-      lineData.parColumnName=parColumnName;
       lineData.line=correctedLine;
+      lineData.lineNumber=listReader.getLineNumber();
       int partitionId=0;
-      if (!config.check) {
-        if (!CSVPartitionProcessor.isMP) {
-          partitionId=TheHashinator.getPartitionForParameter(VoltType.BIGINT.getValue(),(Object)lineData.line[partitionedColumnIndex - 1]);
-        }
-        if (lineq.get(partitionId) == null) {
-          BlockingQueue<CSVLineWithMetaData> q=new LinkedBlockingQueue<CSVLineWithMetaData>();
-          q.offer(lineData);
-          lineq.put(partitionId,q);
-          CSVPartitionProcessor pp=new CSVPartitionProcessor();
-          pp.csvClient=csvClient;
-          pp.partitionId=partitionId;
-          pp.tableName=tableName;
-          pp.columnCnt=columnCnt;
-          pp.lineq=q;
-          pp.rdr=this;
-          pp.dummy=dummy;
-          Thread th=new Thread(pp);
-          th.setName("PartitionProcessor-" + partitionId);
-          th.setDaemon(true);
-          th.start();
-          spawned.add(th);
-        }
- else {
-          BlockingQueue<CSVLineWithMetaData> q=lineq.get(partitionId);
-          q.offer(lineData);
-        }
+      if (!CSVPartitionProcessor.isMP) {
+        partitionId=TheHashinator.getPartitionForParameter(partitionColumnType.getValue(),(Object)lineData.line[partitionedColumnIndex - 1]);
       }
-      totalRowCount.getAndIncrement();
+      BlockingQueue<CSVLineWithMetaData> q=lineq.get(partitionId);
+      if (!q.offer(lineData)) {
+        q.put(lineData);
+      }
     }
  catch (    SuperCsvException e) {
       e.printStackTrace();
-      totalRowCount.getAndIncrement();
       String[] info={e.getMessage(),""};
-      try {
-        CSVLoaderMT.synchronizeErrorInfo(totalLineCount.get() + 1,info);
+      if (synchronizeErrorInfo(totalLineCount.get() + 1,info)) {
+        errored=true;
+        break;
       }
- catch (      IOException ex) {
-      }
-catch (      InterruptedException ex) {
-      }
+    }
+catch (    IOException ioex) {
+      ioex.printStackTrace();
       break;
     }
-catch (    Throwable ex) {
-      ex.printStackTrace();
-      totalRowCount.getAndIncrement();
-      String[] info={ex.getMessage(),""};
-      try {
-        CSVLoaderMT.synchronizeErrorInfo(totalLineCount.get() + 1,info);
-      }
- catch (      IOException ex1) {
-      }
-catch (      InterruptedException ex2) {
-      }
+catch (    InterruptedException ex) {
       break;
     }
   }
@@ -97,15 +63,25 @@ catch (      InterruptedException ex2) {
     m_log.error("Error cloging Reader: " + ex);
   }
  finally {
-    done=true;
     for (    BlockingQueue<CSVLineWithMetaData> q : lineq.values()) {
       try {
+        if (errored) {
+          q.clear();
+        }
         q.put(dummy);
       }
  catch (      InterruptedException ex) {
-        Logger.getLogger(CSVLoaderMT.class.getName()).log(Level.SEVERE,null,ex);
+        ;
       }
     }
     m_log.info("Rows Queued by Reader: " + totalRowCount.get());
+  }
+  try {
+    m_log.info("Waiting for partition processors to finish.");
+    pcount.await();
+    m_log.info("Partition Processors Done.");
+  }
+ catch (  InterruptedException ex) {
+    ;
   }
 }
