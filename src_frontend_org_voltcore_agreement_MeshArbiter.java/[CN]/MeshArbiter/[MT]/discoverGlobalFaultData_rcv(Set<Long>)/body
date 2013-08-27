@@ -1,0 +1,64 @@
+{
+  long blockedOnReceiveStart=System.currentTimeMillis();
+  long lastReportTime=0;
+  boolean haveEnough=false;
+  int[] forwardStallCount=new int[]{FORWARD_STALL_COUNT};
+  do {
+    VoltMessage m=m_mailbox.recvBlocking(receiveSubjects,5);
+    final long now=System.currentTimeMillis();
+    if (now - blockedOnReceiveStart > 10000) {
+      if (now - lastReportTime > 60000) {
+        lastReportTime=System.currentTimeMillis();
+        haveNecessaryFaultInfo(m_seeker.getSurvivors(),true);
+      }
+    }
+    if (m == null) {
+      m_meshAide.sendHeartbeats(m_seeker.getSurvivors());
+    }
+ else     if (m.getSubject() == Subject.SITE_FAILURE_UPDATE.getId()) {
+      SiteFailureMessage sfm=(SiteFailureMessage)m;
+      if (!m_seeker.getSurvivors().contains(m.m_sourceHSId) || m_failedSites.contains(m.m_sourceHSId) || m_failedSites.containsAll(sfm.getFailedSites()))       continue;
+      updateFailedSitesLedger(hsIds,sfm);
+      m_seeker.add(sfm);
+      addForwardCandidate(new SiteFailureForwardMessage(sfm));
+      m_recoveryLog.info("Agreement, Received " + sfm);
+    }
+ else     if (m.getSubject() == Subject.SITE_FAILURE_FORWARD.getId()) {
+      SiteFailureForwardMessage fsfm=(SiteFailureForwardMessage)m;
+      addForwardCandidate(fsfm);
+      if (!hsIds.contains(fsfm.m_sourceHSId) || m_seeker.getSurvivors().contains(fsfm.m_reportingHSId) || m_failedSites.contains(fsfm.m_reportingHSId)|| m_failedSites.containsAll(fsfm.getFailedSites()))       continue;
+      m_seeker.add(fsfm);
+      m_recoveryLog.info("Agreement, Received forward " + fsfm);
+      forwardStallCount[0]=FORWARD_STALL_COUNT;
+    }
+ else     if (m.getSubject() == Subject.FAILURE.getId()) {
+      FaultMessage fm=(FaultMessage)m;
+      Discard ignoreIt=mayIgnore(hsIds,fm);
+      if (Discard.DoNot == ignoreIt) {
+        m_mailbox.deliverFront(m);
+        m_recoveryLog.info("Agreement, Detected a concurrent failure from FaultDistributor, new failed site " + CoreUtils.hsIdToString(fm.failedSite));
+        return false;
+      }
+ else {
+        if (m_recoveryLog.isDebugEnabled()) {
+          ignoreIt.log(fm);
+        }
+      }
+    }
+    haveEnough=haveEnough || haveNecessaryFaultInfo(m_seeker.getSurvivors(),false);
+    if (haveEnough) {
+      Iterator<Map.Entry<Long,SiteFailureForwardMessage>> itr=m_forwardCandidates.entrySet().iterator();
+      while (itr.hasNext()) {
+        Map.Entry<Long,SiteFailureForwardMessage> e=itr.next();
+        Set<Long> unseenBy=m_seeker.forWhomSiteIsDead(e.getKey());
+        if (unseenBy.size() > 0) {
+          m_mailbox.send(Longs.toArray(unseenBy),e.getValue());
+          m_recoveryLog.info("Agreement, fowarding to " + CoreUtils.hsIdCollectionToString(unseenBy) + " "+ e.getValue());
+        }
+        itr.remove();
+      }
+    }
+  }
+ while (!haveEnough || m_seeker.needForward(forwardStallCount));
+  return true;
+}

@@ -1,9 +1,33 @@
 {
   assert(subAssembler != null);
   AbstractPlanNode subSelectRoot=subAssembler.nextPlan();
-  if (subSelectRoot == null)   return null;
+  if (subSelectRoot == null) {
+    m_recentErrorMsg=subAssembler.m_recentErrorMsg;
+    return null;
+  }
   AbstractPlanNode root=subSelectRoot;
-  root.generateOutputSchema(m_catalogDb);
+  if (m_partitioning.requiresTwoFragments()) {
+    ArrayList<AbstractPlanNode> receivers=root.findAllNodesOfType(PlanNodeType.RECEIVE);
+    if (receivers.size() == 1) {
+      HashSet<String> tablesRead=new HashSet<String>();
+      root.getTablesReadByFragment(tablesRead);
+      for (      String tableName : tablesRead) {
+        Table table=m_parsedSelect.getTableFromDB(tableName);
+        if (!table.getIsreplicated()) {
+          throw new PlanningErrorException("This special case join between an outer replicated table and " + "an inner partitioned table is too complex and is not supported.");
+        }
+      }
+    }
+ else     if (receivers.size() > 0) {
+      throw new PlanningErrorException("This special case join between an outer replicated table and " + "an inner partitioned table is too complex and is not supported.");
+    }
+ else {
+      root=subAssembler.addSendReceivePair(root);
+    }
+  }
+  if (root instanceof ReceivePlanNode && m_parsedSelect.mayNeedAvgPushdown()) {
+    m_parsedSelect.switchOptimalSuite();
+  }
   root=handleAggregationOperators(root);
   if (m_parsedSelect.hasComplexAgg()) {
     AbstractPlanNode aggNode=root.getChild(0);
@@ -21,6 +45,5 @@
   if (m_parsedSelect.hasLimitOrOffset()) {
     root=handleLimitOperator(root);
   }
-  root.generateOutputSchema(m_catalogDb);
   return root;
 }

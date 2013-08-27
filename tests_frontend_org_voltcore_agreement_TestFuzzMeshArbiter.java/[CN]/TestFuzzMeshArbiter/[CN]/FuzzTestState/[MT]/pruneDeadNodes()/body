@@ -1,0 +1,58 @@
+{
+  NavigableMap<Integer,Integer> expectations=getFailedCountMap();
+  while (expectations.isEmpty()) {
+    expect();
+    expectations=getFailedCountMap();
+  }
+  m_fuzzLog.info("expectations at prune: " + expectations);
+  Map<Integer,Integer> laggers=Maps.filterKeys(expectations,not(equalTo(expectations.firstKey())));
+  int expectedFails=0;
+  Set<Integer> pruneSizes=Sets.newHashSet();
+  for (  Map.Entry<Integer,Integer> e : laggers.entrySet()) {
+    pruneSizes.add(m_nodes.size() - e.getKey());
+    expectedFails+=e.getValue();
+  }
+  m_fuzzLog.info("pruneSizes are: " + pruneSizes);
+  Map<Long,MiniNode> removed=Maps.newHashMap();
+  Iterator<Map.Entry<Long,MiniNode>> itr;
+  int attempts=50;
+  int actualFails=0;
+  while (--attempts > 0 && actualFails < expectedFails) {
+    itr=m_nodes.entrySet().iterator();
+    while (itr.hasNext()) {
+      Map.Entry<Long,MiniNode> e=itr.next();
+      MiniNode node=e.getValue();
+      int connectedCount=node.getNodeState() == NodeState.STOP ? 0 : node.getConnectedNodes().size();
+      m_fuzzLog.debug("Connection count for " + CoreUtils.hsIdToString(e.getKey()) + " is "+ connectedCount);
+      if (connectedCount == 0 || pruneSizes.contains(connectedCount)) {
+        if (pruneSizes.contains(connectedCount)) {
+          actualFails+=1;
+        }
+        removed.put(e.getKey(),e.getValue());
+        itr.remove();
+      }
+    }
+    Thread.sleep(100);
+  }
+  assertEquals("timeout while waiting for mini node to catch up with minisite",expectedFails,actualFails);
+  itr=m_nodes.entrySet().iterator();
+  while (itr.hasNext()) {
+    Map.Entry<Long,MiniNode> e=itr.next();
+    MiniNode node=e.getValue();
+    for (    long rmd : removed.keySet()) {
+      node.stopTracking(rmd);
+    }
+  }
+  for (  Map.Entry<Long,MiniNode> e : removed.entrySet()) {
+    MiniNode node=e.getValue();
+    if (node.getNodeState() != NodeState.STOP) {
+      node.shutdown();
+      node.join();
+    }
+  }
+  m_fuzzLog.info("pruned " + removed.size() + " nodes");
+  m_expectedLive.clear();
+  m_expectedLive.addAll(m_nodes.keySet());
+  m_alreadyPicked.clear();
+  settleMesh();
+}
