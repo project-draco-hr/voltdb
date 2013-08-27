@@ -3,6 +3,7 @@
   final String path=jsObj.getString(JSON_PATH);
   final String nonce=jsObj.getString(JSON_NONCE);
   final String dupsPath=jsObj.optString(JSON_DUPLICATES_PATH,null);
+  final byte useHashinatorData=(byte)(jsObj.has(JSON_HASHINATOR) && jsObj.getBoolean(JSON_HASHINATOR) ? 1 : 0);
   final long startTime=System.currentTimeMillis();
   if (dupsPath != null) {
     CONSOLE_LOG.info("Restoring from path: " + path + " with nonce: "+ nonce+ " and duplicate rows will be output to "+ dupsPath);
@@ -23,6 +24,21 @@
     if (perPartitionTxnIds.length == 0) {
       perPartitionTxnIds=new long[]{ctx.getCurrentTxnId()};
     }
+    if (useHashinatorData != 0 && !digests.isEmpty()) {
+      InstanceId iid=null;
+      if (digests.get(0).has("instanceId")) {
+        iid=new InstanceId(digests.get(0).getJSONObject("instanceId"));
+      }
+      byte[] hashConfig=performRestoreHashinatorScanWork(iid);
+      if (useHashinatorData != 0 && hashConfig != null) {
+        VoltTable[] hashinatorResults=performRestoreHashinatorDistributeWork(hashConfig);
+        while (hashinatorResults[0].advanceRow()) {
+          if (hashinatorResults[0].getString("RESULT").equals("FAILURE")) {
+            throw new VoltAbortException("Error distributing hashinator.");
+          }
+        }
+      }
+    }
   }
  catch (  VoltAbortException e) {
     ColumnInfo[] result_columns=new ColumnInfo[2];
@@ -31,7 +47,7 @@
     result_columns[ii++]=new ColumnInfo("ERR_MSG",VoltType.STRING);
     VoltTable results[]=new VoltTable[]{new VoltTable(result_columns)};
     results[0].addRow("FAILURE",e.toString());
-    noteOperationalFailure("Restore failed to complete. See response table for additional info.");
+    noteOperationalFailure(RESTORE_FAILED);
     return results;
   }
   ClusterSaveFileState savefile_state=null;
@@ -60,7 +76,7 @@
     result_columns[ii++]=new ColumnInfo("ERR_MSG",VoltType.STRING);
     VoltTable results[]=new VoltTable[]{new VoltTable(result_columns)};
     results[0].addRow("FAILURE",e.toString());
-    noteOperationalFailure("Restore failed to complete. See response table for additional info.");
+    noteOperationalFailure(RESTORE_FAILED);
     return results;
   }
   assert(relevantTableNames != null);
@@ -101,7 +117,7 @@
     }
   }
   if (results != null) {
-    noteOperationalFailure("Restore failed to complete. See response table for additional info.");
+    noteOperationalFailure(RESTORE_FAILED);
     return results;
   }
   try {

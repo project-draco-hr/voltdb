@@ -1,0 +1,61 @@
+{
+  SynthesizedPlanFragment[] pfs=new SynthesizedPlanFragment[2];
+  pfs[0]=new SynthesizedPlanFragment();
+  pfs[0].fragmentId=SysProcFragmentId.PF_restoreHashinatorScan;
+  pfs[0].outputDepId=DEP_restoreHashinatorScan;
+  pfs[0].inputDepIds=new int[]{};
+  pfs[0].multipartition=true;
+  pfs[0].parameters=ParameterSet.emptyParameterSet();
+  pfs[1]=new SynthesizedPlanFragment();
+  pfs[1].fragmentId=SysProcFragmentId.PF_restoreHashinatorScanResults;
+  pfs[1].outputDepId=DEP_restoreHashinatorScanResults;
+  pfs[1].inputDepIds=new int[]{DEP_restoreHashinatorScan};
+  pfs[1].multipartition=false;
+  pfs[1].parameters=ParameterSet.emptyParameterSet();
+  VoltTable[] results=executeSysProcPlanFragments(pfs,DEP_restoreHashinatorScanResults);
+  byte[] result=null;
+  int ioErrors=0;
+  int iidErrors=0;
+  Set<Long> versions=new HashSet<Long>();
+  while (results[0].advanceRow()) {
+    if (results[0].getString("RESULT").equals("FAILURE")) {
+      throw new VoltAbortException(results[0].getString("ERR_MSG"));
+    }
+    ByteBuffer buf=ByteBuffer.wrap(results[0].getVarbinary("HASH"));
+    HashinatorSnapshotData hashData=new HashinatorSnapshotData();
+    try {
+      InstanceId iidSnap=hashData.restoreFromBuffer(buf);
+      assert(iidSnap != null);
+      buf.clear();
+      versions.add(hashData.m_version);
+      if (!iidSnap.equals(iid)) {
+        iidErrors++;
+      }
+      if (result == null) {
+        result=hashData.m_serData;
+      }
+    }
+ catch (    IOException e) {
+      ioErrors++;
+    }
+  }
+  if (result == null) {
+    throw new VoltAbortException(String.format(HASHINATOR_ALL_BAD,"final"));
+  }
+  if (ioErrors > 0) {
+    SNAP_LOG.warn(String.format("Failed to load %d of %d hashinator snapshot data files.",ioErrors,results[0].getRowCount()));
+  }
+  boolean abort=false;
+  if (iidErrors > 0) {
+    SNAP_LOG.error(String.format("%d hashinator snapshot files have the wrong instance ID.",iidErrors));
+    abort=true;
+  }
+  if (versions.size() > 1) {
+    SNAP_LOG.error(String.format("Expect one version across all hashinator snapshots. " + "Found %d.",versions.size()));
+    abort=true;
+  }
+  if (abort) {
+    throw new VoltAbortException("Failed to load hashinator snapshot data.");
+  }
+  return result;
+}

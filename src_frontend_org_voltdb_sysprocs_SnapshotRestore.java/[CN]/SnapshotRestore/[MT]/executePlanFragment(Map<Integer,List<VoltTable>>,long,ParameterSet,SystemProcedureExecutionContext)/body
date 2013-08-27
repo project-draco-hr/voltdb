@@ -76,9 +76,58 @@
     VoltTable result=VoltTableUtil.unionTables(dependencies.get(DEP_restoreDigestScan));
     return new DependencyPair(DEP_restoreDigestScanResults,result);
   }
+ else   if (fragmentId == SysProcFragmentId.PF_restoreHashinatorScan) {
+    VoltTable result=new VoltTable(new VoltTable.ColumnInfo("HASH",VoltType.VARBINARY),new VoltTable.ColumnInfo("RESULT",VoltType.STRING),new VoltTable.ColumnInfo("ERR_MSG",VoltType.STRING));
+    if (context.isLowestSiteId()) {
+      TRACE_LOG.trace("Checking saved hashinator state for restore of: " + m_filePath + ", "+ m_fileNonce);
+      List<ByteBuffer> configs;
+      try {
+        configs=SnapshotUtil.retrieveHashinatorConfigs(m_filePath,m_fileNonce,1,SNAP_LOG);
+        if (configs.size() == 0) {
+          String errMsg=String.format(HASHINATOR_ALL_BAD,"fragment");
+          SNAP_LOG.error(errMsg);
+          result.addRow(null,"FAILURE",errMsg);
+        }
+ else {
+          for (          ByteBuffer config : configs) {
+            assert(config.hasArray());
+            result.addRow(config.array(),"SUCCESS",null);
+          }
+        }
+      }
+ catch (      IOException e) {
+      }
+    }
+    return new DependencyPair(DEP_restoreHashinatorScan,result);
+  }
+ else   if (fragmentId == SysProcFragmentId.PF_restoreHashinatorScanResults) {
+    TRACE_LOG.trace("Aggregating hashinator state");
+    assert(dependencies.size() > 0);
+    VoltTable result=VoltTableUtil.unionTables(dependencies.get(DEP_restoreHashinatorScan));
+    return new DependencyPair(DEP_restoreHashinatorScanResults,result);
+  }
+ else   if (fragmentId == SysProcFragmentId.PF_restoreDistributeHashinator) {
+    Object paramsArray[]=params.toArray();
+    assert(paramsArray.length == 1);
+    assert(paramsArray[0] != null);
+    assert(paramsArray[0] instanceof byte[]);
+    VoltTable result=new VoltTable(new VoltTable.ColumnInfo("RESULT",VoltType.STRING));
+    byte[] hashConfig=(byte[])paramsArray[0];
+    TheHashinator.deserializeConfiguredHashinator(context.getCurrentTxnId(),hashConfig);
+    Pair<TheHashinator.HashinatorType,byte[]> updateData=TheHashinator.getCurrentConfig();
+    context.updateHashinator(updateData);
+    return new DependencyPair(DEP_restoreDistributeHashinator,result);
+  }
+ else   if (fragmentId == SysProcFragmentId.PF_restoreDistributeHashinatorResults) {
+    TRACE_LOG.trace("Aggregating hashinator distribution state");
+    assert(dependencies.size() > 0);
+    VoltTable result=VoltTableUtil.unionTables(dependencies.get(DEP_restoreDistributeHashinator));
+    return new DependencyPair(DEP_restoreDistributeHashinatorResults,result);
+  }
  else   if (fragmentId == SysProcFragmentId.PF_restoreScan) {
-    assert(params.toArray()[0] != null);
-    assert(params.toArray()[1] != null);
+    Object paramsArray[]=params.toArray();
+    assert(paramsArray[0] != null);
+    assert(paramsArray[1] != null);
     String hostname=CoreUtils.getHostnameOrAddress();
     VoltTable result=ClusterSaveFileState.constructEmptySaveFileStateVoltTable();
     if (context.isLowestSiteId()) {
