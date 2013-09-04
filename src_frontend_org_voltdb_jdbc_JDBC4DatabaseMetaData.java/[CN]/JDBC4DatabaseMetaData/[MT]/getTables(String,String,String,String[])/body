@@ -1,5 +1,4 @@
 {
-  if ((tableNamePattern != null && !tableNamePattern.equals("%")) || (types != null && types.length > tableTypes.length))   throw new SQLException(String.format("getTables('%s','%s','%s',%d) does not support pattern filtering",catalog,schemaPattern,tableNamePattern,types != null ? types.length : 0));
   checkClosed();
   this.sysCatalog.setString(1,"TABLES");
   JDBC4ResultSet res=(JDBC4ResultSet)this.sysCatalog.executeQuery();
@@ -8,9 +7,16 @@
   if (types != null) {
     typeStrings=Arrays.asList(types);
   }
+  if (tableNamePattern == null || tableNamePattern.length() == 0) {
+    tableNamePattern="%";
+  }
+  Pattern table_pattern=computeJavaPattern(tableNamePattern);
   while (res.next()) {
     if (typeStrings == null || typeStrings.contains(res.getString("TABLE_TYPE"))) {
-      vtable.addRow(res.getRowData());
+      Matcher table_matcher=table_pattern.matcher(res.getString("TABLE_NAME"));
+      if (table_matcher.matches()) {
+        vtable.addRow(res.getRowData());
+      }
     }
   }
   return new JDBC4ResultSet(this.sysCatalog,vtable);
