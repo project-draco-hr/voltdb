@@ -1,10 +1,10 @@
 {
   VoltServerConfig config=null;
   MultiConfigSuiteBuilder builder=new MultiConfigSuiteBuilder(TestPlansGroupByComplexMaterializedViewSuite.class);
-  ByteArrayOutputStream capturer=new ByteArrayOutputStream();
-  PrintStream capturing=new PrintStream(capturer);
   String literalSchema=null;
   boolean success=true;
+  ByteArrayOutputStream capturer=new ByteArrayOutputStream();
+  PrintStream capturing=new PrintStream(capturer);
   String captured=null;
   String[] lines=null;
   VoltProjectBuilder project0=new VoltProjectBuilder();
@@ -36,32 +36,24 @@
   assertFalse(success);
   captured=capturer.toString("UTF-8");
   lines=captured.split("\n");
-  assertTrue(foundLineMatching(lines,".*V1.*Expressions with aggregate functions are not currently supported in views.*"));
-  VoltProjectBuilder project2=new VoltProjectBuilder();
-  project2.setCompilerDebugPrintStream(capturing);
-  literalSchema="CREATE TABLE F ( " + "F_PKEY INTEGER NOT NULL, " + "F_D1   INTEGER NOT NULL, "+ "F_D2   INTEGER NOT NULL, "+ "F_D3   INTEGER NOT NULL, "+ "F_VAL1 INTEGER NOT NULL, "+ "F_VAL2 INTEGER NOT NULL, "+ "F_VAL3 INTEGER NOT NULL, "+ "PRIMARY KEY (F_PKEY) ); "+ "CREATE VIEW V2 (V2_F_D1, V2_F_D2) "+ "AS SELECT ABS(F_D1), SUM(F_D2) FROM F  GROUP BY ABS(F_D1);";
+  VoltProjectBuilder project=new VoltProjectBuilder();
+  literalSchema="CREATE TABLE R1 ( " + "id INTEGER DEFAULT '0' NOT NULL, " + "wage INTEGER, "+ "dept INTEGER, "+ "PRIMARY KEY (id) );"+ "CREATE VIEW V_R1 (V_R1_G1, V_R1_CNT, V_R1_sum_wage) "+ "AS SELECT ABS(dept), count(*), SUM(wage) FROM R1 GROUP BY ABS(dept);"+ "CREATE TABLE R2 ( "+ "id INTEGER DEFAULT '0' NOT NULL, "+ "wage INTEGER, "+ "dept INTEGER, "+ "tm TIMESTAMP DEFAULT NULL, "+ "PRIMARY KEY (ID) );"+ "CREATE VIEW V_R2 (V_R2_G1, V_R2_G2, V_R2_CNT, V_R2_sum_wage) "+ "AS SELECT truncate(month,tm), dept, count(*), SUM(wage) "+ "FROM R2 GROUP BY truncate(month,tm), dept;"+ "CREATE TABLE R3 ( "+ "id INTEGER DEFAULT '0' NOT NULL, "+ "wage INTEGER, "+ "vshort VARCHAR(20),"+ "vlong VARCHAR(200),"+ "PRIMARY KEY (ID) );"+ "CREATE VIEW V_R3_test1 (V_R3_G1,V_R3_CNT, V_R3_sum_wage) "+ "AS SELECT substring(vshort,0,2), count(*), SUM(wage) "+ "FROM R3 GROUP BY substring(vshort,0,2) ;"+ "CREATE VIEW V_R3_test2 (V_R3_G1,V_R3_CNT, V_R3_sum_wage) "+ "AS SELECT vshort || '" + longStr + "', "+ "count(*), SUM(wage) "+ "FROM R3 GROUP BY vshort || '"+ longStr+ "';"+ "CREATE VIEW V_R3_test3 (V_R3_G1,V_R3_CNT, V_R3_sum_wage) "+ "AS SELECT substring(vlong,0,2), count(*), SUM(wage) "+ "FROM R3 GROUP BY substring(vlong,0,2);"+ "CREATE VIEW V_R3_test4 (V_R3_G1,V_R3_CNT, V_R3_sum_wage) "+ "AS SELECT vlong || '"+ longStr+ "', "+ "count(*), SUM(wage) "+ "FROM R3 GROUP BY vlong || '"+ longStr+ "';"+ "";
   try {
-    project2.addLiteralSchema(literalSchema);
+    project.addLiteralSchema(literalSchema);
   }
  catch (  IOException e) {
     assertFalse(true);
   }
   config=new LocalCluster("plansgroupby-onesite.jar",1,1,0,BackendTarget.NATIVE_EE_JNI);
-  success=config.compile(project2);
-  assertFalse(success);
-  captured=capturer.toString("UTF-8");
-  lines=captured.split("\n");
-  assertTrue(foundLineMatching(lines,".*V2.*Expressions with group by are not currently supported in views.*"));
-  VoltProjectBuilder project3=new VoltProjectBuilder();
-  literalSchema="CREATE TABLE R1 ( " + "ID INTEGER DEFAULT '0' NOT NULL, " + "WAGE INTEGER, "+ "DEPT INTEGER, "+ "TM TIMESTAMP DEFAULT NULL, "+ "PRIMARY KEY (ID) );"+ "CREATE TABLE P1 ( "+ "ID INTEGER DEFAULT '0' NOT NULL, "+ "WAGE INTEGER, "+ "DEPT INTEGER, "+ "TM TIMESTAMP DEFAULT NULL, "+ "PRIMARY KEY (ID) );";
-  try {
-    project3.addLiteralSchema(literalSchema);
-  }
- catch (  IOException e) {
-    assertFalse(true);
-  }
-  config=new LocalCluster("plansgroupby-onesite.jar",1,1,0,BackendTarget.NATIVE_EE_JNI);
-  success=config.compile(project3);
+  success=config.compile(project);
+  assertTrue(success);
+  builder.addServerConfig(config);
+  config=new LocalCluster("plansgroupby-hsql.jar",1,1,0,BackendTarget.HSQLDB_BACKEND);
+  success=config.compile(project);
+  assertTrue(success);
+  builder.addServerConfig(config);
+  config=new LocalCluster("plansgroupby-cluster.jar",2,3,1,BackendTarget.NATIVE_EE_JNI);
+  success=config.compile(project);
   assertTrue(success);
   builder.addServerConfig(config);
   return builder;
