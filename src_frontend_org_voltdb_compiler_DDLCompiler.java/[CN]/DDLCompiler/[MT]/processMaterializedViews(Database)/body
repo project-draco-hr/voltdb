@@ -43,13 +43,8 @@
     List<AbstractExpression> groupbyExprs=null;
     if (stmt.hasComplexGroupby()) {
       groupbyExprs=new ArrayList<AbstractExpression>();
-      HashSet<TupleValueExpression> tves=new HashSet<TupleValueExpression>();
       for (      ParsedColInfo col : stmt.groupByColumns) {
         groupbyExprs.add(col.expression);
-        tves.addAll(ExpressionUtil.getTupleValueExpressions(col.expression));
-      }
-      for (      TupleValueExpression tve : tves) {
-        matviewinfo.getGroupbycols().add(tve.getColumnName());
       }
       String groupbyExprsJson=null;
       try {
@@ -71,13 +66,13 @@
       for (int i=0; i < stmt.groupByColumns.size(); i++) {
         ParsedSelectStmt.ParsedColInfo col=stmt.displayColumns.get(i);
         Column destColumn=destColumnArray.get(i);
-        processMaterializedViewColumn(matviewinfo,srcTable,destTable,destColumn,ExpressionType.VALUE_TUPLE,(TupleValueExpression)col.expression);
+        processMaterializedViewColumn(matviewinfo,srcTable,destColumn,ExpressionType.VALUE_TUPLE,(TupleValueExpression)col.expression);
       }
     }
     ParsedSelectStmt.ParsedColInfo countCol=stmt.displayColumns.get(stmt.groupByColumns.size());
     assert(countCol.expression.getExpressionType() == ExpressionType.AGGREGATE_COUNT_STAR);
     assert(countCol.expression.getLeft() == null);
-    processMaterializedViewColumn(matviewinfo,srcTable,destTable,destColumnArray.get(stmt.groupByColumns.size()),ExpressionType.AGGREGATE_COUNT_STAR,null);
+    processMaterializedViewColumn(matviewinfo,srcTable,destColumnArray.get(stmt.groupByColumns.size()),ExpressionType.AGGREGATE_COUNT_STAR,null);
     Index pkIndex=destTable.getIndexes().add("MATVIEW_PK_INDEX");
     pkIndex.setType(IndexType.BALANCED_TREE.getValue());
     pkIndex.setUnique(true);
@@ -89,12 +84,35 @@
     Constraint pkConstraint=destTable.getConstraints().add("MATVIEW_PK_CONSTRAINT");
     pkConstraint.setType(ConstraintType.PRIMARY_KEY.getValue());
     pkConstraint.setIndex(pkIndex);
+    List<AbstractExpression> aggregationExprs=new ArrayList<AbstractExpression>();
+    boolean hasAggregationExprs=false;
+    for (int i=stmt.groupByColumns.size() + 1; i < stmt.displayColumns.size(); i++) {
+      ParsedSelectStmt.ParsedColInfo col=stmt.displayColumns.get(i);
+      AbstractExpression aggExpr=col.expression.getLeft();
+      if (aggExpr.getExpressionType() != ExpressionType.VALUE_TUPLE) {
+        hasAggregationExprs=true;
+      }
+      aggregationExprs.add(aggExpr);
+    }
+    if (hasAggregationExprs) {
+      String aggregationExprsJson=null;
+      try {
+        aggregationExprsJson=convertToJSONArray(aggregationExprs);
+      }
+ catch (      JSONException e) {
+        throw m_compiler.new VoltCompilerException("Unexpected error serializing non-column " + "expressions for aggregation expressions: " + e.toString());
+      }
+      matviewinfo.setAggregationexpressionsjson(aggregationExprsJson);
+    }
     for (int i=stmt.groupByColumns.size() + 1; i < stmt.displayColumns.size(); i++) {
       ParsedSelectStmt.ParsedColInfo col=stmt.displayColumns.get(i);
       Column destColumn=destColumnArray.get(i);
       AbstractExpression colExpr=col.expression.getLeft();
-      assert(colExpr.getExpressionType() == ExpressionType.VALUE_TUPLE);
-      processMaterializedViewColumn(matviewinfo,srcTable,destTable,destColumn,col.expression.getExpressionType(),(TupleValueExpression)colExpr);
+      TupleValueExpression tve=null;
+      if (colExpr.getExpressionType() == ExpressionType.VALUE_TUPLE) {
+        tve=(TupleValueExpression)colExpr;
+      }
+      processMaterializedViewColumn(matviewinfo,srcTable,destColumn,col.expression.getExpressionType(),tve);
       destColumn.setType(col.expression.getValueType().getValue());
     }
   }
