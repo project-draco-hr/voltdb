@@ -40,12 +40,39 @@
     destTable.setMaterializer(srcTable);
     List<Column> srcColumnArray=CatalogUtil.getSortedCatalogItems(srcTable.getColumns(),"index");
     List<Column> destColumnArray=CatalogUtil.getSortedCatalogItems(destTable.getColumns(),"index");
-    for (int i=0; i < stmt.groupByColumns.size(); i++) {
-      ParsedSelectStmt.ParsedColInfo gbcol=stmt.groupByColumns.get(i);
-      Column srcCol=srcColumnArray.get(gbcol.index);
-      ColumnRef cref=matviewinfo.getGroupbycols().add(srcCol.getTypeName());
-      cref.setIndex(i);
-      cref.setColumn(srcCol);
+    List<AbstractExpression> groupbyExprs=null;
+    if (stmt.hasComplexGroupby()) {
+      groupbyExprs=new ArrayList<AbstractExpression>();
+      HashSet<TupleValueExpression> tves=new HashSet<TupleValueExpression>();
+      for (      ParsedColInfo col : stmt.groupByColumns) {
+        groupbyExprs.add(col.expression);
+        tves.addAll(ExpressionUtil.getTupleValueExpressions(col.expression));
+      }
+      for (      TupleValueExpression tve : tves) {
+        matviewinfo.getGroupbycols().add(tve.getColumnName());
+      }
+      String groupbyExprsJson=null;
+      try {
+        groupbyExprsJson=convertToJSONArray(groupbyExprs);
+      }
+ catch (      JSONException e) {
+        throw m_compiler.new VoltCompilerException("Unexpected error serializing non-column " + "expressions for group by expressions: " + e.toString());
+      }
+      matviewinfo.setGroupbyexpressionsjson(groupbyExprsJson);
+    }
+ else {
+      for (int i=0; i < stmt.groupByColumns.size(); i++) {
+        ParsedSelectStmt.ParsedColInfo gbcol=stmt.groupByColumns.get(i);
+        Column srcCol=srcColumnArray.get(gbcol.index);
+        ColumnRef cref=matviewinfo.getGroupbycols().add(srcCol.getTypeName());
+        cref.setIndex(i);
+        cref.setColumn(srcCol);
+      }
+      for (int i=0; i < stmt.groupByColumns.size(); i++) {
+        ParsedSelectStmt.ParsedColInfo col=stmt.displayColumns.get(i);
+        Column destColumn=destColumnArray.get(i);
+        processMaterializedViewColumn(matviewinfo,srcTable,destTable,destColumn,ExpressionType.VALUE_TUPLE,(TupleValueExpression)col.expression);
+      }
     }
     ParsedSelectStmt.ParsedColInfo countCol=stmt.displayColumns.get(stmt.groupByColumns.size());
     assert(countCol.expression.getExpressionType() == ExpressionType.AGGREGATE_COUNT_STAR);
@@ -62,11 +89,6 @@
     Constraint pkConstraint=destTable.getConstraints().add("MATVIEW_PK_CONSTRAINT");
     pkConstraint.setType(ConstraintType.PRIMARY_KEY.getValue());
     pkConstraint.setIndex(pkIndex);
-    for (int i=0; i < stmt.groupByColumns.size(); i++) {
-      ParsedSelectStmt.ParsedColInfo col=stmt.displayColumns.get(i);
-      Column destColumn=destColumnArray.get(i);
-      processMaterializedViewColumn(matviewinfo,srcTable,destTable,destColumn,ExpressionType.VALUE_TUPLE,(TupleValueExpression)col.expression);
-    }
     for (int i=stmt.groupByColumns.size() + 1; i < stmt.displayColumns.size(); i++) {
       ParsedSelectStmt.ParsedColInfo col=stmt.displayColumns.get(i);
       Column destColumn=destColumnArray.get(i);
