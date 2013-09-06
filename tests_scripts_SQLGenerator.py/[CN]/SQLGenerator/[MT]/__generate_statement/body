@@ -1,15 +1,9 @@
 def __generate_statement(self, text):
-    statement = Statement(text)
-    table_gens = statement.get_tables()
-    if table_gens:
-        schema_tables = self.get_schema_tables()
-        for i in xrange(0, len(schema_tables), len(table_gens)):
-            for (k, v) in zip(table_gens, schema_tables[i:]):
-                k.add_table(v)
-    for table_bound_statement in statement.next_table_bound_statement():
-        col_gens = statement.init_column_generators(table_bound_statement)
-        for col_gen in col_gens:
-            for (col_name, col_type) in self.get_schema_typed_columns(col_gen.get_table(), col_gen.get_type(), COUNT):
-                col_gen.add_column(col_name, col_type)
-        for complete_statement in statement.next_complete_statement():
-            yield complete_statement
+    text = self.__template.apply_macros(text)
+    text = unicode(text)
+    for statement in self.__template.generate_statements_from_text(text):
+        (statement, generators, field_map) = BaseGenerator.prepare_generators(statement, self.__schema, SQLGenerator.GENERATOR_TYPES)
+        if (SQLGenerator.UNRESOLVED_PUNCTUATION.search(statement) or (SQLGenerator.UNRESOLVED_GENERATOR.search(statement) and (not SQLGenerator.LIKELY_FALSE_ALARMS.search(statement)))):
+            print (('WARNING: final statement contains suspicious unresolved symbol(s): "' + statement) + '"')
+        for generated_stmt in BaseGenerator.generate_statements_from_list(statement, generators, field_map):
+            yield generated_stmt
