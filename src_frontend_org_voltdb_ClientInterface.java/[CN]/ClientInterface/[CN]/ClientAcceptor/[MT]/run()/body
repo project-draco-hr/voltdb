@@ -31,12 +31,13 @@
         continue;
       }
       m_numConnections.incrementAndGet();
-      m_executor.execute(new Runnable(){
+      final Runnable authRunnable=new Runnable(){
         @Override public void run(){
           if (socket != null) {
             boolean success=false;
+            AtomicReference<String> timeoutRef=new AtomicReference<String>();
             try {
-              final InputHandler handler=authenticate(socket);
+              final InputHandler handler=authenticate(socket,timeoutRef);
               if (handler != null) {
                 socket.configureBlocking(false);
                 if (handler instanceof ClientInputHandler) {
@@ -44,14 +45,14 @@
                 }
                 socket.socket().setKeepAlive(true);
                 if (handler instanceof ClientInputHandler) {
-                  final Connection c=m_network.registerChannel(socket,handler,0);
+                  final Connection c=m_network.registerChannel(socket,handler,0,ReverseDNSPolicy.ASYNCHRONOUS);
                   if (!m_isIV2Enabled) {
                     m_backpressureLock.lock();
                     try {
                       if (!m_hasDTXNBackPressure) {
                         c.enableReadSelection();
                       }
-                      m_connections.put(c,"CONN");
+                      m_connections.put(c,"");
                     }
   finally {
                       m_backpressureLock.unlock();
@@ -59,7 +60,7 @@
                   }
                 }
  else {
-                  m_network.registerChannel(socket,handler,SelectionKey.OP_READ);
+                  m_network.registerChannel(socket,handler,SelectionKey.OP_READ,ReverseDNSPolicy.ASYNCHRONOUS);
                 }
                 success=true;
               }
@@ -71,7 +72,12 @@
  catch (              IOException e1) {
               }
               if (m_running) {
-                hostLog.warn("Exception authenticating and registering user in ClientAcceptor",e);
+                if (timeoutRef.get() != null) {
+                  hostLog.warn(timeoutRef.get());
+                }
+ else {
+                  hostLog.warn("Exception authenticating and " + "registering user in ClientAcceptor",e);
+                }
               }
             }
  finally {
@@ -82,11 +88,20 @@
           }
         }
       }
-);
+;
+      while (true) {
+        try {
+          m_executor.execute(authRunnable);
+          break;
+        }
+ catch (        RejectedExecutionException e) {
+          Thread.sleep(1);
+        }
+      }
     }
  while (m_running);
   }
- catch (  IOException e) {
+ catch (  Exception e) {
     if (m_running) {
       hostLog.fatal("Exception in ClientAcceptor. The acceptor has died",e);
     }

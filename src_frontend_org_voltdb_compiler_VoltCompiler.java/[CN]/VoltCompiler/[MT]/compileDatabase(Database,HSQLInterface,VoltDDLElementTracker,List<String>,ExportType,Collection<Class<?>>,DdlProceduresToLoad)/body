@@ -61,6 +61,48 @@ default :
 }
 t.setPartitioncolumn(c);
 t.setIsreplicated(false);
+for (Index index : t.getIndexes()) {
+  if (!index.getUnique()) {
+    continue;
+  }
+  boolean contain=false;
+  String jsonExpr=index.getExpressionsjson();
+  if (jsonExpr.isEmpty()) {
+    for (    ColumnRef cref : index.getColumns()) {
+      Column col=cref.getColumn();
+      if (col.equals(c)) {
+        contain=true;
+        break;
+      }
+    }
+  }
+ else {
+    try {
+      List<AbstractExpression> indexExpressions=AbstractExpression.fromJSONArrayString(jsonExpr,null);
+      for (      AbstractExpression expr : indexExpressions) {
+        if (expr instanceof TupleValueExpression && ((TupleValueExpression)expr).getColumnName().equals(c.getName())) {
+          contain=true;
+          break;
+        }
+      }
+    }
+ catch (    JSONException e) {
+      e.printStackTrace();
+      assert(false);
+    }
+  }
+  if (!contain) {
+    String indexName=index.getTypeName();
+    if (indexName.startsWith("SYS_IDX_PK_") || indexName.startsWith("SYS_IDX_SYS_PK_") || indexName.startsWith("MATVIEW_PK_INDEX")) {
+      indexName="PRIMARY KEY index";
+    }
+ else {
+      indexName="unique index " + indexName;
+    }
+    String warnMsg=String.format("A %s on the partitioned table %s does not include the partitioning column %s. " + "This does not guarantee uniqueness across the database and can cause constraint violations when repartitioning the data.",indexName,tableName,c.getName());
+    addWarn(warnMsg);
+  }
+}
 final CatalogMap<MaterializedViewInfo> views=t.getViews();
 for (final MaterializedViewInfo mvi : views) {
   mvi.getDest().setIsreplicated(false);
@@ -68,10 +110,6 @@ for (final MaterializedViewInfo mvi : views) {
 }
 }
 }
-String catData=m_catalog.serialize();
-m_catalog=new Catalog();
-m_catalog.execute(catData);
-db=getCatalogDatabase();
 addDatabaseEstimatesInfo(m_estimates,db);
 for (String exportedTableName : voltDdlTracker.getExportedTables()) {
 addExportTableToConnector(exportedTableName,db);
@@ -83,4 +121,6 @@ if (whichProcs != DdlProceduresToLoad.NO_DDL_PROCEDURES) {
 Collection<ProcedureDescriptor> allProcs=voltDdlTracker.getProcedureDescriptors();
 compileProcedures(db,hsql,allProcs,classDependencies,whichProcs);
 }
+m_addedClasses=voltDdlTracker.m_extraClassses;
+addExtraClasses();
 }

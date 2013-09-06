@@ -1,0 +1,156 @@
+{
+  ByteBuffer responseBuffer=ByteBuffer.allocate(6);
+  byte version=(byte)0;
+  responseBuffer.putInt(2);
+  responseBuffer.put(version);
+  socket.configureBlocking(true);
+  socket.socket().setTcpNoDelay(true);
+  final ByteBuffer lengthBuffer=ByteBuffer.allocate(4);
+  final long start=System.currentTimeMillis();
+  ScheduledFuture<?> timeoutFuture=VoltDB.instance().schedulePriorityWork(new Runnable(){
+    @Override public void run(){
+      long delta=System.currentTimeMillis() - start;
+      double seconds=delta / 1000.0;
+      StringBuilder sb=new StringBuilder();
+      sb.append("Timed out authenticating client from ");
+      sb.append(socket.socket().getRemoteSocketAddress().toString());
+      sb.append(String.format(" after %.2f seconds (timeout target is 1.6 seconds)",seconds));
+      timeoutRef.set(sb.toString());
+      try {
+        socket.close();
+      }
+ catch (      IOException e) {
+      }
+    }
+  }
+,1600,0,TimeUnit.MILLISECONDS);
+  try {
+    while (lengthBuffer.hasRemaining()) {
+      int read=socket.read(lengthBuffer);
+      if (read == -1) {
+        socket.close();
+        timeoutFuture.cancel(false);
+        return null;
+      }
+    }
+  }
+ catch (  AsynchronousCloseException e) {
+  }
+  if (lengthBuffer.hasRemaining()) {
+    authLog.debug("Failure to authenticate connection(" + socket.socket().getRemoteSocketAddress() + "): wire protocol violation (timeout reading message length).");
+    responseBuffer.put(WIRE_PROTOCOL_TIMEOUT_ERROR).flip();
+    socket.write(responseBuffer);
+    socket.close();
+    return null;
+  }
+  lengthBuffer.flip();
+  final int messageLength=lengthBuffer.getInt();
+  if (messageLength < 0) {
+    authLog.warn("Failure to authenticate connection(" + socket.socket().getRemoteSocketAddress() + "): wire protocol violation (message length "+ messageLength+ " is negative).");
+    responseBuffer.put(WIRE_PROTOCOL_FORMAT_ERROR).flip();
+    socket.write(responseBuffer);
+    socket.close();
+    return null;
+  }
+  if (messageLength > ((1024 * 1024) * 2)) {
+    authLog.warn("Failure to authenticate connection(" + socket.socket().getRemoteSocketAddress() + "): wire protocol violation (message length "+ messageLength+ " is too large).");
+    responseBuffer.put(WIRE_PROTOCOL_FORMAT_ERROR).flip();
+    socket.write(responseBuffer);
+    socket.close();
+    return null;
+  }
+  final ByteBuffer message=ByteBuffer.allocate(messageLength);
+  try {
+    while (message.hasRemaining()) {
+      int read=socket.read(message);
+      if (read == -1) {
+        socket.close();
+        timeoutFuture.cancel(false);
+        return null;
+      }
+    }
+  }
+ catch (  AsynchronousCloseException e) {
+  }
+  if (message.hasRemaining()) {
+    authLog.warn("Failure to authenticate connection(" + socket.socket().getRemoteSocketAddress() + "): wire protocol violation (timeout reading authentication strings).");
+    responseBuffer.put(WIRE_PROTOCOL_TIMEOUT_ERROR).flip();
+    socket.write(responseBuffer);
+    socket.close();
+    return null;
+  }
+  if (!timeoutFuture.cancel(false)) {
+    return null;
+  }
+  message.flip().position(1);
+  FastDeserializer fds=new FastDeserializer(message);
+  final String service=fds.readString();
+  final String username=fds.readString();
+  final byte password[]=new byte[20];
+  message.get(password);
+  CatalogContext context=m_catalogContext.get();
+  if (!VoltDB.instance().rejoining()) {
+    boolean authenticated=context.authSystem.authenticate(username,password);
+    if (!authenticated) {
+      authLog.warn("Failure to authenticate connection(" + socket.socket().getRemoteSocketAddress() + "): user "+ username+ " failed authentication.");
+      responseBuffer.put(AUTHENTICATION_FAILURE).flip();
+      socket.write(responseBuffer);
+      socket.close();
+      return null;
+    }
+  }
+ else {
+    authLog.warn("Failure to authenticate connection(" + socket.socket().getRemoteSocketAddress() + "): user "+ username+ " because this node is rejoining.");
+    responseBuffer.put(AUTHENTICATION_FAILURE_DUE_TO_REJOIN).flip();
+    socket.write(responseBuffer);
+    socket.close();
+    return null;
+  }
+  AuthSystem.AuthUser user=context.authSystem.getUser(username);
+  InputHandler handler=null;
+  if (service.equalsIgnoreCase("database")) {
+    handler=new ClientInputHandler(username,m_isAdmin);
+  }
+ else {
+    String strUser="ANONYMOUS";
+    if ((username != null) && (username.length() > 0))     strUser=username;
+    String connectorClassName=ExportManager.instance().getConnectorForService(service);
+    if (connectorClassName == null) {
+      responseBuffer.put(EXPORT_DISABLED_REJECTION).flip();
+      socket.write(responseBuffer);
+      socket.close();
+      authLog.warn("Rejected user " + strUser + " attempting to use disabled or unconfigured service "+ service+ ".");
+      return null;
+    }
+    if (!user.authorizeConnector(connectorClassName)) {
+      responseBuffer.put(AUTHENTICATION_FAILURE).flip();
+      socket.write(responseBuffer);
+      socket.close();
+      authLog.warn("Failure to authorize user " + strUser + " for service "+ service+ ".");
+      return null;
+    }
+    handler=ExportManager.instance().createInputHandler(service,m_isAdmin);
+  }
+  if (handler != null) {
+    byte buildString[]=VoltDB.instance().getBuildString().getBytes("UTF-8");
+    responseBuffer=ByteBuffer.allocate(34 + buildString.length);
+    responseBuffer.putInt(30 + buildString.length);
+    responseBuffer.put((byte)0);
+    responseBuffer.put((byte)0);
+    responseBuffer.putInt(VoltDB.instance().getHostMessenger().getHostId());
+    responseBuffer.putLong(handler.connectionId());
+    responseBuffer.putLong(VoltDB.instance().getHostMessenger().getInstanceId().getTimestamp());
+    responseBuffer.putInt(VoltDB.instance().getHostMessenger().getInstanceId().getCoord());
+    responseBuffer.putInt(buildString.length);
+    responseBuffer.put(buildString).flip();
+    socket.write(responseBuffer);
+  }
+ else {
+    authLog.warn("Failure to authenticate connection(" + socket.socket().getRemoteSocketAddress() + "): user "+ username+ " failed authentication.");
+    responseBuffer.put(AUTHENTICATION_FAILURE).flip();
+    socket.write(responseBuffer);
+    socket.close();
+    return null;
+  }
+  return handler;
+}

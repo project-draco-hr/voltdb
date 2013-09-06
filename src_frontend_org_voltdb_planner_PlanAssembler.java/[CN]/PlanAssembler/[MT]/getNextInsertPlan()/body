@@ -1,6 +1,6 @@
 {
-  if (m_insertPlanWasGenerated)   return null;
-  m_insertPlanWasGenerated=true;
+  if (m_bestAndOnlyPlanWasGenerated)   return null;
+  m_bestAndOnlyPlanWasGenerated=true;
   assert(m_parsedInsert.tableList.size() == 1);
   Table targetTable=m_parsedInsert.tableList.get(0);
   InsertPlanNode insertNode=new InsertPlanNode();
@@ -18,21 +18,12 @@
       expr=const_expr;
       if (column.getDefaulttype() != 0) {
         const_expr.setValue(column.getDefaultvalue());
-        const_expr.setValueType(VoltType.get((byte)column.getDefaulttype()));
+        const_expr.refineValueType(VoltType.get((byte)column.getDefaulttype()),column.getSize());
       }
  else {
         const_expr.setValue(null);
+        const_expr.refineValueType(VoltType.get((byte)column.getType()),column.getSize());
       }
-    }
-    if (expr.getValueType() == VoltType.NULL) {
-      ConstantValueExpression const_expr=new ConstantValueExpression();
-      const_expr.setValue("NULL");
-    }
-    try {
-      ExpressionUtil.setOutputTypeForInsertExpression(expr,VoltType.get((byte)column.getType()),column.getSize(),m_paramTypeOverrideMap);
-    }
- catch (    Exception e) {
-      throw new PlanningErrorException(e.getMessage());
     }
     if (column.equals(m_partitioning.getColumn())) {
       String fullColumnName=targetTable.getTypeName() + "." + column.getTypeName();
@@ -43,7 +34,6 @@
   }
   materializeNode.setOutputSchema(mat_schema);
   insertNode.addAndLinkChild(materializeNode);
-  insertNode.generateOutputSchema(m_catalogDb);
   if (m_partitioning.wasSpecifiedAsSingle() || (m_partitioning.effectivePartitioningExpression() != null)) {
     insertNode.setMultiPartition(false);
     return insertNode;
@@ -53,6 +43,5 @@
   sendNode.addAndLinkChild(insertNode);
   AbstractPlanNode recvNode=new ReceivePlanNode();
   recvNode.addAndLinkChild(sendNode);
-  recvNode.generateOutputSchema(m_catalogDb);
   return addSumOrLimitAndSendToDMLNode(recvNode,targetTable.getIsreplicated());
 }

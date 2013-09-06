@@ -10,17 +10,16 @@
     msg+="has too few columns.";
     throw m_compiler.new VoltCompilerException(msg);
   }
+  if (stmt.hasComplexAgg()) {
+    msg+="contains an expression involving an aggregate function. " + "Expressions with aggregate functions are not currently supported in views.";
+    throw m_compiler.new VoltCompilerException(msg);
+  }
   int i;
   for (i=0; i < groupColCount; i++) {
     ParsedSelectStmt.ParsedColInfo gbcol=stmt.groupByColumns.get(i);
     ParsedSelectStmt.ParsedColInfo outcol=stmt.displayColumns.get(i);
-    if (outcol.expression.getExpressionType() != ExpressionType.VALUE_TUPLE) {
-      msg+="must have column at index " + String.valueOf(i) + " be "+ gbcol.alias;
-      throw m_compiler.new VoltCompilerException(msg);
-    }
-    TupleValueExpression expr=(TupleValueExpression)outcol.expression;
-    if (expr.getColumnIndex() != gbcol.index) {
-      msg+="must have column at index " + String.valueOf(i) + " be "+ gbcol.alias;
+    if (!outcol.expression.equals(gbcol.expression)) {
+      msg+="must exactly match the GROUP BY clause at index " + String.valueOf(i) + " of SELECT list.";
       throw m_compiler.new VoltCompilerException(msg);
     }
   }
@@ -33,10 +32,6 @@
     ParsedSelectStmt.ParsedColInfo outcol=stmt.displayColumns.get(i);
     if ((outcol.expression.getExpressionType() != ExpressionType.AGGREGATE_COUNT) && (outcol.expression.getExpressionType() != ExpressionType.AGGREGATE_SUM)) {
       msg+="must have non-group by columns aggregated by sum or count.";
-      throw m_compiler.new VoltCompilerException(msg);
-    }
-    if (outcol.expression.getLeft().getExpressionType() != ExpressionType.VALUE_TUPLE) {
-      msg+="must have non-group by columns use only one level of aggregation.";
       throw m_compiler.new VoltCompilerException(msg);
     }
   }

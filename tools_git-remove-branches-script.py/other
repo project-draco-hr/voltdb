@@ -1,26 +1,50 @@
-from optparse import OptionParser
-from datetime import date, datetime, timedelta
 import getpass
+from optparse import OptionParser
 import re
 from subprocess import Popen
 import subprocess
+import sys
+import time
 import jiratools
 exclusions = ['master']
 jira_url = 'https://issues.voltdb.com/'
+gitshowmap = {'unixtime': '%ct', 'datetime': '%ci', 'humantime': '%cr', 'email': '%ce', }
+DELIMITER = '^'
 if (__name__ == '__main__'):
     parser = OptionParser()
+    parser.add_option('--no-jira', dest='use_jira', action='store_false', help="Don't look up jira ticket", default='True')
     parser.add_option('-u', '--username', dest='username', action='store', help='username to use for Jira lookups', default=getpass.getuser())
     parser.add_option('-p', '--password', dest='password', action='store', help='password to use for Jira lookups')
     parser.add_option('--no-merged', dest='merged', action='store_false', help='find branches that are not merged to master', default=True)
-    parser.add_option('--older', dest='olderthan', action='store', help='age of unmerged branches to list', type='int', default=21)
+    parser.add_option('--older', dest='olderthan', action='store', help='age of unmerged branches to list', type='int', default=60)
     (options, args) = parser.parse_args()
-    user = options.username
-    password = (options.password or getpass.getpass('Enter your Jira password: '))
-    if (not options.merged):
-        print ('# Branches with checkins within %d days will not be listed' % options.olderthan)
-    branch_list = get_branch_list(options.merged)
-    old_branches = weed_out_newer_branches(branch_list, options.olderthan)
+    if options.use_jira:
+        user = options.username
+        password = (options.password or getpass.getpass('Enter your Jira password: '))
+    branch_names = get_branch_list(options.merged)
+    format_string = DELIMITER.join([gitshowmap[key] for key in sorted(gitshowmap)])
+    branch_infos = []
+    for b in branch_names:
+        branch_info = {}
+        branch_info['name'] = b.split('/')[1]
+        cmd = ('git log -1 --format=%s %s' % (format_string, b))
+        (ret, stdout, stderr) = run_cmd(cmd)
+        if (not ret):
+            values = stdout.rstrip().split(DELIMITER)
+            for (k, v) in zip(sorted(gitshowmap), values):
+                try:
+                    branch_info[k] = float(v)
+                except ValueError:
+                    branch_info[k] = v
+            branch_infos.append(branch_info)
+        else:
+            sys.stderr.write(("ERROR: Can't get git information for %s\n" % b))
+            sys.stderr.write(('\tcmd = %s\n' % cmd))
+            sys.stderr.write(('\tstderr=%s\n' % stderr))
+    now = time.time()
+    sorted_branch_infos = sorted(branch_infos, reverse=True, key=(lambda bi: bi['unixtime']))
+    old_branch_infos = [bi for bi in sorted_branch_infos if ((now - bi['unixtime']) > (((options.olderthan * 60) * 60) * 24))]
     if options.merged:
-        make_delete_branches_script(old_branches, dry_run=False)
+        make_delete_branches_script(old_branch_infos, dry_run=False)
     else:
-        make_archive_branches_script(old_branches, dry_run=False)
+        make_archive_branches_script(old_branch_infos, dry_run=False)

@@ -1,0 +1,60 @@
+{
+  VoltServerConfig config=null;
+  MultiConfigSuiteBuilder builder=new MultiConfigSuiteBuilder(TestPlansGroupByComplexMaterializedViewSuite.class);
+  String literalSchema=null;
+  boolean success=true;
+  ByteArrayOutputStream capturer=new ByteArrayOutputStream();
+  PrintStream capturing=new PrintStream(capturer);
+  String captured=null;
+  String[] lines=null;
+  VoltProjectBuilder project0=new VoltProjectBuilder();
+  project0.setCompilerDebugPrintStream(capturing);
+  literalSchema="CREATE TABLE F ( " + "F_PKEY INTEGER NOT NULL, " + "F_D1   INTEGER NOT NULL, "+ "F_D2   INTEGER NOT NULL, "+ "F_D3   INTEGER NOT NULL, "+ "F_VAL1 INTEGER NOT NULL, "+ "F_VAL2 INTEGER NOT NULL, "+ "F_VAL3 INTEGER NOT NULL, "+ "PRIMARY KEY (F_PKEY) ); "+ "CREATE VIEW V0 (V_D1_PKEY, V_D2_PKEY, V_D3_PKEY, V_F_PKEY, CNT, SUM_V1, SUM_V2, SUM_V3) "+ "AS SELECT F_D1, F_D2, F_D3, F_PKEY, COUNT(*), SUM(F_VAL1)+1, SUM(F_VAL2), SUM(F_VAL3) "+ "FROM F  GROUP BY F_D1, F_D2, F_D3, F_PKEY;";
+  try {
+    project0.addLiteralSchema(literalSchema);
+  }
+ catch (  IOException e) {
+    assertFalse(true);
+  }
+  config=new LocalCluster("plansgroupby-onesite.jar",1,1,0,BackendTarget.NATIVE_EE_JNI);
+  success=config.compile(project0);
+  assertFalse(success);
+  captured=capturer.toString("UTF-8");
+  lines=captured.split("\n");
+  assertTrue(foundLineMatching(lines,".*V0.*Expressions with aggregate functions are not currently supported in views.*"));
+  VoltProjectBuilder project1=new VoltProjectBuilder();
+  project1.setCompilerDebugPrintStream(capturing);
+  literalSchema="CREATE TABLE F ( " + "F_PKEY INTEGER NOT NULL, " + "F_D1   INTEGER NOT NULL, "+ "F_D2   INTEGER NOT NULL, "+ "F_D3   INTEGER NOT NULL, "+ "F_VAL1 INTEGER NOT NULL, "+ "F_VAL2 INTEGER NOT NULL, "+ "F_VAL3 INTEGER NOT NULL, "+ "PRIMARY KEY (F_PKEY) ); "+ "CREATE VIEW V1 (V_D1_PKEY, V_D2_PKEY, V_D3_PKEY, V_F_PKEY, CNT, SUM_V1, SUM_V2, SUM_V3) "+ "AS SELECT F_D1, F_D2, F_D3, F_PKEY, COUNT(*) + 1, SUM(F_VAL1), SUM(F_VAL2), SUM(F_VAL3) "+ "FROM F  GROUP BY F_D1, F_D2, F_D3, F_PKEY;";
+  try {
+    project1.addLiteralSchema(literalSchema);
+  }
+ catch (  IOException e) {
+    assertFalse(true);
+  }
+  config=new LocalCluster("plansgroupby-onesite.jar",1,1,0,BackendTarget.NATIVE_EE_JNI);
+  success=config.compile(project1);
+  assertFalse(success);
+  captured=capturer.toString("UTF-8");
+  lines=captured.split("\n");
+  VoltProjectBuilder project=new VoltProjectBuilder();
+  literalSchema="CREATE TABLE R1 ( " + "id INTEGER DEFAULT '0' NOT NULL, " + "wage INTEGER, "+ "dept INTEGER, "+ "PRIMARY KEY (id) );"+ "CREATE VIEW V_R1 (V_R1_G1, V_R1_CNT, V_R1_sum_wage) "+ "AS SELECT ABS(dept), count(*), SUM(wage) FROM R1 GROUP BY ABS(dept);"+ "CREATE VIEW V_R1_add (V_R1_G1, V_R1_CNT, V_R1_sum_wage) "+ "AS SELECT dept, count(*), SUM(wage+id) FROM R1 GROUP BY dept;"+ "CREATE VIEW V_R1_multiply (V_R1_G1, V_R1_CNT, V_R1_sum_wage) "+ "AS SELECT dept, count(*), SUM(wage*id) FROM R1 GROUP BY dept;"+ "CREATE VIEW V_R1_combine (V_R1_G1, V_R1_CNT, V_R1_sum_wage) "+ "AS SELECT ABS(dept), count(*), SUM(wage+id) FROM R1 GROUP BY ABS(dept);"+ "CREATE TABLE R2 ( "+ "id INTEGER DEFAULT '0' NOT NULL, "+ "wage INTEGER, "+ "dept INTEGER, "+ "tm TIMESTAMP DEFAULT NULL, "+ "PRIMARY KEY (ID) );"+ "CREATE VIEW V_R2 (V_R2_G1, V_R2_G2, V_R2_CNT, V_R2_sum_wage) "+ "AS SELECT truncate(month,tm), dept, count(*), SUM(wage) "+ "FROM R2 GROUP BY truncate(month,tm), dept;"+ "CREATE TABLE R3 ( "+ "id INTEGER DEFAULT '0' NOT NULL, "+ "wage INTEGER, "+ "vshort VARCHAR(20),"+ "vlong VARCHAR(200),"+ "PRIMARY KEY (ID) );"+ "CREATE VIEW V_R3_test1 (V_R3_G1,V_R3_CNT, V_R3_sum_wage) "+ "AS SELECT substring(vshort,0,2), count(*), SUM(wage) "+ "FROM R3 GROUP BY substring(vshort,0,2) ;"+ "CREATE VIEW V_R3_test2 (V_R3_G1,V_R3_CNT, V_R3_sum_wage) "+ "AS SELECT vshort || '" + longStr + "', "+ "count(*), SUM(wage) "+ "FROM R3 GROUP BY vshort || '"+ longStr+ "';"+ "CREATE VIEW V_R3_test3 (V_R3_G1,V_R3_CNT, V_R3_sum_wage) "+ "AS SELECT substring(vlong,0,2), count(*), SUM(wage) "+ "FROM R3 GROUP BY substring(vlong,0,2);"+ "CREATE VIEW V_R3_test4 (V_R3_G1,V_R3_CNT, V_R3_sum_wage) "+ "AS SELECT vlong || '"+ longStr+ "', "+ "count(*), SUM(wage) "+ "FROM R3 GROUP BY vlong || '"+ longStr+ "';"+ "";
+  try {
+    project.addLiteralSchema(literalSchema);
+  }
+ catch (  IOException e) {
+    assertFalse(true);
+  }
+  config=new LocalCluster("plansgroupby-onesite.jar",1,1,0,BackendTarget.NATIVE_EE_JNI);
+  success=config.compile(project);
+  assertTrue(success);
+  builder.addServerConfig(config);
+  config=new LocalCluster("plansgroupby-hsql.jar",1,1,0,BackendTarget.HSQLDB_BACKEND);
+  success=config.compile(project);
+  assertTrue(success);
+  builder.addServerConfig(config);
+  config=new LocalCluster("plansgroupby-cluster.jar",2,3,1,BackendTarget.NATIVE_EE_JNI);
+  success=config.compile(project);
+  assertTrue(success);
+  builder.addServerConfig(config);
+  return builder;
+}
