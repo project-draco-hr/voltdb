@@ -1,0 +1,24 @@
+{
+  TheHashinator.constructHashinator(TheHashinator.getConfiguredHashinatorClass(),TheHashinator.getConfigureBytes(3));
+  Pair<Long,byte[]> hashinatorConfig=TheHashinator.getCurrentVersionedConfig();
+  long newHashinatorVersion=hashinatorConfig.getFirst() + 1;
+  ByteBuffer msg=createMsg("hello",1);
+  Iv2InitiateTaskMessage initMsg=readAndCheck(msg,"hello",1,true,true);
+  assertEquals(1,initMsg.getStoredProcedureInvocation().getParameterAtIndex(0));
+  InitiateResponseMessage respMsg=new InitiateResponseMessage(initMsg);
+  respMsg.setMispartitioned(true,initMsg.getStoredProcedureInvocation(),Pair.of(newHashinatorVersion,hashinatorConfig.getSecond()));
+  reset(m_messenger);
+  m_ci.m_mailbox.deliver(respMsg);
+  ArgumentCaptor<DeferredSerialization> respCaptor=ArgumentCaptor.forClass(DeferredSerialization.class);
+  verify(m_cxn).enqueue(respCaptor.capture());
+  DeferredSerialization resp=respCaptor.getValue();
+  if (shouldRestart) {
+    assertEquals(0,resp.serialize().length);
+    checkInitMsgSent("hello",1,true,true);
+  }
+ else {
+    assertEquals(1,resp.serialize().length);
+    verify(m_messenger,never()).send(anyLong(),any(VoltMessage.class));
+  }
+  assertEquals(newHashinatorVersion,TheHashinator.getCurrentVersionedConfig().getFirst().longValue());
+}
