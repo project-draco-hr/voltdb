@@ -1,7 +1,14 @@
 {
   Preconditions.checkArgument(oldHashinator instanceof ElasticHashinator);
   ElasticHashinator oldElasticHashinator=(ElasticHashinator)oldHashinator;
-  Random r=new Random(0);
+  SecureRandom sr;
+  try {
+    sr=SecureRandom.getInstance(SECURE_RANDOM_ALGORITHM);
+    sr.setSeed(SECURE_RANDON_SEED);
+  }
+ catch (  NoSuchAlgorithmException ex) {
+    throw new RuntimeException("Unable to initialize secure random generator",ex);
+  }
   Map<Long,Integer> newConfig=new HashMap<Long,Integer>(oldElasticHashinator.tokens);
   Set<Integer> existingPartitions=new HashSet<Integer>(oldElasticHashinator.tokens.values());
   Set<Long> checkSet=new HashSet<Long>(oldElasticHashinator.tokens.keySet());
@@ -11,7 +18,7 @@
     }
     for (int i=0; i < tokensPerPartition; i++) {
       while (true) {
-        long candidateToken=MurmurHash3.hash3_x64_128(r.nextLong());
+        long candidateToken=sr.nextLong() & TOKEN_MASK;
         if (!checkSet.add(candidateToken)) {
           continue;
         }
@@ -20,5 +27,5 @@
       }
     }
   }
-  return new ElasticHashinator(newConfig).toBytes();
+  return new ElasticHashinator(newConfig).m_configBytes;
 }
