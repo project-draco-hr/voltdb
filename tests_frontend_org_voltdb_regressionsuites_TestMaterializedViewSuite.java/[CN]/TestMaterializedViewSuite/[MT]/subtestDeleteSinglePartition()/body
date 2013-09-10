@@ -1,0 +1,54 @@
+{
+  Client client=getClient();
+  truncateBeforeTest(client);
+  VoltTable[] results=null;
+  results=client.callProcedure("AggAges",1).getResults();
+  assertEquals(1,results.length);
+  assertEquals(0,results[0].getRowCount());
+  results=client.callProcedure("AddPerson",1,1L,31L,27500.20,7,NORMALLY).getResults();
+  assertEquals(1,results.length);
+  assertEquals(1L,results[0].asScalarLong());
+  results=client.callProcedure("AddPerson",1,2L,31L,28920.99,3,NORMALLY).getResults();
+  assertEquals(1,results.length);
+  assertEquals(1L,results[0].asScalarLong());
+  results=client.callProcedure("AggAges",1).getResults();
+  assertEquals(1,results.length);
+  results[0].advanceRow();
+  assertEquals(31L,results[0].getLong(0));
+  assertEquals(2L,results[0].getLong(2));
+  assertEquals(27500.20 + 28920.99,results[0].getDouble("SALARIES"),0.001);
+  if (!isHSQL()) {
+    try {
+      results=client.callProcedure("DeletePerson",1,1L,SABOTAGE).getResults();
+      fail("intentional ProcCallException failed");
+    }
+ catch (    ProcCallException pce) {
+    }
+  }
+  results=client.callProcedure("AggAges",1).getResults();
+  assertEquals(1,results.length);
+  results[0].advanceRow();
+  assertEquals(31L,results[0].getLong(0));
+  assertEquals(2L,results[0].getLong(2));
+  assertEquals(27500.20 + 28920.99,results[0].getDouble("SALARIES"),0.001);
+  results=client.callProcedure("DeletePerson",1,1L,NORMALLY).getResults();
+  assertEquals(1,results.length);
+  assertEquals(1L,results[0].asScalarLong());
+  results=client.callProcedure("AggAges",1).getResults();
+  assertEquals(1,results.length);
+  assertEquals(1,results[0].getRowCount());
+  while (results[0].advanceRow()) {
+    assertEquals(31L,results[0].getLong(0));
+    assertEquals(1L,results[0].getLong(2));
+    assertEquals(28920.99,results[0].getDouble(3),0.01);
+    assertEquals(3L,results[0].getLong(4));
+  }
+  assert(results != null);
+  results=client.callProcedure("DeletePerson",1,2L,NORMALLY).getResults();
+  assertEquals(1,results.length);
+  assertEquals(1L,results[0].asScalarLong());
+  results=client.callProcedure("AggAges",1).getResults();
+  assertEquals(1,results.length);
+  assertEquals(0,results[0].getRowCount());
+  assert(results != null);
+}

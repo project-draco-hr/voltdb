@@ -2,15 +2,16 @@
   try {
     String timestamp="";
     String rootpath="";
-    if (calledFromVEM) {
+    if (copyToVEM) {
       rootpath=m_voltDbRootPath;
     }
  else {
       TimestampType ts=new TimestampType(new java.util.Date());
       timestamp=ts.toString().replace(' ','-');
+      timestamp=timestamp.substring(0,"YYYY-mm-DD-HH:MM:ss".length());
       rootpath=System.getProperty("user.dir");
     }
-    String collectionFilePath=rootpath + File.separator + m_uniqueid+ timestamp+ ".tgz";
+    String collectionFilePath=rootpath + File.separator + m_prefix+ timestamp+ ".tgz";
     File collectionFile=new File(collectionFilePath);
     TarGenerator tarGenerator=new TarGenerator(collectionFile,true,null);
     for (    String path : paths) {
@@ -40,10 +41,17 @@
     cmd(tarGenerator,sarCmd,"sardata");
     String[] dmesgCmd={"bash","-c","/bin/dmesg"};
     cmd(tarGenerator,dmesgCmd,"dmesgdata");
-    tarGenerator.write();
+    if (m_calledFromVEM) {
+      tarGenerator.write(false,false);
+    }
+ else {
+      tarGenerator.write(false,true);
+    }
     long sizeInByte=collectionFile.length();
     String sizeStringInKB=String.format("%5.2f",(double)sizeInByte / 1000);
-    m_log.info("Collection file created at " + collectionFilePath + " size: "+ sizeStringInKB+ " KB");
+    if (!m_calledFromVEM) {
+      System.out.println("Collection file created at " + collectionFilePath + " size: "+ sizeStringInKB+ " KB");
+    }
     boolean upload=false;
     if (!m_host.isEmpty()) {
       if (m_noPrompt) {
@@ -55,17 +63,17 @@
     }
     if (upload) {
       if (org.voltdb.utils.MiscUtils.isPro()) {
-        if (m_username.isEmpty()) {
+        if (m_username.isEmpty() && !m_noPrompt) {
           System.out.print("username: ");
           m_username=System.console().readLine();
         }
-        if (m_password.isEmpty()) {
+        if (m_password.isEmpty() && !m_noPrompt) {
           System.out.print("password: ");
           m_password=new String(System.console().readPassword());
         }
-        boolean res=uploadToServer(collectionFilePath,m_host,m_username,m_password);
-        if (res) {
-          m_log.info("Uploaded " + new File(collectionFilePath).getName() + " via SFTP");
+        try {
+          uploadToServer(collectionFilePath,m_host,m_username,m_password);
+          System.out.println("Uploaded " + new File(collectionFilePath).getName() + " via SFTP");
           boolean delLocalCopy=false;
           if (m_noPrompt) {
             delLocalCopy=true;
@@ -76,26 +84,25 @@
           if (delLocalCopy) {
             try {
               collectionFile.delete();
-              m_log.info("Local copy " + collectionFilePath + " deleted");
+              if (!m_calledFromVEM) {
+                System.out.println("Local copy " + collectionFilePath + " deleted");
+              }
             }
  catch (            SecurityException e) {
-              m_log.info("Failed to delete local copy " + collectionFilePath + ". "+ e.getMessage());
+              System.err.println("Failed to delete local copy " + collectionFilePath + ". "+ e.getMessage());
             }
           }
         }
- else {
-          m_log.info("Failed to upload. Probably due to wrong credential provided. " + "Local copy could be found at " + collectionFilePath);
+ catch (        Exception e) {
+          System.err.println(e.getMessage());
         }
       }
  else {
-        m_log.info("Uploading is only available in the Enterprise Edition");
+        System.out.println("Uploading is only available in the Enterprise Edition");
       }
     }
   }
- catch (  IOException e) {
-    m_log.error(e.getMessage());
-  }
-catch (  TarMalformatException e) {
-    m_log.error(e.getMessage());
+ catch (  Exception e) {
+    System.err.println(e.getMessage());
   }
 }

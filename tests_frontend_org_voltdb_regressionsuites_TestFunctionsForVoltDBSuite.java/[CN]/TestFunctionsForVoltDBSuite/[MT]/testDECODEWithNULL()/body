@@ -1,0 +1,50 @@
+{
+  System.out.println("STARTING DECODE with NULL");
+  Client client=getClient();
+  ClientResponse cr;
+  cr=client.callProcedure("R3.insert",1,1,1,1,1,1.1,"2013-07-18 02:00:00.123457","IBM",1);
+  cr=client.callProcedure("R3.insert",2,null,null,null,null,null,null,null,null);
+  assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+  cr=client.callProcedure("TestDecodeNull",1);
+  checkDecodeNullResult(cr,new String[]{"1","1","1","1","1.1","tm","IBM","1"});
+  cr=client.callProcedure("TestDecodeNull",2);
+  checkDecodeNullResult(cr,new String[]{"null tiny","null small","null num","null big","null ratio","null tm","null var","null dec"});
+  cr=client.callProcedure("TestDecodeNullParam",null,null,null,null,null,null,null,null,1);
+  checkDecodeNullResult(cr,new String[]{"1","1","1","1","1.1","tm","IBM","1"});
+  cr=client.callProcedure("TestDecodeNullParam",null,null,null,null,null,null,null,null,2);
+  checkDecodeNullResult(cr,new String[]{"null tiny","null small","null num","null big","null ratio","null tm","null var","null dec"});
+  cr=client.callProcedure("TestDecodeNullParam","\\N","\\N","\\N","\\N","\\N","\\N","\\N","\\N",1);
+  checkDecodeNullResult(cr,new String[]{"1","1","1","1","1.1","tm","IBM","1"});
+  cr=client.callProcedure("TestDecodeNullParam","\\N","\\N","\\N","\\N","\\N","\\N","\\N","\\N",2);
+  checkDecodeNullResult(cr,new String[]{"null tiny","null small","null num","null big","null ratio","null tm","null var","null dec"});
+  cr=client.callProcedure("@AdHoc","select DECODE(tiny, NULL, 'null tiny', tiny)," + "DECODE(small, NULL, 'null small', small), DECODE(num, NULL, 'null num', num),  " + "DECODE(big, NULL, 'null big', big), DECODE(ratio, NULL, 'null ratio', ratio),  "+ "DECODE(tm, NULL, 'null tm', 'tm'), DECODE(var, NULL, 'null var', var), "+ "DECODE(dec, NULL, 'null dec', dec) from R3 where id = 1");
+  checkDecodeNullResult(cr,new String[]{"1","1","1","1","1.1","tm","IBM","1"});
+  cr=client.callProcedure("@AdHoc","select DECODE(tiny, NULL, 'null tiny', tiny)," + "DECODE(small, NULL, 'null small', small), DECODE(num, NULL, 'null num', num),  " + "DECODE(big, NULL, 'null big', big), DECODE(ratio, NULL, 'null ratio', ratio),  "+ "DECODE(tm, NULL, 'null tm', 'tm'), DECODE(var, NULL, 'null var', var), "+ "DECODE(dec, NULL, 'null dec', dec) from R3 where id = 2");
+  checkDecodeNullResult(cr,new String[]{"null tiny","null small","null num","null big","null ratio","null tm","null var","null dec"});
+  cr=client.callProcedure("P2.insert",1,new Timestamp(1000L));
+  cr=client.callProcedure("P2.insert",2,null);
+  try {
+    cr=client.callProcedure("TestDecodeNullTimestamp",1);
+    fail();
+  }
+ catch (  Exception ex) {
+    assertTrue(ex.getMessage().contains("TIMESTAMP can't be cast as VARCHAR"));
+  }
+  cr=client.callProcedure("@AdHoc","select DECODE(tiny, -1, -1, NULL, 0, tiny)," + "DECODE(small, -1, -1, NULL, 0, small), DECODE(num, -1, -1, NULL, 0, num),  " + "DECODE(big, -1, -1, NULL, 0, big) from R3 where id = 1");
+  checkDecodeNullResult(cr,new Long[]{1L,1L,1L,1L});
+  cr=client.callProcedure("@AdHoc","select DECODE(tiny, -1, -1, NULL, 0, tiny)," + "DECODE(small, -1, -1, NULL, 0, small), DECODE(num, -1, -1, NULL, 0, num),  " + "DECODE(big, -1, -1, NULL, 0, big) from R3 where id = 2");
+  checkDecodeNullResult(cr,new Long[]{0L,0L,0L,0L});
+  cr=client.callProcedure("@AdHoc","select DECODE(tiny, 4, 5, NULL, NULL, 10) " + " from R3 where id = 2");
+  assertTrue(cr.getResults()[0].getRowCount() == 1);
+  assertTrue(cr.getResults()[0].advanceRow());
+  assertEquals(Integer.MIN_VALUE,cr.getResults()[0].getLong(0));
+  try {
+    cr=client.callProcedure("@AdHoc","select DECODE(tiny, 4, 5, NULL, 'tiny null', tiny) " + " from R3 where id = 2");
+    fail();
+  }
+ catch (  Exception ex) {
+    System.out.println(ex.getMessage());
+    assertTrue(ex.getMessage().contains("SQL ERROR"));
+    assertTrue(ex.getMessage().contains("value: 'tiny null'"));
+  }
+}
