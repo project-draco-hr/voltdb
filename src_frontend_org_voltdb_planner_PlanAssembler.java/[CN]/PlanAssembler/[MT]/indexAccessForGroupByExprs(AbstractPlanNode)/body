@@ -2,8 +2,7 @@
   if (root.getPlanNodeType() == PlanNodeType.SEQSCAN && m_parsedSelect.isGrouped()) {
     Table targetTable=m_catalogDb.getTables().get(((SeqScanPlanNode)root).getTargetTableName());
     CatalogMap<Index> allIndexes=targetTable.getIndexes();
-    ArrayList<AbstractExpression> groupByExprs=new ArrayList<AbstractExpression>();
-    groupByExprs.addAll(m_parsedSelect.groupByExpressions.values());
+    ArrayList<ParsedColInfo> groupBys=m_parsedSelect.groupByColumns;
     for (    Index index : allIndexes) {
       if (!IndexType.isScannable(index.getType())) {
         continue;
@@ -12,11 +11,11 @@
       String exprsjson=index.getExpressionsjson();
       if (exprsjson.isEmpty()) {
         List<ColumnRef> indexedColRefs=CatalogUtil.getSortedCatalogItems(index.getColumns(),"index");
-        if (groupByExprs.size() > indexedColRefs.size()) {
+        if (groupBys.size() > indexedColRefs.size()) {
           continue;
         }
-        for (int i=0; i < groupByExprs.size(); i++) {
-          if (groupByExprs.get(i).getExpressionType() != ExpressionType.VALUE_TUPLE || !indexedColRefs.get(i).getColumn().getName().equals(((TupleValueExpression)groupByExprs.get(i)).getColumnName())) {
+        for (int i=0; i < groupBys.size(); i++) {
+          if (groupBys.get(i).expression.getExpressionType() != ExpressionType.VALUE_TUPLE || !indexedColRefs.get(i).getColumn().getName().equals(groupBys.get(i).columnName)) {
             replacable=false;
             break;
           }
@@ -37,11 +36,11 @@
           assert(false);
           return root;
         }
-        if (groupByExprs.size() > indexedExprs.size()) {
+        if (groupBys.size() > indexedExprs.size()) {
           continue;
         }
-        for (int i=0; i < groupByExprs.size(); i++) {
-          if (!groupByExprs.get(i).equals(indexedExprs.get(i))) {
+        for (int i=0; i < groupBys.size(); i++) {
+          if (!groupBys.get(i).expression.equals(indexedExprs.get(i))) {
             replacable=false;
             break;
           }
