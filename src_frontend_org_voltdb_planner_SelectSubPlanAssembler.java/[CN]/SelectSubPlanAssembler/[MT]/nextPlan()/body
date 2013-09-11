@@ -1,9 +1,18 @@
 {
   while (m_plans.size() == 0) {
-    JoinTree joinTree=m_joinOrders.poll();
+    JoinNode joinTree=m_joinOrders.poll();
     if (joinTree == null)     return null;
-    m_parsedStmt.analyzeTreeExpressions(joinTree);
-    generateMorePlansForJoinOrder(joinTree);
+    m_parsedStmt.analyzeJoinExpressions(joinTree);
+    assert(m_parsedStmt.noTableSelectionList.size() == 0);
+    if (!m_partitioning.wasSpecifiedAsSingle()) {
+      HashMap<AbstractExpression,Set<AbstractExpression>> valueEquivalence=joinTree.getAllEquivalenceFilters();
+      int countOfIndependentlyPartitionedTables=m_partitioning.analyzeForMultiPartitionAccess(m_parsedStmt.tableList,valueEquivalence);
+      if (countOfIndependentlyPartitionedTables > 1) {
+        m_recentErrorMsg="Join of multiple partitioned tables has insufficient join criteria.";
+        continue;
+      }
+    }
+    generateMorePlansForJoinTree(joinTree);
   }
   return m_plans.poll();
 }
