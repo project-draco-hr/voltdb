@@ -1,0 +1,31 @@
+{
+  while (true) {
+    try {
+      CSVLineWithMetaData lineList;
+      lineList=failedQueue.take();
+      if (lineList == endOfData || m_processor.m_errored) {
+        m_log.info("Shutting down failure processor. " + failedQueue.size());
+        break;
+      }
+      try {
+        VoltTable table=new VoltTable(colInfo);
+        VoltTableUtil.addRowToVoltTableFromLine(table,lineList.line,columnTypes);
+        PartitionSingleExecuteProcedureCallback cbmt=new PartitionSingleExecuteProcedureCallback(lineList,m_processor);
+        if (!CSVPartitionProcessor.isMP) {
+          csvClient.callProcedure(cbmt,m_procName,m_partitionParam,m_tableName,table);
+        }
+ else {
+          csvClient.callProcedure(cbmt,m_procName,m_tableName,table);
+        }
+        m_partitionProcessedCount.addAndGet(table.getRowCount());
+      }
+ catch (      IOException ioex) {
+        m_log.warn("Failure Processor failed, failures will not be processed: " + ioex);
+      }
+    }
+ catch (    InterruptedException ex) {
+      m_log.info("Stopped failure processor.");
+      break;
+    }
+  }
+}

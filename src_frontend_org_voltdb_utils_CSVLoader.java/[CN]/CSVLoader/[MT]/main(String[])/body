@@ -1,12 +1,12 @@
 {
   start=System.currentTimeMillis();
-  int waits=0;
-  int shortWaits=0;
-  CSVConfig cfg=new CSVConfig();
+  long insertTimeStart=start;
+  long insertTimeEnd;
+  final CSVConfig cfg=new CSVConfig();
   cfg.parse(CSVLoader.class.getName(),args);
   config=cfg;
   configuration();
-  Tokenizer tokenizer=null;
+  final Tokenizer tokenizer;
   ICsvListReader listReader=null;
   try {
     if (CSVLoader.standin) {
@@ -22,33 +22,38 @@
     m_log.error("CSV file '" + config.file + "' could not be found.");
     System.exit(-1);
   }
-  String[] serverlist=config.servers.split(",");
-  ClientConfig c_config=new ClientConfig(config.user,config.password);
+  final String[] serverlist=config.servers.split(",");
+  final ClientConfig c_config=new ClientConfig(config.user,config.password);
   c_config.setProcedureCallTimeout(0);
   Client csvClient=null;
   try {
     csvClient=CSVLoader.getClient(c_config,serverlist,config.port);
   }
  catch (  Exception e) {
-    m_log.error("Error to connect to the servers:" + config.servers);
+    m_log.error("Error connecting to the servers: " + config.servers);
     close_cleanup();
     System.exit(-1);
   }
   assert(csvClient != null);
+  int partitionedColumnIndex=-1;
+  VoltType partitionColumnType=VoltType.NULL;
   try {
-    ProcedureCallback cb=null;
-    boolean lastOK=true;
-    int columnCnt=0;
-    VoltTable procInfo=null;
+    VoltTable procInfo;
     boolean isProcExist=false;
     try {
-      procInfo=csvClient.callProcedure("@SystemCatalog","PROCEDURECOLUMNS").getResults()[0];
-      while (procInfo.advanceRow()) {
-        if (insertProcedure.matches((String)procInfo.get("PROCEDURE_NAME",VoltType.STRING))) {
-          columnCnt++;
-          isProcExist=true;
-          String typeStr=(String)procInfo.get("TYPE_NAME",VoltType.STRING);
-          typeList.add(VoltType.typeFromString(typeStr));
+      if (config.useSuppliedProcedure) {
+        procInfo=csvClient.callProcedure("@SystemCatalog","PROCEDURECOLUMNS").getResults()[0];
+        while (procInfo.advanceRow()) {
+          if (insertProcedure.matches((String)procInfo.get("PROCEDURE_NAME",VoltType.STRING))) {
+            isProcExist=true;
+            String typeStr=(String)procInfo.get("TYPE_NAME",VoltType.STRING);
+            typeList.add(VoltType.typeFromString(typeStr));
+          }
+        }
+        if (isProcExist == false) {
+          m_log.error("No matching insert procedure available");
+          close_cleanup();
+          System.exit(-1);
         }
       }
     }
@@ -57,74 +62,137 @@
       close_cleanup();
       System.exit(-1);
     }
-    if (isProcExist == false) {
-      m_log.error("No matching insert procedure available");
-      close_cleanup();
-      System.exit(-1);
-    }
-    try {
-      if (isProcedureMp(csvClient)) {
-        m_log.warn("Using a multi-partitioned procedure to load data will be slow. " + "If loading a partitioned table, use a single-partitioned procedure " + "for best performance.");
+    procInfo=csvClient.callProcedure("@SystemCatalog","COLUMNS").getResults()[0];
+    Map<Integer,VoltType> columnTypes=new TreeMap<Integer,VoltType>();
+    Map<Integer,String> colNames=new TreeMap<Integer,String>();
+    while (procInfo.advanceRow()) {
+      String table=procInfo.getString("TABLE_NAME");
+      if (config.table.equalsIgnoreCase(table)) {
+        VoltType vtype=VoltType.typeFromString(procInfo.getString("TYPE_NAME"));
+        int idx=(int)procInfo.getLong("ORDINAL_POSITION") - 1;
+        columnTypes.put(idx,vtype);
+        colNames.put(idx,procInfo.getString("COLUMN_NAME"));
+        String remarks=procInfo.getString("REMARKS");
+        if (remarks != null && remarks.equalsIgnoreCase("PARTITION_COLUMN")) {
+          partitionColumnType=vtype;
+          partitionedColumnIndex=idx;
+          m_log.info("Table " + config.table + " Partition Column Name is: "+ procInfo.getString("COLUMN_NAME"));
+          m_log.info("Table " + config.table + " Partition Column Type is: "+ vtype.toString());
+        }
       }
     }
- catch (    Exception e) {
-      m_log.fatal(e.getMessage(),e);
+    if (columnTypes.isEmpty()) {
+      m_log.error("Table " + config.table + " Not found");
       close_cleanup();
       System.exit(-1);
     }
-    List<String> lineList=new ArrayList<String>();
-    while ((config.limitrows-- > 0)) {
+    VoltTable.ColumnInfo colInfo[]=new VoltTable.ColumnInfo[columnTypes.size()];
+    for (int i=0; i < columnTypes.size(); i++) {
+      VoltType type=columnTypes.get(i);
+      String cname=colNames.get(i);
+      VoltTable.ColumnInfo ci=new VoltTable.ColumnInfo(cname,type);
+      colInfo[i]=ci;
+    }
+    int numProcessors=-1;
+    int sitesPerHost=1;
+    int kfactor=0;
+    int hostcount=1;
+    procInfo=csvClient.callProcedure("@SystemInformation","deployment").getResults()[0];
+    while (procInfo.advanceRow()) {
+      String prop=procInfo.getString("PROPERTY");
+      if (prop != null && prop.equalsIgnoreCase("sitesperhost")) {
+        sitesPerHost=Integer.parseInt(procInfo.getString("VALUE"));
+      }
+      if (prop != null && prop.equalsIgnoreCase("hostcount")) {
+        hostcount=Integer.parseInt(procInfo.getString("VALUE"));
+      }
+      if (prop != null && prop.equalsIgnoreCase("kfactor")) {
+        kfactor=Integer.parseInt(procInfo.getString("VALUE"));
+      }
+    }
+    boolean isMP=(partitionedColumnIndex == -1 ? true : false);
+    if (!isMP) {
+      numProcessors=(hostcount * sitesPerHost) / (kfactor + 1);
+      m_log.info("Number of Partitions: " + numProcessors);
+      m_log.info("Batch Size is: " + config.batch);
+      TheHashinator.initialize(LegacyHashinator.class,LegacyHashinator.getConfigureBytes(numProcessors));
+    }
+ else {
+      m_log.warn("Using a multi-partitioned procedure to load data will be slow. " + "If loading a partitioned table, use a single-partitioned procedure " + "for best performance.");
+      numProcessors=1;
+    }
+    CSVPartitionProcessor.colInfo=colInfo;
+    CSVPartitionProcessor.columnTypes=columnTypes;
+    CSVPartitionProcessor.insertProcedure=insertProcedure;
+    CSVPartitionProcessor.isMP=isMP;
+    CSVPartitionProcessor.config=config;
+    List<Thread> spawned=new ArrayList<Thread>(numProcessors);
+    CSVLineWithMetaData dummy=new CSVLineWithMetaData();
+    Map<Integer,BlockingQueue<CSVLineWithMetaData>> lineq=new HashMap<Integer,BlockingQueue<CSVLineWithMetaData>>(numProcessors);
+    CountDownLatch processor_cdl=new CountDownLatch(numProcessors);
+    List<CSVPartitionProcessor> processors=new ArrayList<CSVPartitionProcessor>(numProcessors);
+    for (int i=0; i < numProcessors; i++) {
+      LinkedBlockingQueue<CSVLineWithMetaData> q=new LinkedBlockingQueue<CSVLineWithMetaData>((int)config.batch);
+      lineq.put(i,q);
+      CSVPartitionProcessor pp=new CSVPartitionProcessor();
+      processors.add(pp);
+      pp.csvClient=csvClient;
+      pp.m_partitionId=i;
+      pp.m_tableName=config.table;
+      pp.m_columnCnt=columnTypes.size();
+      pp.lineq=q;
+      pp.endOfData=dummy;
+      pp.m_processorName="PartitionProcessor-" + i;
+      Thread th=new Thread(pp);
+      th.setName(pp.m_processorName);
+      spawned.add(th);
+    }
+    CSVPartitionProcessor.processor_cdl=processor_cdl;
+    CSVFileReader.config=config;
+    CSVFileReader.columnCnt=columnTypes.size();
+    CSVFileReader.listReader=listReader;
+    CSVFileReader.partitionedColumnIndex=partitionedColumnIndex;
+    CSVFileReader.partitionColumnType=partitionColumnType;
+    CSVFileReader.tableName=config.table;
+    CSVFileReader.typeList=typeList;
+    CSVFileReader.csvClient=csvClient;
+    CSVFileReader.processorQueues=lineq;
+    CSVFileReader.endOfData=dummy;
+    CSVFileReader.processor_cdl=processor_cdl;
+    CSVFileReader rdr=new CSVFileReader();
+    Thread th=new Thread(rdr);
+    th.setName("CSVReader-MT");
+    th.setDaemon(true);
+    for (    Thread th2 : spawned) {
+      th2.start();
+    }
+    th.start();
+    th.join();
+    long readerTime=0;
+    readerTime+=(rdr.m_parsingTimeEnd - rdr.m_parsingTimeSt);
+    readerTime=readerTime / 1000000;
+    for (    Thread th2 : spawned) {
       try {
-        if (listReader.getLineNumber() == 0)         totalLineCount.set(cfg.skip);
- else         totalLineCount.set(listReader.getLineNumber());
-        lineList=listReader.read();
-        if (lineList == null) {
-          if (totalLineCount.get() > listReader.getLineNumber())           totalLineCount.set(listReader.getLineNumber());
-          break;
-        }
-        totalRowCount.getAndIncrement();
-        boolean queued=false;
-        while (queued == false) {
-          String[] correctedLine=lineList.toArray(new String[0]);
-          cb=new MyCallback(totalLineCount.get() + 1,config,lineList);
-          String lineCheckResult;
-          if ((lineCheckResult=checkparams_trimspace(correctedLine,columnCnt)) != null) {
-            String[] info={lineList.toString(),lineCheckResult};
-            synchronizeErrorInfo(totalLineCount.get() + 1,info);
-            break;
-          }
-          queued=csvClient.callProcedure(cb,insertProcedure,(Object[])correctedLine);
-          outCount.incrementAndGet();
-          if (queued == false) {
-            ++waits;
-            if (lastOK == false) {
-              ++shortWaits;
-            }
-            Thread.sleep(waitSeconds);
-          }
-          lastOK=queued;
-        }
+        th2.join();
       }
- catch (      SuperCsvException e) {
-        totalRowCount.getAndIncrement();
-        String[] info={e.getMessage(),""};
-        synchronizeErrorInfo(totalLineCount.get() + 1,info);
+ catch (      InterruptedException ex) {
       }
     }
+    insertTimeEnd=System.currentTimeMillis();
     csvClient.drain();
-  }
- catch (  Exception e) {
-    e.printStackTrace();
-  }
-  m_log.info("Inserted " + outCount.get() + " and acknowledged "+ inCount.get()+ " rows (final)");
-  if (waits > 0) {
-    m_log.info("Waited " + waits + " times");
-    if (shortWaits > 0) {
-      m_log.info("Waited too briefly? " + shortWaits + " times");
+    csvClient.close();
+    long insertCount=0, ackCount=0;
+    for (    CSVPartitionProcessor pp : processors) {
+      insertCount+=pp.m_partitionProcessedCount.get();
+      ackCount+=pp.m_partitionAcknowledgedCount.get();
     }
+    m_log.info("Parsing CSV file took " + readerTime + " milliseconds.");
+    m_log.info("Inserting Data took " + ((insertTimeEnd - insertTimeStart) - readerTime) + " milliseconds.");
+    m_log.info("Inserted " + insertCount + " and acknowledged "+ ackCount+ " rows (final)");
+    produceFiles(ackCount,insertCount);
+    close_cleanup();
   }
-  produceFiles();
-  close_cleanup();
-  listReader.close();
-  csvClient.close();
+ catch (  Exception ex) {
+    ex.printStackTrace();
+  }
 }

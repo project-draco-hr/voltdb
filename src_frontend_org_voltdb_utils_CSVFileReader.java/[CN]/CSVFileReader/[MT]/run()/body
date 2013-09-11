@@ -1,5 +1,8 @@
 {
   while ((config.limitrows-- > 0)) {
+    if (errored) {
+      break;
+    }
     try {
       if (listReader.getLineNumber() == 0) {
         totalLineCount.set(config.skip);
@@ -10,7 +13,7 @@
       long st=System.nanoTime();
       List<String> lineList=listReader.read();
       long end=System.nanoTime();
-      parsingTimeEnd+=(end - st);
+      m_parsingTimeEnd+=(end - st);
       if (lineList == null) {
         if (totalLineCount.get() > listReader.getLineNumber()) {
           totalLineCount.set(listReader.getLineNumber());
@@ -24,7 +27,6 @@
         String[] info={lineList.toString(),lineCheckResult};
         if (synchronizeErrorInfo(totalLineCount.get() + 1,info)) {
           errored=true;
-          break;
         }
         continue;
       }
@@ -36,14 +38,13 @@
       if (!CSVPartitionProcessor.isMP) {
         partitionId=TheHashinator.getPartitionForParameter(partitionColumnType.getValue(),(Object)lineData.line[partitionedColumnIndex]);
       }
-      BlockingQueue<CSVLineWithMetaData> q=lineq.get(partitionId);
+      BlockingQueue<CSVLineWithMetaData> q=processorQueues.get(partitionId);
       q.offer(lineData);
     }
  catch (    SuperCsvException e) {
       e.printStackTrace();
       String[] info={e.getMessage(),""};
       if (synchronizeErrorInfo(totalLineCount.get() + 1,info)) {
-        errored=true;
         break;
       }
     }
@@ -59,17 +60,17 @@ catch (    IOException ioex) {
     m_log.error("Error cloging Reader: " + ex);
   }
  finally {
-    for (    BlockingQueue<CSVLineWithMetaData> q : lineq.values()) {
+    for (    BlockingQueue<CSVLineWithMetaData> q : processorQueues.values()) {
       if (errored) {
         q.clear();
       }
-      q.offer(dummy);
+      q.offer(endOfData);
     }
     m_log.info("Rows Queued by Reader: " + totalRowCount.get());
   }
   try {
     m_log.info("Waiting for partition processors to finish.");
-    pcount.await();
+    processor_cdl.await();
     m_log.info("Partition Processors Done.");
   }
  catch (  InterruptedException ex) {
