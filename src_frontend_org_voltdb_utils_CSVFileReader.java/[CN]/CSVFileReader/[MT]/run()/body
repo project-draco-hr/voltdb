@@ -30,16 +30,13 @@
         }
         continue;
       }
-      CSVLineWithMetaData lineData=new CSVLineWithMetaData();
-      lineData.line=correctedLine;
-      lineData.rawLineData=lineList;
-      lineData.lineNumber=listReader.getLineNumber();
+      CSVLineWithMetaData lineData=new CSVLineWithMetaData(correctedLine,lineList,listReader.getLineNumber());
       int partitionId=0;
       if (!CSVPartitionProcessor.isMP) {
-        partitionId=TheHashinator.getPartitionForParameter(partitionColumnType.getValue(),(Object)lineData.line[partitionedColumnIndex]);
+        partitionId=TheHashinator.getPartitionForParameter(partitionColumnType.getValue(),(Object)lineData.correctedLine[partitionedColumnIndex]);
       }
       BlockingQueue<CSVLineWithMetaData> q=processorQueues.get(partitionId);
-      q.offer(lineData);
+      q.put(lineData);
     }
  catch (    SuperCsvException e) {
       e.printStackTrace();
@@ -52,6 +49,12 @@ catch (    IOException ioex) {
       ioex.printStackTrace();
       break;
     }
+catch (    InterruptedException ex) {
+      m_log.error("Failed to add lines for partition processor queues: " + ex);
+    }
+  }
+  if (errorInfo.size() >= config.maxerrors) {
+    m_log.info("The number of Failure row data exceeds " + config.maxerrors);
   }
   try {
     listReader.close();
@@ -64,7 +67,12 @@ catch (    IOException ioex) {
       if (errored) {
         q.clear();
       }
-      q.offer(endOfData);
+      try {
+        q.put(endOfData);
+      }
+ catch (      InterruptedException ex) {
+        m_log.error("Failed to add endOfData for Partition Processor. " + ex);
+      }
     }
     m_log.info("Rows Queued by Reader: " + totalRowCount.get());
   }

@@ -6,22 +6,22 @@
       return;
     }
     List<CSVLineWithMetaData> mlineList=new ArrayList<CSVLineWithMetaData>();
-    lineq.drainTo(mlineList);
+    m_partitionQueue.drainTo(mlineList,config.batch);
     for (    CSVLineWithMetaData lineList : mlineList) {
       if (lineList == endOfData) {
         if (table.getRowCount() > 0) {
           PartitionProcedureCallback cbmt=new PartitionProcedureCallback(batchList,this,failedQueue);
           try {
             if (!isMP) {
-              csvClient.callProcedure(cbmt,procName,partitionParam,m_tableName,table);
+              csvClient.callProcedure(cbmt,procName,partitionParam,tableName,table);
             }
  else {
-              csvClient.callProcedure(cbmt,procName,m_tableName,table);
+              csvClient.callProcedure(cbmt,procName,tableName,table);
             }
             m_partitionProcessedCount.addAndGet(table.getRowCount());
           }
  catch (          IOException ex) {
-            String[] info={lineList.rawLineData.toString(),ex.toString()};
+            String[] info={lineList.rawLine.toString(),ex.toString()};
             m_errored=synchronizeErrorInfo(lineList.lineNumber,info);
           }
         }
@@ -29,17 +29,17 @@
       }
       if (!config.useSuppliedProcedure) {
         try {
-          if (VoltTableUtil.addRowToVoltTableFromLine(table,lineList.line,columnTypes)) {
+          if (VoltTableUtil.addRowToVoltTableFromLine(table,lineList.correctedLine,columnTypes)) {
             batchList.add(lineList);
           }
  else {
-            String[] info={lineList.rawLineData.toString(),"Missing or Invalid Data in Row."};
+            String[] info={lineList.rawLine.toString(),"Missing or Invalid Data in Row."};
             m_errored=synchronizeErrorInfo(lineList.lineNumber,info);
             continue;
           }
         }
  catch (        Exception ex) {
-          String[] info={lineList.rawLineData.toString(),ex.toString()};
+          String[] info={lineList.rawLine.toString(),ex.toString()};
           m_errored=synchronizeErrorInfo(lineList.lineNumber,info);
           continue;
         }
@@ -47,17 +47,17 @@
           try {
             PartitionProcedureCallback cbmt=new PartitionProcedureCallback(batchList,this,failedQueue);
             if (!isMP) {
-              csvClient.callProcedure(cbmt,procName,partitionParam,m_tableName,table);
+              csvClient.callProcedure(cbmt,procName,partitionParam,tableName,table);
             }
  else {
-              csvClient.callProcedure(cbmt,procName,m_tableName,table);
+              csvClient.callProcedure(cbmt,procName,tableName,table);
             }
             m_partitionProcessedCount.addAndGet(table.getRowCount());
             table.clearRowData();
           }
  catch (          IOException ex) {
             table.clearRowData();
-            String[] info={lineList.rawLineData.toString(),ex.toString()};
+            String[] info={lineList.rawLine.toString(),ex.toString()};
             m_errored=synchronizeErrorInfo(lineList.lineNumber,info);
             return;
           }
@@ -67,11 +67,11 @@
  else {
         try {
           PartitionSingleExecuteProcedureCallback cbmt=new PartitionSingleExecuteProcedureCallback(lineList,this);
-          csvClient.callProcedure(cbmt,procName,(Object[])lineList.line);
+          csvClient.callProcedure(cbmt,procName,(Object[])lineList.correctedLine);
           m_partitionProcessedCount.incrementAndGet();
         }
  catch (        IOException ex) {
-          String[] info={lineList.rawLineData.toString(),ex.toString()};
+          String[] info={lineList.rawLine.toString(),ex.toString()};
           m_errored=synchronizeErrorInfo(lineList.lineNumber,info);
           return;
         }

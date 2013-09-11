@@ -121,33 +121,27 @@
       m_log.warn("Using a multi-partitioned procedure to load data will be slow. " + "If loading a partitioned table, use a single-partitioned procedure " + "for best performance.");
       numProcessors=1;
     }
+    CountDownLatch processor_cdl=new CountDownLatch(numProcessors);
+    CSVPartitionProcessor.processor_cdl=processor_cdl;
     CSVPartitionProcessor.colInfo=colInfo;
     CSVPartitionProcessor.columnTypes=columnTypes;
     CSVPartitionProcessor.insertProcedure=insertProcedure;
     CSVPartitionProcessor.isMP=isMP;
     CSVPartitionProcessor.config=config;
+    CSVPartitionProcessor.tableName=config.table;
     List<Thread> spawned=new ArrayList<Thread>(numProcessors);
-    CSVLineWithMetaData dummy=new CSVLineWithMetaData();
+    CSVLineWithMetaData endOfData=new CSVLineWithMetaData(null,null,-1);
     Map<Integer,BlockingQueue<CSVLineWithMetaData>> lineq=new HashMap<Integer,BlockingQueue<CSVLineWithMetaData>>(numProcessors);
-    CountDownLatch processor_cdl=new CountDownLatch(numProcessors);
     List<CSVPartitionProcessor> processors=new ArrayList<CSVPartitionProcessor>(numProcessors);
     for (int i=0; i < numProcessors; i++) {
-      LinkedBlockingQueue<CSVLineWithMetaData> q=new LinkedBlockingQueue<CSVLineWithMetaData>((int)config.batch);
-      lineq.put(i,q);
-      CSVPartitionProcessor pp=new CSVPartitionProcessor();
-      processors.add(pp);
-      pp.csvClient=csvClient;
-      pp.m_partitionId=i;
-      pp.m_tableName=config.table;
-      pp.m_columnCnt=columnTypes.size();
-      pp.lineq=q;
-      pp.endOfData=dummy;
-      pp.m_processorName="PartitionProcessor-" + i;
-      Thread th=new Thread(pp);
-      th.setName(pp.m_processorName);
+      LinkedBlockingQueue<CSVLineWithMetaData> partitionQueue=new LinkedBlockingQueue<CSVLineWithMetaData>((int)config.batch);
+      lineq.put(i,partitionQueue);
+      CSVPartitionProcessor processor=new CSVPartitionProcessor(csvClient,i,partitionedColumnIndex,partitionQueue,endOfData);
+      processors.add(processor);
+      Thread th=new Thread(processor);
+      th.setName(processor.m_processorName);
       spawned.add(th);
     }
-    CSVPartitionProcessor.processor_cdl=processor_cdl;
     CSVFileReader.config=config;
     CSVFileReader.columnCnt=columnTypes.size();
     CSVFileReader.listReader=listReader;
@@ -157,11 +151,11 @@
     CSVFileReader.typeList=typeList;
     CSVFileReader.csvClient=csvClient;
     CSVFileReader.processorQueues=lineq;
-    CSVFileReader.endOfData=dummy;
+    CSVFileReader.endOfData=endOfData;
     CSVFileReader.processor_cdl=processor_cdl;
     CSVFileReader rdr=new CSVFileReader();
     Thread th=new Thread(rdr);
-    th.setName("CSVReader-MT");
+    th.setName("CSVFileReader");
     th.setDaemon(true);
     for (    Thread th2 : spawned) {
       th2.start();
@@ -171,21 +165,14 @@
     long readerTime=0;
     readerTime+=(rdr.m_parsingTimeEnd - rdr.m_parsingTimeSt);
     readerTime=readerTime / 1000000;
-    for (    Thread th2 : spawned) {
-      try {
-        th2.join();
-      }
- catch (      InterruptedException ex) {
-      }
-    }
     insertTimeEnd=System.currentTimeMillis();
     csvClient.drain();
     csvClient.close();
     long insertCount=0, ackCount=0;
     for (    CSVPartitionProcessor pp : processors) {
       insertCount+=pp.m_partitionProcessedCount.get();
-      ackCount+=pp.m_partitionAcknowledgedCount.get();
     }
+    ackCount=CSVPartitionProcessor.partitionAcknowledgedCount.get();
     m_log.info("Parsing CSV file took " + readerTime + " milliseconds.");
     m_log.info("Inserting Data took " + ((insertTimeEnd - insertTimeStart) - readerTime) + " milliseconds.");
     m_log.info("Inserted " + insertCount + " and acknowledged "+ ackCount+ " rows (final)");
