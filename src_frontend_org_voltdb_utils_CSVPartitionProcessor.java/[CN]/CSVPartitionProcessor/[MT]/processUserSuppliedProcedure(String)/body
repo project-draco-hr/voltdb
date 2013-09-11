@@ -1,0 +1,25 @@
+{
+  while (true) {
+    if (m_errored) {
+      CSVFileReader.errored=true;
+      return;
+    }
+    List<CSVLineWithMetaData> mlineList=new ArrayList<CSVLineWithMetaData>();
+    m_partitionQueue.drainTo(mlineList,config.batch);
+    for (    CSVLineWithMetaData lineList : mlineList) {
+      if (lineList == endOfData) {
+        return;
+      }
+      try {
+        PartitionSingleExecuteProcedureCallback cbmt=new PartitionSingleExecuteProcedureCallback(lineList,this);
+        csvClient.callProcedure(cbmt,procName,(Object[])lineList.correctedLine);
+        m_partitionProcessedCount.incrementAndGet();
+      }
+ catch (      IOException ex) {
+        String[] info={lineList.rawLine.toString(),ex.toString()};
+        m_errored=synchronizeErrorInfo(lineList.lineNumber,info);
+        return;
+      }
+    }
+  }
+}

@@ -36,6 +36,7 @@
   }
   assert(csvClient != null);
   int partitionedColumnIndex=-1;
+  int columnCnt=0;
   VoltType partitionColumnType=VoltType.NULL;
   try {
     VoltTable procInfo;
@@ -45,6 +46,7 @@
         procInfo=csvClient.callProcedure("@SystemCatalog","PROCEDURECOLUMNS").getResults()[0];
         while (procInfo.advanceRow()) {
           if (insertProcedure.matches((String)procInfo.get("PROCEDURE_NAME",VoltType.STRING))) {
+            columnCnt++;
             isProcExist=true;
             String typeStr=(String)procInfo.get("TYPE_NAME",VoltType.STRING);
             typeList.add(VoltType.typeFromString(typeStr));
@@ -54,6 +56,9 @@
           m_log.error("No matching insert procedure available");
           close_cleanup();
           System.exit(-1);
+        }
+        if (isProcedureMp(csvClient)) {
+          m_log.warn("Using a multi-partitioned procedure to load data will be slow. " + "If loading a partitioned table, use a single-partitioned procedure " + "for best performance.");
         }
       }
     }
@@ -81,7 +86,7 @@
         }
       }
     }
-    if (columnTypes.isEmpty()) {
+    if (!config.useSuppliedProcedure && columnTypes.isEmpty()) {
       m_log.error("Table " + config.table + " Not found");
       close_cleanup();
       System.exit(-1);
@@ -118,7 +123,9 @@
       TheHashinator.initialize(LegacyHashinator.class,LegacyHashinator.getConfigureBytes(numProcessors));
     }
  else {
-      m_log.warn("Using a multi-partitioned procedure to load data will be slow. " + "If loading a partitioned table, use a single-partitioned procedure " + "for best performance.");
+      if (!config.useSuppliedProcedure) {
+        m_log.warn("Using a multi-partitioned procedure to load data will be slow. " + "If loading a partitioned table, use a single-partitioned procedure " + "for best performance.");
+      }
       numProcessors=1;
     }
     CountDownLatch processor_cdl=new CountDownLatch(numProcessors);
@@ -143,7 +150,12 @@
       spawned.add(th);
     }
     CSVFileReader.config=config;
-    CSVFileReader.columnCnt=columnTypes.size();
+    if (config.useSuppliedProcedure) {
+      CSVFileReader.columnCnt=columnCnt;
+    }
+ else {
+      CSVFileReader.columnCnt=columnTypes.size();
+    }
     CSVFileReader.listReader=listReader;
     CSVFileReader.partitionedColumnIndex=partitionedColumnIndex;
     CSVFileReader.partitionColumnType=partitionColumnType;

@@ -1,21 +1,26 @@
 {
-  VoltTable table=new VoltTable(colInfo);
-  String procName=(isMP ? "@LoadMultipartitionTable" : "@LoadSinglepartitionTable");
+  FailedBatchProcessor failureProcessor=null;
   if (config.useSuppliedProcedure) {
-    procName=insertProcedure;
+    processUserSuppliedProcedure(insertProcedure);
   }
-  Object partitionParam=null;
-  if (!isMP) {
-    partitionParam=TheHashinator.valueToBytes(m_partitionId);
+ else {
+    Object partitionParam=null;
+    if (!isMP) {
+      partitionParam=TheHashinator.valueToBytes(m_partitionId);
+    }
+    VoltTable table=new VoltTable(colInfo);
+    String procName=(isMP ? "@LoadMultipartitionTable" : "@LoadSinglepartitionTable");
+    failureProcessor=new FailedBatchProcessor(this,procName,tableName,partitionParam);
+    failureProcessor.start();
+    process(table,procName,partitionParam);
   }
-  FailedBatchProcessor failureProcessor=new FailedBatchProcessor(this,procName,tableName,partitionParam);
-  failureProcessor.start();
-  process(table,procName,partitionParam);
   m_partitionQueue.clear();
   try {
     csvClient.drain();
     failedQueue.put(endOfData);
-    failureProcessor.join();
+    if (failureProcessor != null) {
+      failureProcessor.join();
+    }
     csvClient.drain();
   }
  catch (  NoConnectionsException ex) {
