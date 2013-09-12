@@ -1,0 +1,82 @@
+{
+  VoltTable procInfo;
+  if (config.useSuppliedProcedure) {
+    boolean isProcExist=false;
+    procInfo=csvClient.callProcedure("@SystemCatalog","PROCEDURECOLUMNS").getResults()[0];
+    while (procInfo.advanceRow()) {
+      if (insertProcedure.matches((String)procInfo.get("PROCEDURE_NAME",VoltType.STRING))) {
+        columnCnt++;
+        isProcExist=true;
+        String typeStr=(String)procInfo.get("TYPE_NAME",VoltType.STRING);
+        typeList.add(VoltType.typeFromString(typeStr));
+      }
+    }
+    if (isProcExist == false) {
+      m_log.error("No matching insert procedure available");
+      close_cleanup();
+      System.exit(-1);
+    }
+    isMP=isProcedureMp(csvClient);
+  }
+ else {
+    procInfo=csvClient.callProcedure("@SystemCatalog","COLUMNS").getResults()[0];
+    columnTypes=new TreeMap<Integer,VoltType>();
+    colNames=new TreeMap<Integer,String>();
+    while (procInfo.advanceRow()) {
+      String table=procInfo.getString("TABLE_NAME");
+      if (config.table.equalsIgnoreCase(table)) {
+        VoltType vtype=VoltType.typeFromString(procInfo.getString("TYPE_NAME"));
+        int idx=(int)procInfo.getLong("ORDINAL_POSITION") - 1;
+        columnTypes.put(idx,vtype);
+        colNames.put(idx,procInfo.getString("COLUMN_NAME"));
+        String remarks=procInfo.getString("REMARKS");
+        if (remarks != null && remarks.equalsIgnoreCase("PARTITION_COLUMN")) {
+          partitionColumnType=vtype;
+          partitionedColumnIndex=idx;
+          m_log.info("Table " + config.table + " Partition Column Name is: "+ procInfo.getString("COLUMN_NAME"));
+          m_log.info("Table " + config.table + " Partition Column Type is: "+ vtype.toString());
+        }
+      }
+    }
+    if (columnTypes.isEmpty()) {
+      m_log.error("Table " + config.table + " Not found");
+      close_cleanup();
+      System.exit(-1);
+    }
+    columnCnt=columnTypes.size();
+    colInfo=new VoltTable.ColumnInfo[columnTypes.size()];
+    for (int i=0; i < columnTypes.size(); i++) {
+      VoltType type=columnTypes.get(i);
+      String cname=colNames.get(i);
+      VoltTable.ColumnInfo ci=new VoltTable.ColumnInfo(cname,type);
+      colInfo[i]=ci;
+    }
+    typeList=new ArrayList<VoltType>(columnTypes.values());
+    int sitesPerHost=1;
+    int kfactor=0;
+    int hostcount=1;
+    procInfo=csvClient.callProcedure("@SystemInformation","deployment").getResults()[0];
+    while (procInfo.advanceRow()) {
+      String prop=procInfo.getString("PROPERTY");
+      if (prop != null && prop.equalsIgnoreCase("sitesperhost")) {
+        sitesPerHost=Integer.parseInt(procInfo.getString("VALUE"));
+      }
+      if (prop != null && prop.equalsIgnoreCase("hostcount")) {
+        hostcount=Integer.parseInt(procInfo.getString("VALUE"));
+      }
+      if (prop != null && prop.equalsIgnoreCase("kfactor")) {
+        kfactor=Integer.parseInt(procInfo.getString("VALUE"));
+      }
+    }
+    isMP=(partitionedColumnIndex == -1 ? true : false);
+    if (!isMP) {
+      numProcessors=(hostcount * sitesPerHost) / (kfactor + 1);
+      m_log.info("Number of Partitions: " + numProcessors);
+      m_log.info("Batch Size is: " + config.batch);
+      TheHashinator.initialize(LegacyHashinator.class,LegacyHashinator.getConfigureBytes(numProcessors));
+    }
+  }
+  if (isMP) {
+    m_log.warn("Using a multi-partitioned procedure to load data will be slow. " + "If loading a partitioned table, use a single-partitioned procedure " + "for best performance.");
+  }
+}

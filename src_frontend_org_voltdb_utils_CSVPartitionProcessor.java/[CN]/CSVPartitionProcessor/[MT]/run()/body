@@ -10,18 +10,19 @@
     }
     VoltTable table=new VoltTable(colInfo);
     String procName=(isMP ? "@LoadMultipartitionTable" : "@LoadSinglepartitionTable");
+    failedQueue=new LinkedBlockingQueue<CSVLineWithMetaData>();
     failureProcessor=new FailedBatchProcessor(this,procName,tableName,partitionParam);
     failureProcessor.start();
-    process(table,procName,partitionParam);
+    processLoadTable(table,procName,partitionParam);
   }
   m_partitionQueue.clear();
   try {
     csvClient.drain();
-    failedQueue.put(endOfData);
     if (failureProcessor != null) {
+      failedQueue.put(endOfData);
       failureProcessor.join();
+      csvClient.drain();
     }
-    csvClient.drain();
   }
  catch (  NoConnectionsException ex) {
     m_log.warn("Failed to Drain the client: ",ex);
