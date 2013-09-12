@@ -5,15 +5,32 @@
   System.out.println();
   if (config.preload) {
     System.out.println("Preloading data store...");
-    for (int i=0; i < config.poolsize; i++) {
+    for (int i=config.preloadLowKey; i < config.poolsize; i++) {
       client.callProcedure(new NullCallback(),"Put",String.format(processor.KeyFormat,i),processor.generateForStore().getStoreValue());
     }
     client.drain();
     System.out.println("Preloading complete.\n");
   }
+  if (!config.runbenchmark) {
+    System.out.println("Benchmark run disabled by --runbenchmark option, exiting now");
+    System.exit(0);
+  }
   System.out.print(HORIZONTAL_RULE);
   System.out.println("Starting Benchmark");
   System.out.println(HORIZONTAL_RULE);
+  if (config.warmup > 0) {
+    System.out.println("Warming up...");
+    final long warmupEndTime=System.currentTimeMillis() + (1000l * config.warmup);
+    while (warmupEndTime > System.currentTimeMillis()) {
+      if (rand.nextDouble() < config.getputratio) {
+        client.callProcedure(new NullCallback(),"Get",processor.generateRandomKeyForRetrieval());
+      }
+ else {
+        final PayloadProcessor.Pair pair=processor.generateForStore();
+        client.callProcedure(new NullCallback(),"Put",pair.Key,pair.getStoreValue());
+      }
+    }
+  }
   fullStatsContext.fetchAndResetBaseline();
   periodicStatsContext.fetchAndResetBaseline();
   benchmarkStartTS=System.currentTimeMillis();
@@ -71,4 +88,5 @@
     currentTime=System.currentTimeMillis();
     diff=benchmarkEndTime - currentTime;
   }
+  timer.cancel();
 }

@@ -1,0 +1,26 @@
+{
+  if (!haveNecessaryFaultInfo(m_seeker.getSurvivors(),false)) {
+    VoltDB.crashLocalVoltDB("Error extracting fault data",true,null);
+  }
+  Set<Long> toBeKilled=m_seeker.nextKill();
+  if (toBeKilled.isEmpty()) {
+    m_recoveryLog.warn("Agreement, seeker failed to yield a kill set: " + m_seeker);
+  }
+  Map<Long,Long> initiatorSafeInitPoint=new HashMap<Long,Long>();
+  Iterator<Map.Entry<Pair<Long,Long>,Long>> iter=m_failedSitesLedger.entrySet().iterator();
+  while (iter.hasNext()) {
+    final Map.Entry<Pair<Long,Long>,Long> entry=iter.next();
+    final Pair<Long,Long> key=entry.getKey();
+    final Long safeTxnId=entry.getValue();
+    if (!hsIds.contains(key.getFirst()) || !toBeKilled.contains(key.getSecond())) {
+      continue;
+    }
+    Long initiatorId=key.getSecond();
+    if (!initiatorSafeInitPoint.containsKey(initiatorId)) {
+      initiatorSafeInitPoint.put(initiatorId,Long.MIN_VALUE);
+    }
+    initiatorSafeInitPoint.put(initiatorId,Math.max(initiatorSafeInitPoint.get(initiatorId),safeTxnId));
+  }
+  assert(!initiatorSafeInitPoint.containsValue(Long.MIN_VALUE));
+  return ImmutableMap.copyOf(initiatorSafeInitPoint);
+}

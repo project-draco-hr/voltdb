@@ -1,0 +1,43 @@
+{
+  VoltTable results=constructFragmentResultsTable();
+  List<File> relevantFiles=retrieveRelevantFiles(path);
+  if (relevantFiles == null) {
+    results.addRow(m_messenger.getHostId(),m_hostname,"","",0,0,"","FALSE",0,"","",0,"","FAILURE",m_errorString);
+  }
+ else {
+    for (    final File f : relevantFiles) {
+      if (f.getName().endsWith(".digest")) {
+        continue;
+      }
+      if (f.canRead()) {
+        try {
+          FileInputStream savefile_input=new FileInputStream(f);
+          try {
+            TableSaveFile savefile=new TableSaveFile(savefile_input.getChannel(),1,null);
+            String partitions="";
+            for (            int partition : savefile.getPartitionIds()) {
+              partitions=partitions + "," + partition;
+            }
+            if (partitions.startsWith(",")) {
+              partitions=partitions.substring(1);
+            }
+            results.addRow(m_messenger.getHostId(),m_hostname,f.getParent(),f.getName(),savefile.getTxnId(),org.voltdb.TransactionIdManager.getTimestampFromTransactionId(savefile.getTxnId()),savefile.getTableName(),savefile.getCompleted() ? "TRUE" : "FALSE",f.length(),savefile.isReplicated() ? "TRUE" : "FALSE",partitions,savefile.getTotalPartitions(),f.canRead() ? "TRUE" : "FALSE","SUCCESS","");
+          }
+ catch (          IOException e) {
+            SNAP_LOG.warn(e);
+          }
+ finally {
+            savefile_input.close();
+          }
+        }
+ catch (        IOException e) {
+          SNAP_LOG.warn(e);
+        }
+      }
+ else {
+        results.addRow(m_messenger.getHostId(),m_hostname,f.getParent(),f.getName(),0L,f.lastModified(),"","FALSE",f.length(),"FALSE","",-1,f.canRead() ? "TRUE" : "FALSE","SUCCESS","");
+      }
+    }
+  }
+  return results;
+}

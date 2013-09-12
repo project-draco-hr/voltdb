@@ -1,0 +1,41 @@
+{
+  long seed=System.currentTimeMillis();
+  System.out.println("SEED: " + seed);
+  constructCluster(10);
+  while (!getNodesInState(NodeState.START).isEmpty()) {
+    Thread.sleep(50);
+  }
+  FuzzTestState state=new FuzzTestState(seed,m_nodes.keySet());
+  Set<Long> subset=new HashSet<Long>();
+  int subsize=state.m_rand.nextInt((m_nodes.size() / 2) + 1);
+  for (int i=0; i < subsize; i++) {
+    long nextNode=getHSId(state.getRandomLiveNode());
+    while (subset.contains(nextNode)) {
+      nextNode=getHSId(state.getRandomLiveNode());
+    }
+    subset.add(nextNode);
+  }
+  partitionGraph(m_nodes.keySet(),subset);
+  long start=System.currentTimeMillis();
+  while (getNodesInState(NodeState.RESOLVE).isEmpty()) {
+    long now=System.currentTimeMillis();
+    if (now - start > 30000) {
+      start=now;
+      dumpNodeState();
+    }
+    Thread.sleep(50);
+  }
+  while (!getNodesInState(NodeState.RESOLVE).isEmpty()) {
+    long now=System.currentTimeMillis();
+    if (now - start > 30000) {
+      start=now;
+      dumpNodeState();
+    }
+    Thread.sleep(50);
+  }
+  Set<Long> otherSet=new HashSet<Long>();
+  otherSet.addAll(m_nodes.keySet());
+  otherSet.removeAll(subset);
+  assertTrue(checkFullyConnectedGraphs(subset));
+  assertTrue(checkFullyConnectedGraphs(otherSet));
+}

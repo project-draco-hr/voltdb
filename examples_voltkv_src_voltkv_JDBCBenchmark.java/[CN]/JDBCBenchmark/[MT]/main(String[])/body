@@ -22,6 +22,7 @@
         if (sleep < 8000)         sleep+=sleep;
       }
     }
+    ClientStatsContext fullStatsContext=((IVoltDBConnection)Con).createStatsContext();
     System.out.println("Connected.  Starting benchmark.");
     final PayloadProcessor processor=new PayloadProcessor(config.keysize,config.minvaluesize,config.maxvaluesize,config.entropy,config.poolsize,config.usecompression);
     if (config.preload) {
@@ -36,6 +37,7 @@
       }
       System.out.println(" Done.");
     }
+    fullStatsContext.fetchAndResetBaseline();
     Timer timer=new Timer();
     timer.scheduleAtFixedRate(new TimerTask(){
       @Override public void run(){
@@ -52,11 +54,24 @@
     for (    Thread thread : threads)     thread.start();
     for (    Thread thread : threads)     thread.join();
     timer.cancel();
+    ClientStats stats=fullStatsContext.fetch().getStats();
     System.out.printf("\n-------------------------------------------------------------------------------------\n" + " Store Results\n" + "-------------------------------------------------------------------------------------\n\n"+ "A total of %,d operations was posted...\n"+ " - GETs: %,9d Operations (%,9d Misses/Failures)\n"+ "         %,9d MB in compressed store data\n"+ "         %,9d MB in uncompressed application data\n"+ "         Network Throughput: %6.3f Gbps*\n\n"+ " - PUTs: %,9d Operations (%,9d Failures)\n"+ "         %,9d MB in compressed store data\n"+ "         %,9d MB in uncompressed application data\n"+ "         Network Throughput: %6.3f Gbps*\n\n"+ " - Total Network Throughput: %6.3f Gbps*\n\n"+ "* Figure includes key & value traffic but not database protocol overhead.\n"+ "\n"+ "-------------------------------------------------------------------------------------\n",GetStoreResults.get(0) + GetStoreResults.get(1) + PutStoreResults.get(0)+ PutStoreResults.get(1),GetStoreResults.get(0),GetStoreResults.get(1),GetCompressionResults.get(0) / 1048576l,GetCompressionResults.get(1) / 1048576l,((double)GetCompressionResults.get(0) + (GetStoreResults.get(0) + GetStoreResults.get(1)) * config.keysize) / (134217728d * config.duration),PutStoreResults.get(0),PutStoreResults.get(1),PutCompressionResults.get(0) / 1048576l,PutCompressionResults.get(1) / 1048576l,((double)PutCompressionResults.get(0) + (PutStoreResults.get(0) + PutStoreResults.get(1)) * config.keysize) / (134217728d * config.duration),((double)GetCompressionResults.get(0) + (GetStoreResults.get(0) + GetStoreResults.get(1)) * config.keysize) / (134217728d * config.duration) + ((double)PutCompressionResults.get(0) + (PutStoreResults.get(0) + PutStoreResults.get(1)) * config.keysize) / (134217728d * config.duration));
     System.out.println("\n\n-------------------------------------------------------------------------------------\n" + " System Statistics\n" + "-------------------------------------------------------------------------------------\n\n");
     System.out.print(Con.unwrap(IVoltDBConnection.class).getStatistics("Get","Put").toString(false));
     System.out.println("\n\n-------------------------------------------------------------------------------------\n" + " Detailed Statistics\n" + "-------------------------------------------------------------------------------------\n\n");
     System.out.print(Con.unwrap(IVoltDBConnection.class).getStatistics().toString(false));
+    System.out.println("\n\n-------------------------------------------------------------------------------------\n" + " Client Latency Statistics\n" + "-------------------------------------------------------------------------------------\n\n");
+    System.out.printf("Average latency:               %,9.2f ms\n",stats.getAverageLatency());
+    System.out.printf("10th percentile latency:       %,9d ms\n",stats.kPercentileLatency(.1));
+    System.out.printf("25th percentile latency:       %,9d ms\n",stats.kPercentileLatency(.25));
+    System.out.printf("50th percentile latency:       %,9d ms\n",stats.kPercentileLatency(.5));
+    System.out.printf("75th percentile latency:       %,9d ms\n",stats.kPercentileLatency(.75));
+    System.out.printf("90th percentile latency:       %,9d ms\n",stats.kPercentileLatency(.9));
+    System.out.printf("95th percentile latency:       %,9d ms\n",stats.kPercentileLatency(.95));
+    System.out.printf("99th percentile latency:       %,9d ms\n",stats.kPercentileLatency(.99));
+    System.out.printf("99.5th percentile latency:     %,9d ms\n",stats.kPercentileLatency(.995));
+    System.out.printf("99.9th percentile latency:     %,9d ms\n",stats.kPercentileLatency(.999));
+    System.out.println("\n\n" + stats.latencyHistoReport());
     Con.unwrap(IVoltDBConnection.class).saveStatistics(config.statsfile);
     Con.close();
   }

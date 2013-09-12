@@ -6,7 +6,7 @@
     byte messageBytes[]=new byte[in.getInt()];
     in.get(messageBytes);
     String message=new String(messageBytes,"UTF-8");
-    message=String.format("Fatal error from id,hostname(%d,%s): %s",m_hostId,hostname(),message);
+    message=String.format("Fatal error from id,hostname(%d,%s): %s",m_hostId,hostnameAndIPAndPort(),message);
     org.voltdb.VoltDB.crashLocalVoltDB(message,false,null);
   }
   recvDests=new long[destCount];
@@ -14,13 +14,14 @@
     recvDests[i]=in.getLong();
   }
   final VoltMessage message=m_hostMessenger.getMessageFactory().createMessageFromBuffer(in,sourceHSId);
+  if (message instanceof SiteFailureMessage && !(message instanceof SiteFailureForwardMessage)) {
+    SiteFailureMessage sfm=(SiteFailureMessage)message;
+    for (    FaultMessage fm : sfm.asFaultMessages()) {
+      m_hostMessenger.relayForeignHostFailed(fm);
+    }
+  }
   for (int i=0; i < destCount; i++) {
     deliverMessage(recvDests[i],message);
   }
   m_lastMessageMillis.lazySet(EstTime.currentTimeMillis());
-  if (message instanceof FailureSiteUpdateMessage) {
-    for (    long failedHostId : ((FailureSiteUpdateMessage)message).m_failedHSIds) {
-      m_hostMessenger.reportForeignHostFailed((int)failedHostId);
-    }
-  }
 }

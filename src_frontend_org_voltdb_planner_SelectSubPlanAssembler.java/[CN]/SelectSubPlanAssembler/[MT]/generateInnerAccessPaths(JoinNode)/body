@@ -1,0 +1,32 @@
+{
+  assert(parentNode.m_rightNode != null);
+  JoinNode innerChildNode=parentNode.m_rightNode;
+  if (parentNode.m_joinType == JoinType.INNER) {
+    parentNode.m_joinInnerOuterList.addAll(parentNode.m_whereInnerOuterList);
+    parentNode.m_whereInnerOuterList.clear();
+    parentNode.m_joinInnerList.addAll(parentNode.m_whereInnerList);
+    parentNode.m_whereInnerList.clear();
+  }
+  if (innerChildNode.m_table == null) {
+    assert(innerChildNode.m_leftNode != null && innerChildNode.m_rightNode != null);
+    generateOuterAccessPaths(innerChildNode);
+    generateInnerAccessPaths(innerChildNode);
+    innerChildNode.m_accessPaths.add(getRelevantNaivePath(parentNode.m_joinInnerOuterList,parentNode.m_joinInnerList));
+    return;
+  }
+  innerChildNode.m_accessPaths.addAll(getRelevantAccessPathsForTable(innerChildNode.m_table,parentNode.m_joinInnerOuterList,parentNode.m_joinInnerList,null));
+  boolean mayNeedInnerSendReceive=(!m_partitioning.wasSpecifiedAsSingle()) && (m_partitioning.getCountOfPartitionedTables() > 0) && (parentNode.m_joinType != JoinType.INNER)&& !innerChildNode.m_table.getIsreplicated();
+  if (mayNeedInnerSendReceive && !parentNode.m_joinInnerOuterList.isEmpty()) {
+    List<AccessPath> innerOuterAccessPaths=new ArrayList<AccessPath>();
+    for (    AccessPath innerAccessPath : innerChildNode.m_accessPaths) {
+      if ((innerAccessPath.index != null) && hasInnerOuterIndexExpression(innerChildNode.m_table,innerAccessPath.indexExprs,innerAccessPath.initialExpr,innerAccessPath.endExprs)) {
+        innerOuterAccessPaths.add(innerAccessPath);
+      }
+    }
+    Collection<AccessPath> nljAccessPaths=getRelevantAccessPathsForTable(innerChildNode.m_table,null,parentNode.m_joinInnerList,parentNode.m_joinInnerOuterList);
+    innerChildNode.m_accessPaths.clear();
+    innerChildNode.m_accessPaths.addAll(nljAccessPaths);
+    innerChildNode.m_accessPaths.addAll(innerOuterAccessPaths);
+  }
+  assert(innerChildNode.m_accessPaths.size() > 0);
+}

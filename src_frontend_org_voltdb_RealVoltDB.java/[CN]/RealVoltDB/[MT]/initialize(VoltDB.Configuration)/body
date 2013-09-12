@@ -25,9 +25,7 @@ synchronized (m_startAndStopLock) {
     m_deployment=null;
     m_messenger=null;
     m_startMode=null;
-    m_statsAgent=new StatsAgent();
-    m_catalogAgent=new SystemCatalogAgent();
-    m_sysInfoAgent=new SystemInformationAgent();
+    m_opsRegistrar=new OpsRegistrar();
     m_asyncCompilerAgent=new AsyncCompilerAgent();
     m_faultManager=null;
     m_snapshotCompletionMonitor=null;
@@ -41,6 +39,8 @@ synchronized (m_startAndStopLock) {
     m_hostIdWithStartupCatalog=0;
     m_pathToStartupCatalog=m_config.m_pathToCatalog;
     m_replicationActive=false;
+    m_configLogger=null;
+    ActivePlanRepository.clear();
     m_localSites=new COWMap<Long,ExecutionSite>();
     m_siteThreads=new HashMap<Long,Thread>();
     m_runners=new ArrayList<ExecutionSiteRunner>();
@@ -121,7 +121,7 @@ synchronized (m_startAndStopLock) {
         m_iv2Initiators=createIv2Initiators(partitions,m_config.m_startAction,m_partitionsToSitesAtStartupForExportInit);
         m_iv2InitiatorStartingTxnIds.put(MpInitiator.MP_INIT_PID,TxnEgo.makeZero(MpInitiator.MP_INIT_PID).getTxnId());
         long mpiBuddyHSId=m_iv2Initiators.get(0).getInitiatorHSId();
-        m_MPI=new MpInitiator(m_messenger,mpiBuddyHSId,m_statsAgent);
+        m_MPI=new MpInitiator(m_messenger,mpiBuddyHSId,getStatsAgent());
         m_iv2Initiators.add(m_MPI);
       }
       clusterConfig=new ClusterConfig(topo);
@@ -152,13 +152,6 @@ synchronized (m_startAndStopLock) {
     }
     Inits inits=new Inits(this,1);
     inits.doInitializationWork();
-    if (config.m_backend.isIPC) {
-      int eeCount=clusterConfig.getSitesPerHost();
-      if (config.m_ipcPorts.size() != eeCount) {
-        hostLog.fatal("Specified an IPC backend but only supplied " + config.m_ipcPorts.size() + " backend ports when "+ eeCount+ " are required");
-        System.exit(-1);
-      }
-    }
     collectLocalNetworkMetadata();
     final CatalogSpecificPlanner csp=new CatalogSpecificPlanner(m_asyncCompilerAgent,m_catalogContext);
     File drOverflowDir=new File(m_catalogContext.cluster.getVoltroot(),"dr_overflow");
@@ -173,25 +166,25 @@ synchronized (m_startAndStopLock) {
       }
     }
     m_ioStats=new IOStats();
-    m_statsAgent.registerStatsSource(StatsSelector.IOSTATS,0,m_ioStats);
+    getStatsAgent().registerStatsSource(StatsSelector.IOSTATS,0,m_ioStats);
     m_memoryStats=new MemoryStats();
-    m_statsAgent.registerStatsSource(StatsSelector.MEMORY,0,m_memoryStats);
-    m_statsAgent.registerStatsSource(StatsSelector.TOPO,0,m_cartographer);
+    getStatsAgent().registerStatsSource(StatsSelector.MEMORY,0,m_memoryStats);
+    getStatsAgent().registerStatsSource(StatsSelector.TOPO,0,m_cartographer);
     m_partitionCountStats=new PartitionCountStats(m_cartographer);
-    m_statsAgent.registerStatsSource(StatsSelector.PARTITIONCOUNT,0,m_partitionCountStats);
+    getStatsAgent().registerStatsSource(StatsSelector.PARTITIONCOUNT,0,m_partitionCountStats);
     m_initiatorStats=new InitiatorStats(m_myHostId);
     m_liveClientsStats=new LiveClientsStats();
-    m_statsAgent.registerStatsSource(StatsSelector.LIVECLIENTS,0,m_liveClientsStats);
+    getStatsAgent().registerStatsSource(StatsSelector.LIVECLIENTS,0,m_liveClientsStats);
     m_latencyStats=new LatencyStats(m_myHostId);
-    if (m_commandLog != null && isRejoin) {
-      m_commandLog.initForRejoin(m_catalogContext,Long.MIN_VALUE,m_iv2InitiatorStartingTxnIds,true,m_config.m_commandLogBinding);
+    if (m_commandLog != null && (isRejoin || m_joining)) {
+      m_commandLog.initForRejoin(m_catalogContext,Long.MIN_VALUE,clusterConfig.getPartitionCount(),true,m_config.m_commandLogBinding,m_iv2InitiatorStartingTxnIds);
     }
     try {
       boolean usingCommandLog=m_config.m_isEnterprise && m_catalogContext.cluster.getLogconfig().get("log").getEnabled();
       m_leaderAppointer=new LeaderAppointer(m_messenger,clusterConfig.getPartitionCount(),m_deployment.getCluster().getKfactor(),m_catalogContext.cluster.getNetworkpartition(),m_catalogContext.cluster.getFaultsnapshots().get("CLUSTER_PARTITION"),usingCommandLog,topo,m_MPI);
       m_globalServiceElector.registerService(m_leaderAppointer);
       for (      Initiator iv2init : m_iv2Initiators) {
-        iv2init.configure(getBackendTargetType(),m_serializedCatalog,m_catalogContext,m_deployment.getCluster().getKfactor(),csp,clusterConfig.getPartitionCount(),m_config.m_startAction,m_statsAgent,m_memoryStats,m_commandLog,m_nodeDRGateway,m_config.m_executionCoreBindings.poll());
+        iv2init.configure(getBackendTargetType(),m_serializedCatalog,m_catalogContext,m_deployment.getCluster().getKfactor(),csp,clusterConfig.getPartitionCount(),m_config.m_startAction,getStatsAgent(),m_memoryStats,m_commandLog,m_nodeDRGateway,m_config.m_executionCoreBindings.poll());
       }
     }
  catch (    Exception e) {
@@ -207,10 +200,15 @@ synchronized (m_startAndStopLock) {
  catch (    Exception e) {
       VoltDB.crashLocalVoltDB("Unable to start GlobalServiceElector",true,e);
     }
+    m_opsRegistrar.registerMailboxes(m_messenger);
     int portOffset=0;
     for (int i=0; i < 1; i++) {
       try {
-        ClientInterface ci=ClientInterface.create(m_messenger,m_catalogContext,m_config.m_replicationRole,m_cartographer,clusterConfig.getPartitionCount(),config.m_port + portOffset,config.m_adminPort + portOffset,m_config.m_timestampTestingSalt);
+        InetAddress externalInterface=null;
+        if (!m_config.m_externalInterface.trim().equals("")) {
+          externalInterface=InetAddress.getByName(m_config.m_externalInterface);
+        }
+        ClientInterface ci=ClientInterface.create(m_messenger,m_catalogContext,m_config.m_replicationRole,m_cartographer,clusterConfig.getPartitionCount(),externalInterface,config.m_port + portOffset,config.m_adminPort + portOffset,m_config.m_timestampTestingSalt);
         portOffset+=2;
         m_clientInterfaces.add(ci);
       }
@@ -223,26 +221,11 @@ synchronized (m_startAndStopLock) {
     try {
       final Class<?> statsManagerClass=MiscUtils.loadProClass("org.voltdb.management.JMXStatsManager","JMX",true);
       if (statsManagerClass != null) {
-        ArrayList<Long> localHSIds;
-        Long MPHSId;
-        if (isIV2Enabled()) {
-          localHSIds=new ArrayList<Long>();
-          for (          Initiator iv2Initiator : m_iv2Initiators) {
-            localHSIds.add(iv2Initiator.getInitiatorHSId());
-          }
-          MPHSId=m_MPI.getInitiatorHSId();
-        }
- else {
-          localHSIds=new ArrayList<Long>(m_localSites.keySet());
-          MPHSId=null;
-        }
         m_statsManager=(StatsManager)statsManagerClass.newInstance();
         m_statsManager.initialize();
       }
     }
  catch (    Exception e) {
-      hostLog.error("Failed to instantiate the JMX stats manager: " + e.getMessage() + ". Disabling JMX.");
-      e.printStackTrace();
     }
     try {
       m_snapshotCompletionMonitor.init(m_messenger.getZK());
@@ -285,9 +268,54 @@ synchronized (m_startAndStopLock) {
     ClientInterface ci=m_clientInterfaces.get(0);
     ci.initializeSnapshotDaemon(m_messenger.getZK(),m_globalServiceElector);
     if (m_restoreAgent != null) {
-      ci.bindAdapter(m_restoreAgent.getAdapter());
       m_restoreAgent.setCatalogContext(m_catalogContext);
       m_restoreAgent.setInitiator(new Iv2TransactionCreator(m_clientInterfaces.get(0)));
+    }
+    m_configLogger=new Thread(new ConfigLogging());
+    m_configLogger.start();
+    DailyRollingFileAppender dailyAppender=null;
+    Enumeration appenders=Logger.getRootLogger().getAllAppenders();
+    while (appenders.hasMoreElements()) {
+      Appender appender=(Appender)appenders.nextElement();
+      if (appender instanceof DailyRollingFileAppender) {
+        dailyAppender=(DailyRollingFileAppender)appender;
+      }
+    }
+    final DailyRollingFileAppender dailyRollingFileAppender=dailyAppender;
+    Field field=null;
+    if (dailyRollingFileAppender != null) {
+      try {
+        field=dailyRollingFileAppender.getClass().getDeclaredField("nextCheck");
+        field.setAccessible(true);
+      }
+ catch (      NoSuchFieldException e) {
+        hostLog.error("Failed to set daily system info logging: " + e.getMessage());
+      }
+    }
+    final Field nextCheckField=field;
+class DailyLogTask implements Runnable {
+      @Override public void run(){
+        try {
+          m_myHostId=m_messenger.getHostId();
+          hostLog.info(String.format("Host id of this node is: %d",m_myHostId));
+          hostLog.info("URL of deployment info: " + m_config.m_pathToDeployment);
+          logDebuggingInfo(m_config.m_adminPort,m_config.m_httpPort,m_httpPortExtraLogMessage,m_jsonEnabled);
+          long nextCheck=nextCheckField.getLong(dailyRollingFileAppender);
+          scheduleWork(new DailyLogTask(),nextCheck - System.currentTimeMillis() + 30 * 1000,0,TimeUnit.MILLISECONDS);
+        }
+ catch (        IllegalAccessException e) {
+          hostLog.error("Failed to set daily system info logging: " + e.getMessage());
+        }
+      }
+    }
+    if (dailyRollingFileAppender != null && nextCheckField != null) {
+      try {
+        long nextCheck=nextCheckField.getLong(dailyRollingFileAppender);
+        scheduleWork(new DailyLogTask(),nextCheck - System.currentTimeMillis() + 30 * 1000,0,TimeUnit.MILLISECONDS);
+      }
+ catch (      IllegalAccessException e) {
+        hostLog.error("Failed to set daily system info logging: " + e.getMessage());
+      }
     }
   }
 }

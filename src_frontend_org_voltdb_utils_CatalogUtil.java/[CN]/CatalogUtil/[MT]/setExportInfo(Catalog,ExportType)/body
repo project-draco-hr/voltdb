@@ -19,24 +19,39 @@
   catconn.setEnabled(adminstate);
   ExportOnServerType exportOnServer=exportType.getOnserver();
   if (exportOnServer != null) {
-    ConnectorProperty prop=catconn.getConfig().add(GuestProcessor.EXPORT_TO_TYPE);
-    prop.setName(GuestProcessor.EXPORT_TO_TYPE);
+    String exportClientClassName=null;
 switch (exportOnServer.getExportto()) {
 case FILE:
-      prop.setValue(ExportToFileClient.class.getName());
+      exportClientClassName=ExportToFileClient.class.getName();
     break;
 case JDBC:
-  prop.setValue("org.voltdb.exportclient.JDBCExportClient");
+  exportClientClassName="org.voltdb.exportclient.JDBCExportClient";
 break;
+case CUSTOM:
+try {
+CatalogUtil.class.getClassLoader().loadClass(exportOnServer.getExportconnectorclass());
+exportClientClassName=exportOnServer.getExportconnectorclass();
+}
+ catch (ClassNotFoundException ex) {
+hostLog.error("Custom Export failed to configure, failed to load " + " export plugin class: " + exportOnServer.getExportconnectorclass() + " Disabling export.");
+exportType.setEnabled(false);
+return;
+}
+break;
+}
+if (exportClientClassName != null && exportClientClassName.trim().length() > 0) {
+ConnectorProperty prop=catconn.getConfig().add(GuestProcessor.EXPORT_TO_TYPE);
+prop.setName(GuestProcessor.EXPORT_TO_TYPE);
+prop.setValue(exportClientClassName);
 }
 ExportConfigurationType exportConfiguration=exportOnServer.getConfiguration();
 if (exportConfiguration != null) {
 List<PropertyType> configProperties=exportConfiguration.getProperty();
 if (configProperties != null && !configProperties.isEmpty()) {
 for (PropertyType configProp : configProperties) {
-  prop=catconn.getConfig().add(configProp.getName());
-  prop.setName(configProp.getName());
-  prop.setValue(configProp.getValue());
+ConnectorProperty prop=catconn.getConfig().add(configProp.getName());
+prop.setName(configProp.getName());
+prop.setValue(configProp.getValue());
 }
 }
 }

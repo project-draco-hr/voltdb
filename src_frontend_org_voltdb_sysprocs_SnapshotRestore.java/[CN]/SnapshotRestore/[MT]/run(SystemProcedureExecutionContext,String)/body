@@ -1,0 +1,169 @@
+{
+  JSONObject jsObj=new JSONObject(json);
+  final String path=jsObj.getString(JSON_PATH);
+  final String nonce=jsObj.getString(JSON_NONCE);
+  final String dupsPath=jsObj.optString(JSON_DUPLICATES_PATH,null);
+  final long startTime=System.currentTimeMillis();
+  if (dupsPath != null) {
+    CONSOLE_LOG.info("Restoring from path: " + path + " with nonce: "+ nonce+ " and duplicate rows will be output to "+ dupsPath);
+  }
+ else {
+    CONSOLE_LOG.info("Restoring from path: " + path + " with nonce: "+ nonce);
+  }
+  VoltTable[] savefile_data;
+  savefile_data=performRestoreScanWork(path,nonce,dupsPath);
+  List<JSONObject> digests;
+  Map<String,Map<Integer,Long>> exportSequenceNumbers;
+  long perPartitionTxnIds[];
+  try {
+    DigestScanResult digestScanResult=performRestoreDigestScanWork();
+    digests=digestScanResult.digests;
+    exportSequenceNumbers=digestScanResult.exportSequenceNumbers;
+    perPartitionTxnIds=digestScanResult.perPartitionTxnIds;
+    if (perPartitionTxnIds.length == 0) {
+      perPartitionTxnIds=new long[]{ctx.getCurrentTxnId()};
+    }
+  }
+ catch (  VoltAbortException e) {
+    ColumnInfo[] result_columns=new ColumnInfo[2];
+    int ii=0;
+    result_columns[ii++]=new ColumnInfo("RESULT",VoltType.STRING);
+    result_columns[ii++]=new ColumnInfo("ERR_MSG",VoltType.STRING);
+    VoltTable results[]=new VoltTable[]{new VoltTable(result_columns)};
+    results[0].addRow("FAILURE",e.toString());
+    noteOperationalFailure("Restore failed to complete. See response table for additional info.");
+    return results;
+  }
+  ClusterSaveFileState savefile_state=null;
+  try {
+    savefile_state=new ClusterSaveFileState(savefile_data[0]);
+  }
+ catch (  IOException e) {
+    throw new VoltAbortException(e.getMessage());
+  }
+  HashSet<String> relevantTableNames=new HashSet<String>();
+  try {
+    if (digests.isEmpty()) {
+      throw new Exception("No digests found");
+    }
+    for (    JSONObject obj : digests) {
+      JSONArray tables=obj.getJSONArray("tables");
+      for (int ii=0; ii < tables.length(); ii++) {
+        relevantTableNames.add(tables.getString(ii));
+      }
+    }
+  }
+ catch (  Exception e) {
+    ColumnInfo[] result_columns=new ColumnInfo[2];
+    int ii=0;
+    result_columns[ii++]=new ColumnInfo("RESULT",VoltType.STRING);
+    result_columns[ii++]=new ColumnInfo("ERR_MSG",VoltType.STRING);
+    VoltTable results[]=new VoltTable[]{new VoltTable(result_columns)};
+    results[0].addRow("FAILURE",e.toString());
+    noteOperationalFailure("Restore failed to complete. See response table for additional info.");
+    return results;
+  }
+  assert(relevantTableNames != null);
+  assert(relevantTableNames.size() > 0);
+  VoltTable[] results=null;
+  for (  String tableName : relevantTableNames) {
+    if (!savefile_state.getSavedTableNames().contains(tableName)) {
+      if (results == null) {
+        ColumnInfo[] result_columns=new ColumnInfo[2];
+        int ii=0;
+        result_columns[ii++]=new ColumnInfo("RESULT",VoltType.STRING);
+        result_columns[ii++]=new ColumnInfo("ERR_MSG",VoltType.STRING);
+        results=new VoltTable[]{new VoltTable(result_columns)};
+      }
+      results[0].addRow("FAILURE","Save data contains no information for table " + tableName);
+      break;
+    }
+    final TableSaveFileState saveFileState=savefile_state.getTableState(tableName);
+    if (saveFileState == null) {
+      if (results == null) {
+        ColumnInfo[] result_columns=new ColumnInfo[2];
+        int ii=0;
+        result_columns[ii++]=new ColumnInfo("RESULT",VoltType.STRING);
+        result_columns[ii++]=new ColumnInfo("ERR_MSG",VoltType.STRING);
+        results=new VoltTable[]{new VoltTable(result_columns)};
+      }
+      results[0].addRow("FAILURE","Save data contains no information for table " + tableName);
+    }
+ else     if (!saveFileState.isConsistent()) {
+      if (results == null) {
+        ColumnInfo[] result_columns=new ColumnInfo[2];
+        int ii=0;
+        result_columns[ii++]=new ColumnInfo("RESULT",VoltType.STRING);
+        result_columns[ii++]=new ColumnInfo("ERR_MSG",VoltType.STRING);
+        results=new VoltTable[]{new VoltTable(result_columns)};
+      }
+      results[0].addRow("FAILURE",saveFileState.getConsistencyResult());
+    }
+  }
+  if (results != null) {
+    noteOperationalFailure("Restore failed to complete. See response table for additional info.");
+    return results;
+  }
+  try {
+    VoltDB.instance().getHostMessenger().getZK().create(VoltZK.restoreMarker,null,Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+  }
+ catch (  KeeperException.NodeExistsException e) {
+    throw new VoltAbortException("Cluster has already been restored or has failed a restore." + " Restart the cluster before doing another restore.");
+  }
+  ByteBuffer buf=ByteBuffer.allocate(perPartitionTxnIds.length * 8 + 4);
+  buf.putInt(perPartitionTxnIds.length);
+  for (  long txnid : perPartitionTxnIds) {
+    buf.putLong(txnid);
+  }
+  VoltDB.instance().getHostMessenger().getZK().create(VoltZK.perPartitionTxnIds,buf.array(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+  try {
+    ByteArrayOutputStream baos=new ByteArrayOutputStream();
+    ObjectOutputStream oos=new ObjectOutputStream(baos);
+    oos.writeObject(exportSequenceNumbers);
+    oos.flush();
+    byte exportSequenceNumberBytes[]=baos.toByteArray();
+    oos.close();
+    ctx.getSiteProcedureConnection().setPerPartitionTxnIds(perPartitionTxnIds);
+    results=performDistributeExportSequenceNumbers(exportSequenceNumberBytes,digests.get(0).getLong("txnId"),perPartitionTxnIds);
+  }
+ catch (  IOException e) {
+    throw new VoltAbortException(e);
+  }
+catch (  JSONException e) {
+    throw new VoltAbortException(e);
+  }
+  while (results[0].advanceRow()) {
+    if (results[0].getString("RESULT").equals("FAILURE")) {
+      throw new VoltAbortException("Error distributing export sequence numbers");
+    }
+  }
+  results=performTableRestoreWork(savefile_state,ctx.getSiteTrackerForSnapshot());
+  final long endTime=System.currentTimeMillis();
+  final double duration=(endTime - startTime) / 1000.0;
+  final StringWriter sw=new StringWriter();
+  final PrintWriter pw=new PrintWriter(sw);
+  pw.toString();
+  pw.printf("%.2f",duration);
+  CONSOLE_LOG.info("Finished restore of " + path + " with nonce: "+ nonce+ " in "+ sw.toString()+ " seconds");
+  final StartAction startAction=VoltDB.instance().getConfig().m_startAction;
+  final org.voltdb.OperationMode mode=VoltDB.instance().getMode();
+  final boolean isStartWithNoAutomatedRestore=startAction == StartAction.CREATE && mode != org.voltdb.OperationMode.INITIALIZING;
+  final boolean isCLEnabled=VoltDB.instance().getCommandLog().getClass().getSimpleName().equals("CommandLogImpl");
+  final boolean isStartedWithCreateAction=startAction == StartAction.CREATE;
+  if (isCLEnabled && (isStartedWithCreateAction || isStartWithNoAutomatedRestore)) {
+    final ZooKeeper zk=VoltDB.instance().getHostMessenger().getZK();
+    SNAP_LOG.info("Requesting truncation snapshot to make data loaded by snapshot restore durable.");
+    zk.create(VoltZK.request_truncation_snapshot,null,Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT,new StringCallback(){
+      @Override public void processResult(      int rc,      String path,      Object ctx,      String name){
+        if (rc != 0) {
+          KeeperException.Code code=KeeperException.Code.get(rc);
+          if (code != KeeperException.Code.NODEEXISTS) {
+            SNAP_LOG.warn("Don't expect this ZK response when requesting a truncation snapshot " + code);
+          }
+        }
+      }
+    }
+,null);
+  }
+  return results;
+}

@@ -7,7 +7,7 @@
       throw new HSQLParseException("Parser did not create limit and offset expression for LIMIT.");
     }
     try {
-      if (limitCondition.nodes[0].isParam() == false) {
+      if (limitCondition.nodes[0].isParam == false) {
         Integer offset=(Integer)limitCondition.nodes[0].getValue(session);
         if (offset > 0) {
           query.attributes.put("offset",offset.toString());
@@ -16,7 +16,7 @@
  else {
         query.attributes.put("offset_paramid",limitCondition.nodes[0].getUniqueId(session));
       }
-      if (limitCondition.nodes[1].isParam() == false) {
+      if (limitCondition.nodes[1].isParam == false) {
         Integer limit=(Integer)limitCondition.nodes[1].getValue(session);
         query.attributes.put("limit",limit.toString());
       }
@@ -97,31 +97,15 @@
   for (  Pair<Integer,SimpleName> alias : aliases) {
     select.exprColumns[alias.getFirst()].alias=alias.getSecond();
   }
+  Set<Integer> ignoredColsIndexes=new HashSet<Integer>();
   for (int jj=0; jj < displayCols.size(); ++jj) {
     Expression expr=displayCols.get(jj);
-    if (expr == null) {
+    if (ignoredColsIndexes.contains(jj)) {
       continue;
     }
- else     if (expr.opType == OpTypes.SIMPLE_COLUMN) {
-      for (int ii=jj; ii < displayCols.size(); ++ii) {
-        Expression otherCol=displayCols.get(ii);
-        if (otherCol == null) {
-          continue;
-        }
- else         if ((otherCol.opType != OpTypes.SIMPLE_COLUMN) && (otherCol.columnIndex == expr.columnIndex)) {
-          VoltXMLElement xml=otherCol.voltGetXML(session);
-          cols.children.add(xml);
-          assert(xml != null);
-          displayCols.set(ii,null);
-          break;
-        }
-      }
-    }
- else {
-      VoltXMLElement xml=expr.voltGetXML(session);
-      cols.children.add(xml);
-      assert(xml != null);
-    }
+    VoltXMLElement xml=expr.voltGetXML(session,displayCols,ignoredColsIndexes,jj);
+    cols.children.add(xml);
+    assert(xml != null);
   }
   voltAppendParameters(session,query);
   VoltXMLElement scans=new VoltXMLElement("tablescans");
@@ -137,15 +121,19 @@
   if (select.isGrouped) {
     VoltXMLElement groupCols=new VoltXMLElement("groupcolumns");
     query.children.add(groupCols);
-    for (    Expression groupByCol : groupByCols) {
-      groupCols.children.add(groupByCol.voltGetXML(session));
+    for (int jj=0; jj < groupByCols.size(); ++jj) {
+      Expression expr=groupByCols.get(jj);
+      VoltXMLElement xml=expr.voltGetXML(session,displayCols,ignoredColsIndexes,jj);
+      groupCols.children.add(xml);
     }
   }
   if (orderByCols.size() > 0) {
     VoltXMLElement orderCols=new VoltXMLElement("ordercolumns");
     query.children.add(orderCols);
-    for (    Expression orderByCol : orderByCols) {
-      orderCols.children.add(orderByCol.voltGetXML(session));
+    for (int jj=0; jj < orderByCols.size(); ++jj) {
+      Expression expr=orderByCols.get(jj);
+      VoltXMLElement xml=expr.voltGetXML(session,displayCols,ignoredColsIndexes,jj);
+      orderCols.children.add(xml);
     }
   }
   return query;

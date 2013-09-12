@@ -1,20 +1,32 @@
 {
-  ParsedColInfo col=new ParsedColInfo();
-  col.expression=parseExpressionTree(groupByNode);
-  assert(col.expression != null);
+  ParsedColInfo groupbyCol=new ParsedColInfo();
+  groupbyCol.expression=parseExpressionTree(groupByNode);
+  assert(groupbyCol.expression != null);
+  ExpressionUtil.finalizeValueTypes(groupbyCol.expression);
+  groupbyCol.groupBy=true;
   if (groupByNode.name.equals("columnref")) {
-    col.alias=groupByNode.attributes.get("alias");
-    col.columnName=groupByNode.attributes.get("column");
-    col.tableName=groupByNode.attributes.get("table");
-    col.groupBy=true;
+    groupbyCol.alias=groupByNode.attributes.get("alias");
+    groupbyCol.columnName=groupByNode.attributes.get("column");
+    groupbyCol.tableName=groupByNode.attributes.get("table");
+    org.voltdb.catalog.Column catalogColumn=getTableFromDB(groupbyCol.tableName).getColumns().getIgnoreCase(groupbyCol.columnName);
+    groupbyCol.index=catalogColumn.getIndex();
   }
  else {
-    throw new RuntimeException("GROUP BY with complex expressions not supported");
+    groupbyCol.tableName="VOLT_TEMP_TABLE";
+    groupbyCol.columnName="";
+    hasComplexGroupby=true;
+    ParsedColInfo orig_col=null;
+    for (int i=0; i < displayColumns.size(); ++i) {
+      ParsedColInfo col=displayColumns.get(i);
+      if (col.expression.equals(groupbyCol.expression)) {
+        groupbyCol.alias=col.alias;
+        orig_col=col;
+        break;
+      }
+    }
+    if (orig_col != null) {
+      orig_col.groupBy=true;
+    }
   }
-  assert(col.alias.equalsIgnoreCase(col.columnName));
-  assert(getTableFromDB(col.tableName) != null);
-  assert(getTableFromDB(col.tableName).getColumns().getIgnoreCase(col.columnName) != null);
-  org.voltdb.catalog.Column catalogColumn=getTableFromDB(col.tableName).getColumns().getIgnoreCase(col.columnName);
-  col.index=catalogColumn.getIndex();
-  groupByColumns.add(col);
+  groupByColumns.add(groupbyCol);
 }
