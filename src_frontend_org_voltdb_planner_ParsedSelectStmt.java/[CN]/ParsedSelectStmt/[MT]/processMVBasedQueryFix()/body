@@ -1,0 +1,63 @@
+{
+  String mvTableName=mvFixInfo.mvTable.getTypeName();
+  ArrayList<ParsedColInfo> tmpDisplayColumns=new ArrayList<ParsedColInfo>(displayColumns);
+  ArrayList<ParsedColInfo> tmpAggResultColumns=new ArrayList<ParsedColInfo>(aggResultColumns);
+  ArrayList<ParsedColInfo> tmpGroupbyColumns=new ArrayList<ParsedColInfo>(groupByColumns);
+  mvFixInfo.orignalGroupbyColumnsList=new ArrayList<ParsedColInfo>();
+  List<Column> mvColumnArray=CatalogUtil.getSortedCatalogItems(mvFixInfo.mvTable.getColumns(),"index");
+  assert(mvFixInfo.numOfGroupByColumns > 0);
+  for (int i=0; i < mvFixInfo.numOfGroupByColumns; i++) {
+    ParsedColInfo col=new ParsedColInfo();
+    Column mvCol=mvColumnArray.get(i);
+    col.columnName=mvCol.getName();
+    col.tableName=mvTableName;
+    col.alias=mvCol.getName();
+    TupleValueExpression tve=new TupleValueExpression();
+    tve.setColumnIndex(i);
+    tve.setColumnName(mvCol.getName());
+    tve.setTableName(mvTableName);
+    tve.setColumnAlias(mvCol.getName());
+    tve.setValueType(VoltType.get((byte)mvCol.getType()));
+    tve.setValueSize(mvCol.getSize());
+    col.expression=tve;
+    mvFixInfo.orignalGroupbyColumnsList.add(col);
+    if (ParsedColInfo.isNewtoColumnList(aggResultColumns,col)) {
+      aggResultColumns.add(col);
+    }
+    if (ParsedColInfo.isNewtoColumnList(displayColumns,col)) {
+      displayColumns.add(col);
+    }
+    if (ParsedColInfo.isNewtoColumnList(groupByColumns,col)) {
+      groupByColumns.add(col);
+    }
+  }
+  assert(projectSchema != null);
+  placeTVEsinColumns();
+  mvFixInfo.mvDisplayColumns=displayColumns;
+  mvFixInfo.mvAggResultColumns=aggResultColumns;
+  mvFixInfo.mvGroupByColumns=groupByColumns;
+  displayColumns=tmpDisplayColumns;
+  aggResultColumns=tmpAggResultColumns;
+  groupByColumns=tmpGroupbyColumns;
+  for (  String key : scanColumns.keySet()) {
+    ArrayList<SchemaColumn> value=scanColumns.get(key);
+    if (key.equals(mvTableName)) {
+      ArrayList<SchemaColumn> newValue=new ArrayList<SchemaColumn>(value);
+      Set<SchemaColumn> valueSet=new HashSet<SchemaColumn>(value);
+      for (      ParsedColInfo col : mvFixInfo.orignalGroupbyColumnsList) {
+        assert(col.expression instanceof TupleValueExpression);
+        TupleValueExpression tve=(TupleValueExpression)col.expression;
+        SchemaColumn scol=new SchemaColumn(tve.getTableName(),tve.getColumnName(),tve.getColumnAlias(),tve);
+        if (!valueSet.contains(scol)) {
+          valueSet.add(scol);
+          newValue.add(scol);
+        }
+      }
+      mvFixInfo.inlineProjSchema=new NodeSchema();
+      for (      SchemaColumn scol : newValue) {
+        mvFixInfo.inlineProjSchema.addColumn(scol);
+      }
+      break;
+    }
+  }
+}

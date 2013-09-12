@@ -1,0 +1,70 @@
+{
+  if (!m_parsedSelect.mvFixInfo.finalNeedFix) {
+    return root;
+  }
+  MVFixInfo mvFixInfo=m_parsedSelect.mvFixInfo;
+  AbstractPlanNode scanNode=root;
+  while (scanNode instanceof AbstractScanPlanNode == false) {
+    scanNode=scanNode.getChild(0);
+  }
+  ProjectionPlanNode inlineProj=new ProjectionPlanNode();
+  inlineProj.setOutputSchema(mvFixInfo.inlineProjSchema);
+  scanNode.addInlinePlanNode(inlineProj);
+  AggregatePlanNode aggNode=new HashAggregatePlanNode();
+  int outputColumnIndex=0;
+  NodeSchema agg_schema=new NodeSchema();
+  for (  ParsedSelectStmt.ParsedColInfo col : m_parsedSelect.aggResultColumns) {
+    AbstractExpression rootExpr=col.expression;
+    SchemaColumn schema_col=null;
+    if (ParsedColInfo.isNewtoColumnList(mvFixInfo.orignalGroupbyColumnsList,col)) {
+      ExpressionType agg_expression_type=ExpressionType.AGGREGATE_SUM;
+      boolean is_distinct=false;
+      AbstractExpression agg_input_expr=null;
+      TupleValueExpression tve=new TupleValueExpression();
+      tve.setValueType(rootExpr.getValueType());
+      tve.setValueSize(rootExpr.getValueSize());
+      tve.setColumnIndex(outputColumnIndex);
+      if (rootExpr instanceof AggregateExpression) {
+        is_distinct=((AggregateExpression)rootExpr).isDistinct();
+        tve.setColumnName("");
+        tve.setColumnAlias(col.alias);
+        tve.setTableName("VOLT_TEMP_TABLE");
+      }
+ else {
+        tve.setColumnName(col.columnName);
+        tve.setColumnAlias(col.alias);
+        tve.setTableName(col.tableName);
+      }
+      agg_input_expr=(AbstractExpression)tve.clone();
+      aggNode.addAggregate(agg_expression_type,is_distinct,outputColumnIndex,agg_input_expr);
+      schema_col=new SchemaColumn(col.tableName,col.columnName,col.alias,tve);
+    }
+ else {
+      schema_col=new SchemaColumn(col.tableName,col.columnName,col.alias,col.expression);
+    }
+    agg_schema.addColumn(schema_col);
+    outputColumnIndex++;
+  }
+  aggNode.setOutputSchema(agg_schema);
+  for (  ParsedSelectStmt.ParsedColInfo col : mvFixInfo.orignalGroupbyColumnsList) {
+    aggNode.addGroupByExpression(col.expression);
+  }
+  if (root.getPlanNodeType() == PlanNodeType.RECEIVE) {
+    aggNode.addAndLinkChild(root);
+    root=aggNode;
+  }
+ else {
+    AbstractPlanNode receiveNode=root;
+    while (receiveNode.getPlanNodeType() != PlanNodeType.RECEIVE) {
+      receiveNode=receiveNode.getChild(0);
+    }
+    assert(receiveNode.getPlanNodeType() == PlanNodeType.RECEIVE);
+    AbstractPlanNode parent=receiveNode.getParent(0);
+    receiveNode.clearParents();
+    parent.clearChildren();
+    aggNode.addAndLinkChild(receiveNode);
+    parent.addAndLinkChild(aggNode);
+  }
+  m_parsedSelect.displayColumns=mvFixInfo.mvDisplayColumns;
+  return root;
+}
