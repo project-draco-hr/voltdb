@@ -1,12 +1,13 @@
 {
-  if (tableList.size() != 1) {
-    return false;
-  }
   Table mvTable=tableList.get(0);
   String mvTableName=mvTable.getTypeName();
   Table srcTable=mvTable.getMaterializer();
   if (srcTable == null) {
     return false;
+  }
+  if (tableList.size() != 1) {
+    String errorMsg=String.format("Unsupported query joined with materialized table %s",mvTableName);
+    throw new PlanningErrorException(errorMsg);
   }
   Column partitionCol=srcTable.getPartitioncolumn();
   if (partitionCol == null) {
@@ -48,7 +49,14 @@
   if (partitionColInGroupbyCols) {
     return false;
   }
+  if (!isGrouped() && hasAggregateExpression) {
+    if (displayColumns.size() == 1) {
+      if (displayColumns.get(0).expression.getExpressionType() == ExpressionType.AGGREGATE_COUNT_STAR) {
+        return false;
+      }
+    }
+  }
   mvFixInfo.mvTable=mvTable;
-  mvFixInfo.isMVBasedDistributedQuery=true;
+  mvFixInfo.mayNeedFixMVBasedDistributedQuery=true;
   return true;
 }

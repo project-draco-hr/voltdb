@@ -1,11 +1,11 @@
 {
-  if (m_parsedSelect.mvFixInfo.finalNeedFix) {
+  AggregatePlanNode aggNode=null;
+  boolean containsAggregateExpression=m_parsedSelect.hasAggregateExpression();
+  if (m_parsedSelect.mvFixInfo.finalNeedFix && !containsAggregateExpression) {
     if (m_parsedSelect.groupByColumns().size() == m_parsedSelect.mvFixInfo.numOfGroupByColumns) {
       return root;
     }
   }
-  AggregatePlanNode aggNode=null;
-  boolean containsAggregateExpression=m_parsedSelect.hasAggregateExpression();
   if (containsAggregateExpression || m_parsedSelect.isGrouped()) {
     AggregatePlanNode topAggNode;
     if (m_parsedSelect.isGrouped() && (root.getPlanNodeType() != PlanNodeType.INDEXSCAN || ((IndexScanPlanNode)root).getSortDirection() == SortDirectionType.INVALID)) {
@@ -77,7 +77,14 @@
     for (    ParsedSelectStmt.ParsedColInfo col : m_parsedSelect.groupByColumns) {
       aggNode.addGroupByExpression(col.expression);
       if (topAggNode != null) {
-        topAggNode.addGroupByExpression(m_parsedSelect.groupByExpressions.get(col.alias));
+        if (!m_parsedSelect.mvFixInfo.finalNeedFix) {
+          topAggNode.addGroupByExpression(m_parsedSelect.groupByExpressions.get(col.alias));
+        }
+ else {
+          if (m_parsedSelect.mvFixInfo.originalGroupByColumns.contains(col)) {
+            topAggNode.addGroupByExpression(m_parsedSelect.groupByExpressions.get(col.alias));
+          }
+        }
       }
     }
     aggNode.setOutputSchema(agg_schema);
