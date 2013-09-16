@@ -1,0 +1,25 @@
+{
+  final long startTs=System.currentTimeMillis();
+  if (!m_closed.get()) {
+    rejoinLog.trace("Closing stream snapshot target");
+    sendEOS();
+    m_sender.offer(new SendWork());
+    while (!m_writeFailed.get() && (m_outstandingWorkCount.get() > 0)) {
+      if (System.currentTimeMillis() - startTs >= timeout) {
+        return false;
+      }
+      Thread.yield();
+    }
+    clearOutstanding();
+synchronized (this) {
+      m_closed.set(true);
+      assert(m_outstandingWork.size() == 0);
+    }
+    rejoinLog.trace("Closed stream snapshot target");
+  }
+  Runnable closeHandle=m_onCloseHandler.get();
+  if (closeHandle != null) {
+    closeHandle.run();
+  }
+  return true;
+}
