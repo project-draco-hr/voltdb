@@ -1,0 +1,24 @@
+{
+  System.out.println("Test MV partition...");
+  VoltTable vt=null;
+  Client client=this.getClient();
+  vt=client.callProcedure("@AdHoc","Select count(*) from V_P1").getResults()[0];
+  assertEquals(0,vt.asScalarLong());
+  String insert="P1.insert";
+  client.callProcedure(insert,2,20,3);
+  client.callProcedure(insert,6,40,3);
+  client.callProcedure(insert,4,40,1);
+  client.callProcedure(insert,1,10,1);
+  client.callProcedure(insert,5,50,1);
+  String[] tbs={"V_P1","V_P1_ABS"};
+  for (  String tb : tbs) {
+    vt=client.callProcedure("@AdHoc","Select * from " + tb + " ORDER BY V_P1_G1").getResults()[0];
+    validateTableOfLongs(vt,new long[][]{{1,3,100},{3,2,60}});
+    vt=client.callProcedure("@AdHoc","Select V_P1_sum_wage from " + tb + " ORDER BY V_P1_sum_wage").getResults()[0];
+    validateTableOfLongs(vt,new long[][]{{60},{100}});
+    vt=client.callProcedure("@AdHoc","Select V_P1_sum_wage as tag, sum(V_P1_CNT) " + "from " + tb + " group by V_P1_sum_wage order by tag").getResults()[0];
+    validateTableOfLongs(vt,new long[][]{{60,2},{100,3}});
+    vt=client.callProcedure("@AdHoc","Select V_P1_G1, V_P1_sum_wage, sum(V_P1_CNT) " + "from " + tb + " group by V_P1_G1, V_P1_sum_wage "+ "order by V_P1_G1 desc, V_P1_sum_wage").getResults()[0];
+    validateTableOfLongs(vt,new long[][]{{3,60,2},{1,100,3}});
+  }
+}

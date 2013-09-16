@@ -1,0 +1,71 @@
+{
+  for (  AbstractPlanNode apn : pns) {
+    System.out.println(apn.toExplainPlanString());
+  }
+  assertTrue(pns.size() == 2);
+  AbstractPlanNode p=pns.get(0);
+  assertTrue(p instanceof SendPlanNode);
+  p=p.getChild(0);
+  if (p instanceof LimitPlanNode) {
+    p=p.getChild(0);
+  }
+  if (needFix || !aggPushdown) {
+    assertTrue(p instanceof ProjectionPlanNode);
+    p=p.getChild(0);
+  }
+  if (p instanceof OrderByPlanNode) {
+    p=p.getChild(0);
+  }
+  if (p instanceof DistinctPlanNode) {
+    p=p.getChild(0);
+  }
+  HashAggregatePlanNode reAggNode=null;
+  if (numGroupbyOfTopAggNode == -1) {
+    if (needFix) {
+      assertTrue(p instanceof HashAggregatePlanNode);
+      reAggNode=(HashAggregatePlanNode)p;
+      assertEquals(numGroupbyOfReaggNode,reAggNode.getGroExpressionTypes().size());
+      assertEquals(numAggsOfReaggNode,reAggNode.getAggregateTypes().size());
+      for (      ExpressionType type : reAggNode.getAggregateTypes()) {
+        assertEquals(ExpressionType.AGGREGATE_SUM,type);
+      }
+      p=p.getChild(0);
+    }
+    assertTrue(p instanceof ReceivePlanNode);
+    p=pns.get(1).getChild(0);
+    if (distinctPushdown) {
+      assertTrue(p instanceof DistinctPlanNode);
+      p=p.getChild(0);
+    }
+    assertTrue(p instanceof AbstractScanPlanNode);
+  }
+ else {
+    assertTrue(p instanceof AggregatePlanNode);
+    AggregatePlanNode topAggNode=(AggregatePlanNode)p;
+    assertEquals(numGroupbyOfTopAggNode,topAggNode.getGroExpressionTypes().size());
+    assertEquals(numAggsOfTopAggNode,topAggNode.getAggregateTypes().size());
+    p=p.getChild(0);
+    if (needFix) {
+      assertTrue(p instanceof HashAggregatePlanNode);
+      reAggNode=(HashAggregatePlanNode)p;
+      assertEquals(numGroupbyOfReaggNode,reAggNode.getGroExpressionTypes().size());
+      assertEquals(numAggsOfReaggNode,reAggNode.getAggregateTypes().size());
+      for (      ExpressionType type : reAggNode.getAggregateTypes()) {
+        assertEquals(ExpressionType.AGGREGATE_SUM,type);
+      }
+      p=p.getChild(0);
+    }
+    assertTrue(p instanceof ReceivePlanNode);
+    p=pns.get(1);
+    assertTrue(p instanceof SendPlanNode);
+    p=pns.get(1).getChild(0);
+    if (aggPushdown) {
+      assertTrue(p instanceof AggregatePlanNode);
+      AggregatePlanNode aggNode=(AggregatePlanNode)p;
+      assertEquals(numGroupbyOfAggNode,aggNode.getGroExpressionTypes().size());
+      assertEquals(numAggsOfAggNode,aggNode.getAggregateTypes().size());
+      p=p.getChild(0);
+    }
+    assertTrue(p instanceof AbstractScanPlanNode);
+  }
+}
