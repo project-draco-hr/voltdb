@@ -8,25 +8,20 @@
         rejoinLog.warn("No stream snapshot ack message was received in the past 10 minutes" + " or the thread was interrupted");
         continue;
       }
-      assert(msg instanceof RejoinDataAckMessage);
-      RejoinDataAckMessage ackMsg=(RejoinDataAckMessage)msg;
-      if (ackMsg.isEOS()) {
+      if (StreamSnapshotDataTarget.m_rejoinDeathTestMode && (m_msgFactory.getAckTargetId(msg) == 1)) {
+        continue;
+      }
+      AckCallback ackCallback=m_callbacks.get(m_msgFactory.getAckTargetId(msg));
+      if (ackCallback == null) {
+        rejoinLog.error("Unknown target ID " + m_msgFactory.getAckTargetId(msg) + " in stream snapshot ack message");
+      }
+ else       if (m_msgFactory.getAckBlockIndex(msg) != -1) {
+        ackCallback.receiveAck(m_msgFactory.getAckBlockIndex(msg));
+      }
+      if (m_msgFactory.isAckEOS(msg)) {
         if (m_expectedEOFs.decrementAndGet() == 0) {
           break;
         }
- else {
-          continue;
-        }
-      }
-      if (StreamSnapshotDataTarget.m_rejoinDeathTestMode && (ackMsg.getTargetId() == 1)) {
-        continue;
-      }
-      AckCallback ackCallback=m_callbacks.get(ackMsg.getTargetId());
-      if (ackCallback == null) {
-        rejoinLog.error("Unknown target ID " + ackMsg.getTargetId() + " in stream snapshot ack message");
-      }
- else {
-        ackCallback.receiveAck(ackMsg.getBlockIndex());
       }
     }
   }
