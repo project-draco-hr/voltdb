@@ -86,6 +86,8 @@
     pkConstraint.setIndex(pkIndex);
     List<AbstractExpression> aggregationExprs=new ArrayList<AbstractExpression>();
     boolean hasAggregationExprs=false;
+    boolean hasMinOrMaxAgg=false;
+    ArrayList<AbstractExpression> minMaxAggs=new ArrayList<AbstractExpression>();
     for (int i=stmt.groupByColumns.size() + 1; i < stmt.displayColumns.size(); i++) {
       ParsedSelectStmt.ParsedColInfo col=stmt.displayColumns.get(i);
       AbstractExpression aggExpr=col.expression.getLeft();
@@ -93,6 +95,10 @@
         hasAggregationExprs=true;
       }
       aggregationExprs.add(aggExpr);
+      if (col.expression.getExpressionType() == ExpressionType.AGGREGATE_MIN || col.expression.getExpressionType() == ExpressionType.AGGREGATE_MAX) {
+        hasMinOrMaxAgg=true;
+        minMaxAggs.add(aggExpr);
+      }
     }
     if (hasAggregationExprs) {
       String aggregationExprsJson=null;
@@ -103,6 +109,19 @@
         throw m_compiler.new VoltCompilerException("Unexpected error serializing non-column " + "expressions for aggregation expressions: " + e.toString());
       }
       matviewinfo.setAggregationexpressionsjson(aggregationExprsJson);
+    }
+    if (hasMinOrMaxAgg) {
+      Index found=findBestMatchIndexForMatviewMinOrMax(matviewinfo,srcTable,groupbyExprs);
+      if (found != null) {
+        matviewinfo.setIndexforminmax(found.getTypeName());
+      }
+ else {
+        matviewinfo.setIndexforminmax("");
+        m_compiler.addWarn("No index found for min() / max() support in Materialized View " + matviewinfo.getTypeName() + ", and could cause sequential scan.");
+      }
+    }
+ else {
+      matviewinfo.setIndexforminmax("");
     }
     for (int i=stmt.groupByColumns.size() + 1; i < stmt.displayColumns.size(); i++) {
       ParsedSelectStmt.ParsedColInfo col=stmt.displayColumns.get(i);
