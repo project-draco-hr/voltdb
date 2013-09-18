@@ -1,11 +1,6 @@
 {
   AggregatePlanNode aggNode=null;
   boolean containsAggregateExpression=m_parsedSelect.hasAggregateExpression();
-  if (m_parsedSelect.mvFixInfo.finalNeedFix && !containsAggregateExpression) {
-    if (m_parsedSelect.groupByColumns().size() == m_parsedSelect.mvFixInfo.numOfGroupByColumns) {
-      return root;
-    }
-  }
   if (containsAggregateExpression || m_parsedSelect.isGrouped()) {
     AggregatePlanNode topAggNode;
     if (m_parsedSelect.isGrouped() && (root.getPlanNodeType() != PlanNodeType.INDEXSCAN || ((IndexScanPlanNode)root).getSortDirection() == SortDirectionType.INVALID)) {
@@ -77,14 +72,7 @@
     for (    ParsedSelectStmt.ParsedColInfo col : m_parsedSelect.groupByColumns) {
       aggNode.addGroupByExpression(col.expression);
       if (topAggNode != null) {
-        if (!m_parsedSelect.mvFixInfo.finalNeedFix) {
-          topAggNode.addGroupByExpression(m_parsedSelect.groupByExpressions.get(col.alias));
-        }
- else {
-          if (m_parsedSelect.mvFixInfo.originalGroupByColumns.contains(col)) {
-            topAggNode.addGroupByExpression(m_parsedSelect.groupByExpressions.get(col.alias));
-          }
-        }
+        topAggNode.addGroupByExpression(m_parsedSelect.groupByExpressions.get(col.alias));
       }
     }
     aggNode.setOutputSchema(agg_schema);
@@ -97,7 +85,19 @@
       }
     }
     NodeSchema newSchema=m_parsedSelect.getFinalProjectionSchema();
-    root=pushDownAggregate(root,aggNode,topAggNode,m_parsedSelect.hasComplexAgg(),newSchema);
+    if (!m_parsedSelect.mvFixInfo.finalNeedFix) {
+      root=pushDownAggregate(root,aggNode,topAggNode,m_parsedSelect.hasComplexAgg(),newSchema);
+    }
+ else {
+      aggNode.addAndLinkChild(root);
+      root=aggNode;
+      if (m_parsedSelect.hasComplexAgg()) {
+        ProjectionPlanNode proj=new ProjectionPlanNode();
+        proj.addAndLinkChild(root);
+        proj.setOutputSchema(newSchema);
+        root=proj;
+      }
+    }
   }
   if (m_parsedSelect.isGrouped()) {
     if (m_parsedSelect.displayColumnsContainAllGroupByColumns()) {

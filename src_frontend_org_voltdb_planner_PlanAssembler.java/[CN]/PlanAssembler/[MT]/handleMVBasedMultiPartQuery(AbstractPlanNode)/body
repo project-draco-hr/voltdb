@@ -10,49 +10,41 @@
   ProjectionPlanNode inlineProj=new ProjectionPlanNode();
   inlineProj.setOutputSchema(mvFixInfo.inlineProjSchema);
   scanNode.addInlinePlanNode(inlineProj);
-  AggregatePlanNode aggNode=new HashAggregatePlanNode();
+  AggregatePlanNode reAggNode=new HashAggregatePlanNode();
   int outputColumnIndex=0;
-  NodeSchema agg_schema=new NodeSchema();
-  for (  ParsedSelectStmt.ParsedColInfo col : m_parsedSelect.aggResultColumns) {
+  NodeSchema aggSchema=new NodeSchema();
+  for (  ParsedSelectStmt.ParsedColInfo col : mvFixInfo.mvAggResultColumns) {
     AbstractExpression rootExpr=col.expression;
     SchemaColumn schema_col=null;
     if (ParsedColInfo.isNewtoColumnList(mvFixInfo.mvDDLGroupbyColumnsList,col)) {
-      ExpressionType agg_expression_type=ExpressionType.AGGREGATE_SUM;
-      boolean is_distinct=false;
+      ExpressionType reAggType=mvFixInfo.mvColumnAggType.get(col.columnName);
+      assert(reAggType != null);
       AbstractExpression agg_input_expr=null;
+      assert(rootExpr instanceof TupleValueExpression);
       TupleValueExpression tve=new TupleValueExpression();
       tve.setValueType(rootExpr.getValueType());
       tve.setValueSize(rootExpr.getValueSize());
       tve.setColumnIndex(outputColumnIndex);
-      if (rootExpr instanceof AggregateExpression) {
-        AggregateExpression aggExpr=(AggregateExpression)rootExpr;
-        is_distinct=aggExpr.isDistinct();
-        tve.setColumnName("");
-        tve.setColumnAlias(col.alias);
-        tve.setTableName("VOLT_TEMP_TABLE");
-      }
- else {
-        tve.setColumnName(col.columnName);
-        tve.setColumnAlias(col.alias);
-        tve.setTableName(col.tableName);
-      }
+      tve.setColumnName(col.columnName);
+      tve.setColumnAlias(col.alias);
+      tve.setTableName(col.tableName);
       agg_input_expr=(AbstractExpression)tve.clone();
-      aggNode.addAggregate(agg_expression_type,is_distinct,outputColumnIndex,agg_input_expr);
+      reAggNode.addAggregate(reAggType,false,outputColumnIndex,agg_input_expr);
       schema_col=new SchemaColumn(col.tableName,col.columnName,col.alias,tve);
     }
  else {
       schema_col=new SchemaColumn(col.tableName,col.columnName,col.alias,col.expression);
     }
-    agg_schema.addColumn(schema_col);
+    aggSchema.addColumn(schema_col);
     outputColumnIndex++;
   }
-  aggNode.setOutputSchema(agg_schema);
+  reAggNode.setOutputSchema(aggSchema);
   for (  ParsedSelectStmt.ParsedColInfo col : mvFixInfo.mvDDLGroupbyColumnsList) {
-    aggNode.addGroupByExpression(col.expression);
+    reAggNode.addGroupByExpression(col.expression);
   }
   if (root.getPlanNodeType() == PlanNodeType.RECEIVE) {
-    aggNode.addAndLinkChild(root);
-    root=aggNode;
+    reAggNode.addAndLinkChild(root);
+    root=reAggNode;
   }
  else {
     AbstractPlanNode receiveNode=root;
@@ -63,9 +55,8 @@
     AbstractPlanNode parent=receiveNode.getParent(0);
     receiveNode.clearParents();
     parent.clearChildren();
-    aggNode.addAndLinkChild(receiveNode);
-    parent.addAndLinkChild(aggNode);
+    reAggNode.addAndLinkChild(receiveNode);
+    parent.addAndLinkChild(reAggNode);
   }
-  m_parsedSelect.displayColumns=mvFixInfo.originalDisplayColumns;
   return root;
 }

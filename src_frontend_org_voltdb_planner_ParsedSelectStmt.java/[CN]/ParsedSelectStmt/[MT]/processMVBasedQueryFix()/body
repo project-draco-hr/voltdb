@@ -1,10 +1,16 @@
 {
   String mvTableName=mvFixInfo.mvTable.getTypeName();
-  ArrayList<ParsedColInfo> tmpDisplayColumns=new ArrayList<ParsedColInfo>(displayColumns);
-  ArrayList<ParsedColInfo> tmpAggResultColumns=new ArrayList<ParsedColInfo>(aggResultColumns);
-  ArrayList<ParsedColInfo> tmpGroupbyColumns=new ArrayList<ParsedColInfo>(groupByColumns);
   mvFixInfo.mvDDLGroupbyColumnsList=new ArrayList<ParsedColInfo>();
+  mvFixInfo.mvAggResultColumns=new ArrayList<ParsedColInfo>();
+  mvFixInfo.mvColumnAggType=new HashMap<String,ExpressionType>();
   List<Column> mvColumnArray=CatalogUtil.getSortedCatalogItems(mvFixInfo.mvTable.getColumns(),"index");
+  for (  Column mvCol : mvColumnArray) {
+    ExpressionType reAggType=ExpressionType.get(mvCol.getAggregatetype());
+    if (reAggType == ExpressionType.AGGREGATE_COUNT_STAR || reAggType == ExpressionType.AGGREGATE_COUNT) {
+      reAggType=ExpressionType.AGGREGATE_SUM;
+    }
+    mvFixInfo.mvColumnAggType.put(mvCol.getName(),reAggType);
+  }
   assert(mvFixInfo.numOfGroupByColumns > 0);
   for (int i=0; i < mvFixInfo.numOfGroupByColumns; i++) {
     ParsedColInfo col=new ParsedColInfo();
@@ -21,24 +27,7 @@
     tve.setValueSize(mvCol.getSize());
     col.expression=tve;
     mvFixInfo.mvDDLGroupbyColumnsList.add(col);
-    if (ParsedColInfo.isNewtoColumnList(aggResultColumns,col)) {
-      aggResultColumns.add(col);
-    }
-    if (ParsedColInfo.isNewtoColumnList(displayColumns,col)) {
-      displayColumns.add(col);
-    }
-    if (ParsedColInfo.isNewtoColumnList(groupByColumns,col)) {
-      groupByColumns.add(col);
-    }
   }
-  assert(projectSchema != null);
-  placeTVEsinColumns();
-  mvFixInfo.originalDisplayColumns=displayColumns;
-  mvFixInfo.originalAggResultColumns=aggResultColumns;
-  mvFixInfo.originalGroupByColumns=groupByColumns;
-  displayColumns=tmpDisplayColumns;
-  aggResultColumns=tmpAggResultColumns;
-  groupByColumns=tmpGroupbyColumns;
   mvFixInfo.inlineProjSchema=new NodeSchema();
   ArrayList<SchemaColumn> orignalGroupbyColumnsList=new ArrayList<SchemaColumn>();
   for (  ParsedColInfo col : mvFixInfo.mvDDLGroupbyColumnsList) {
@@ -48,18 +37,17 @@
     orignalGroupbyColumnsList.add(scol);
   }
   ArrayList<SchemaColumn> newValue=new ArrayList<SchemaColumn>();
-  for (  String key : scanColumns.keySet()) {
-    ArrayList<SchemaColumn> value=scanColumns.get(key);
-    if (key.equals(mvTableName)) {
-      newValue.addAll(value);
-      Set<SchemaColumn> valueSet=new HashSet<SchemaColumn>(value);
-      for (      SchemaColumn scol : orignalGroupbyColumnsList) {
-        if (!valueSet.contains(scol)) {
-          valueSet.add(scol);
-          newValue.add(scol);
-        }
+  assert(scanColumns.keySet().size() == 1);
+  for (  String tbName : scanColumns.keySet()) {
+    assert(tbName.equals(mvTableName));
+    ArrayList<SchemaColumn> columns=scanColumns.get(tbName);
+    newValue.addAll(columns);
+    Set<SchemaColumn> valueSet=new HashSet<SchemaColumn>(columns);
+    for (    SchemaColumn scol : orignalGroupbyColumnsList) {
+      if (!valueSet.contains(scol)) {
+        valueSet.add(scol);
+        newValue.add(scol);
       }
-      break;
     }
   }
   if (newValue.size() == 0) {
@@ -67,5 +55,13 @@
   }
   for (  SchemaColumn scol : newValue) {
     mvFixInfo.inlineProjSchema.addColumn(scol);
+  }
+  for (  SchemaColumn scol : newValue) {
+    ParsedColInfo col=new ParsedColInfo();
+    col.expression=scol.getExpression();
+    col.alias=scol.getColumnAlias();
+    col.columnName=scol.getColumnName();
+    col.tableName=scol.getTableName();
+    mvFixInfo.mvAggResultColumns.add(col);
   }
 }
