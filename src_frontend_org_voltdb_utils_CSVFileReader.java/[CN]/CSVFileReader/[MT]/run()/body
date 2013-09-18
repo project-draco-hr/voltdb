@@ -1,40 +1,40 @@
 {
   List<String> lineList=null;
-  while ((config.limitrows-- > 0)) {
-    if (errored) {
+  while ((m_config.limitrows-- > 0)) {
+    if (m_errored) {
       break;
     }
     try {
-      if (listReader.getLineNumber() == 0) {
-        totalLineCount.set(config.skip);
+      if (m_listReader.getLineNumber() == 0) {
+        m_totalLineCount.set(m_config.skip);
       }
  else {
-        totalLineCount.set(listReader.getLineNumber());
+        m_totalLineCount.set(m_listReader.getLineNumber());
       }
       long st=System.nanoTime();
-      lineList=listReader.read();
+      lineList=m_listReader.read();
       long end=System.nanoTime();
-      m_parsingTimeEnd+=(end - st);
+      m_parsingTime+=(end - st);
       if (lineList == null) {
-        if (totalLineCount.get() > listReader.getLineNumber()) {
-          totalLineCount.set(listReader.getLineNumber());
+        if (m_totalLineCount.get() > m_listReader.getLineNumber()) {
+          m_totalLineCount.set(m_listReader.getLineNumber());
         }
         break;
       }
-      totalRowCount.incrementAndGet();
+      m_totalRowCount.incrementAndGet();
       String[] correctedLine=lineList.toArray(new String[0]);
       String lineCheckResult;
-      if ((lineCheckResult=checkparams_trimspace(correctedLine,columnCnt)) != null) {
+      if ((lineCheckResult=checkparams_trimspace(correctedLine,m_columnCnt)) != null) {
         String[] info={lineList.toString(),lineCheckResult};
-        if (synchronizeErrorInfo(totalLineCount.get() + 1,info)) {
-          errored=true;
+        if (synchronizeErrorInfo(m_totalLineCount.get() + 1,info)) {
+          m_errored=true;
         }
         continue;
       }
-      CSVLineWithMetaData lineData=new CSVLineWithMetaData(correctedLine,lineList,listReader.getLineNumber());
+      CSVLineWithMetaData lineData=new CSVLineWithMetaData(correctedLine,lineList,m_listReader.getLineNumber());
       int partitionId=0;
-      if (!CSVPartitionProcessor.isMP && !config.useSuppliedProcedure) {
-        partitionId=TheHashinator.getPartitionForParameter(partitionColumnType.getValue(),(Object)lineData.correctedLine[partitionedColumnIndex]);
+      if (!CSVPartitionProcessor.m_isMP && !m_config.useSuppliedProcedure) {
+        partitionId=TheHashinator.getPartitionForParameter(m_partitionColumnType.getValue(),(Object)lineData.correctedLine[m_partitionedColumnIndex]);
       }
       BlockingQueue<CSVLineWithMetaData> q=processorQueues.get(partitionId);
       q.offer(lineData);
@@ -42,7 +42,7 @@
  catch (    SuperCsvException e) {
       e.printStackTrace();
       String[] info={e.getMessage(),""};
-      if (synchronizeErrorInfo(totalLineCount.get() + 1,info)) {
+      if (synchronizeErrorInfo(m_totalLineCount.get() + 1,info)) {
         break;
       }
     }
@@ -51,11 +51,11 @@ catch (    IOException ioex) {
       break;
     }
   }
-  if (errorInfo.size() >= config.maxerrors) {
-    m_log.info("The number of Failure row data exceeds " + config.maxerrors);
+  if (m_errorInfo.size() >= m_config.maxerrors) {
+    m_log.info("The number of Failure row data exceeds " + m_config.maxerrors);
   }
   try {
-    listReader.close();
+    m_listReader.close();
   }
  catch (  IOException ex) {
     m_log.error("Error cloging Reader: " + ex);
@@ -63,17 +63,17 @@ catch (    IOException ioex) {
  finally {
     for (    BlockingQueue<CSVLineWithMetaData> q : processorQueues.values()) {
       try {
-        q.put(endOfData);
+        q.put(m_endOfData);
       }
  catch (      InterruptedException ex) {
         m_log.error("Failed to add endOfData for Partition Processor. " + ex);
       }
     }
-    m_log.info("Rows Queued by Reader: " + totalRowCount.get());
+    m_log.info("Rows Queued by Reader: " + m_totalRowCount.get());
   }
   try {
     m_log.info("Waiting for partition processors to finish.");
-    processor_cdl.await();
+    m_processor_cdl.await();
     m_log.info("Partition Processors Done.");
   }
  catch (  InterruptedException ex) {
