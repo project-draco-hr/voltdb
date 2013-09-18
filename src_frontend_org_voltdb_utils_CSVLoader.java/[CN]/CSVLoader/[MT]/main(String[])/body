@@ -36,23 +36,18 @@
   }
   assert(csvClient != null);
   try {
-    setupCSVLoader(csvClient);
-    CountDownLatch processor_cdl=new CountDownLatch(numProcessors);
-    CSVPartitionProcessor.m_processor_cdl=processor_cdl;
-    CSVPartitionProcessor.m_colInfo=colInfo;
-    CSVPartitionProcessor.m_columnTypes=columnTypes;
-    CSVPartitionProcessor.m_insertProcedure=insertProcedure;
-    CSVPartitionProcessor.m_isMP=isMP;
-    CSVPartitionProcessor.m_config=config;
-    CSVPartitionProcessor.m_tableName=config.table;
-    List<Thread> spawned=new ArrayList<Thread>(numProcessors);
+    if (!CSVPartitionProcessor.initializeProcessorInformation(config,csvClient)) {
+      close_cleanup();
+      System.exit(-1);
+    }
+    List<Thread> spawned=new ArrayList<Thread>(CSVPartitionProcessor.m_numProcessors);
     CSVLineWithMetaData endOfData=new CSVLineWithMetaData(null,null,-1);
-    Map<Integer,BlockingQueue<CSVLineWithMetaData>> lineq=new HashMap<Integer,BlockingQueue<CSVLineWithMetaData>>(numProcessors);
-    List<CSVPartitionProcessor> processors=new ArrayList<CSVPartitionProcessor>(numProcessors);
-    for (int i=0; i < numProcessors; i++) {
+    Map<Integer,BlockingQueue<CSVLineWithMetaData>> lineq=new HashMap<Integer,BlockingQueue<CSVLineWithMetaData>>(CSVPartitionProcessor.m_numProcessors);
+    List<CSVPartitionProcessor> processors=new ArrayList<CSVPartitionProcessor>(CSVPartitionProcessor.m_numProcessors);
+    for (int i=0; i < CSVPartitionProcessor.m_numProcessors; i++) {
       LinkedBlockingQueue<CSVLineWithMetaData> partitionQueue=new LinkedBlockingQueue<CSVLineWithMetaData>(Integer.MAX_VALUE);
       lineq.put(i,partitionQueue);
-      CSVPartitionProcessor processor=new CSVPartitionProcessor(csvClient,i,partitionedColumnIndex,partitionQueue,endOfData);
+      CSVPartitionProcessor processor=new CSVPartitionProcessor(csvClient,i,CSVPartitionProcessor.m_partitionedColumnIndex,partitionQueue,endOfData);
       processors.add(processor);
       Thread th=new Thread(processor);
       th.setName(processor.m_processorName);
@@ -60,14 +55,8 @@
     }
     CSVFileReader.m_config=config;
     CSVFileReader.m_listReader=listReader;
-    CSVFileReader.m_partitionedColumnIndex=partitionedColumnIndex;
-    CSVFileReader.m_partitionColumnType=partitionColumnType;
-    CSVFileReader.m_typeList=typeList;
-    CSVFileReader.m_columnCnt=columnCnt;
-    CSVFileReader.m_csvClient=csvClient;
-    CSVFileReader.processorQueues=lineq;
+    CSVFileReader.m_processorQueues=lineq;
     CSVFileReader.m_endOfData=endOfData;
-    CSVFileReader.m_processor_cdl=processor_cdl;
     CSVFileReader csvReader=new CSVFileReader();
     Thread th=new Thread(csvReader);
     th.setName("CSVFileReader");
