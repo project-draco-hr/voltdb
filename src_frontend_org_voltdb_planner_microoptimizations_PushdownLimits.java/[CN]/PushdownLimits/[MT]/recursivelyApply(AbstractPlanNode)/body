@@ -1,0 +1,47 @@
+{
+  assert(plan != null);
+  ArrayList<AbstractPlanNode> children=new ArrayList<AbstractPlanNode>();
+  for (int i=0; i < plan.getChildCount(); i++)   children.add(plan.getChild(i));
+  plan.clearChildren();
+  for (  AbstractPlanNode child : children) {
+    child=recursivelyApply(child);
+    child.clearParents();
+    plan.addAndLinkChild(child);
+  }
+  if ((plan instanceof LimitPlanNode) == false)   return plan;
+  if (plan.getChildCount() != 1)   return plan;
+  AbstractPlanNode child=plan.getChild(0);
+  if (child instanceof AbstractScanPlanNode) {
+    plan.clearChildren();
+    child.clearParents();
+    child.addInlinePlanNode(plan);
+    return recursivelyApply(child);
+  }
+  if (child instanceof ProjectionPlanNode) {
+    assert(child.getChildCount() == 1);
+    AbstractPlanNode leaf=child.getChild(0);
+    leaf.clearParents();
+    plan.clearChildren();
+    plan.addAndLinkChild(leaf);
+    child.clearChildren();
+    child.clearParents();
+    child.addAndLinkChild(plan);
+    return recursivelyApply(child);
+  }
+  if (child instanceof AbstractJoinPlanNode) {
+    plan.clearChildren();
+    child.clearParents();
+    child.addInlinePlanNode(plan);
+    if (((AbstractJoinPlanNode)child).getJoinType() == JoinType.LEFT) {
+      AbstractPlanNode leaf=child.getChild(0);
+      LimitPlanNode copy=new LimitPlanNode((LimitPlanNode)plan);
+      leaf.clearChildren();
+      leaf.clearParents();
+      copy.addAndLinkChild(leaf);
+      child.setAndLinkChild(0,copy);
+      child=recursivelyApply(child);
+    }
+    return child;
+  }
+  return plan;
+}
