@@ -1,29 +1,33 @@
 {
   FailedBatchProcessor failureProcessor=null;
-  if (m_config.useSuppliedProcedure) {
-    processUserSuppliedProcedure(m_insertProcedure);
-  }
- else {
-    VoltTable table=new VoltTable(m_colInfo);
-    String procName=(m_isMP ? "@LoadMultipartitionTable" : "@LoadSinglepartitionTable");
-    failedQueue=new LinkedBlockingQueue<CSVLineWithMetaData>();
-    failureProcessor=new FailedBatchProcessor(this,procName,m_tableName);
-    failureProcessor.start();
-    processLoadTable(table,procName);
-  }
-  m_partitionQueue.clear();
   try {
+    if (m_config.useSuppliedProcedure) {
+      processUserSuppliedProcedure(m_insertProcedure);
+    }
+ else {
+      VoltTable table=new VoltTable(m_colInfo);
+      String procName=(m_isMP ? "@LoadMultipartitionTable" : "@LoadSinglepartitionTable");
+      m_failedQueue=new LinkedBlockingQueue<CSVLineWithMetaData>();
+      failureProcessor=new FailedBatchProcessor(this,procName,m_tableName);
+      failureProcessor.start();
+      processLoadTable(table,procName);
+    }
+    m_partitionQueue.clear();
     m_csvClient.drain();
     if (failureProcessor != null) {
-      failedQueue.put(m_endOfData);
+      if (m_failedQueue != null) {
+        m_failedQueue.put(m_endOfData);
+      }
       failureProcessor.join();
       m_csvClient.drain();
     }
   }
  catch (  NoConnectionsException ex) {
+    CSVFileReader.m_errored=true;
     m_log.warn("Failed to Drain the client: ",ex);
   }
 catch (  InterruptedException ex) {
+    CSVFileReader.m_errored=true;
     m_log.warn("Failed to Drain the client: ",ex);
   }
   CSVPartitionProcessor.m_processor_cdl.countDown();
