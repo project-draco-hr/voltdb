@@ -1,26 +1,10 @@
 {
   if (!m_closed.get()) {
     rejoinLog.trace("Closing stream snapshot target");
-    while (!m_writeFailed.get() && (m_outstandingWorkCount.get() > 0)) {
-      Thread.yield();
-    }
-    clearOutstanding();
-    ByteBuffer buf=ByteBuffer.allocate(1);
-    if (m_writeFailed.get()) {
-      buf.put((byte)StreamSnapshotMessageType.FAILURE.ordinal());
-    }
- else {
-      buf.put((byte)StreamSnapshotMessageType.END.ordinal());
-    }
-    buf.flip();
-    byte compressedBytes[]=CompressionService.compressBytes(buf.array(),buf.position(),buf.remaining());
-    RejoinDataMessage msg=new RejoinDataMessage(m_targetId,compressedBytes);
-    m_mb.send(m_destHSId,msg);
-    m_sender.m_bytesSent.get(m_targetId).addAndGet(compressedBytes.length);
+    waitForOutstandingWork();
+    sendEOS();
     m_sender.offer(new SendWork());
-    m_mb.deliver(new RejoinDataAckMessage(true));
 synchronized (this) {
-      m_mb=null;
       m_closed.set(true);
       assert(m_outstandingWork.size() == 0);
     }

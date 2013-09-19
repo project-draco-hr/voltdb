@@ -2,7 +2,7 @@
   try {
     String timestamp="";
     String rootpath="";
-    if (calledFromVEM) {
+    if (copyToVEM) {
       rootpath=m_voltDbRootPath;
     }
  else {
@@ -11,7 +11,7 @@
       timestamp=timestamp.substring(0,"YYYY-mm-DD-HH:MM:ss".length());
       rootpath=System.getProperty("user.dir");
     }
-    String collectionFilePath=rootpath + File.separator + m_uniqueid+ timestamp+ ".tgz";
+    String collectionFilePath=rootpath + File.separator + m_prefix+ timestamp+ ".tgz";
     File collectionFile=new File(collectionFilePath);
     TarGenerator tarGenerator=new TarGenerator(collectionFile,true,null);
     for (    String path : paths) {
@@ -41,10 +41,17 @@
     cmd(tarGenerator,sarCmd,"sardata");
     String[] dmesgCmd={"bash","-c","/bin/dmesg"};
     cmd(tarGenerator,dmesgCmd,"dmesgdata");
-    tarGenerator.write(false,true);
+    if (m_calledFromVEM) {
+      tarGenerator.write(false,false);
+    }
+ else {
+      tarGenerator.write(false,true);
+    }
     long sizeInByte=collectionFile.length();
     String sizeStringInKB=String.format("%5.2f",(double)sizeInByte / 1000);
-    System.out.println("Collection file created at " + collectionFilePath + " size: "+ sizeStringInKB+ " KB");
+    if (!m_calledFromVEM) {
+      System.out.println("Collection file created at " + collectionFilePath + " size: "+ sizeStringInKB+ " KB");
+    }
     boolean upload=false;
     if (!m_host.isEmpty()) {
       if (m_noPrompt) {
@@ -56,11 +63,11 @@
     }
     if (upload) {
       if (org.voltdb.utils.MiscUtils.isPro()) {
-        if (m_username.isEmpty()) {
+        if (m_username.isEmpty() && !m_noPrompt) {
           System.out.print("username: ");
           m_username=System.console().readLine();
         }
-        if (m_password.isEmpty()) {
+        if (m_password.isEmpty() && !m_noPrompt) {
           System.out.print("password: ");
           m_password=new String(System.console().readPassword());
         }
@@ -77,10 +84,12 @@
           if (delLocalCopy) {
             try {
               collectionFile.delete();
-              System.out.println("Local copy " + collectionFilePath + " deleted");
+              if (!m_calledFromVEM) {
+                System.out.println("Local copy " + collectionFilePath + " deleted");
+              }
             }
  catch (            SecurityException e) {
-              System.out.println("Failed to delete local copy " + collectionFilePath + ". "+ e.getMessage());
+              System.err.println("Failed to delete local copy " + collectionFilePath + ". "+ e.getMessage());
             }
           }
         }
