@@ -25,24 +25,27 @@
       root=subAssembler.addSendReceivePair(root);
     }
   }
-  final boolean distributedQuery=(root instanceof ReceivePlanNode) ? true : false;
-  if (distributedQuery && m_parsedSelect.mayNeedAvgPushdown()) {
-    m_parsedSelect.switchOptimalSuiteForAvgPushdown();
+  if (root instanceof ReceivePlanNode) {
+    if (m_parsedSelect.mayNeedAvgPushdown()) {
+      m_parsedSelect.switchOptimalSuiteForAvgPushdown();
+    }
+    if (m_parsedSelect.mvFixInfo.needed) {
+      if (m_parsedSelect.tableList.size() != 1) {
+        String errorMsg=String.format("Unsupported query joined with materialized table %s",m_parsedSelect.mvFixInfo.mvTable.getTypeName());
+        throw new PlanningErrorException(errorMsg);
+      }
+      AbstractExpression whereExpr=m_parsedSelect.getSingleTableFilterExpression();
+      if (whereExpr != null) {
+        String errorMsg=String.format("Unsupported query materialized table %s has filter " + "on the table",m_parsedSelect.mvFixInfo.mvTable.getTypeName());
+        throw new PlanningErrorException(errorMsg);
+      }
+    }
   }
-  if (distributedQuery && m_parsedSelect.mvFixInfo.mayNeedFixMVBasedDistributedQuery) {
-    if (m_parsedSelect.tableList.size() != 1) {
-      String errorMsg=String.format("Unsupported query joined with materialized table %s",m_parsedSelect.mvFixInfo.mvTable.getTypeName());
-      throw new PlanningErrorException(errorMsg);
-    }
-    AbstractExpression whereExpr=m_parsedSelect.getSingleTableFilterExpression();
-    if (whereExpr != null) {
-      String errorMsg=String.format("Unsupported query materialized table %s has filter " + "on the table",m_parsedSelect.mvFixInfo.mvTable.getTypeName());
-      throw new PlanningErrorException(errorMsg);
-    }
-    m_parsedSelect.mvFixInfo.finalNeedFix=true;
+ else {
+    m_parsedSelect.mvFixInfo.needed=false;
   }
   root=handleAggregationOperators(root);
-  if (m_parsedSelect.mvFixInfo.finalNeedFix) {
+  if (m_parsedSelect.mvFixInfo.needed) {
     root=handleMVBasedMultiPartQuery(root);
   }
   if (m_parsedSelect.hasComplexAgg()) {

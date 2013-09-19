@@ -2,14 +2,18 @@
   AggregatePlanNode aggNode=null;
   boolean containsAggregateExpression=m_parsedSelect.hasAggregateExpression();
   if (containsAggregateExpression || m_parsedSelect.isGrouped()) {
-    AggregatePlanNode topAggNode;
+    AggregatePlanNode topAggNode=null;
     if (m_parsedSelect.isGrouped() && (root.getPlanNodeType() != PlanNodeType.INDEXSCAN || ((IndexScanPlanNode)root).getSortDirection() == SortDirectionType.INVALID)) {
       aggNode=new HashAggregatePlanNode();
-      topAggNode=new HashAggregatePlanNode();
+      if (!m_parsedSelect.mvFixInfo.needed) {
+        topAggNode=new HashAggregatePlanNode();
+      }
     }
  else {
       aggNode=new AggregatePlanNode();
-      topAggNode=new AggregatePlanNode();
+      if (!m_parsedSelect.mvFixInfo.needed) {
+        topAggNode=new AggregatePlanNode();
+      }
     }
     int outputColumnIndex=0;
     NodeSchema agg_schema=new NodeSchema();
@@ -85,19 +89,7 @@
       }
     }
     NodeSchema newSchema=m_parsedSelect.getFinalProjectionSchema();
-    if (!m_parsedSelect.mvFixInfo.finalNeedFix) {
-      root=pushDownAggregate(root,aggNode,topAggNode,m_parsedSelect.hasComplexAgg(),newSchema);
-    }
- else {
-      aggNode.addAndLinkChild(root);
-      root=aggNode;
-      if (m_parsedSelect.hasComplexAgg()) {
-        ProjectionPlanNode proj=new ProjectionPlanNode();
-        proj.addAndLinkChild(root);
-        proj.setOutputSchema(newSchema);
-        root=proj;
-      }
-    }
+    root=pushDownAggregate(root,aggNode,topAggNode,m_parsedSelect.hasComplexAgg(),newSchema);
   }
   if (m_parsedSelect.isGrouped()) {
     if (m_parsedSelect.displayColumnsContainAllGroupByColumns()) {
