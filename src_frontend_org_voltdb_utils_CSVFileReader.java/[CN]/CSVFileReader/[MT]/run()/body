@@ -1,5 +1,5 @@
 {
-  List<String> lineList=null;
+  List<String> lineList;
   m_log.debug("Using Hashinator: " + TheHashinator.getConfiguredHashinatorType().name());
   while ((m_config.limitrows-- > 0)) {
     if (m_errored) {
@@ -23,7 +23,7 @@
         break;
       }
       m_totalRowCount.incrementAndGet();
-      String[] correctedLine=lineList.toArray(new String[0]);
+      String[] correctedLine=lineList.toArray(new String[lineList.size()]);
       String lineCheckResult;
       if ((lineCheckResult=checkparams_trimspace(correctedLine,CSVPartitionProcessor.m_columnCnt)) != null) {
         String[] info={lineList.toString(),lineCheckResult};
@@ -48,7 +48,10 @@
         }
         continue;
       }
-      q.offer(lineData);
+      if (!q.offer(lineData)) {
+        m_log.info("Failed to insert linedata in processor, waiting and doing put.");
+        q.put(lineData);
+      }
     }
  catch (    SuperCsvException e) {
       m_log.error("Failed to process CSV line: " + e);
@@ -58,6 +61,10 @@
       }
     }
 catch (    IOException ex) {
+      m_log.error("Failed to read CSV line from file: " + ex);
+      break;
+    }
+catch (    InterruptedException ex) {
       m_log.error("Failed to read CSV line from file: " + ex);
       break;
     }
