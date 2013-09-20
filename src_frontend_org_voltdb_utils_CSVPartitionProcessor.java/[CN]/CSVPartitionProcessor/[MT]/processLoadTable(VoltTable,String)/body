@@ -13,13 +13,20 @@
         if (table.getRowCount() > 0) {
           PartitionProcedureCallback cbmt=new PartitionProcedureCallback(batchList,this);
           try {
+            boolean success;
             if (!m_isMP) {
-              m_csvClient.callProcedure(cbmt,procName,rpartitionParam,m_tableName,table);
+              rpartitionParam=TheHashinator.valueToBytes(table.fetchRow(0).get(CSVPartitionProcessor.m_partitionedColumnIndex,m_partitionColumnType));
+              success=m_csvClient.callProcedure(cbmt,procName,rpartitionParam,m_tableName,table);
             }
  else {
-              m_csvClient.callProcedure(cbmt,procName,m_tableName,table);
+              success=m_csvClient.callProcedure(cbmt,procName,m_tableName,table);
             }
-            m_partitionProcessedCount.addAndGet(table.getRowCount());
+            if (success) {
+              m_partitionProcessedCount.addAndGet(table.getRowCount());
+            }
+ else {
+              m_log.error("Failed to send last batch to procedure request.");
+            }
           }
  catch (          IOException ex) {
             String[] info={lineList.rawLine.toString(),ex.toString()};
@@ -46,14 +53,20 @@
       if (table.getRowCount() >= m_config.batch) {
         try {
           PartitionProcedureCallback cbmt=new PartitionProcedureCallback(batchList,this);
+          boolean success;
           if (!m_isMP) {
             rpartitionParam=TheHashinator.valueToBytes(table.fetchRow(0).get(CSVPartitionProcessor.m_partitionedColumnIndex,m_partitionColumnType));
-            m_csvClient.callProcedure(cbmt,procName,rpartitionParam,m_tableName,table);
+            success=m_csvClient.callProcedure(cbmt,procName,rpartitionParam,m_tableName,table);
           }
  else {
-            m_csvClient.callProcedure(cbmt,procName,m_tableName,table);
+            success=m_csvClient.callProcedure(cbmt,procName,m_tableName,table);
           }
-          m_partitionProcessedCount.addAndGet(table.getRowCount());
+          if (success) {
+            m_partitionProcessedCount.addAndGet(table.getRowCount());
+          }
+ else {
+            m_log.error("Failed to send batch procedure request.");
+          }
           table.clearRowData();
         }
  catch (        IOException ex) {
