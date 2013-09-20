@@ -1,6 +1,5 @@
 {
   List<CSVLineWithMetaData> batchList=new ArrayList<CSVLineWithMetaData>();
-  Object rpartitionParam=null;
   while (true) {
     if (m_errored) {
       CSVFileReader.m_errored=true;
@@ -13,20 +12,7 @@
         if (table.getRowCount() > 0) {
           PartitionProcedureCallback cbmt=new PartitionProcedureCallback(batchList,this);
           try {
-            boolean success;
-            if (!m_isMP) {
-              rpartitionParam=TheHashinator.valueToBytes(table.fetchRow(0).get(CSVPartitionProcessor.m_partitionedColumnIndex,m_partitionColumnType));
-              success=m_csvClient.callProcedure(cbmt,procName,rpartitionParam,m_tableName,table);
-            }
- else {
-              success=m_csvClient.callProcedure(cbmt,procName,m_tableName,table);
-            }
-            if (success) {
-              m_partitionProcessedCount.addAndGet(table.getRowCount());
-            }
- else {
-              m_log.error("Failed to send last batch to procedure request.");
-            }
+            submitWorkToServer(table,procName,cbmt);
           }
  catch (          IOException ex) {
             String[] info={lineList.rawLine.toString(),ex.toString()};
@@ -53,21 +39,9 @@
       if (table.getRowCount() >= m_config.batch) {
         try {
           PartitionProcedureCallback cbmt=new PartitionProcedureCallback(batchList,this);
-          boolean success;
-          if (!m_isMP) {
-            rpartitionParam=TheHashinator.valueToBytes(table.fetchRow(0).get(CSVPartitionProcessor.m_partitionedColumnIndex,m_partitionColumnType));
-            success=m_csvClient.callProcedure(cbmt,procName,rpartitionParam,m_tableName,table);
-          }
- else {
-            success=m_csvClient.callProcedure(cbmt,procName,m_tableName,table);
-          }
-          if (success) {
-            m_partitionProcessedCount.addAndGet(table.getRowCount());
-          }
- else {
-            m_log.error("Failed to send batch procedure request.");
-          }
+          submitWorkToServer(table,procName,cbmt);
           table.clearRowData();
+          batchList=new ArrayList<CSVLineWithMetaData>();
         }
  catch (        IOException ex) {
           table.clearRowData();
@@ -76,7 +50,6 @@
           CSVFileReader.m_errored=true;
           return;
         }
-        batchList=new ArrayList<CSVLineWithMetaData>();
       }
     }
   }
