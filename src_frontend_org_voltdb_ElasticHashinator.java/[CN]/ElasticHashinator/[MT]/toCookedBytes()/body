@@ -1,10 +1,10 @@
 {
-  ByteBuffer buf=ByteBuffer.allocate(4 + (m_tokens.size() * 12));
+  ByteBuffer buf=ByteBuffer.allocate(4 + (m_tokens.size() * 8));
   int numEntries=m_tokens.size();
   buf.putInt(numEntries);
   for (  Map.Entry<Long,Integer> e : m_tokens.entrySet()) {
-    long token=e.getKey();
-    buf.putLong(token);
+    int optimizedToken=(int)(e.getKey() >>> 32);
+    buf.putInt(optimizedToken);
   }
   for (  Map.Entry<Long,Integer> e : m_tokens.entrySet()) {
     int partitionId=e.getValue();
@@ -12,7 +12,12 @@
   }
   ByteArrayOutputStream bos=new ByteArrayOutputStream(buf.array().length);
   DeflaterOutputStream dos=new DeflaterOutputStream(bos);
-  dos.write(buf.array());
-  dos.close();
+  try {
+    dos.write(buf.array());
+    dos.close();
+  }
+ catch (  IOException e) {
+    throw new RuntimeException(String.format("Failed to deflate cooked bytes: %s",e.toString()));
+  }
   return bos.toByteArray();
 }
