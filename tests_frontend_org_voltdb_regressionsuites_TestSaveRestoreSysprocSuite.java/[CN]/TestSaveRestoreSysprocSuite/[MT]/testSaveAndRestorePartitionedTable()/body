@@ -67,6 +67,36 @@
     threwException=true;
   }
   assertTrue(threwException);
+  VoltDB.instance().getHostMessenger().getZK().delete(VoltZK.restoreMarker,-1);
+  VoltDB.instance().getHostMessenger().getZK().delete(VoltZK.perPartitionTxnIds,-1);
+  threwException=false;
+  try {
+    JSONObject jsObj=new JSONObject();
+    jsObj.put(SnapshotRestore.JSON_NONCE,TESTNONCE);
+    jsObj.put(SnapshotRestore.JSON_PATH,TMPDIR);
+    jsObj.put(SnapshotRestore.JSON_DUPLICATES_PATH,TMPDIR);
+    results=client.callProcedure("@SnapshotRestore",jsObj.toString()).getResults();
+    while (results[0].advanceRow()) {
+      if (results[0].getString("RESULT").equals("FAILURE")) {
+        fail(results[0].getString("ERR_MSG"));
+      }
+    }
+  }
+ catch (  Exception ex) {
+    threwException=true;
+  }
+  assertFalse(threwException);
+  boolean haveCSVFile=false;
+  for (  File f : new File(TMPDIR).listFiles()) {
+    final String name=f.getName();
+    if (name.startsWith("PARTITION_TESTER") && name.endsWith(".csv")) {
+      haveCSVFile=true;
+      if (!(f.length() > 30000)) {
+        fail("Duplicates file is not as large as expected");
+      }
+    }
+  }
+  assertTrue(haveCSVFile);
   checkTable(client,"PARTITION_TESTER","PT_ID",num_partitioned_items_per_chunk * num_partitioned_chunks);
   boolean ok=false;
   int foundItem=0;

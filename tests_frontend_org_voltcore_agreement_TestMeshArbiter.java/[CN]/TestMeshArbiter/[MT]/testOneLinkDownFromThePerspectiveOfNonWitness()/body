@@ -1,0 +1,20 @@
+{
+  Maker<SiteFailureMessage> s1f=a(SiteFailureMessage,with(sfmSurvivors,Longs.asList(0,2,3)),with(sfmFailures,sfmFailed(1)),with(sfmSafeTxns,sfmSafe(0,10,1,11,2,22,3,33)));
+  Maker<SiteFailureMessage> s2f=a(SiteFailureMessage,with(sfmSurvivors,Longs.asList(0,1,3)),with(sfmFailures,sfmFailed(2)),with(sfmSafeTxns,sfmSafe(0,10,1,11,2,22,3,33)));
+  Maker<SiteFailureMessage> s03f=a(SiteFailureMessage,with(sfmSurvivors,Longs.asList(0,1,2,3)),with(sfmFailures,sfmFailed(1,2)),with(sfmSafeTxns,sfmSafe(0,10,1,11,2,22,3,33)));
+  when(aide.getNewestSafeTransactionForInitiator(1L)).thenReturn(11L);
+  when(aide.getNewestSafeTransactionForInitiator(2L)).thenReturn(22L);
+  when(mbox.recvBlocking(any(Subject[].class),eq(5L))).thenReturn(make(s2f.but(with(sfmSource,1L)))).thenReturn(make(s03f.but(with(sfmSource,3L),with(sfmFailures,sfmFailed(1))))).thenReturn(new FaultMessage(1,2,ImmutableSet.of(0L,1L,3L)));
+  Map<Long,Long> decision=arbiter.reconfigureOnFault(hsids,new FaultMessage(2,1,ImmutableSet.of(0L,2L,3L)));
+  verify(mbox,times(1)).deliverFront(any(VoltMessage.class));
+  verify(mbox,times(1)).send(any(long[].class),any(VoltMessage.class));
+  verify(mbox).send(any(long[].class),argThat(siteFailureIs(sfmFailed(1),sfmSurvived(0,1,2,3))));
+  assertEquals(decision,ImmutableMap.<Long,Long>of());
+  reset(mbox);
+  when(mbox.recvBlocking(any(Subject[].class),eq(5L))).thenReturn(make(s1f.but(with(sfmSource,2L)))).thenReturn(make(s03f.but(with(sfmSource,0L)))).thenReturn(make(s03f.but(with(sfmSource,3L))));
+  decision=arbiter.reconfigureOnFault(hsids,new FaultMessage(1,2,ImmutableSet.of(0L,1L,3L)));
+  verify(mbox,atLeast(2)).send(any(long[].class),any(VoltMessage.class));
+  verify(mbox).send(any(long[].class),argThat(siteFailureIs(sfmFailed(1,2),sfmSurvived(0,1,2,3))));
+  verify(mbox).send(eq(new long[]{1}),argThat(failureForwardMsgIs(2,sfmFailed(1),sfmSurvived(0,2,3))));
+  assertEquals(decision,ImmutableMap.<Long,Long>of(2L,22L));
+}

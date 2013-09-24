@@ -15,7 +15,66 @@
     }
     endKeys.add((AbstractExpression)ae.getRight().clone());
   }
-  if ((endType != IndexLookupType.LT) && (endKeys.size() > 0) && (endKeys.size() < isp.getCatalogIndex().getColumns().size())) {
+  int indexSize=0;
+  String jsonstring=isp.getCatalogIndex().getExpressionsjson();
+  List<ColumnRef> indexedColRefs=null;
+  List<AbstractExpression> indexedExprs=null;
+  if (jsonstring.isEmpty()) {
+    indexedColRefs=CatalogUtil.getSortedCatalogItems(isp.getCatalogIndex().getColumns(),"index");
+    indexSize=indexedColRefs.size();
+  }
+ else {
+    try {
+      indexedExprs=AbstractExpression.fromJSONArrayString(jsonstring,null);
+      indexSize=indexedExprs.size();
+    }
+ catch (    JSONException e) {
+      e.printStackTrace();
+    }
+  }
+  if (isp.getSortDirection() != SortDirectionType.DESC && endType == IndexLookupType.EQ && endKeys.size() > 0 && endKeys.size() == indexSize - 1 && isp.getSearchKeyExpressions().size() == indexSize) {
+    VoltType missingKeyType=VoltType.INVALID;
+    boolean canPadding=true;
+    if (jsonstring.isEmpty()) {
+      int lastIndex=indexedColRefs.get(indexSize - 1).getColumn().getIndex();
+      for (      AbstractExpression expr : endComparisons) {
+        if (((TupleValueExpression)(expr.getLeft())).getColumnIndex() == lastIndex) {
+          canPadding=false;
+          break;
+        }
+      }
+      if (canPadding) {
+        missingKeyType=VoltType.get((byte)(indexedColRefs.get(indexSize - 1).getColumn().getType()));
+      }
+    }
+ else {
+      AbstractExpression lastIndexableExpr=indexedExprs.get(indexSize - 1);
+      for (      AbstractExpression expr : endComparisons) {
+        if (expr.getLeft().bindingToIndexedExpression(lastIndexableExpr) != null) {
+          canPadding=false;
+          break;
+        }
+      }
+      if (canPadding) {
+        missingKeyType=lastIndexableExpr.getValueType();
+      }
+    }
+    if (canPadding && missingKeyType.isMaxValuePaddable()) {
+      ConstantValueExpression missingKey=new ConstantValueExpression();
+      missingKey.setValueType(missingKeyType);
+      missingKey.setValue(String.valueOf(VoltType.getPaddedMaxTypeValue(missingKeyType)));
+      missingKey.setValueSize(missingKeyType.getLengthInBytesForFixedTypes());
+      endType=IndexLookupType.LTE;
+      endKeys.add(missingKey);
+    }
+ else {
+      return null;
+    }
+  }
+  if (isp.getSortDirection() != SortDirectionType.DESC && (endType != IndexLookupType.LT) && (endKeys.size() > 0) && (endKeys.size() < indexSize)) {
+    return null;
+  }
+  if ((isp.getSearchKeyExpressions().size() > 0) && (isp.getSearchKeyExpressions().size() < indexSize)) {
     return null;
   }
   return new IndexCountPlanNode(isp,apn,endType,endKeys);

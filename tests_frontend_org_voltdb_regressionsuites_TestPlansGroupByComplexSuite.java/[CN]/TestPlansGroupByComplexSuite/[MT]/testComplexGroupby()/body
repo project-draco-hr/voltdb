@@ -1,0 +1,58 @@
+{
+  loadData();
+  Client client=this.getClient();
+  ClientResponse cr=null;
+  VoltTable vt;
+  long[][] expected;
+  String[] procs={"R1.insert","P1.insert"};
+  for (  String tb : procs) {
+    cr=client.callProcedure(tb,6,10,2,"2013-07-18 02:00:00.123457");
+    cr=client.callProcedure(tb,7,40,2,"2013-09-18 02:00:00.123457");
+  }
+  String[] tbs={"R1","P1"};
+  for (  String tb : tbs) {
+    cr=client.callProcedure("@AdHoc","SELECT abs(dept) as tag, count(wage) from " + tb + " GROUP BY abs(dept) ORDER BY tag ");
+    assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+    vt=cr.getResults()[0];
+    expected=new long[][]{{1,3},{2,4}};
+    System.out.println(vt.toString());
+    compareTable(vt,expected);
+    cr=client.callProcedure("@AdHoc","SELECT (dept+1) as tag, count(wage) from " + tb + " GROUP BY dept+1 ORDER BY tag ");
+    assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+    vt=cr.getResults()[0];
+    expected=new long[][]{{2,3},{3,4}};
+    System.out.println(vt.toString());
+    compareTable(vt,expected);
+    cr=client.callProcedure("@AdHoc","SELECT abs(dept) as tag, count(wage)+1 from " + tb + " GROUP BY abs(dept) ORDER BY tag DESC;");
+    assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+    vt=cr.getResults()[0];
+    expected=new long[][]{{2,5},{1,4}};
+    System.out.println(vt.toString());
+    compareTable(vt,expected);
+    cr=client.callProcedure("@AdHoc","SELECT abs(dept-2) as tag, count(wage)+1 from " + tb + " GROUP BY abs(dept-2) ORDER BY tag;");
+    assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+    vt=cr.getResults()[0];
+    expected=new long[][]{{0,5},{1,4}};
+    System.out.println(vt.toString());
+    compareTable(vt,expected);
+    cr=client.callProcedure("@AdHoc","SELECT abs(dept-2) as tag, wage, wage/2, count(*)*2, " + "sum(id)/count(id)+1 from " + tb + " GROUP BY abs(dept-2), wage ORDER BY tag, wage;");
+    assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+    vt=cr.getResults()[0];
+    expected=new long[][]{{0,10,5,2,7},{0,40,20,4,6},{0,50,25,2,6},{1,10,5,2,2},{1,20,10,2,3},{1,30,15,2,4}};
+    System.out.println(vt.toString());
+    compareTable(vt,expected);
+    if (!isHSQL()) {
+      cr=client.callProcedure("@AdHoc","SELECT truncate(day, tm) as tag, count(id)+1, " + "sum(wage)/count(wage) from " + tb + " GROUP BY truncate(day, tm) ORDER BY tag;");
+      assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+      vt=cr.getResults()[0];
+      SimpleDateFormat dateFormat=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
+      Date time1=dateFormat.parse("2013-06-18 00:00:00.000");
+      Date time2=dateFormat.parse("2013-07-18 00:00:00.000");
+      Date time3=dateFormat.parse("2013-08-18 00:00:00.000");
+      Date time4=dateFormat.parse("2013-09-18 00:00:00.000");
+      expected=new long[][]{{time1.getTime() * 1000,2,10},{time2.getTime() * 1000,4,20},{time3.getTime() * 1000,2,40},{time4.getTime() * 1000,3,45}};
+      System.out.println(vt.toString());
+      compareTable(vt,expected);
+    }
+  }
+}

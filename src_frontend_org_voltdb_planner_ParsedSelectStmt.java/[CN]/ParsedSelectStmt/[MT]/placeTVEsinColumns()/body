@@ -1,0 +1,39 @@
+{
+  Map<AbstractExpression,Integer> aggTableIndexMap=new HashMap<AbstractExpression,Integer>();
+  Map<Integer,ParsedColInfo> indexToColumnMap=new HashMap<Integer,ParsedColInfo>();
+  int index=0;
+  for (  ParsedColInfo col : aggResultColumns) {
+    aggTableIndexMap.put(col.expression,index);
+    if (col.alias == null) {
+      col.alias="$$_" + col.expression.getExpressionType().symbol() + "_$$_"+ index;
+    }
+    indexToColumnMap.put(index,col);
+    index++;
+  }
+  if (hasComplexAgg()) {
+    newAggSchema=new NodeSchema();
+    for (    ParsedColInfo col : displayColumns) {
+      AbstractExpression expr=col.expression.replaceWithTVE(aggTableIndexMap,indexToColumnMap);
+      SchemaColumn schema_col=new SchemaColumn(col.tableName,col.columnName,col.alias,expr);
+      newAggSchema.addColumn(schema_col);
+    }
+  }
+  for (  ParsedColInfo orderCol : orderColumns) {
+    AbstractExpression expr=orderCol.expression.replaceWithTVE(aggTableIndexMap,indexToColumnMap);
+    if (hasComplexAgg()) {
+      orderCol.expression=expr;
+    }
+ else {
+      if (orderCol.expression.hasAnySubexpressionOfClass(AggregateExpression.class) || hasComplexGroupby()) {
+        orderCol.expression=expr;
+      }
+    }
+  }
+  groupByExpressions=new HashMap<String,AbstractExpression>();
+  for (  ParsedColInfo groupbyCol : groupByColumns) {
+    assert(aggTableIndexMap.get(groupbyCol.expression) != null);
+    assert(groupByExpressions.get(groupbyCol.alias) == null);
+    AbstractExpression expr=groupbyCol.expression.replaceWithTVE(aggTableIndexMap,indexToColumnMap);
+    groupByExpressions.put(groupbyCol.alias,expr);
+  }
+}

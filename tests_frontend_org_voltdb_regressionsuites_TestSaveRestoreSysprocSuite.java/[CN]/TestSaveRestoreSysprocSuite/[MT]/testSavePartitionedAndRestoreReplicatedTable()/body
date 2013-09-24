@@ -1,0 +1,79 @@
+{
+  if (isValgrind())   return;
+  System.out.println("Starting testSaveAndRestorePartitionedTable");
+  int num_partitioned_items_per_chunk=120;
+  int num_partitioned_chunks=10;
+  Client client=getClient();
+  loadLargePartitionedTable(client,"PARTITION_TESTER",num_partitioned_items_per_chunk,num_partitioned_chunks);
+  VoltTable[] results=null;
+  Thread.sleep(1000);
+  VoltTable orig_mem=null;
+  try {
+    orig_mem=client.callProcedure("@Statistics","memory",0).getResults()[0];
+    System.out.println("STATS: " + orig_mem.toString());
+  }
+ catch (  Exception ex) {
+    ex.printStackTrace();
+    fail("Statistics exception: " + ex.getMessage());
+  }
+  DefaultSnapshotDataTarget.m_simulateFullDiskWritingHeader=false;
+  validateSnapshot(false);
+  results=saveTablesWithDefaultOptions(client);
+  validateSnapshot(true);
+  while (results[0].advanceRow()) {
+    if (!results[0].getString("RESULT").equals("SUCCESS")) {
+      System.out.println(results[0].getString("ERR_MSG"));
+    }
+    assertTrue(results[0].getString("RESULT").equals("SUCCESS"));
+  }
+  try {
+    checkSnapshotStatus(client,TMPDIR,TESTNONCE,null,"SUCCESS",8);
+  }
+ catch (  Exception ex) {
+    ex.printStackTrace();
+    fail("SnapshotRestore exception: " + ex.getMessage());
+  }
+  m_config.shutDown();
+  CatalogChangeSingleProcessServer config=(CatalogChangeSingleProcessServer)m_config;
+  SaveRestoreTestProjectBuilder project=new SaveRestoreTestProjectBuilder();
+  project.addDefaultProcedures();
+  project.addSchema(SaveRestoreTestProjectBuilder.class.getResource("saverestore-ddl.sql"));
+  config.recompile(project);
+  m_config.startUp();
+  client=getClient();
+  try {
+    results=client.callProcedure("@SnapshotRestore",TMPDIR,TESTNONCE).getResults();
+    while (results[0].advanceRow()) {
+      if (results[0].getString("RESULT").equals("FAILURE")) {
+        fail(results[0].getString("ERR_MSG"));
+      }
+    }
+  }
+ catch (  Exception ex) {
+    ex.printStackTrace();
+    fail("SnapshotRestore exception: " + ex.getMessage());
+  }
+  checkTable(client,"PARTITION_TESTER","PT_ID",num_partitioned_items_per_chunk * num_partitioned_chunks);
+  boolean ok=false;
+  int foundItem=0;
+  while (!ok) {
+    ok=true;
+    foundItem=0;
+    results=client.callProcedure("@Statistics","table",0).getResults();
+    while (results[0].advanceRow()) {
+      if (results[0].getString("TABLE_NAME").equals("PARTITION_TESTER")) {
+        long tupleCount=results[0].getLong("TUPLE_COUNT");
+        ok=(ok & (tupleCount == (num_partitioned_items_per_chunk * num_partitioned_chunks)));
+        ++foundItem;
+      }
+    }
+    ok=ok & (foundItem == 3);
+  }
+  results=client.callProcedure("@Statistics","table",0).getResults();
+  while (results[0].advanceRow()) {
+    if (results[0].getString("TABLE_NAME").equals("PARTITION_TESTER")) {
+      assertEquals((num_partitioned_items_per_chunk * num_partitioned_chunks),results[0].getLong("TUPLE_COUNT"));
+    }
+  }
+  config.revertCompile();
+}
