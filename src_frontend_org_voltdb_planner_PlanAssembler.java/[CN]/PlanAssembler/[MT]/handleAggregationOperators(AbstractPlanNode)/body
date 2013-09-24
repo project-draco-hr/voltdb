@@ -2,7 +2,7 @@
   AggregatePlanNode aggNode=null;
   boolean containsAggregateExpression=m_parsedSelect.hasAggregateExpression();
   if (containsAggregateExpression || m_parsedSelect.isGrouped()) {
-    AggregatePlanNode topAggNode;
+    AggregatePlanNode topAggNode=null;
     if (m_partitioning.requiresTwoFragments()) {
       AbstractPlanNode candidate=root.getChild(0).getChild(0);
       candidate=indexAccessForGroupByExprs(candidate);
@@ -16,17 +16,21 @@
       root=indexAccessForGroupByExprs(root);
     }
     if (m_parsedSelect.isGrouped() && (root.getPlanNodeType() != PlanNodeType.INDEXSCAN || ((IndexScanPlanNode)root).getSortDirection() == SortDirectionType.INVALID)) {
-      topAggNode=new HashAggregatePlanNode();
       if (!m_partitioning.requiresTwoFragments() || m_parsedSelect.isGrouped() && (root.getChild(0).getChild(0).getPlanNodeType() != PlanNodeType.INDEXSCAN || ((IndexScanPlanNode)root.getChild(0).getChild(0)).getSortDirection() == SortDirectionType.INVALID)) {
         aggNode=new HashAggregatePlanNode();
       }
  else {
         aggNode=new AggregatePlanNode();
       }
+      if (!m_parsedSelect.mvFixInfo.needed) {
+        topAggNode=new HashAggregatePlanNode();
+      }
     }
  else {
       aggNode=new AggregatePlanNode();
-      topAggNode=new AggregatePlanNode();
+      if (!m_parsedSelect.mvFixInfo.needed) {
+        topAggNode=new AggregatePlanNode();
+      }
     }
     int outputColumnIndex=0;
     NodeSchema agg_schema=new NodeSchema();
@@ -101,7 +105,7 @@
         topAggNode.setOutputSchema(agg_schema);
       }
     }
-    NodeSchema newSchema=m_parsedSelect.getNewSchema();
+    NodeSchema newSchema=m_parsedSelect.getFinalProjectionSchema();
     root=pushDownAggregate(root,aggNode,topAggNode,m_parsedSelect.hasComplexAgg(),newSchema);
   }
   if (m_parsedSelect.isGrouped()) {
