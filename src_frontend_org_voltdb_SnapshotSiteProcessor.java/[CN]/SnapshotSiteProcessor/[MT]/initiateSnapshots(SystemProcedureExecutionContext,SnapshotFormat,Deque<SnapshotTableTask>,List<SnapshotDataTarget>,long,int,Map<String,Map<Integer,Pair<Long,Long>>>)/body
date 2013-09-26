@@ -1,0 +1,41 @@
+{
+  ExecutionSitesCurrentlySnapshotting.add(this);
+  final long now=System.currentTimeMillis();
+  m_quietUntil=now + 200;
+  m_lastSnapshotSucceded=true;
+  m_lastSnapshotTxnId=txnId;
+  m_lastSnapshotNumHosts=numHosts;
+  m_snapshotTableTasks=MiscUtils.sortedArrayListMultimap();
+  m_streamers=Maps.newHashMap();
+  m_snapshotTargets=new ArrayList<SnapshotDataTarget>();
+  m_snapshotTargetTerminators=new ArrayList<Thread>();
+  m_exportSequenceNumbersToLogOnCompletion=exportSequenceNumbers;
+  for (  final SnapshotDataTarget target : targets) {
+    if (target.needsFinalClose()) {
+      assert(m_snapshotTargets != null);
+      m_snapshotTargets.add(target);
+    }
+  }
+  for (  Map.Entry<Integer,byte[]> tablePredicates : makeTablesAndPredicatesToSnapshot(tasks).entrySet()) {
+    int tableId=tablePredicates.getKey();
+    TableStreamer streamer=new TableStreamer(tableId,format.getStreamType(),m_snapshotTableTasks.get(tableId));
+    streamer.activate(context,tablePredicates.getValue());
+    m_streamers.put(tableId,streamer);
+  }
+  int maxTableTaskSize=0;
+  for (  Collection<SnapshotTableTask> perTableTasks : m_snapshotTableTasks.asMap().values()) {
+    maxTableTaskSize=Math.max(maxTableTaskSize,perTableTasks.size());
+  }
+  if (maxTableTaskSize == 1) {
+    resizeBufferPool(m_bufferCountMultiplier);
+  }
+ else {
+    resizeBufferPool(maxTableTaskSize);
+  }
+  if (tasks.isEmpty()) {
+    queueInitialSnapshotTasks(1,now);
+  }
+ else {
+    queueInitialSnapshotTasks(m_availableSnapshotBuffers.size(),now);
+  }
+}

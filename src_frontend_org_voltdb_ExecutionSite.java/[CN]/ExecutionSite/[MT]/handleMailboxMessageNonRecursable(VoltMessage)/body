@@ -26,7 +26,7 @@
       return;
     }
     assert(!m_rejoining);
-    if (m_recoveryProcessor != null || m_rejoinSnapshotProcessor != null) {
+    if (m_rejoinSnapshotProcessor != null) {
       m_rejoinLog.error("ExecutionSite is not ready to handle " + "recovery request from site " + CoreUtils.hsIdToString(rm.sourceSite()));
       RecoveryMessage recoveryResponse=new RecoveryMessage(false);
       m_mailbox.send(rm.sourceSite(),recoveryResponse);
@@ -35,7 +35,6 @@
     final long recoveringPartitionTxnId=rm.txnId();
     m_recoveryStartTime=System.currentTimeMillis();
     m_rejoinLog.info("Recovery initiate received at site " + CoreUtils.hsIdToString(m_siteId) + " from site "+ CoreUtils.hsIdToString(rm.sourceSite())+ " requesting recovery start before txnid "+ recoveringPartitionTxnId);
-    m_recoveryProcessor=RecoverySiteProcessorSource.createProcessor(this,rm,m_context.database,m_tracker,ee,m_mailbox,m_siteId,m_onRejoinCompletion,m_recoveryMessageHandler);
   }
  else   if (message instanceof RejoinMessage) {
     RejoinMessage rm=(RejoinMessage)message;
@@ -54,12 +53,12 @@
     ee.exportAction(exportm.m_m.isSync(),exportm.m_m.getAckOffset(),0,exportm.m_m.getPartitionId(),exportm.m_m.getSignature());
   }
  else   if (message instanceof PotentialSnapshotWorkMessage) {
-    m_snapshotter.doSnapshotWork(m_systemProcedureContext,ee);
+    m_snapshotter.doSnapshotWork(m_systemProcedureContext);
   }
  else   if (message instanceof ExecutionSiteLocalSnapshotMessage) {
     hostLog.info("Executing local snapshot. Completing any on-going snapshots.");
     try {
-      HashSet<Exception> completeSnapshotWork=m_snapshotter.completeSnapshotWork(m_systemProcedureContext,ee);
+      HashSet<Exception> completeSnapshotWork=m_snapshotter.completeSnapshotWork(m_systemProcedureContext);
       if (completeSnapshotWork != null && !completeSnapshotWork.isEmpty()) {
         for (        Exception e : completeSnapshotWork) {
           hostLog.error("Error completing in progress snapshot.",e);
@@ -74,7 +73,7 @@
     ExecutionSiteLocalSnapshotMessage snapshotMsg=(ExecutionSiteLocalSnapshotMessage)message;
     String nonce=snapshotMsg.nonce + "_" + snapshotMsg.m_roadblockTransactionId;
     SnapshotSaveAPI saveAPI=new SnapshotSaveAPI();
-    VoltTable startSnapshotting=saveAPI.startSnapshotting(snapshotMsg.path,nonce,SnapshotFormat.NATIVE,(byte)0x1,snapshotMsg.m_roadblockTransactionId,Long.MIN_VALUE,new long[0],null,m_systemProcedureContext,CoreUtils.getHostnameOrAddress(),TransactionIdManager.getTimestampFromTransactionId(snapshotMsg.m_roadblockTransactionId));
+    VoltTable startSnapshotting=saveAPI.startSnapshotting(snapshotMsg.path,nonce,SnapshotFormat.NATIVE,(byte)0x1,snapshotMsg.m_roadblockTransactionId,Long.MIN_VALUE,new long[0],null,m_systemProcedureContext,CoreUtils.getHostnameOrAddress(),null,TransactionIdManager.getTimestampFromTransactionId(snapshotMsg.m_roadblockTransactionId));
     if (SnapshotSiteProcessor.ExecutionSitesCurrentlySnapshotting.isEmpty() && snapshotMsg.crash) {
       String msg="Partition detection snapshot completed. Shutting down. " + "Result: " + startSnapshotting.toString();
       VoltDB.crashLocalVoltDB(msg,false,null);
