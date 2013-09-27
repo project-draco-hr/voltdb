@@ -102,4 +102,44 @@
     outputColumnIndex++;
   }
   mvFixInfo.reAggNode.setOutputSchema(aggSchema);
+  assert(joinTree != null);
+  assert(joinTree.m_whereExpr == null);
+  AbstractExpression where=joinTree.m_joinExpr;
+  if (where != null) {
+    List<TupleValueExpression> needReAggTVEs=new ArrayList<TupleValueExpression>();
+    for (int i=numOfGroupByColumns; i < mvColumnArray.size(); i++) {
+      Column mvCol=mvColumnArray.get(i);
+      TupleValueExpression tve=new TupleValueExpression();
+      tve.setColumnIndex(i);
+      tve.setColumnName(mvCol.getName());
+      tve.setTableName(mvTableName);
+      tve.setColumnAlias(mvCol.getName());
+      tve.setValueType(VoltType.get((byte)mvCol.getType()));
+      tve.setValueSize(mvCol.getSize());
+      needReAggTVEs.add(tve);
+    }
+    List<AbstractExpression> exprs=ExpressionUtil.uncombine(where);
+    List<AbstractExpression> pushdownExprs=new ArrayList<AbstractExpression>();
+    List<AbstractExpression> aggPostExprs=new ArrayList<AbstractExpression>();
+    for (    AbstractExpression expr : exprs) {
+      ArrayList<AbstractExpression> tves=expr.findBaseTVEs();
+      boolean pushdown=true;
+      for (      TupleValueExpression needReAggTVE : needReAggTVEs) {
+        if (tves.contains(needReAggTVE)) {
+          pushdown=false;
+          break;
+        }
+      }
+      if (pushdown) {
+        pushdownExprs.add(expr);
+      }
+ else {
+        aggPostExprs.add(expr);
+      }
+    }
+    AbstractExpression aggPostExpr=ExpressionUtil.combine(aggPostExprs);
+    mvFixInfo.reAggNode.setPostPredicate(aggPostExpr);
+    assert(joinTree.m_whereExpr == null);
+    joinTree.m_joinExpr=ExpressionUtil.combine(pushdownExprs);
+  }
 }
