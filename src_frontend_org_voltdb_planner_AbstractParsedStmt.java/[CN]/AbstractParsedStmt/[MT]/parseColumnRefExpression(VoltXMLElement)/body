@@ -1,16 +1,24 @@
 {
   String alias=exprNode.attributes.get("alias");
   String tableName=exprNode.attributes.get("table");
-  if (tableName == null && !exprNode.children.isEmpty()) {
-    VoltXMLElement childExpr=exprNode.children.get(0);
-    if (childExpr.name.toLowerCase().equals("columnref")) {
-      return parseColumnRefExpression(childExpr);
+  List<TupleValueExpression> childExprs=null;
+  if (!exprNode.children.isEmpty()) {
+    childExprs=new ArrayList<TupleValueExpression>();
+    for (    VoltXMLElement childRefExpr : exprNode.children) {
+      if (childRefExpr.name.toLowerCase().equals("columnref")) {
+        childExprs.add(parseColumnRefExpression(childRefExpr));
+      }
     }
   }
   String columnName=exprNode.attributes.get("column");
   if (tableName == null) {
-    assert(m_DDLIndexedTable != null);
-    tableName=m_DDLIndexedTable.getTypeName();
+    if (childExprs != null && !childExprs.isEmpty()) {
+      tableName=childExprs.get(0).getTableName();
+    }
+    if (tableName == null) {
+      assert(m_DDLIndexedTable != null);
+      tableName=m_DDLIndexedTable.getTypeName();
+    }
   }
   assert(tableName != null);
   String tableAlias=exprNode.attributes.get("tablealias");
@@ -19,6 +27,9 @@
   }
   addTableToQueryCache(tableName,tableAlias);
   TupleValueExpression expr=new TupleValueExpression(tableName,tableAlias,columnName,alias);
+  if (childExprs != null && !childExprs.isEmpty()) {
+    expr.setChildExpressions(childExprs);
+  }
   expr.resolveForDB(m_db);
   return expr;
 }
