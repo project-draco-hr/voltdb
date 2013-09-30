@@ -8,12 +8,13 @@
   for (  Entry<Integer,SendWork> e : m_outstandingWork.entrySet()) {
     SendWork work=e.getValue();
     if ((now - work.m_ts) > m_writeTimeout) {
-      rejoinLog.error(String.format("A snapshot write task failed after a timeout (currently %d seconds outstanding).",(now - work.m_ts) / 1000));
-      m_writeFailed.set(true);
+      RuntimeException exception=new RuntimeException(String.format("A snapshot write task failed after a timeout (currently %d seconds outstanding).",(now - work.m_ts) / 1000));
+      rejoinLog.error(exception.getMessage());
+      m_writeFailed.compareAndSet(null,exception);
       break;
     }
   }
-  if (m_writeFailed.get()) {
+  if (m_writeFailed.get() != null) {
     clearOutstanding();
   }
   VoltDB.instance().scheduleWork(new Watchdog(bytesWritten,m_writeTimeout),WATCHDOG_PERIOS_S,-1,TimeUnit.SECONDS);
