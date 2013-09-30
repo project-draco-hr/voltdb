@@ -1,0 +1,73 @@
+{
+  if (root.getPlanNodeType() == PlanNodeType.SEQSCAN && m_parsedSelect.isGrouped()) {
+    Table targetTable=m_catalogDb.getTables().get(((SeqScanPlanNode)root).getTargetTableName());
+    CatalogMap<Index> allIndexes=targetTable.getIndexes();
+    ArrayList<ParsedColInfo> groupBys=m_parsedSelect.groupByColumns;
+    for (    Index index : allIndexes) {
+      if (!IndexType.isScannable(index.getType())) {
+        continue;
+      }
+      boolean replacable=true;
+      String exprsjson=index.getExpressionsjson();
+      if (exprsjson.isEmpty()) {
+        List<ColumnRef> indexedColRefs=CatalogUtil.getSortedCatalogItems(index.getColumns(),"index");
+        if (groupBys.size() > indexedColRefs.size()) {
+          continue;
+        }
+        for (int i=0; i < groupBys.size(); i++) {
+          if (groupBys.get(i).expression.getExpressionType() != ExpressionType.VALUE_TUPLE) {
+            replacable=false;
+            break;
+          }
+          boolean foundMatch=false;
+          for (int j=0; j < groupBys.size(); j++) {
+            if (indexedColRefs.get(j).getColumn().getName().equals(groupBys.get(i).columnName)) {
+              foundMatch=true;
+              break;
+            }
+          }
+          if (!foundMatch) {
+            replacable=false;
+            break;
+          }
+        }
+        if (replacable) {
+          IndexScanPlanNode indexScanNode=new IndexScanPlanNode((SeqScanPlanNode)root,null,index,SortDirectionType.ASC);
+          return indexScanNode;
+        }
+      }
+ else {
+        List<AbstractExpression> indexedExprs=null;
+        try {
+          indexedExprs=AbstractExpression.fromJSONArrayString(exprsjson,null);
+        }
+ catch (        JSONException e) {
+          e.printStackTrace();
+          assert(false);
+          return root;
+        }
+        if (groupBys.size() > indexedExprs.size()) {
+          continue;
+        }
+        for (int i=0; i < groupBys.size(); i++) {
+          boolean foundMatch=false;
+          for (int j=0; j < groupBys.size(); j++) {
+            if (groupBys.get(i).expression.equals(indexedExprs.get(j))) {
+              foundMatch=true;
+              break;
+            }
+          }
+          if (!foundMatch) {
+            replacable=false;
+            break;
+          }
+        }
+        if (replacable) {
+          IndexScanPlanNode indexScanNode=new IndexScanPlanNode((SeqScanPlanNode)root,null,index,SortDirectionType.ASC);
+          return indexScanNode;
+        }
+      }
+    }
+  }
+  return root;
+}
