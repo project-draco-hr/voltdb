@@ -9,6 +9,7 @@
     m.send(pf.siteId,ftm);
   }
   Map<Integer,List<VoltTable>> receivedDependencyIds=new HashMap<Integer,List<VoltTable>>();
+  long total=0;
   while (true) {
     VoltMessage vm=m.recvBlocking(1000);
     if (vm == null)     continue;
@@ -33,6 +34,15 @@
       FragmentResponseMessage frm=(FragmentResponseMessage)vm;
       final int dependencyId=frm.getTableDependencyIdAtIndex(0);
       if (dependencyIds.contains(dependencyId)) {
+        VoltTable table=frm.getTableAtIndex(0);
+        if (table != null) {
+          table.advanceRow();
+          Long count=table.getLong("COUNT");
+          total+=count;
+          if (count != 0) {
+            System.out.println("Processed: " + total);
+          }
+        }
         receivedDependencyIds.put(dependencyId,Arrays.asList(new VoltTable[]{frm.getTableAtIndex(0)}));
         log.trace("Received dependency at " + CoreUtils.hsIdToString(m.getHSId()) + "-"+ CoreUtils.hsIdToString(m_site.getCorrespondingSiteId())+ " from "+ CoreUtils.hsIdToString(frm.m_sourceHSId)+ " have "+ receivedDependencyIds.size()+ " "+ receivedDependencyIds.keySet()+ " and need "+ dependencyIds.size()+ " "+ dependencyIds);
         if (receivedDependencyIds.size() == dependencyIds.size() && receivedDependencyIds.keySet().equals(dependencyIds)) {
