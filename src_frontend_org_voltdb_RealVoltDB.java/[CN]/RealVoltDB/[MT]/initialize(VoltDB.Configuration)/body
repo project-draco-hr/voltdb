@@ -180,8 +180,9 @@ synchronized (m_startAndStopLock) {
     if (m_commandLog != null && (isRejoin || m_joining)) {
       m_commandLog.initForRejoin(m_catalogContext,Long.MIN_VALUE,clusterConfig.getPartitionCount(),true,m_config.m_commandLogBinding,m_iv2InitiatorStartingTxnIds);
     }
+    boolean usingCommandLog=false;
     try {
-      boolean usingCommandLog=m_config.m_isEnterprise && m_catalogContext.cluster.getLogconfig().get("log").getEnabled();
+      usingCommandLog=m_config.m_isEnterprise && m_catalogContext.cluster.getLogconfig().get("log").getEnabled();
       m_leaderAppointer=new LeaderAppointer(m_messenger,clusterConfig.getPartitionCount(),m_deployment.getCluster().getKfactor(),m_catalogContext.cluster.getNetworkpartition(),m_catalogContext.cluster.getFaultsnapshots().get("CLUSTER_PARTITION"),usingCommandLog,topo,m_MPI);
       m_globalServiceElector.registerService(m_leaderAppointer);
       for (      Initiator iv2init : m_iv2Initiators) {
@@ -260,7 +261,21 @@ synchronized (m_startAndStopLock) {
     m_clientInterfaces.get(0).schedulePeriodicWorks();
     logDebuggingInfo(m_config.m_adminPort,m_config.m_httpPort,m_httpPortExtraLogMessage,m_jsonEnabled);
     if (clusterConfig.getReplicationFactor() == 0) {
-      hostLog.warn("Running without redundancy (k=0) is not recommended for production use.");
+      consoleLog.warn("This is not a highly available cluster. K-Safety is set to 0.");
+    }
+    if (!usingCommandLog) {
+      boolean usingPeridoicSnapshots=false;
+      for (      SnapshotSchedule ss : m_catalogContext.database.getSnapshotschedule()) {
+        if (ss.getEnabled()) {
+          usingPeridoicSnapshots=true;
+        }
+      }
+      if (usingPeridoicSnapshots) {
+        consoleLog.warn("Durability is limited to periodic snapshots. Command logging is off.");
+      }
+ else {
+        consoleLog.warn("Durability is turned off. Command logging is off.");
+      }
     }
     if ((m_catalogContext.cluster.getNetworkpartition() == false) && (clusterConfig.getReplicationFactor() > 0)) {
       hostLog.warn("Running a redundant (k-safe) cluster with network " + "partition detection disabled is not recommended for production use.");
