@@ -86,7 +86,7 @@ synchronized (m_startAndStopLock) {
       m_messenger.createMailbox(elasticHSId,new SiteMailbox(m_messenger,elasticHSId));
     }
     if (m_joining) {
-      Class<?> elasticJoinCoordClass=MiscUtils.loadProClass("org.voltdb.join.ElasticJoinCoordinator","Elastic",false);
+      Class<?> elasticJoinCoordClass=MiscUtils.loadProClass("org.voltdb.join.ElasticJoinNodeCoordinator","Elastic",false);
       try {
         Constructor<?> constructor=elasticJoinCoordClass.getConstructor(HostMessenger.class);
         m_joinCoordinator=(JoinCoordinator)constructor.newInstance(m_messenger);
@@ -111,9 +111,6 @@ synchronized (m_startAndStopLock) {
           if (partitions.size() == 0) {
             VoltDB.crashLocalVoltDB("The VoltDB cluster already has enough nodes to satisfy " + "the requested k-safety factor of " + clusterConfig.getReplicationFactor() + ".\n"+ "No more nodes can join.",false,null);
           }
-        }
- else         if (m_joining) {
-          partitions=m_joinCoordinator.getPartitionsToAdd();
         }
  else {
           partitions=ClusterConfig.partitionsForHost(topo,m_messenger.getHostId());
@@ -186,8 +183,9 @@ synchronized (m_startAndStopLock) {
     if (m_commandLog != null && (isRejoin || m_joining)) {
       m_commandLog.initForRejoin(m_catalogContext,Long.MIN_VALUE,clusterConfig.getPartitionCount(),true,m_config.m_commandLogBinding,m_iv2InitiatorStartingTxnIds);
     }
+    boolean usingCommandLog=false;
     try {
-      boolean usingCommandLog=m_config.m_isEnterprise && m_catalogContext.cluster.getLogconfig().get("log").getEnabled();
+      usingCommandLog=m_config.m_isEnterprise && m_catalogContext.cluster.getLogconfig().get("log").getEnabled();
       m_leaderAppointer=new LeaderAppointer(m_messenger,clusterConfig.getPartitionCount(),m_deployment.getCluster().getKfactor(),m_catalogContext.cluster.getNetworkpartition(),m_catalogContext.cluster.getFaultsnapshots().get("CLUSTER_PARTITION"),usingCommandLog,topo,m_MPI);
       m_globalServiceElector.registerService(m_leaderAppointer);
       for (      Initiator iv2init : m_iv2Initiators) {
@@ -266,7 +264,21 @@ synchronized (m_startAndStopLock) {
     m_clientInterfaces.get(0).schedulePeriodicWorks();
     logDebuggingInfo(m_config.m_adminPort,m_config.m_httpPort,m_httpPortExtraLogMessage,m_jsonEnabled);
     if (clusterConfig.getReplicationFactor() == 0) {
-      hostLog.warn("Running without redundancy (k=0) is not recommended for production use.");
+      consoleLog.warn("This is not a highly available cluster. K-Safety is set to 0.");
+    }
+    if (!usingCommandLog) {
+      boolean usingPeridoicSnapshots=false;
+      for (      SnapshotSchedule ss : m_catalogContext.database.getSnapshotschedule()) {
+        if (ss.getEnabled()) {
+          usingPeridoicSnapshots=true;
+        }
+      }
+      if (usingPeridoicSnapshots) {
+        consoleLog.warn("Durability is limited to periodic snapshots. Command logging is off.");
+      }
+ else {
+        consoleLog.warn("Durability is turned off. Command logging is off.");
+      }
     }
     if ((m_catalogContext.cluster.getNetworkpartition() == false) && (clusterConfig.getReplicationFactor() > 0)) {
       hostLog.warn("Running a redundant (k-safe) cluster with network " + "partition detection disabled is not recommended for production use.");
@@ -274,6 +286,17 @@ synchronized (m_startAndStopLock) {
     assert(m_clientInterfaces.size() > 0);
     ClientInterface ci=m_clientInterfaces.get(0);
     ci.initializeSnapshotDaemon(m_messenger.getZK(),m_globalServiceElector);
+    try {
+      String clSnapshotPath=m_catalogContext.cluster.getLogconfig().get("log").getInternalsnapshotpath();
+      Class<?> elasticServiceClass=MiscUtils.loadProClass("org.voltdb.join.ElasticJoinCoordinator","Elastic",false);
+      if (elasticServiceClass != null && TheHashinator.getCurrentConfig().getFirst() == HashinatorType.ELASTIC) {
+        Constructor<?> constructor=elasticServiceClass.getConstructor(HostMessenger.class,ClientInterface.class,Cartographer.class,String.class,int.class);
+        m_elasticJoinService=(ElasticJoinService)constructor.newInstance(m_messenger,m_clientInterfaces.get(0),m_cartographer,clSnapshotPath,m_deployment.getCluster().getKfactor());
+      }
+    }
+ catch (    Exception e) {
+      VoltDB.crashLocalVoltDB("Failed to instantiate elastic join service",false,e);
+    }
     if (m_restoreAgent != null) {
       m_restoreAgent.setCatalogContext(m_catalogContext);
       m_restoreAgent.setInitiator(new Iv2TransactionCreator(m_clientInterfaces.get(0)));
