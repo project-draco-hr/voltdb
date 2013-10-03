@@ -1,0 +1,45 @@
+{
+  Thread.sleep(STARTUP_DELAY);
+  try {
+    client.callProcedure("CrashVoltDBProc");
+  }
+ catch (  Exception e) {
+  }
+  client.close();
+  cluster.shutDown();
+  int pid=getpid(voltDbRootPath);
+  File heapdumpGenerated=new File("/tmp","java_pid" + pid + ".hprof");
+  heapdumpGenerated.deleteOnExit();
+  PrintWriter writer=new PrintWriter(heapdumpGenerated.getPath());
+  writer.println("fake heapdump file");
+  writer.close();
+  File collectionDecompressed=collect(voltDbRootPath,false);
+  File heapdumpFile=new File(collectionDecompressed,"java_pid" + pid + ".hprof");
+  assertTrue(heapdumpFile.exists());
+  File catalogJar=new File(collectionDecompressed,"catalog.jar");
+  assertTrue(catalogJar.exists());
+  File deploymentXml=new File(collectionDecompressed,"deployment.xml");
+  assertTrue(deploymentXml.exists());
+  File dmesgdata=new File(collectionDecompressed,"dmesgdata");
+  assertTrue(dmesgdata.exists());
+  File logDir=new File(collectionDecompressed,"log");
+  assertTrue(logDir.exists());
+  assertTrue(logDir.listFiles().length > 0);
+  List<String> logPaths=getLogPaths(voltDbRootPath);
+  for (  File file : logDir.listFiles()) {
+    boolean match=false;
+    for (    String path : logPaths) {
+      if (file.getName().startsWith(new File(path).getName())) {
+        match=true;
+        break;
+      }
+    }
+    assertTrue(match);
+  }
+  File voltdbCrashDir=new File(collectionDecompressed,"voltdb_crash");
+  assertTrue(voltdbCrashDir.exists());
+  assertTrue(voltdbCrashDir.listFiles().length > 0);
+  for (  File file : voltdbCrashDir.listFiles()) {
+    assertTrue(file.getName().startsWith("voltdb_crash") && file.getName().endsWith(".txt"));
+  }
+}

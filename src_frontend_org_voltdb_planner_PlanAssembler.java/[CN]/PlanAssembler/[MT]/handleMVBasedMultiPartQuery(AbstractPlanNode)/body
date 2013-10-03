@@ -1,0 +1,31 @@
+{
+  MVFixInfo mvFixInfo=m_parsedSelect.mvFixInfo;
+  HashAggregatePlanNode reAggNode=new HashAggregatePlanNode(mvFixInfo.reAggNode);
+  reAggNode.clearChildren();
+  reAggNode.clearParents();
+  AbstractPlanNode receiveNode=root;
+  if (root.getPlanNodeType() == PlanNodeType.RECEIVE) {
+    reAggNode.addAndLinkChild(root);
+    root=reAggNode;
+  }
+ else {
+    List<AbstractPlanNode> recList=root.findAllNodesOfType(PlanNodeType.RECEIVE);
+    assert(recList.size() == 1);
+    receiveNode=recList.get(0);
+    AbstractPlanNode parent=receiveNode.getParent(0);
+    receiveNode.clearParents();
+    parent.clearChildren();
+    reAggNode.addAndLinkChild(receiveNode);
+    parent.addAndLinkChild(reAggNode);
+  }
+  assert(receiveNode instanceof ReceivePlanNode);
+  AbstractPlanNode sendNode=receiveNode.getChild(0);
+  assert(sendNode instanceof SendPlanNode);
+  AbstractPlanNode sendNodeChild=sendNode.getChild(0);
+  List<AbstractScanPlanNode> scanList=sendNodeChild.getScanNodeList();
+  assert(scanList.size() == 1);
+  AbstractScanPlanNode scanNode=scanList.get(0);
+  assert(scanNode.getTargetTableName().equals(mvFixInfo.mvTable.getTypeName()));
+  scanNode.addInlinePlanNode(mvFixInfo.scanInlinedProjectionNode);
+  return root;
+}
