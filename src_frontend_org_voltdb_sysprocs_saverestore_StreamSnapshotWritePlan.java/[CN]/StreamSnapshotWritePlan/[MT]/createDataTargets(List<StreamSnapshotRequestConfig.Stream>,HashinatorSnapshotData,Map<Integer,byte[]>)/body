@@ -1,0 +1,27 @@
+{
+  byte[] hashinatorConfig=null;
+  if (hashinatorData != null) {
+    ByteBuffer hashinatorConfigBuf=ByteBuffer.allocate(8 + hashinatorData.m_serData.length);
+    hashinatorConfigBuf.putLong(hashinatorData.m_version);
+    hashinatorConfigBuf.put(hashinatorData.m_serData);
+    hashinatorConfig=hashinatorConfigBuf.array();
+  }
+  List<DataTargetInfo> sdts=Lists.newArrayList();
+  if (!localStreams.isEmpty()) {
+    Mailbox mb=VoltDB.instance().getHostMessenger().createMailbox();
+    StreamSnapshotDataTarget.SnapshotSender sender=new StreamSnapshotDataTarget.SnapshotSender(mb);
+    StreamSnapshotAckReceiver ackReceiver=new StreamSnapshotAckReceiver(mb);
+    new Thread(sender,"Stream Snapshot Sender").start();
+    new Thread(ackReceiver,"Stream Snapshot Ack Receiver").start();
+    SnapshotSiteProcessor.m_tasksOnSnapshotCompletion.offer(createCompletionTask(mb));
+    for (    StreamSnapshotRequestConfig.Stream stream : localStreams) {
+      SNAP_LOG.debug("Sites to stream from: " + CoreUtils.hsIdCollectionToString(stream.streamPairs.keySet()));
+      for (      Entry<Long,Long> entry : stream.streamPairs.entries()) {
+        long srcHSId=entry.getKey();
+        long destHSId=entry.getValue();
+        sdts.add(new DataTargetInfo(stream,srcHSId,destHSId,new StreamSnapshotDataTarget(destHSId,hashinatorConfig,schemas,sender,ackReceiver)));
+      }
+    }
+  }
+  return sdts;
+}

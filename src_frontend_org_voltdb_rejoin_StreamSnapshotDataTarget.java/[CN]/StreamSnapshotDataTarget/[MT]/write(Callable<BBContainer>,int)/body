@@ -8,7 +8,7 @@
  catch (    Exception e) {
       return Futures.immediateFailedFuture(e);
     }
-    if (m_writeFailed.get() || (chunk == null)) {
+    if (m_writeFailed.get() != null || (chunk == null)) {
       if (chunk != null) {
         chunk.discard();
       }
@@ -16,21 +16,15 @@
     }
     if (m_closed.get()) {
       chunk.discard();
-      m_writeFailed.set(true);
       IOException e=new IOException("Trying to write snapshot data " + "after the stream is closed");
+      m_writeFailed.set(e);
       return Futures.immediateFailedFuture(e);
     }
     if (m_schemas.containsKey(tableId)) {
       byte[] schema=m_schemas.remove(tableId);
       rejoinLog.debug("Sending schema for table " + tableId);
-      ByteBuffer buf=ByteBuffer.allocate(schema.length + 1 + 4+ 4);
-      buf.put((byte)StreamSnapshotMessageType.SCHEMA.ordinal());
-      buf.putInt(m_blockIndex);
-      buf.putInt(tableId);
-      buf.put(schema);
-      buf.flip();
       rejoinLog.trace("Writing schema as part of this write");
-      send(m_blockIndex++,DBBPool.wrapBB(buf));
+      send(StreamSnapshotMessageType.SCHEMA,tableId,schema);
     }
     chunk.b.put((byte)StreamSnapshotMessageType.DATA.ordinal());
     chunk.b.putInt(m_blockIndex);

@@ -1,0 +1,45 @@
+def main():
+    if (len(sys.argv) < 3):
+        usage()
+        exit((-1))
+    if (not os.path.exists(sys.argv[1])):
+        print sys.argv[1], 'does not exist'
+        exit((-1))
+    prefix = sys.argv[2]
+    path = os.path.join(sys.argv[1], sys.argv[2])
+    ndays = 2000
+    if (len(sys.argv) >= 4):
+        ndays = int(sys.argv[3])
+    width = None
+    height = None
+    if (len(sys.argv) >= 5):
+        width = int(sys.argv[4])
+    if (len(sys.argv) >= 6):
+        height = int(sys.argv[5])
+    branches = get_branches(STATS_SERVER, 21212, ndays)
+    stats = get_stats(STATS_SERVER, 21212, ndays)
+    root_path = path
+    filenames = []
+    iorder = 0
+    bc = [(branches[i], branches[j]) for i in range(len(branches)) for j in range(len(branches)) if (i != j)]
+    for bg in bc:
+        merged = {}
+        missing = [('Cases missing from %s:' % bg[1])]
+        for (group, data) in stats.iteritems():
+            if (bg[0] == group[0]):
+                k = (bg[1], group[1], group[2])
+                if (k in stats):
+                    m = stats[k]
+                    merged[(bg + (group[1], group[2]))] = {'y': data[0], 'x': stats[k][0], }
+                else:
+                    missing.append(('%s %d %s' % (group[1], group[2], ['node', 'nodes'][(group[2] > 1)])))
+        app = ('%s vs %s' % bg)
+        app_filename = app.replace(' ', '_')
+        "\n        latency95_filename = '%s-latency95-%s.png' % (prefix, app_filename)\n        latency99_filename = '%s-latency99-%s.png' % (prefix, app_filename)\n        throughput_filename = '%s-throughput-%s.png' % (prefix, app_filename)\n        filenames.append((app, latency95_filename, latency99_filename, throughput_filename, iorder))\n        "
+        throughput_filename = ('%s-throughput-%s.png' % (prefix, app_filename))
+        filenames.append((app, throughput_filename, iorder))
+        '\n        plot(app + " latency95", "Time", "Latency (ms)",\n             path + "-latency95-" + app_filename + ".png", width, height, app,\n             data, \'lat95\')\n\n        plot(app + " latency99", "Time", "Latency (ms)",\n             path + "-latency99-" + app_filename + ".png", width, height, app,\n             data, \'lat99\')\n        '
+        plot((app + ' throughput'), ('%s Thpt tx/sec' % bg[1]), ('%s Thpt tx/sec' % bg[0]), (((path + '-throughput-') + app_filename) + '.png'), width, height, merged, missing)
+    index_file = open((root_path + '-index.html'), 'w')
+    index_file.write(generate_index_file(filenames))
+    index_file.close()

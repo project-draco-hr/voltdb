@@ -1,0 +1,45 @@
+{
+  Map<Long,TransactionTask> currentSet;
+  if (!m_currentReads.isEmpty()) {
+    assert(m_currentWrites.isEmpty());
+    tmLog.debug("MpTTQ: repairing reads");
+    for (    Long txnId : m_currentReads.keySet()) {
+      m_sitePool.repair(txnId,task);
+    }
+    currentSet=m_currentReads;
+  }
+ else {
+    tmLog.debug("MpTTQ: repairing writes");
+    m_taskQueue.offer(task);
+    currentSet=m_currentWrites;
+  }
+  for (  Entry<Long,TransactionTask> e : currentSet.entrySet()) {
+    if (e.getValue() instanceof MpProcedureTask) {
+      MpProcedureTask next=(MpProcedureTask)e.getValue();
+      tmLog.debug("MpTTQ: poisoning task: " + next);
+      next.doRestart(masters,partitionMasters);
+      MpTransactionState txn=(MpTransactionState)next.getTransactionState();
+      FragmentTaskMessage dummy=new FragmentTaskMessage(0L,0L,0L,0L,false,false,false);
+      FragmentResponseMessage poison=new FragmentResponseMessage(dummy,0L);
+      TransactionRestartException restart=new TransactionRestartException("Transaction being restarted due to fault recovery or shutdown.",next.getTxnId());
+      poison.setStatus(FragmentResponseMessage.UNEXPECTED_ERROR,restart);
+      txn.offerReceivedFragmentResponse(poison);
+    }
+ else {
+    }
+  }
+  Iterator<TransactionTask> iter=m_backlog.iterator();
+  while (iter.hasNext()) {
+    TransactionTask tt=iter.next();
+    if (tt instanceof MpProcedureTask) {
+      MpProcedureTask next=(MpProcedureTask)tt;
+      tmLog.debug("Repair updating task: " + next + " with masters: "+ masters);
+      next.updateMasters(masters,partitionMasters);
+    }
+ else     if (tt instanceof EveryPartitionTask) {
+      EveryPartitionTask next=(EveryPartitionTask)tt;
+      tmLog.debug("Repair updating EPT task: " + next + " with masters: "+ masters);
+      next.updateMasters(masters);
+    }
+  }
+}
