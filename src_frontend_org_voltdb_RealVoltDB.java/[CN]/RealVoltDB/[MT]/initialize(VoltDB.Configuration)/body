@@ -156,6 +156,9 @@ synchronized (m_startAndStopLock) {
     }
     Inits inits=new Inits(this,1);
     inits.doInitializationWork();
+    if (m_joining && m_config.m_replicationRole == ReplicationRole.REPLICA) {
+      VoltDB.crashLocalVoltDB("Elastic join is prohibited on a replica cluster.",false,null);
+    }
     collectLocalNetworkMetadata();
     final CatalogSpecificPlanner csp=new CatalogSpecificPlanner(m_asyncCompilerAgent,m_catalogContext);
     File drOverflowDir=new File(m_catalogContext.cluster.getVoltroot(),"dr_overflow");
@@ -287,7 +290,10 @@ synchronized (m_startAndStopLock) {
     ClientInterface ci=m_clientInterfaces.get(0);
     ci.initializeSnapshotDaemon(m_messenger.getZK(),m_globalServiceElector);
     try {
-      String clSnapshotPath=m_catalogContext.cluster.getLogconfig().get("log").getInternalsnapshotpath();
+      String clSnapshotPath=null;
+      if (m_catalogContext.cluster.getLogconfig().get("log").getEnabled()) {
+        clSnapshotPath=m_catalogContext.cluster.getLogconfig().get("log").getInternalsnapshotpath();
+      }
       Class<?> elasticServiceClass=MiscUtils.loadProClass("org.voltdb.join.ElasticJoinCoordinator","Elastic",false);
       if (elasticServiceClass != null && TheHashinator.getCurrentConfig().getFirst() == HashinatorType.ELASTIC) {
         Constructor<?> constructor=elasticServiceClass.getConstructor(HostMessenger.class,ClientInterface.class,Cartographer.class,String.class,int.class);
