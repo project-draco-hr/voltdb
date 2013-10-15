@@ -10,18 +10,23 @@
   }
   byte[] cookedBytes=bos.toByteArray();
   int numEntries=(cookedBytes.length >= 4 ? ByteBuffer.wrap(cookedBytes).getInt() : 0);
-  int tokensSize=TokenCompressor.COMPRESSED_SIZE * numEntries;
+  int tokensSize=4 * numEntries;
   int partitionsSize=4 * numEntries;
   if (numEntries <= 0 || cookedBytes.length != 4 + tokensSize + partitionsSize) {
     throw new RuntimeException("Bad elastic hashinator cooked config size.");
   }
+  long tokens=unsafe.allocateMemory(8 * numEntries);
   ByteBuffer tokenBuf=ByteBuffer.wrap(cookedBytes,4,tokensSize);
   ByteBuffer partitionBuf=ByteBuffer.wrap(cookedBytes,4 + tokensSize,partitionsSize);
-  ImmutableSortedMap.Builder<Long,Integer> builder=ImmutableSortedMap.naturalOrder();
+  int lastToken=Integer.MIN_VALUE;
   for (int ii=0; ii < numEntries; ii++) {
-    final long token=TokenCompressor.uncompress(tokenBuf.getInt());
+    int token=tokenBuf.getInt();
+    Preconditions.checkArgument(token >= lastToken);
+    lastToken=token;
+    long ptr=tokens + (ii * 8);
+    unsafe.putInt(ptr,token);
     final int partitionId=partitionBuf.getInt();
-    builder.put(token,partitionId);
+    unsafe.putInt(ptr + 4,partitionId);
   }
-  return builder.build();
+  return Pair.of(tokens,numEntries);
 }
