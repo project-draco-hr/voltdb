@@ -1,0 +1,41 @@
+{
+  final int maxOverFlow=m_clientIndexes.size() * 10000;
+  final int overFlowSize=m_clientOverFlow.size();
+  int dcount=0;
+  int drainedPartitions=0;
+  long[] rec=new long[3];
+  for (  int partId : m_readUpTo.keySet()) {
+    int upTo=(int)m_readUpTo.get(partId).get();
+    if (upTo > 0 && overFlowSize < maxOverFlow) {
+      upTo+=1000;
+    }
+    for (int i=0; i < upTo; ++i) {
+      String trace=readNextClientFileLine(partId);
+      if (trace == null) {
+        System.out.println("No more client txn IDs for partition id " + partId);
+        drainedPartitions++;
+        break;
+      }
+      int recColumns=splitClientTrace(trace,rec);
+      if (recColumns == rec.length) {
+        long rowid=rec[0];
+        long txid=rec[1];
+        long ts=rec[2];
+        if (txid >= 0) {
+          m_clientTxnIds.put(txid,ts);
+          countDownReadUpTo(txid);
+        }
+ else {
+          m_clientTxnIdOrphans.add(rowid);
+        }
+        dcount++;
+      }
+ else       if (trace != null) {
+        System.out.println("WARN read malformed trace " + trace);
+      }
+    }
+  }
+  System.out.println("!_!_! DEBUG !_!_! read " + dcount + " client txid records");
+  readOrphanedClientRecords();
+  return drainedPartitions != m_clientIndexes.size();
+}
