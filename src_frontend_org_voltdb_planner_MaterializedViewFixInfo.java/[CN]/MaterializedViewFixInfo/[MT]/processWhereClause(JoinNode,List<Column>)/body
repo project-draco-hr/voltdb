@@ -1,0 +1,41 @@
+{
+  AbstractExpression where=processJoinTree(joinTree);
+  if (where != null) {
+    List<TupleValueExpression> needReAggTVEs=new ArrayList<TupleValueExpression>();
+    for (int i=numOfGroupByColumns; i < mvColumnArray.size(); i++) {
+      Column mvCol=mvColumnArray.get(i);
+      TupleValueExpression tve=new TupleValueExpression();
+      tve.setColumnIndex(i);
+      tve.setColumnName(mvCol.getName());
+      tve.setTableName(getMVTableName());
+      tve.setColumnAlias(mvCol.getName());
+      tve.setValueType(VoltType.get((byte)mvCol.getType()));
+      tve.setValueSize(mvCol.getSize());
+      needReAggTVEs.add(tve);
+    }
+    List<AbstractExpression> pushdownExprs=new ArrayList<AbstractExpression>();
+    List<AbstractExpression> aggPostExprs=new ArrayList<AbstractExpression>();
+    List<AbstractExpression> exprs=ExpressionUtil.uncombine(where);
+    for (    AbstractExpression expr : exprs) {
+      ArrayList<AbstractExpression> tves=expr.findBaseTVEs();
+      boolean pushdown=true;
+      for (      TupleValueExpression needReAggTVE : needReAggTVEs) {
+        if (tves.contains(needReAggTVE)) {
+          pushdown=false;
+          break;
+        }
+      }
+      if (pushdown) {
+        pushdownExprs.add(expr);
+      }
+ else {
+        aggPostExprs.add(expr);
+      }
+    }
+    AbstractExpression aggPostExpr=ExpressionUtil.combine(aggPostExprs);
+    reAggNode.setPostPredicate(aggPostExpr);
+    AbstractExpression scanFilters=ExpressionUtil.combine(pushdownExprs);
+    boolean updated=updateJoinFilters(joinTree,scanFilters);
+    assert(updated);
+  }
+}
