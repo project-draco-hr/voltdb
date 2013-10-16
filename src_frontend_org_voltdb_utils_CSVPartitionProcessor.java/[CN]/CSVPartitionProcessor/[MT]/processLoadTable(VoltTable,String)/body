@@ -1,0 +1,56 @@
+{
+  List<CSVLineWithMetaData> batchList=new ArrayList<CSVLineWithMetaData>();
+  while (true) {
+    if (m_errored) {
+      CSVFileReader.m_errored=true;
+      return;
+    }
+    List<CSVLineWithMetaData> mlineList=new ArrayList<CSVLineWithMetaData>();
+    m_partitionQueue.drainTo(mlineList,m_config.batch);
+    for (    CSVLineWithMetaData lineList : mlineList) {
+      if (lineList == m_endOfData) {
+        if (table.getRowCount() > 0) {
+          PartitionProcedureCallback cbmt=new PartitionProcedureCallback(batchList,this);
+          try {
+            submitWorkToServer(table,procName,cbmt,false);
+          }
+ catch (          IOException ex) {
+            String[] info={lineList.rawLine.toString(),ex.toString()};
+            m_errored=synchronizeErrorInfo(lineList.lineNumber,info);
+          }
+        }
+        return;
+      }
+      try {
+        if (addRowToVoltTableFromLine(table,lineList.correctedLine)) {
+          batchList.add(lineList);
+        }
+ else {
+          String[] info={lineList.rawLine.toString(),"Missing or Invalid Data in Row."};
+          m_errored=synchronizeErrorInfo(lineList.lineNumber,info);
+          continue;
+        }
+      }
+ catch (      Exception ex) {
+        String[] info={lineList.rawLine.toString(),ex.toString()};
+        m_errored=synchronizeErrorInfo(lineList.lineNumber,info);
+        continue;
+      }
+      if (table.getRowCount() >= m_config.batch) {
+        try {
+          PartitionProcedureCallback cbmt=new PartitionProcedureCallback(batchList,this);
+          submitWorkToServer(table,procName,cbmt,false);
+          table.clearRowData();
+          batchList=new ArrayList<CSVLineWithMetaData>();
+        }
+ catch (        IOException ex) {
+          table.clearRowData();
+          String[] info={lineList.rawLine.toString(),ex.toString()};
+          m_errored=synchronizeErrorInfo(lineList.lineNumber,info);
+          CSVFileReader.m_errored=true;
+          return;
+        }
+      }
+    }
+  }
+}

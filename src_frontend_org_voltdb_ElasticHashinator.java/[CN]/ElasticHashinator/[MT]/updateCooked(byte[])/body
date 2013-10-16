@@ -1,0 +1,27 @@
+{
+  ByteArrayOutputStream bos=new ByteArrayOutputStream((int)(compressedData.length * 1.5));
+  InflaterOutputStream dos=new InflaterOutputStream(bos);
+  try {
+    dos.write(compressedData);
+    dos.close();
+  }
+ catch (  IOException e) {
+    throw new RuntimeException("Unable to decompress elastic hashinator data.");
+  }
+  byte[] cookedBytes=bos.toByteArray();
+  int numEntries=(cookedBytes.length >= 4 ? ByteBuffer.wrap(cookedBytes).getInt() : 0);
+  int tokensSize=TokenCompressor.COMPRESSED_SIZE * numEntries;
+  int partitionsSize=4 * numEntries;
+  if (numEntries <= 0 || cookedBytes.length != 4 + tokensSize + partitionsSize) {
+    throw new RuntimeException("Bad elastic hashinator cooked config size.");
+  }
+  ByteBuffer tokenBuf=ByteBuffer.wrap(cookedBytes,4,tokensSize);
+  ByteBuffer partitionBuf=ByteBuffer.wrap(cookedBytes,4 + tokensSize,partitionsSize);
+  ImmutableSortedMap.Builder<Long,Integer> builder=ImmutableSortedMap.naturalOrder();
+  for (int ii=0; ii < numEntries; ii++) {
+    final long token=TokenCompressor.uncompress(tokenBuf.getInt());
+    final int partitionId=partitionBuf.getInt();
+    builder.put(token,partitionId);
+  }
+  return builder.build();
+}

@@ -1,2 +1,51 @@
 {
+  String node;
+  if ((node=stmtNode.attributes.get("distinct")) != null)   distinct=Boolean.parseBoolean(node);
+  VoltXMLElement limitElement=null, offsetElement=null;
+  VoltXMLElement displayElement=null, orderbyElement=null, groupbyElement=null;
+  for (  VoltXMLElement child : stmtNode.children) {
+    if (child.name.equalsIgnoreCase("limit")) {
+      limitElement=child;
+    }
+ else     if (child.name.equalsIgnoreCase("offset")) {
+      offsetElement=child;
+    }
+ else     if (child.name.equalsIgnoreCase("columns")) {
+      displayElement=child;
+    }
+ else     if (child.name.equalsIgnoreCase("ordercolumns")) {
+      orderbyElement=child;
+    }
+ else     if (child.name.equalsIgnoreCase("groupcolumns")) {
+      groupbyElement=child;
+    }
+  }
+  parseLimitAndOffset(limitElement,offsetElement);
+  if (aggregationList == null) {
+    aggregationList=new ArrayList<AbstractExpression>();
+  }
+  assert(displayElement != null);
+  parseDisplayColumns(displayElement,false);
+  if (groupbyElement != null) {
+    parseGroupByColumns(groupbyElement);
+    insertToColumnList(aggResultColumns,groupByColumns);
+  }
+  if (orderbyElement != null && !guaranteesUniqueRow()) {
+    parseOrderColumns(orderbyElement,false);
+  }
+  aggregationList=null;
+  if (needComplexAggregation()) {
+    fillUpAggResultColumns();
+  }
+ else {
+    aggResultColumns=displayColumns;
+  }
+  placeTVEsinColumns();
+  if (mayNeedAvgPushdown()) {
+    processAvgPushdownOptimization(displayElement,orderbyElement,groupbyElement);
+  }
+  if (tableList.size() == 1) {
+    mvFixInfo.mvTable=tableList.get(0);
+    processMVBasedQueryFix(mvFixInfo,m_db,scanColumns,joinTree);
+  }
 }

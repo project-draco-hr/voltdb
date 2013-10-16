@@ -41,7 +41,7 @@
   }
   if (catProc == null) {
     String errorMessage="Procedure " + task.procName + " was not found";
-    authLog.l7dlog(Level.WARN,LogKeys.auth_ClientInterface_ProcedureNotFound.name(),new Object[]{task.procName},null);
+    RateLimitedLogger.tryLogForMessage(errorMessage + ". This message is rate limited to once every 60 seconds.",System.currentTimeMillis(),1000 * 60,authLog,Level.WARN);
     return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],errorMessage,task.clientHandle);
   }
   error=checkPolicies(null,user,task,catProc);
@@ -60,7 +60,7 @@
       return dispatchUpdateApplicationCatalog(task,handler,ccxn);
     }
  else     if (task.procName.equals("@LoadMultipartitionTable")) {
-      if (VoltDB.instance().isIV2Enabled() && task.getType() == ProcedureInvocationType.REPLICATED) {
+      if (task.getType() == ProcedureInvocationType.REPLICATED) {
         sendSentinelsToAllPartitions(task.getOriginalTxnId());
       }
     }
@@ -96,7 +96,7 @@
       return dispatchStatistics(OpsSelector.SNAPSHOTDELETE,task,ccxn);
     }
  else     if (task.procName.equals("@SnapshotRestore")) {
-      ClientResponseImpl retval=SnapshotRestore.transformRestoreParamsToJSON(task);
+      ClientResponseImpl retval=SnapshotUtil.transformRestoreParamsToJSON(task);
       if (retval != null)       return retval;
     }
     if (task.procName.equals("@Pause") || task.procName.equals("@Resume")) {
@@ -105,13 +105,10 @@
       }
     }
   }
-  int[] involvedPartitions;
-  if (catProc.getSinglepartition() == false) {
-    involvedPartitions=m_allPartitions;
-  }
- else {
+  int partition=-1;
+  if (catProc.getSinglepartition()) {
     try {
-      involvedPartitions=new int[]{getPartitionForProcedure(catProc.getPartitionparameter(),catProc.getPartitioncolumn().getType(),task)};
+      partition=getPartitionForProcedure(catProc.getPartitionparameter(),catProc.getPartitioncolumn().getType(),task);
     }
  catch (    RuntimeException e) {
       String errorMessage="Error sending procedure " + task.procName + " to the correct partition. Make sure parameter values are correct.";
@@ -123,7 +120,7 @@ catch (    Exception e) {
       return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],e.getMessage(),task.clientHandle);
     }
   }
-  boolean success=createTransaction(handler.connectionId(),task,catProc.getReadonly(),catProc.getSinglepartition(),catProc.getEverysite(),involvedPartitions,buf.capacity(),now);
+  boolean success=createTransaction(handler.connectionId(),task,catProc.getReadonly(),catProc.getSinglepartition(),catProc.getEverysite(),partition,buf.capacity(),now);
   if (!success) {
     return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],ClientResponseImpl.IGNORED_TRANSACTION,task.clientHandle);
   }
