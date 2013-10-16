@@ -1,6 +1,6 @@
 {
-  String mvTableName=mvFixInfo.mvTable.getTypeName();
-  Table srcTable=mvFixInfo.mvTable.getMaterializer();
+  String mvTableName=mvTable.getTypeName();
+  Table srcTable=mvTable.getMaterializer();
   if (srcTable == null) {
     return;
   }
@@ -42,11 +42,12 @@
       }
     }
   }
+  assert(numOfGroupByColumns > 0);
   if (partitionColInGroupbyCols) {
     return;
   }
   mvFixInfo.needed=true;
-  Set<SchemaColumn> mvNewScanColumns=new HashSet<SchemaColumn>();
+  mvFixInfo.mvTable=mvTable;
   Set<SchemaColumn> mvDDLGroupbyColumns=new HashSet<SchemaColumn>();
   Map<String,ExpressionType> mvColumnAggType=new HashMap<String,ExpressionType>();
   List<Column> mvColumnArray=CatalogUtil.getSortedCatalogItems(mvFixInfo.mvTable.getColumns(),"index");
@@ -58,24 +59,20 @@
     mvColumnAggType.put(mvCol.getName(),reAggType);
   }
   NodeSchema inlineProjSchema=new NodeSchema();
-  assert(scanColumns.keySet().size() <= 1);
-  if (scanColumns.keySet().size() == 1) {
-    mvNewScanColumns.addAll(scanColumns.get(mvTableName));
-  }
   for (  SchemaColumn scol : mvNewScanColumns) {
     inlineProjSchema.addColumn(scol);
   }
-  assert(numOfGroupByColumns > 0);
   for (int i=0; i < numOfGroupByColumns; i++) {
     Column mvCol=mvColumnArray.get(i);
+    String colName=mvCol.getName();
     TupleValueExpression tve=new TupleValueExpression();
     tve.setColumnIndex(i);
-    tve.setColumnName(mvCol.getName());
+    tve.setColumnName(colName);
     tve.setTableName(mvTableName);
-    tve.setColumnAlias(mvCol.getName());
+    tve.setColumnAlias(colName);
     tve.setValueType(VoltType.get((byte)mvCol.getType()));
     tve.setValueSize(mvCol.getSize());
-    SchemaColumn scol=new SchemaColumn(mvTableName,mvCol.getName(),mvCol.getName(),tve);
+    SchemaColumn scol=new SchemaColumn(mvTableName,colName,colName,tve);
     mvDDLGroupbyColumns.add(scol);
     if (!mvNewScanColumns.contains(scol)) {
       mvNewScanColumns.add(scol);
