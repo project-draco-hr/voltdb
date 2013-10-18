@@ -1,14 +1,18 @@
 {
   if (response.getStatus() != ClientResponse.SUCCESS) {
-    m_log.info("Batch Failed Will be processed by Failure Processor: " + response.getStatusString());
+    m_log.info("Unable to insert rows in a batch.  Attempting to insert them one-by-one.");
+    m_log.info("Note: this will result in reduced insertion performance.");
+    m_log.debug("Batch Failed Will be processed by Failure Processor: " + response.getStatusString());
     m_processor.m_partitionProcessedCount.addAndGet(-1 * m_batchList.size());
     if (!m_processor.m_errored) {
       if (m_failedQueue != null) {
         m_failedQueue.addAll(m_batchList);
       }
     }
+    m_batchWaitCount.decrementAndGet();
     return;
   }
+  m_batchWaitCount.decrementAndGet();
   long executed=response.getResults()[0].asScalarLong();
   long currentCount=CSVPartitionProcessor.m_partitionAcknowledgedCount.addAndGet(executed);
   int newMultiple=(int)currentCount / m_reportEveryNRows;
