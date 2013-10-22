@@ -3,10 +3,7 @@
     return;
   }
   boolean adminstate=exportType.isEnabled();
-  String connector=RawProcessor.class.getName();
-  if (exportType.getOnserver() != null) {
-    connector=GuestProcessor.class.getName();
-  }
+  String connector="org.voltdb.export.processors.GuestProcessor";
   Database db=catalog.getClusters().get("cluster").getDatabases().get("database");
   org.voltdb.catalog.Connector catconn=db.getConnectors().get("0");
   if (catconn == null) {
@@ -17,34 +14,33 @@
   }
   catconn.setLoaderclass(connector);
   catconn.setEnabled(adminstate);
-  ExportOnServerType exportOnServer=exportType.getOnserver();
-  if (exportOnServer != null) {
-    String exportClientClassName=null;
-switch (exportOnServer.getExportto()) {
+  String exportClientClassName=null;
+switch (exportType.getTarget()) {
 case FILE:
-      exportClientClassName=ExportToFileClient.class.getName();
-    break;
+    exportClientClassName="org.voltdb.exportclient.ExportToFileClient";
+  break;
 case JDBC:
-  exportClientClassName="org.voltdb.exportclient.JDBCExportClient";
+exportClientClassName="org.voltdb.exportclient.JDBCExportClient";
 break;
 case CUSTOM:
 try {
-CatalogUtil.class.getClassLoader().loadClass(exportOnServer.getExportconnectorclass());
-exportClientClassName=exportOnServer.getExportconnectorclass();
+CatalogUtil.class.getClassLoader().loadClass(exportType.getExportconnectorclass());
+exportClientClassName=exportType.getExportconnectorclass();
 }
  catch (ClassNotFoundException ex) {
-hostLog.error("Custom Export failed to configure, failed to load " + " export plugin class: " + exportOnServer.getExportconnectorclass() + " Disabling export.");
+hostLog.error("Custom Export failed to configure, failed to load " + " export plugin class: " + exportType.getExportconnectorclass() + " Disabling export.");
 exportType.setEnabled(false);
 return;
 }
 break;
 }
 if (exportClientClassName != null && exportClientClassName.trim().length() > 0) {
-ConnectorProperty prop=catconn.getConfig().add(GuestProcessor.EXPORT_TO_TYPE);
-prop.setName(GuestProcessor.EXPORT_TO_TYPE);
-prop.setValue(exportClientClassName);
+ConnectorProperty prop=catconn.getConfig().add(ExportDataProcessor.EXPORT_TO_TYPE);
+prop.setName(ExportDataProcessor.EXPORT_TO_TYPE);
+String dexportClientClassName=System.getProperty(ExportDataProcessor.EXPORT_TO_TYPE,exportClientClassName);
+prop.setValue(dexportClientClassName);
 }
-ExportConfigurationType exportConfiguration=exportOnServer.getConfiguration();
+ExportConfigurationType exportConfiguration=exportType.getConfiguration();
 if (exportConfiguration != null) {
 List<PropertyType> configProperties=exportConfiguration.getProperty();
 if (configProperties != null && !configProperties.isEmpty()) {
@@ -52,7 +48,6 @@ for (PropertyType configProp : configProperties) {
 ConnectorProperty prop=catconn.getConfig().add(configProp.getName());
 prop.setName(configProp.getName());
 prop.setValue(configProp.getValue());
-}
 }
 }
 }

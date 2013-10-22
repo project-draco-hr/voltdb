@@ -3,11 +3,9 @@
     final VoltTable results=constructPartitioningResultsTable();
     List<Integer> tableIds=new ArrayList<Integer>();
     List<String> tableNames=new ArrayList<String>();
-    for (    Table t : context.getDatabase().getTables()) {
-      if (!t.getIsreplicated() && t.getMaterializer() == null) {
-        tableIds.add(t.getRelativeIndex());
-        tableNames.add(t.getTypeName());
-      }
+    for (    Table t : CatalogUtil.getNormalTables(context.getDatabase(),false)) {
+      tableIds.add(t.getRelativeIndex());
+      tableNames.add(t.getTypeName());
     }
     long mispartitionedCounts[]=context.getSiteProcedureConnection().validatePartitioning(Longs.toArray(tableIds),(Integer)params.toArray()[0],(byte[])params.toArray()[1]);
     for (int ii=0; ii < tableNames.size(); ii++) {
@@ -19,6 +17,21 @@
     assert(dependencies.size() > 0);
     final VoltTable results=VoltTableUtil.unionTables(dependencies.get(DEP_validatePartitioning));
     return new DependencyPair(DEP_validatePartitioningResults,results);
+  }
+ else   if (fragmentId == SysProcFragmentId.PF_matchesHashinator) {
+    final VoltTable matchesHashinator=constructHashinatorMatchesTable();
+    byte[] configBytes=(byte[])params.toArray()[1];
+    if (configBytes == null) {
+      configBytes=LegacyHashinator.getConfigureBytes(0);
+    }
+    final long givenConfigurationSignature=TheHashinator.computeConfigurationSignature(configBytes);
+    matchesHashinator.addRow(context.getHostId(),CoreUtils.getSiteIdFromHSId(context.getSiteId()),context.getPartitionId(),givenConfigurationSignature == TheHashinator.getConfigurationSignature() ? (byte)1 : (byte)0);
+    return new DependencyPair(DEP_matchesHashinator,matchesHashinator);
+  }
+ else   if (fragmentId == SysProcFragmentId.PF_matchesHashinatorResults) {
+    assert(dependencies.size() > 0);
+    final VoltTable results=VoltTableUtil.unionTables(dependencies.get(DEP_matchesHashinator));
+    return new DependencyPair(DEP_matchesHashinatorResults,results);
   }
   assert(false);
   return null;

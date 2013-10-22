@@ -3,11 +3,6 @@
     fetchSnapshotTxnId();
     exitRestore();
     m_state=State.REPLAY;
-    try {
-      m_restoreHeartbeatThread.join();
-    }
- catch (    InterruptedException e) {
-    }
     m_snapshotMonitor.addInterest(this);
     m_replayAgent.replay();
   }
@@ -18,6 +13,11 @@
     m_snapshotMonitor.removeInterest(this);
     if (m_callback != null) {
       m_callback.onRestoreCompletion(m_truncationSnapshot,m_truncationSnapshotPerPartition);
+    }
+    if (m_isLeader) {
+      if (!m_replayAgent.checkAndBalancePartitions()) {
+        VoltDB.crashLocalVoltDB("Failed to finish balancing partitions",false,null);
+      }
     }
   }
 }

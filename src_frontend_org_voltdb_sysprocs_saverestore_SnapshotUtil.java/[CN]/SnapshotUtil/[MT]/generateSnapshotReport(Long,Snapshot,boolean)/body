@@ -1,0 +1,176 @@
+{
+  CharArrayWriter caw=new CharArrayWriter();
+  PrintWriter pw=new PrintWriter(caw);
+  boolean snapshotConsistent=true;
+  String indentString="";
+  pw.println(indentString + "TxnId: " + snapshotTxnId);
+  pw.println(indentString + "Date: " + new Date(org.voltdb.TransactionIdManager.getTimestampFromTransactionId(snapshotTxnId)));
+  pw.println(indentString + "Digests:");
+  indentString="\t";
+  TreeSet<String> digestTablesSeen=new TreeSet<String>();
+  if (snapshot.m_digests.isEmpty()) {
+    pw.println(indentString + "No digests found.");
+    snapshotConsistent=false;
+  }
+ else {
+    boolean inconsistent=false;
+    Map<Integer,List<Integer>> inconsistentDigests=new HashMap<Integer,List<Integer>>();
+    for (int ii=0; ii < snapshot.m_digests.size(); ii++) {
+      inconsistentDigests.put(ii,new ArrayList<Integer>());
+      Set<String> tables=snapshot.m_digestTables.get(ii);
+      for (int zz=0; zz < snapshot.m_digests.size(); zz++) {
+        if (zz == ii) {
+          continue;
+        }
+        if (!tables.equals(snapshot.m_digestTables.get(zz))) {
+          snapshotConsistent=false;
+          inconsistent=true;
+          inconsistentDigests.get(ii).add(zz);
+        }
+      }
+    }
+    if (!inconsistent) {
+      for (int ii=0; ii < snapshot.m_digests.size(); ii++) {
+        pw.println(indentString + snapshot.m_digests.get(ii).getPath());
+      }
+    }
+ else {
+      pw.println(indentString + "Not all digests are consistent");
+      indentString=indentString + "\t";
+      for (      Map.Entry<Integer,List<Integer>> entry : inconsistentDigests.entrySet()) {
+        File left=snapshot.m_digests.get(entry.getKey());
+        pw.println(indentString + left.getPath() + " is inconsistent with:");
+        indentString=indentString + "\t";
+        for (        Integer id : entry.getValue()) {
+          File right=snapshot.m_digests.get(id);
+          pw.println(indentString + right.getPath());
+        }
+        indentString=indentString.substring(1);
+      }
+    }
+    indentString=indentString.substring(1);
+    pw.print(indentString + "Tables: ");
+    int ii=0;
+    for (int jj=0; jj < snapshot.m_digestTables.size(); jj++) {
+      for (      String table : snapshot.m_digestTables.get(jj)) {
+        digestTablesSeen.add(table);
+      }
+    }
+    for (    String table : digestTablesSeen) {
+      if (ii != 0) {
+        pw.print(", ");
+      }
+      ii++;
+      pw.print(table);
+    }
+    pw.print("\n");
+  }
+  if (expectHashinator) {
+    pw.print(indentString + "Hash configuration: ");
+    if (snapshot.m_hashConfig != null) {
+      pw.println(indentString + "present");
+    }
+ else {
+      pw.println(indentString + "not present");
+      snapshotConsistent=false;
+    }
+  }
+  Integer totalPartitionCount=null;
+  indentString=indentString + "\t";
+  for (  Map.Entry<String,TableFiles> entry : snapshot.m_tableFiles.entrySet()) {
+    if (entry.getValue().m_isReplicated) {
+      continue;
+    }
+    for (    Integer partitionCount : entry.getValue().m_totalPartitionCounts) {
+      if (totalPartitionCount == null) {
+        totalPartitionCount=partitionCount;
+      }
+ else       if (!totalPartitionCount.equals(partitionCount)) {
+        snapshotConsistent=false;
+        pw.println(indentString + "Partition count is not consistent throughout snapshot files for " + entry.getKey()+ ". Saw "+ partitionCount+ " and "+ totalPartitionCount);
+      }
+    }
+  }
+  TreeSet<String> consistentTablesSeen=new TreeSet<String>();
+  for (  Map.Entry<String,TableFiles> entry : snapshot.m_tableFiles.entrySet()) {
+    TableFiles tableFiles=entry.getValue();
+    TreeSet<Integer> partitionsAvailable=new TreeSet<Integer>();
+    int kk=0;
+    for (    Set<Integer> validPartitionIds : tableFiles.m_validPartitionIds) {
+      if (tableFiles.m_completed.get(kk++)) {
+        partitionsAvailable.addAll(validPartitionIds);
+      }
+    }
+    boolean partitionsPresent=false;
+    if ((partitionsAvailable.size() == (tableFiles.m_isReplicated ? 1 : totalPartitionCount)) && (partitionsAvailable.first() == 0) && (partitionsAvailable.last() == (tableFiles.m_isReplicated ? 1 : totalPartitionCount) - 1)) {
+      partitionsPresent=true;
+    }
+    boolean hasCorruptPartitions=false;
+    for (    Set<Integer> corruptIds : tableFiles.m_corruptParititionIds) {
+      if (!corruptIds.isEmpty()) {
+        hasCorruptPartitions=true;
+        snapshotConsistent=false;
+      }
+    }
+    pw.println(indentString + "Table name: " + entry.getKey());
+    indentString=indentString + "\t";
+    pw.println(indentString + "Replicated: " + entry.getValue().m_isReplicated);
+    pw.println(indentString + "Valid partition set available: " + partitionsPresent);
+    pw.println(indentString + "Corrupt partitions present: " + hasCorruptPartitions);
+    pw.println(indentString + "Files: ");
+    indentString=indentString + "\t";
+    for (int ii=0; ii < tableFiles.m_files.size(); ii++) {
+      String corruptPartitionIdString="";
+      int zz=0;
+      for (      Integer partitionId : tableFiles.m_corruptParititionIds.get(ii)) {
+        if (zz != 0) {
+          corruptPartitionIdString=corruptPartitionIdString + ", ";
+        }
+        zz++;
+        corruptPartitionIdString=corruptPartitionIdString + partitionId;
+      }
+      String validPartitionIdString="";
+      zz=0;
+      for (      Integer partitionId : tableFiles.m_validPartitionIds.get(ii)) {
+        if (zz != 0) {
+          validPartitionIdString=validPartitionIdString + ", ";
+        }
+        zz++;
+        validPartitionIdString=validPartitionIdString + partitionId;
+      }
+      if (corruptPartitionIdString.isEmpty()) {
+        consistentTablesSeen.add(entry.getKey());
+        pw.println(indentString + tableFiles.m_files.get(ii).getPath() + " Completed: "+ tableFiles.m_completed.get(ii)+ " Partitions: "+ validPartitionIdString);
+      }
+ else {
+        pw.println(indentString + tableFiles.m_files.get(ii).getPath() + " Completed: "+ tableFiles.m_completed.get(ii)+ " Valid Partitions: "+ validPartitionIdString+ " Corrupt Partitions: "+ corruptPartitionIdString);
+      }
+    }
+    indentString=indentString.substring(2);
+  }
+  indentString=indentString.substring(1);
+  StringBuilder missingTables=new StringBuilder(8192);
+  if (!consistentTablesSeen.containsAll(digestTablesSeen)) {
+    snapshotConsistent=false;
+    missingTables.append("Missing tables: ");
+    Set<String> missingTablesSet=new TreeSet<String>(digestTablesSeen);
+    missingTablesSet.removeAll(consistentTablesSeen);
+    int hh=0;
+    for (    String tableName : missingTablesSet) {
+      if (hh > 0) {
+        missingTables.append(", ");
+      }
+      missingTables.append(tableName);
+      hh++;
+    }
+    missingTables.append('\n');
+  }
+  if (snapshotConsistent) {
+    return Pair.of(true,"Snapshot valid\n" + caw.toString());
+  }
+ else {
+    StringBuilder sb=new StringBuilder(8192);
+    sb.append("Snapshot corrupted\n").append(missingTables).append(caw.toCharArray());
+    return Pair.of(false,sb.toString());
+  }
+}
