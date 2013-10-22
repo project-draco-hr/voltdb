@@ -13,28 +13,30 @@
       tve.setValueSize(mvCol.getSize());
       needReAggTVEs.add(tve);
     }
-    List<AbstractExpression> pushdownExprs=new ArrayList<AbstractExpression>();
+    List<AbstractExpression> remaningExprs=new ArrayList<AbstractExpression>();
     List<AbstractExpression> aggPostExprs=new ArrayList<AbstractExpression>();
     List<AbstractExpression> exprs=ExpressionUtil.uncombine(where);
     for (    AbstractExpression expr : exprs) {
       ArrayList<AbstractExpression> tves=expr.findBaseTVEs();
-      boolean pushdown=true;
-      for (      TupleValueExpression needReAggTVE : needReAggTVEs) {
-        if (tves.contains(needReAggTVE)) {
-          pushdown=false;
-          break;
+      boolean reAggPostExprs=false;
+      if (fromNumberOfTables(tves) == 1) {
+        for (        TupleValueExpression needReAggTVE : needReAggTVEs) {
+          if (tves.contains(needReAggTVE)) {
+            reAggPostExprs=true;
+            break;
+          }
         }
       }
-      if (pushdown) {
-        pushdownExprs.add(expr);
+      if (reAggPostExprs) {
+        aggPostExprs.add(expr);
       }
  else {
-        aggPostExprs.add(expr);
+        remaningExprs.add(expr);
       }
     }
     AbstractExpression aggPostExpr=ExpressionUtil.combine(aggPostExprs);
     m_reAggNode.setPostPredicate(aggPostExpr);
-    AbstractExpression scanFilters=ExpressionUtil.combine(pushdownExprs);
+    AbstractExpression scanFilters=ExpressionUtil.combine(remaningExprs);
     boolean updated=updateJoinFilters(joinTree,scanFilters);
     assert(updated);
   }
