@@ -37,6 +37,7 @@
   lastProgressTimestamp=System.currentTimeMillis();
   schedulePeriodicStats();
   schedulePeriodicCheckpoint();
+  scheduleRefreshPermits();
   log.info("Running benchmark...");
   BigTableLoader partitionedLoader=new BigTableLoader(client,"bigp",(config.partfillerrowmb * 1024 * 1024) / config.fillerrowsize,config.fillerrowsize,50,permits);
   partitionedLoader.start();
@@ -56,13 +57,8 @@
     clientThread.start();
     clientThreads.add(clientThread);
   }
-  final long benchmarkEndTime=System.currentTimeMillis() + (1000l * config.duration);
-  long currentTs=System.currentTimeMillis();
-  while (benchmarkEndTime > currentTs) {
-    rateLimiter.updateActivePermits(currentTs);
-    Thread.yield();
-    currentTs=System.currentTimeMillis();
-  }
+  log.info("All threads started...");
+  Thread.sleep((1000l * config.duration) - (System.currentTimeMillis() - benchmarkStartTS));
   replicatedLoader.shutdown();
   partitionedLoader.shutdown();
   readThread.shutdown();
@@ -85,6 +81,7 @@
   es.shutdownNow();
   client.drain();
   client.close();
+  permitsTimer.cancel();
   log.info(HORIZONTAL_RULE);
   log.info("Benchmark Complete");
 }
