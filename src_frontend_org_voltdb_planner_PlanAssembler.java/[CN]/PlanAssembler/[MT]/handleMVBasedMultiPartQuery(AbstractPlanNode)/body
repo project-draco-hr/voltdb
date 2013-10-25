@@ -4,41 +4,38 @@
   reAggNode.clearChildren();
   reAggNode.clearParents();
   AbstractPlanNode receiveNode=root;
+  AbstractPlanNode reAggParent=null;
   if (root.getPlanNodeType() == PlanNodeType.RECEIVE) {
-    reAggNode.addAndLinkChild(root);
     root=reAggNode;
   }
  else {
     List<AbstractPlanNode> recList=root.findAllNodesOfType(PlanNodeType.RECEIVE);
     assert(recList.size() == 1);
     receiveNode=recList.get(0);
-    AbstractPlanNode parent=receiveNode.getParent(0);
-    boolean result=parent.replaceChild(receiveNode,reAggNode);
+    reAggParent=receiveNode.getParent(0);
+    boolean result=reAggParent.replaceChild(receiveNode,reAggNode);
     assert(result);
-    reAggNode.addAndLinkChild(receiveNode);
   }
-  AbstractScanPlanNode mvScanNode=null;
+  reAggNode.addAndLinkChild(receiveNode);
   assert(receiveNode instanceof ReceivePlanNode);
   AbstractPlanNode sendNode=receiveNode.getChild(0);
   assert(sendNode instanceof SendPlanNode);
   AbstractPlanNode sendNodeChild=sendNode.getChild(0);
-  if (mvFixInfo.isJoin()) {
+  HashAggregatePlanNode reAggNodeForReplace=null;
+  if (m_parsedSelect.tableList.size() > 1) {
+    reAggNodeForReplace=reAggNode;
+  }
+  boolean find=mvFixInfo.processScanNodeWithReAggNode(sendNode,reAggNodeForReplace);
+  assert(find);
+  if (m_parsedSelect.tableList.size() > 1) {
     AbstractPlanNode joinNode=sendNodeChild;
     assert(joinNode instanceof AbstractJoinPlanNode);
-    AbstractPlanNode reAggParent=null;
-    if (root != reAggNode) {
-      reAggParent=reAggNode.getParent(0);
-    }
     joinNode.clearParents();
     reAggNode.clearParents();
-    boolean replaced=mvFixInfo.replaceScanNodeWithReAggNode(joinNode,reAggNode);
-    assert(replaced);
-    mvScanNode=mvFixInfo.m_scanNode;
-    assert(mvScanNode != null);
-    mvScanNode.clearParents();
-    mvScanNode.clearChildren();
+    assert(mvFixInfo.m_scanNode != null);
+    mvFixInfo.m_scanNode.clearParents();
     sendNode.clearChildren();
-    sendNode.addAndLinkChild(mvScanNode);
+    sendNode.addAndLinkChild(mvFixInfo.m_scanNode);
     if (reAggParent != null) {
       reAggParent.clearChildren();
       reAggParent.addAndLinkChild(joinNode);
@@ -48,11 +45,5 @@
       root=joinNode;
     }
   }
- else {
-    List<AbstractScanPlanNode> scanList=sendNodeChild.getScanNodeList();
-    mvScanNode=scanList.get(0);
-    assert(mvScanNode.getTargetTableName().equals(mvFixInfo.getMVTableName()));
-  }
-  mvScanNode.addInlinePlanNode(mvFixInfo.getScanInlinedProjectionNode());
   return root;
 }
