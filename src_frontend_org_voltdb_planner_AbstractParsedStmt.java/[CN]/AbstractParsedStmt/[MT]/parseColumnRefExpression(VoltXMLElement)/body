@@ -1,6 +1,4 @@
 {
-  String alias=exprNode.attributes.get("alias");
-  String tableName=exprNode.attributes.get("table");
   List<TupleValueExpression> childExprs=null;
   if (!exprNode.children.isEmpty()) {
     childExprs=new ArrayList<TupleValueExpression>();
@@ -10,10 +8,13 @@
       }
     }
   }
-  String columnName=exprNode.attributes.get("column");
+  String tableName=exprNode.attributes.get("table");
+  String tableAlias=exprNode.attributes.get("tablealias");
+  boolean hasChildren=childExprs != null && !childExprs.isEmpty();
   if (tableName == null) {
-    if (childExprs != null && !childExprs.isEmpty()) {
+    if (hasChildren == true) {
       tableName=childExprs.get(0).getTableName();
+      tableAlias=childExprs.get(0).getTableAlias();
     }
     if (tableName == null) {
       assert(m_DDLIndexedTable != null);
@@ -21,11 +22,25 @@
     }
   }
   assert(tableName != null);
-  String tableAlias=exprNode.attributes.get("tablealias");
   if (tableAlias == null) {
-    tableAlias=tableName;
+    if (hasChildren) {
+      for (      TupleValueExpression childTVE : childExprs) {
+        tableAlias=childTVE.getTableAlias();
+        assert(tableAliasIndexMap.containsKey(childTVE.getTableAlias()));
+        int tableIdx=tableAliasIndexMap.get(childTVE.getTableAlias());
+        StmtTableScan childTable=stmtCache.get(tableIdx);
+        if (childTable.m_isInner == false) {
+          break;
+        }
+      }
+    }
+ else {
+      tableAlias=tableName;
+    }
   }
-  TupleValueExpression expr=new TupleValueExpression(tableName,tableAlias,columnName,alias);
+  String columnName=exprNode.attributes.get("column");
+  String columnAlias=exprNode.attributes.get("alias");
+  TupleValueExpression expr=new TupleValueExpression(tableName,tableAlias,columnName,columnAlias);
   if (childExprs != null && !childExprs.isEmpty()) {
     expr.setChildExpressions(childExprs);
   }
