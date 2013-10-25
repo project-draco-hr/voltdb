@@ -9,20 +9,23 @@
       List<String> paths=new ArrayList<String>();
       int trackerModifyTime=rh.channel.stat(rh.path + "/" + TRACKER_FILENAME).getMTime();
       boolean activeInRemote=false;
+      boolean filesInRemote=false;
       for (      LsEntry entry : files) {
-        activeInRemote=activeInRemote || entry.getFilename().startsWith("active");
+        activeInRemote=activeInRemote || entry.getFilename().trim().toLowerCase().startsWith("active");
+        filesInRemote=filesInRemote || entry.getFilename().trim().toLowerCase().startsWith("active");
         if (!entry.getFilename().equals(".") && !entry.getFilename().equals("..") && !entry.getAttrs().isDir()) {
           final String entryFileName=rh.path + "/" + entry.getFilename();
           if (!entry.getFilename().contains("active")) {
             Matcher mtc=EXPORT_FILENAME_REGEXP.matcher(entry.getFilename());
             if (mtc.matches()) {
               paths.add(entryFileName);
+              filesInRemote=true;
             }
  else {
               System.err.println("ERROR: " + entryFileName + " does not match expected export file name pattern");
             }
           }
- else           if (entry.getFilename().startsWith("active-")) {
+ else           if (entry.getFilename().trim().toLowerCase().startsWith("active-")) {
             int activeModifyTime=entry.getAttrs().getMTime();
             if ((trackerModifyTime - activeModifyTime) > 120) {
               final String renamed=rh.path + "/" + entry.getFilename().substring("active-".length());
@@ -34,9 +37,13 @@
       }
       touchActiveTracker(rh);
       rh.activeSeen=rh.activeSeen || activeInRemote;
+      rh.fileSeen=rh.fileSeen || filesInRemote;
       if (activeInRemote)       activeFound++;
       Collections.sort(paths,comparator);
       if (!paths.isEmpty())       pathsFromAllNodes.add(Pair.of(rh.channel,paths));
+    }
+    if (!m_clientComplete.isEmpty()) {
+      printExportFileSituation(pathsFromAllNodes,activeFound);
     }
     if (pathsFromAllNodes.isEmpty() && activeFound == 0 && allActiveSeen()) {
       if (--onDoneRetries <= 0)       return;
