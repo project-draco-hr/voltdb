@@ -1,0 +1,45 @@
+{
+  String mvTableName=table.getTypeName();
+  Table srcTable=table.getMaterializer();
+  if (srcTable == null) {
+    return false;
+  }
+  Column partitionCol=srcTable.getPartitioncolumn();
+  if (partitionCol == null) {
+    return false;
+  }
+  String partitionColName=partitionCol.getName();
+  MaterializedViewInfo mvInfo=srcTable.getViews().get(mvTableName);
+  String complexGroupbyJson=mvInfo.getGroupbyexpressionsjson();
+  if (complexGroupbyJson.length() > 0) {
+    List<AbstractExpression> mvComplexGroupbyCols=null;
+    try {
+      mvComplexGroupbyCols=AbstractExpression.fromJSONArrayString(complexGroupbyJson);
+    }
+ catch (    JSONException e) {
+      e.printStackTrace();
+    }
+    m_numOfGroupByColumns=mvComplexGroupbyCols.size();
+    for (    AbstractExpression expr : mvComplexGroupbyCols) {
+      if (expr instanceof TupleValueExpression) {
+        TupleValueExpression tve=(TupleValueExpression)expr;
+        if (tve.getColumnName().equals(partitionColName)) {
+          return false;
+        }
+      }
+    }
+  }
+ else {
+    CatalogMap<ColumnRef> mvSimpleGroupbyCols=mvInfo.getGroupbycols();
+    m_numOfGroupByColumns=mvSimpleGroupbyCols.size();
+    for (    ColumnRef colRef : mvSimpleGroupbyCols) {
+      if (colRef.getColumn().getName().equals(partitionColName)) {
+        return false;
+      }
+    }
+  }
+  assert(m_numOfGroupByColumns > 0);
+  m_mvTable=table;
+  m_needed=true;
+  return true;
+}
