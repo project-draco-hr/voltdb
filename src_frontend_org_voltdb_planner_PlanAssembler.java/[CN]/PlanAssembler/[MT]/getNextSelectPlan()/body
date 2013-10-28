@@ -25,6 +25,7 @@
       root=subAssembler.addSendReceivePair(root);
     }
   }
+  boolean mvFixInfoCoordinatorNeeded=true;
   if (root instanceof ReceivePlanNode) {
     if (m_parsedSelect.mayNeedAvgPushdown()) {
       m_parsedSelect.switchOptimalSuiteForAvgPushdown();
@@ -34,11 +35,31 @@
     }
   }
  else {
-    m_parsedSelect.mvFixInfo.setNeeded(false);
+    if (m_parsedSelect.mvFixInfo.needed()) {
+      List<AbstractPlanNode> recList=root.findAllNodesOfType(PlanNodeType.RECEIVE);
+      if (recList.size() == 1) {
+        mvFixInfoCoordinatorNeeded=false;
+        AbstractPlanNode receiveNode=recList.get(0);
+        if (receiveNode.getParent(0) instanceof NestLoopPlanNode) {
+          if (m_parsedSelect.tableList.size() > 1 && subSelectRoot.hasInlinedIndexScanOfTable(m_parsedSelect.mvFixInfo.getMVTableName())) {
+            return getNextSelectPlan();
+          }
+          List<AbstractPlanNode> nljs=receiveNode.findAllNodesOfType(PlanNodeType.NESTLOOP);
+          List<AbstractPlanNode> nlijs=receiveNode.findAllNodesOfType(PlanNodeType.NESTLOOPINDEX);
+          if (nljs.size() + nlijs.size() == 0) {
+            m_parsedSelect.mvFixInfo.m_edgeCaseOuterJoin=true;
+          }
+          root=handleMVBasedMultiPartQuery(root);
+        }
+      }
+ else {
+        m_parsedSelect.mvFixInfo.setNeeded(false);
+      }
+    }
   }
   root=handleAggregationOperators(root);
   boolean mvFixNeedsProjection=false;
-  if (m_parsedSelect.mvFixInfo.needed()) {
+  if (m_parsedSelect.mvFixInfo.needed() && mvFixInfoCoordinatorNeeded) {
     AbstractPlanNode tmpRoot=root;
     root=handleMVBasedMultiPartQuery(root);
     if (root != tmpRoot) {
