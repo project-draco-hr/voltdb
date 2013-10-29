@@ -23,33 +23,33 @@
     }
  else {
       root=subAssembler.addSendReceivePair(root);
+      assert(root instanceof ReceivePlanNode);
+      if (m_parsedSelect.mayNeedAvgPushdown()) {
+        m_parsedSelect.switchOptimalSuiteForAvgPushdown();
+      }
+      if (m_parsedSelect.tableList.size() > 1 && m_parsedSelect.mvFixInfo.needed() && subSelectRoot.hasInlinedIndexScanOfTable(m_parsedSelect.mvFixInfo.getMVTableName())) {
+        return getNextSelectPlan();
+      }
     }
   }
   boolean mvFixInfoCoordinatorNeeded=true;
-  if (root instanceof ReceivePlanNode) {
-    if (m_parsedSelect.mayNeedAvgPushdown()) {
-      m_parsedSelect.switchOptimalSuiteForAvgPushdown();
-    }
-    if (m_parsedSelect.tableList.size() > 1 && m_parsedSelect.mvFixInfo.needed() && subSelectRoot.hasInlinedIndexScanOfTable(m_parsedSelect.mvFixInfo.getMVTableName())) {
-      return getNextSelectPlan();
-    }
-  }
- else {
+  boolean mvFixInfoEdgeCaseOuterJoin=false;
+  if (root instanceof ReceivePlanNode == false) {
     if (m_parsedSelect.mvFixInfo.needed()) {
       List<AbstractPlanNode> recList=root.findAllNodesOfType(PlanNodeType.RECEIVE);
       if (recList.size() == 1) {
         mvFixInfoCoordinatorNeeded=false;
         AbstractPlanNode receiveNode=recList.get(0);
         if (receiveNode.getParent(0) instanceof NestLoopPlanNode) {
-          if (m_parsedSelect.tableList.size() > 1 && subSelectRoot.hasInlinedIndexScanOfTable(m_parsedSelect.mvFixInfo.getMVTableName())) {
+          if (subSelectRoot.hasInlinedIndexScanOfTable(m_parsedSelect.mvFixInfo.getMVTableName())) {
             return getNextSelectPlan();
           }
           List<AbstractPlanNode> nljs=receiveNode.findAllNodesOfType(PlanNodeType.NESTLOOP);
           List<AbstractPlanNode> nlijs=receiveNode.findAllNodesOfType(PlanNodeType.NESTLOOPINDEX);
           if (nljs.size() + nlijs.size() == 0) {
-            m_parsedSelect.mvFixInfo.m_edgeCaseOuterJoin=true;
+            mvFixInfoEdgeCaseOuterJoin=true;
           }
-          root=handleMVBasedMultiPartQuery(root);
+          root=handleMVBasedMultiPartQuery(root,mvFixInfoEdgeCaseOuterJoin);
         }
       }
  else {
@@ -61,7 +61,7 @@
   boolean mvFixNeedsProjection=false;
   if (m_parsedSelect.mvFixInfo.needed() && mvFixInfoCoordinatorNeeded) {
     AbstractPlanNode tmpRoot=root;
-    root=handleMVBasedMultiPartQuery(root);
+    root=handleMVBasedMultiPartQuery(root,mvFixInfoEdgeCaseOuterJoin);
     if (root != tmpRoot) {
       mvFixNeedsProjection=true;
     }
