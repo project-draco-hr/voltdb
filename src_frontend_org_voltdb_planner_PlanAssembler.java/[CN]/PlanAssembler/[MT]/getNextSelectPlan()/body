@@ -6,6 +6,8 @@
     return null;
   }
   AbstractPlanNode root=subSelectRoot;
+  boolean mvFixInfoCoordinatorNeeded=true;
+  boolean mvFixInfoEdgeCaseOuterJoin=false;
   if (m_partitioning.requiresTwoFragments()) {
     ArrayList<AbstractPlanNode> receivers=root.findAllNodesOfType(PlanNodeType.RECEIVE);
     if (receivers.size() == 1) {
@@ -15,6 +17,21 @@
         Table table=m_parsedSelect.getTableFromDB(tableName);
         if (!table.getIsreplicated()) {
           throw new PlanningErrorException("This special case join between an outer replicated table and " + "an inner partitioned table is too complex and is not supported.");
+        }
+      }
+      if (m_parsedSelect.mvFixInfo.needed()) {
+        mvFixInfoCoordinatorNeeded=false;
+        AbstractPlanNode receiveNode=receivers.get(0);
+        if (receiveNode.getParent(0) instanceof NestLoopPlanNode) {
+          if (subSelectRoot.hasInlinedIndexScanOfTable(m_parsedSelect.mvFixInfo.getMVTableName())) {
+            return getNextSelectPlan();
+          }
+          List<AbstractPlanNode> nljs=receiveNode.findAllNodesOfType(PlanNodeType.NESTLOOP);
+          List<AbstractPlanNode> nlijs=receiveNode.findAllNodesOfType(PlanNodeType.NESTLOOPINDEX);
+          if (nljs.size() + nlijs.size() == 0) {
+            mvFixInfoEdgeCaseOuterJoin=true;
+          }
+          root=handleMVBasedMultiPartQuery(root,mvFixInfoEdgeCaseOuterJoin);
         }
       }
     }
@@ -32,30 +49,8 @@
       }
     }
   }
-  boolean mvFixInfoCoordinatorNeeded=true;
-  boolean mvFixInfoEdgeCaseOuterJoin=false;
-  if (root instanceof ReceivePlanNode == false) {
-    if (m_parsedSelect.mvFixInfo.needed()) {
-      List<AbstractPlanNode> recList=root.findAllNodesOfType(PlanNodeType.RECEIVE);
-      if (recList.size() == 1) {
-        mvFixInfoCoordinatorNeeded=false;
-        AbstractPlanNode receiveNode=recList.get(0);
-        if (receiveNode.getParent(0) instanceof NestLoopPlanNode) {
-          if (subSelectRoot.hasInlinedIndexScanOfTable(m_parsedSelect.mvFixInfo.getMVTableName())) {
-            return getNextSelectPlan();
-          }
-          List<AbstractPlanNode> nljs=receiveNode.findAllNodesOfType(PlanNodeType.NESTLOOP);
-          List<AbstractPlanNode> nlijs=receiveNode.findAllNodesOfType(PlanNodeType.NESTLOOPINDEX);
-          if (nljs.size() + nlijs.size() == 0) {
-            mvFixInfoEdgeCaseOuterJoin=true;
-          }
-          root=handleMVBasedMultiPartQuery(root,mvFixInfoEdgeCaseOuterJoin);
-        }
-      }
  else {
-        m_parsedSelect.mvFixInfo.setNeeded(false);
-      }
-    }
+    m_parsedSelect.mvFixInfo.setNeeded(false);
   }
   root=handleAggregationOperators(root);
   boolean mvFixNeedsProjection=false;
