@@ -6,9 +6,10 @@
     return null;
   }
   AbstractPlanNode root=subSelectRoot;
-  boolean mvFixInfoCoordinatorNeeded=true;
-  boolean mvFixInfoEdgeCaseOuterJoin=false;
+  boolean mvFixNeedsProjection=false;
   if (m_partitioning.requiresTwoFragments()) {
+    boolean mvFixInfoCoordinatorNeeded=true;
+    boolean mvFixInfoEdgeCaseOuterJoin=false;
     ArrayList<AbstractPlanNode> receivers=root.findAllNodesOfType(PlanNodeType.RECEIVE);
     if (receivers.size() == 1) {
       HashSet<String> tablesRead=new HashSet<String>();
@@ -48,18 +49,18 @@
         return getNextSelectPlan();
       }
     }
+    root=handleAggregationOperators(root);
+    if (m_parsedSelect.mvFixInfo.needed() && mvFixInfoCoordinatorNeeded) {
+      AbstractPlanNode tmpRoot=root;
+      root=handleMVBasedMultiPartQuery(root,mvFixInfoEdgeCaseOuterJoin);
+      if (root != tmpRoot) {
+        mvFixNeedsProjection=true;
+      }
+    }
   }
  else {
     m_parsedSelect.mvFixInfo.setNeeded(false);
-  }
-  root=handleAggregationOperators(root);
-  boolean mvFixNeedsProjection=false;
-  if (m_parsedSelect.mvFixInfo.needed() && mvFixInfoCoordinatorNeeded) {
-    AbstractPlanNode tmpRoot=root;
-    root=handleMVBasedMultiPartQuery(root,mvFixInfoEdgeCaseOuterJoin);
-    if (root != tmpRoot) {
-      mvFixNeedsProjection=true;
-    }
+    root=handleAggregationOperators(root);
   }
   if (m_parsedSelect.hasComplexAgg()) {
     AbstractPlanNode aggNode=root.getChild(0);
