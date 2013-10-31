@@ -1,0 +1,30 @@
+{
+  ZooKeeper zk=VoltDB.instance().getHostMessenger().getZK();
+  byte partitionTxnIdsBytes[]=null;
+  try {
+    partitionTxnIdsBytes=zk.getData(VoltZK.perPartitionTxnIds,false,null);
+  }
+ catch (  KeeperException.NoNodeException e) {
+    return null;
+  }
+catch (  Exception e) {
+    VoltDB.crashLocalVoltDB("Error retrieving per partition txn ids",true,e);
+  }
+  ByteBuffer buf=ByteBuffer.wrap(partitionTxnIdsBytes);
+  int count=buf.getInt();
+  Long partitionTxnId=null;
+  long partitionTxnIds[]=new long[count];
+  for (int ii=0; ii < count; ii++) {
+    long txnId=buf.getLong();
+    partitionTxnIds[ii]=txnId;
+    int partitionId=TxnEgo.getPartitionId(txnId);
+    if (partitionId == m_partitionId) {
+      partitionTxnId=txnId;
+      continue;
+    }
+  }
+  if (partitionTxnId != null) {
+    return partitionTxnIds;
+  }
+  return null;
+}
