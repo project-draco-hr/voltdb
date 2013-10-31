@@ -34,21 +34,17 @@
     if (voltDdlTracker.m_partitionMap.containsKey(tableName.toLowerCase())) {
       String colName=voltDdlTracker.m_partitionMap.get(tableName.toLowerCase());
       if (colName != null) {
-        final Table t=tables.getIgnoreCase(tableName);
-        if (t == null) {
-          msg+="PARTITION has unknown TABLE '" + tableName + "'";
-          throw new VoltCompilerException(msg);
-        }
-        final Column c=t.getColumns().getIgnoreCase(colName);
-        if (c == null) {
+        assert(tables.getIgnoreCase(tableName) != null);
+        final Column partitionCol=table.getColumns().getIgnoreCase(colName);
+        if (partitionCol == null) {
           msg+="PARTITION has unknown COLUMN '" + colName + "'";
           throw new VoltCompilerException(msg);
         }
-        if (c.getNullable() == true) {
+        if (partitionCol.getNullable() == true) {
           msg+="Partition column '" + tableName + "."+ colName+ "' is nullable. "+ "Partition columns must be constrained \"NOT NULL\".";
           throw new VoltCompilerException(msg);
         }
-        VoltType pcolType=VoltType.get((byte)c.getType());
+        VoltType pcolType=VoltType.get((byte)partitionCol.getType());
 switch (pcolType) {
 case TINYINT:
 case SMALLINT:
@@ -61,16 +57,22 @@ default :
         msg+="Partition column '" + tableName + "."+ colName+ "' is not a valid type. "+ "Partition columns must be an integer or varchar type.";
       throw new VoltCompilerException(msg);
   }
-  t.setPartitioncolumn(c);
-  t.setIsreplicated(false);
-  checkValidIndexes(t,c);
+  table.setPartitioncolumn(partitionCol);
+  table.setIsreplicated(false);
+  for (  Index index : table.getIndexes()) {
+    checkValidPartitionTableIndex(index,partitionCol,tableName);
+  }
+  final CatalogMap<MaterializedViewInfo> views=table.getViews();
+  for (  final MaterializedViewInfo mvi : views) {
+    mvi.getDest().setIsreplicated(false);
+    setGroupedTablePartitionColumn(mvi,partitionCol);
+  }
 }
 }
  else {
-Table t=table;
-for (Index index : t.getIndexes()) {
+for (Index index : table.getIndexes()) {
   if (index.getAssumeunique()) {
-    String exceptionMsg=String.format("Please use UNIQUE instead of ASSUMEUNIQUE");
+    String exceptionMsg=String.format("ASSUMEUNIQUE is not valid for replicated tables. Please use UNIQUE instead");
     throw new VoltCompilerException(exceptionMsg);
   }
 }
