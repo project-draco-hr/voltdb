@@ -10,6 +10,7 @@
   }
   String partitionColName=partitionCol.getName();
   MaterializedViewInfo mvInfo=srcTable.getViews().get(mvTableName);
+  int numOfGroupByColumns;
   String complexGroupbyJson=mvInfo.getGroupbyexpressionsjson();
   if (complexGroupbyJson.length() > 0) {
     List<AbstractExpression> mvComplexGroupbyCols=null;
@@ -19,7 +20,7 @@
  catch (    JSONException e) {
       e.printStackTrace();
     }
-    m_numOfGroupByColumns=mvComplexGroupbyCols.size();
+    numOfGroupByColumns=mvComplexGroupbyCols.size();
     for (    AbstractExpression expr : mvComplexGroupbyCols) {
       if (expr instanceof TupleValueExpression) {
         TupleValueExpression tve=(TupleValueExpression)expr;
@@ -31,23 +32,23 @@
   }
  else {
     CatalogMap<ColumnRef> mvSimpleGroupbyCols=mvInfo.getGroupbycols();
-    m_numOfGroupByColumns=mvSimpleGroupbyCols.size();
+    numOfGroupByColumns=mvSimpleGroupbyCols.size();
     for (    ColumnRef colRef : mvSimpleGroupbyCols) {
       if (colRef.getColumn().getName().equals(partitionColName)) {
         return false;
       }
     }
   }
-  assert(m_numOfGroupByColumns > 0);
+  assert(numOfGroupByColumns > 0);
   m_mvTable=table;
   Set<TupleValueExpression> mvDDLGroupbyTVEs=new HashSet<TupleValueExpression>();
-  List<Column> mvColumnArray=CatalogUtil.getSortedCatalogItems(table.getColumns(),"index");
+  List<Column> mvColumnArray=CatalogUtil.getSortedCatalogItems(m_mvTable.getColumns(),"index");
   Set<SchemaColumn> mvDDLGroupbyColumns=new HashSet<SchemaColumn>();
   NodeSchema inlineProjSchema=new NodeSchema();
   for (  SchemaColumn scol : scanColumns) {
     inlineProjSchema.addColumn(scol);
   }
-  for (int i=0; i < m_numOfGroupByColumns; i++) {
+  for (int i=0; i < numOfGroupByColumns; i++) {
     Column mvCol=mvColumnArray.get(i);
     String colName=mvCol.getName();
     TupleValueExpression tve=new TupleValueExpression();
@@ -66,7 +67,7 @@
     }
   }
   Map<String,ExpressionType> mvColumnReAggType=new HashMap<String,ExpressionType>();
-  for (int i=m_numOfGroupByColumns; i < mvColumnArray.size(); i++) {
+  for (int i=numOfGroupByColumns; i < mvColumnArray.size(); i++) {
     Column mvCol=mvColumnArray.get(i);
     ExpressionType reAggType=ExpressionType.get(mvCol.getAggregatetype());
     if (reAggType == ExpressionType.AGGREGATE_COUNT_STAR || reAggType == ExpressionType.AGGREGATE_COUNT) {
@@ -96,7 +97,7 @@
   m_reAggNode.setOutputSchema(aggSchema);
   List<TupleValueExpression> needReAggTVEs=new ArrayList<TupleValueExpression>();
   List<AbstractExpression> aggPostExprs=new ArrayList<AbstractExpression>();
-  for (int i=m_numOfGroupByColumns; i < mvColumnArray.size(); i++) {
+  for (int i=numOfGroupByColumns; i < mvColumnArray.size(); i++) {
     Column mvCol=mvColumnArray.get(i);
     TupleValueExpression tve=new TupleValueExpression();
     tve.setColumnIndex(i);
