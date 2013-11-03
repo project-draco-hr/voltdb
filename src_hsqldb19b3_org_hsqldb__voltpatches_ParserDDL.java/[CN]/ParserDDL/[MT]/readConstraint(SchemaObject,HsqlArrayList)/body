@@ -4,6 +4,7 @@
     read();
     constName=readNewDependentSchemaObjectName(schemaObject.getName(),SchemaObject.CONSTRAINT);
   }
+  boolean assumeUnique=false;
 switch (token.tokenType) {
 case Tokens.PRIMARY:
 {
@@ -25,44 +26,46 @@ case Tokens.PRIMARY:
       constraintList.set(0,c);
       break;
     }
+case Tokens.ASSUMEUNIQUE:
+  assumeUnique=true;
 case Tokens.UNIQUE:
-{
-    if (schemaObject.getName().type != SchemaObject.TABLE) {
-      throw this.unexpectedTokenRequire(Tokens.T_CHECK);
-    }
-    read();
-    List<Expression> indexExprs=XreadExpressions(null);
-    OrderedHashSet set=getSimpleColumnNames(indexExprs);
-    if (constName == null) {
-      constName=database.nameManager.newAutoName("CT",schemaObject.getSchemaName(),schemaObject.getName(),SchemaObject.CONSTRAINT);
-    }
-    if ((indexExprs != null) && (set == null)) {
-      set=getBaseColumnNames(indexExprs);
-      Constraint exprc=new Constraint(constName,set,indexExprs.toArray(new Expression[indexExprs.size()]));
-      constraintList.add(exprc);
-      break;
-    }
-    Constraint c=new Constraint(constName,set,Constraint.UNIQUE);
-    constraintList.add(c);
-    break;
-  }
-case Tokens.FOREIGN:
 {
   if (schemaObject.getName().type != SchemaObject.TABLE) {
     throw this.unexpectedTokenRequire(Tokens.T_CHECK);
   }
   read();
-  readThis(Tokens.KEY);
-  OrderedHashSet set=readColumnNames(false);
-  Constraint c=readFKReferences((Table)schemaObject,constName,set);
+  List<Expression> indexExprs=XreadExpressions(null);
+  OrderedHashSet set=getSimpleColumnNames(indexExprs);
+  if (constName == null) {
+    constName=database.nameManager.newAutoName("CT",schemaObject.getSchemaName(),schemaObject.getName(),SchemaObject.CONSTRAINT);
+  }
+  if ((indexExprs != null) && (set == null)) {
+    set=getBaseColumnNames(indexExprs);
+    Constraint exprc=new Constraint(constName,set,indexExprs.toArray(new Expression[indexExprs.size()])).setAssumeUnique(assumeUnique);
+    constraintList.add(exprc);
+    break;
+  }
+  Constraint c=new Constraint(constName,set,Constraint.UNIQUE).setAssumeUnique(assumeUnique);
   constraintList.add(c);
   break;
+}
+case Tokens.FOREIGN:
+{
+if (schemaObject.getName().type != SchemaObject.TABLE) {
+  throw this.unexpectedTokenRequire(Tokens.T_CHECK);
+}
+read();
+readThis(Tokens.KEY);
+OrderedHashSet set=readColumnNames(false);
+Constraint c=readFKReferences((Table)schemaObject,constName,set);
+constraintList.add(c);
+break;
 }
 case Tokens.CHECK:
 {
 read();
 if (constName == null) {
-  constName=database.nameManager.newAutoName("CT",schemaObject.getSchemaName(),schemaObject.getName(),SchemaObject.CONSTRAINT);
+constName=database.nameManager.newAutoName("CT",schemaObject.getSchemaName(),schemaObject.getName(),SchemaObject.CONSTRAINT);
 }
 Constraint c=new Constraint(constName,null,Constraint.CHECK);
 readCheckConstraintCondition(c);

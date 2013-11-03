@@ -6,6 +6,7 @@
       read();
       constName=readNewDependentSchemaObjectName(table.getName(),SchemaObject.CONSTRAINT);
     }
+    boolean assumeUnique=false;
 switch (token.tokenType) {
 case Tokens.PRIMARY:
 {
@@ -25,50 +26,52 @@ case Tokens.PRIMARY:
         column.setPrimaryKey(true);
         break;
       }
+case Tokens.ASSUMEUNIQUE:
+    assumeUnique=true;
 case Tokens.UNIQUE:
 {
-      read();
-      OrderedHashSet set=new OrderedHashSet();
-      set.add(column.getName().name);
-      if (constName == null) {
-        constName=database.nameManager.newAutoName("CT",table.getSchemaName(),table.getName(),SchemaObject.CONSTRAINT);
-      }
-      Constraint c=new Constraint(constName,set,Constraint.UNIQUE);
-      constraintList.add(c);
-      break;
+    read();
+    OrderedHashSet set=new OrderedHashSet();
+    set.add(column.getName().name);
+    if (constName == null) {
+      constName=database.nameManager.newAutoName("CT",table.getSchemaName(),table.getName(),SchemaObject.CONSTRAINT);
     }
+    Constraint c=new Constraint(constName,set,Constraint.UNIQUE).setAssumeUnique(assumeUnique);
+    constraintList.add(c);
+    break;
+  }
 case Tokens.FOREIGN:
 {
-    read();
-    readThis(Tokens.KEY);
-  }
+  read();
+  readThis(Tokens.KEY);
+}
 case Tokens.REFERENCES:
 {
-  OrderedHashSet set=new OrderedHashSet();
-  set.add(column.getName().name);
-  Constraint c=readFKReferences(table,constName,set);
-  constraintList.add(c);
-  break;
+OrderedHashSet set=new OrderedHashSet();
+set.add(column.getName().name);
+Constraint c=readFKReferences(table,constName,set);
+constraintList.add(c);
+break;
 }
 case Tokens.CHECK:
 {
 read();
 if (constName == null) {
-  constName=database.nameManager.newAutoName("CT",table.getSchemaName(),table.getName(),SchemaObject.CONSTRAINT);
+constName=database.nameManager.newAutoName("CT",table.getSchemaName(),table.getName(),SchemaObject.CONSTRAINT);
 }
 Constraint c=new Constraint(constName,null,Constraint.CHECK);
 readCheckConstraintCondition(c);
 OrderedHashSet set=c.getCheckColumnExpressions();
 for (int i=0; i < set.size(); i++) {
-  ExpressionColumn e=(ExpressionColumn)set.get(i);
-  if (column.getName().name.equals(e.getColumnName())) {
-    if (e.getSchemaName() != null && e.getSchemaName() != table.getSchemaName().name) {
-      throw Error.error(ErrorCode.X_42505);
-    }
+ExpressionColumn e=(ExpressionColumn)set.get(i);
+if (column.getName().name.equals(e.getColumnName())) {
+  if (e.getSchemaName() != null && e.getSchemaName() != table.getSchemaName().name) {
+    throw Error.error(ErrorCode.X_42505);
   }
+}
  else {
-    throw Error.error(ErrorCode.X_42501);
-  }
+  throw Error.error(ErrorCode.X_42501);
+}
 }
 constraintList.add(c);
 break;
