@@ -1,6 +1,14 @@
 {
   if ((m_commandLog != null) && (m_commandLog.needsInitialization())) {
     m_commandLog.init(m_catalogContext,txnId,m_cartographer.getPartitionCount(),m_config.m_commandLogBinding,perPartitionTxnIds);
+    try {
+      ZKCountdownLatch latch=new ZKCountdownLatch(m_messenger.getZK(),VoltZK.commandlog_init_barrier,m_messenger.getLiveHostIds().size());
+      latch.countDown(true);
+      latch.await();
+    }
+ catch (    Exception e) {
+      VoltDB.crashLocalVoltDB("Failed to init and wait on command log init barrier",true,e);
+    }
   }
   for (  Initiator initiator : m_iv2Initiators) {
     initiator.enableWritingIv2FaultLog();
