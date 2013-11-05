@@ -41,7 +41,10 @@
   }
   assert(numOfGroupByColumns > 0);
   m_mvTable=table;
-  Set<TupleValueExpression> mvDDLGroupbyTVEs=new HashSet<TupleValueExpression>();
+  if (stmt.hasComplexGroupby()) {
+    m_edgeCaseQueryNoFixNeeded=false;
+  }
+  Set<String> mvDDLGroupbyColumnNames=new HashSet<String>();
   List<Column> mvColumnArray=CatalogUtil.getSortedCatalogItems(m_mvTable.getColumns(),"index");
   Set<SchemaColumn> mvDDLGroupbyColumns=new HashSet<SchemaColumn>();
   NodeSchema inlineProjSchema=new NodeSchema();
@@ -58,7 +61,7 @@
     tve.setColumnAlias(colName);
     tve.setValueType(VoltType.get((byte)mvCol.getType()));
     tve.setValueSize(mvCol.getSize());
-    mvDDLGroupbyTVEs.add(tve);
+    mvDDLGroupbyColumnNames.add(colName);
     SchemaColumn scol=new SchemaColumn(mvTableName,colName,colName,tve);
     mvDDLGroupbyColumns.add(scol);
     if (!scanColumns.contains(scol)) {
@@ -111,7 +114,7 @@
   collectReAggNodePostExpressions(stmt.joinTree,needReAggTVEs,aggPostExprs);
   AbstractExpression aggPostExpr=ExpressionUtil.combine(aggPostExprs);
   m_reAggNode.setPostPredicate(aggPostExpr);
-  if (edgeCaseQueryNoFixNeeded(stmt,mvDDLGroupbyTVEs,mvColumnReAggType)) {
+  if (m_edgeCaseQueryNoFixNeeded && edgeCaseQueryNoFixNeeded(stmt,mvDDLGroupbyColumnNames,mvColumnReAggType)) {
     return false;
   }
   m_needed=true;
