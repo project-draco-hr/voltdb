@@ -31,33 +31,6 @@
       hostLog.warn("TXN " + counter.getTxnId() + " lost all replicas and "+ "had no responses.  This should be impossible?");
     }
   }
-  final List<Long> replicaCopy=new ArrayList<Long>(replicas);
-  SiteTasker repairTask=new SiteTasker(){
-    @Override public void run(    SiteProcedureConnection connection){
-      try {
-        String whoami="MP leader repair " + CoreUtils.hsIdToString(m_mailbox.getHSId()) + " ";
-        InitiatorMailbox initiatorMailbox=(InitiatorMailbox)m_mailbox;
-        RepairAlgo algo=new MpPromoteAlgo(replicas,initiatorMailbox,whoami);
-        initiatorMailbox.setRepairAlgo(algo);
-        Pair<Boolean,Long> result=algo.start().get();
-        boolean success=result.getFirst();
-        if (success) {
-          tmLog.info(whoami + "finished repair.");
-        }
- else {
-          tmLog.info(whoami + "interrupted during repair.  Retrying.");
-        }
-      }
- catch (      InterruptedException ie) {
-      }
-catch (      Exception e) {
-        VoltDB.crashLocalVoltDB("Terminally failed MPI repair.",true,e);
-      }
-    }
-    @Override public void runForRejoin(    SiteProcedureConnection siteConnection,    TaskLog taskLog) throws IOException {
-      throw new RuntimeException("Rejoin while repairing the MPI should be impossible.");
-    }
-  }
-;
-  m_pendingTasks.repair(repairTask,replicaCopy,partitionMasters);
+  MpRepairTask repairTask=new MpRepairTask((InitiatorMailbox)m_mailbox,replicas);
+  m_pendingTasks.repair(repairTask,replicas,partitionMasters);
 }
