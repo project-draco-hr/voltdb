@@ -1,0 +1,49 @@
+{
+  if (!index.getUnique()) {
+    return;
+  }
+  boolean contain=false;
+  String jsonExpr=index.getExpressionsjson();
+  if (jsonExpr.isEmpty()) {
+    for (    ColumnRef cref : index.getColumns()) {
+      Column col=cref.getColumn();
+      if (col.equals(partitionCol)) {
+        contain=true;
+        break;
+      }
+    }
+  }
+ else {
+    try {
+      List<AbstractExpression> indexExpressions=AbstractExpression.fromJSONArrayString(jsonExpr);
+      for (      AbstractExpression expr : indexExpressions) {
+        if (expr instanceof TupleValueExpression && ((TupleValueExpression)expr).getColumnName().equals(partitionCol.getName())) {
+          contain=true;
+          break;
+        }
+      }
+    }
+ catch (    JSONException e) {
+      e.printStackTrace();
+      assert(false);
+    }
+  }
+  if (contain && index.getAssumeunique()) {
+    String exceptionMsg=String.format("ASSUMEUNIQUE is not required " + "if the index includes the partitioning column. Use UNIQUE instead.");
+    throw new VoltCompilerException(exceptionMsg);
+  }
+ else   if (!contain && !index.getAssumeunique()) {
+    String indexName=index.getTypeName();
+    String keyword="";
+    if (indexName.startsWith("SYS_IDX_PK_") || indexName.startsWith("SYS_IDX_SYS_PK_")) {
+      indexName="PRIMARY KEY";
+      keyword="PRIMARY KEY";
+    }
+ else {
+      indexName="UNIQUE INDEX " + indexName;
+      keyword="UNIQUE";
+    }
+    String exceptionMsg=String.format("Invalid use of %s. " + "%s indexes on partitioned table %s must include the partitioning column %s.  " + "Add the partitioning column %s to the %s or remove the %s keyword.",indexName,keyword,tableName,partitionCol.getName(),partitionCol.getName(),indexName,keyword);
+    throw new VoltCompilerException(exceptionMsg);
+  }
+}
