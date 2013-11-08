@@ -91,21 +91,23 @@ synchronized (m_startAndStopLock) {
         VoltDB.crashLocalVoltDB("Failed to instantiate join coordinator",true,e);
       }
     }
-    ClusterConfig clusterConfig=null;
     JSONObject topo=getTopology(config.m_startAction,m_joinCoordinator);
     m_partitionsToSitesAtStartupForExportInit=new ArrayList<Pair<Integer,Long>>();
     try {
-      clusterConfig=new ClusterConfig(topo);
-      m_configuredNumberOfPartitions=clusterConfig.getPartitionCount();
       m_cartographer=new Cartographer(m_messenger);
+      ClusterConfig clusterConfig=new ClusterConfig(topo);
       List<Integer> partitions=null;
       if (isRejoin) {
         partitions=m_cartographer.getIv2PartitionsToReplace(topo);
+        m_configuredNumberOfPartitions=m_cartographer.getPartitionCount();
+        m_configuredReplicationFactor=clusterConfig.getReplicationFactor();
         if (partitions.size() == 0) {
-          VoltDB.crashLocalVoltDB("The VoltDB cluster already has enough nodes to satisfy " + "the requested k-safety factor of " + clusterConfig.getReplicationFactor() + ".\n"+ "No more nodes can join.",false,null);
+          VoltDB.crashLocalVoltDB("The VoltDB cluster already has enough nodes to satisfy " + "the requested k-safety factor of " + m_configuredReplicationFactor + ".\n"+ "No more nodes can join.",false,null);
         }
       }
  else {
+        m_configuredNumberOfPartitions=clusterConfig.getPartitionCount();
+        m_configuredReplicationFactor=clusterConfig.getReplicationFactor();
         partitions=ClusterConfig.partitionsForHost(topo,m_messenger.getHostId());
       }
       for (int ii=0; ii < partitions.size(); ii++) {
@@ -120,7 +122,6 @@ synchronized (m_startAndStopLock) {
       }
       m_MPI=new MpInitiator(m_messenger,localHSIds,getStatsAgent());
       m_iv2Initiators.add(m_MPI);
-      clusterConfig=new ClusterConfig(topo);
       Map<Integer,Long> partsToHSIdsToRejoin=new HashMap<Integer,Long>();
       for (      Initiator init : m_iv2Initiators) {
         if (init.isRejoinable()) {
@@ -178,15 +179,15 @@ synchronized (m_startAndStopLock) {
     BalancePartitionsStatistics rebalanceStats=new BalancePartitionsStatistics();
     getStatsAgent().registerStatsSource(StatsSelector.REBALANCE,0,rebalanceStats);
     if (m_commandLog != null && (isRejoin || m_joining)) {
-      m_commandLog.initForRejoin(m_catalogContext,Long.MIN_VALUE,clusterConfig.getPartitionCount(),true,m_config.m_commandLogBinding,m_iv2InitiatorStartingTxnIds);
+      m_commandLog.initForRejoin(m_catalogContext,Long.MIN_VALUE,m_cartographer.getPartitionCount(),true,m_config.m_commandLogBinding,m_iv2InitiatorStartingTxnIds);
     }
     boolean usingCommandLog=false;
     try {
       usingCommandLog=m_config.m_isEnterprise && m_catalogContext.cluster.getLogconfig().get("log").getEnabled();
-      m_leaderAppointer=new LeaderAppointer(m_messenger,clusterConfig.getPartitionCount(),m_deployment.getCluster().getKfactor(),m_catalogContext.cluster.getNetworkpartition(),m_catalogContext.cluster.getFaultsnapshots().get("CLUSTER_PARTITION"),usingCommandLog,topo,m_MPI);
+      m_leaderAppointer=new LeaderAppointer(m_messenger,m_configuredNumberOfPartitions,m_deployment.getCluster().getKfactor(),m_catalogContext.cluster.getNetworkpartition(),m_catalogContext.cluster.getFaultsnapshots().get("CLUSTER_PARTITION"),usingCommandLog,topo,m_MPI);
       m_globalServiceElector.registerService(m_leaderAppointer);
       for (      Initiator iv2init : m_iv2Initiators) {
-        iv2init.configure(getBackendTargetType(),m_serializedCatalog,m_catalogContext,m_deployment.getCluster().getKfactor(),csp,clusterConfig.getPartitionCount(),m_config.m_startAction,getStatsAgent(),m_memoryStats,m_commandLog,m_nodeDRGateway,m_config.m_executionCoreBindings.poll());
+        iv2init.configure(getBackendTargetType(),m_serializedCatalog,m_catalogContext,m_deployment.getCluster().getKfactor(),csp,m_configuredNumberOfPartitions,m_config.m_startAction,getStatsAgent(),m_memoryStats,m_commandLog,m_nodeDRGateway,m_config.m_executionCoreBindings.poll());
       }
     }
  catch (    Exception e) {
@@ -210,7 +211,7 @@ synchronized (m_startAndStopLock) {
         if (!m_config.m_externalInterface.trim().equals("")) {
           externalInterface=InetAddress.getByName(m_config.m_externalInterface);
         }
-        ClientInterface ci=ClientInterface.create(m_messenger,m_catalogContext,m_config.m_replicationRole,m_cartographer,clusterConfig.getPartitionCount(),externalInterface,config.m_port + portOffset,config.m_adminPort + portOffset,m_config.m_timestampTestingSalt);
+        ClientInterface ci=ClientInterface.create(m_messenger,m_catalogContext,m_config.m_replicationRole,m_cartographer,m_configuredNumberOfPartitions,externalInterface,config.m_port + portOffset,config.m_adminPort + portOffset,m_config.m_timestampTestingSalt);
         portOffset+=2;
         m_clientInterfaces.add(ci);
       }
@@ -260,7 +261,7 @@ synchronized (m_startAndStopLock) {
     schedulePeriodicWorks();
     m_clientInterfaces.get(0).schedulePeriodicWorks();
     logDebuggingInfo(m_config.m_adminPort,m_config.m_httpPort,m_httpPortExtraLogMessage,m_jsonEnabled);
-    if (clusterConfig.getReplicationFactor() == 0) {
+    if (m_configuredReplicationFactor == 0) {
       consoleLog.warn("This is not a highly available cluster. K-Safety is set to 0.");
     }
     if (!usingCommandLog) {
@@ -277,7 +278,7 @@ synchronized (m_startAndStopLock) {
         consoleLog.warn("Durability is turned off. Command logging is off.");
       }
     }
-    if ((m_catalogContext.cluster.getNetworkpartition() == false) && (clusterConfig.getReplicationFactor() > 0)) {
+    if ((m_catalogContext.cluster.getNetworkpartition() == false) && (m_configuredReplicationFactor > 0)) {
       hostLog.warn("Running a redundant (k-safe) cluster with network " + "partition detection disabled is not recommended for production use.");
     }
     assert(m_clientInterfaces.size() > 0);
