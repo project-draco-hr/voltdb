@@ -8,54 +8,18 @@
   ArrayList<CompiledPlan> childrenPlans=new ArrayList<CompiledPlan>();
   boolean orderIsDeterministic=true;
   boolean contentIsDeterministic=true;
-  PartitioningForStatement commonPartitioning=null;
-  int planId=0;
+  ChildPlanResult parseResult=new ChildPlanResult();
   for (  AbstractParsedStmt parsedChildStmt : m_parsedUnion.m_children) {
-    PartitioningForStatement partitioning=(PartitioningForStatement)m_partitioning.clone();
-    PlanSelector processor=(PlanSelector)m_planSelector.clone();
-    processor.m_planId=planId;
-    PlanAssembler assembler=new PlanAssembler(m_catalogCluster,m_catalogDb,partitioning,processor);
-    CompiledPlan bestChildPlan=assembler.getBestCostPlan(parsedChildStmt);
-    if (bestChildPlan == null) {
-      if (m_recentErrorMsg == null) {
-        m_recentErrorMsg="Unable to plan for statement. Error unknown.";
-      }
+    planForChildStmt(parsedChildStmt,parseResult);
+    if (parseResult.m_compiledPlan == null) {
       return null;
     }
-    childrenPlans.add(bestChildPlan);
-    orderIsDeterministic=orderIsDeterministic && bestChildPlan.isOrderDeterministic();
-    contentIsDeterministic=contentIsDeterministic && bestChildPlan.isContentDeterministic();
-    planId=processor.m_planId;
-    if (commonPartitioning == null) {
-      commonPartitioning=partitioning;
-      continue;
-    }
-    AbstractExpression statementPartitionExpression=partitioning.singlePartitioningExpression();
-    if (commonPartitioning.requiresTwoFragments()) {
-      if (partitioning.requiresTwoFragments() || statementPartitionExpression != null) {
-        throw new PlanningErrorException("Statements are too complex in set operation using multiple partitioned tables.");
-      }
-      continue;
-    }
-    AbstractExpression commonPartitionExpression=commonPartitioning.singlePartitioningExpression();
-    if (commonPartitionExpression == null) {
-      commonPartitioning=partitioning;
-      continue;
-    }
-    if (partitioning.requiresTwoFragments()) {
-      throw new PlanningErrorException("Statements are too complex in set operation using multiple partitioned tables.");
-    }
-    if (statementPartitionExpression == null) {
-      continue;
-    }
-    if (!commonPartitionExpression.equals(statementPartitionExpression)) {
-      throw new PlanningErrorException("Statements use conflicting partitioned table filters in set operation.");
-    }
+    childrenPlans.add(parseResult.m_compiledPlan);
   }
-  if (commonPartitioning != null) {
-    m_partitioning=(PartitioningForStatement)commonPartitioning.clone();
+  if (parseResult.m_commonPartitioning != null) {
+    m_partitioning=(PartitioningForStatement)parseResult.m_commonPartitioning.clone();
   }
-  m_planSelector.m_planId=planId;
+  m_planSelector.m_planId=parseResult.m_planId;
   for (  CompiledPlan selectPlan : childrenPlans) {
     subUnionRoot.addAndLinkChild(selectPlan.rootPlanGraph);
   }

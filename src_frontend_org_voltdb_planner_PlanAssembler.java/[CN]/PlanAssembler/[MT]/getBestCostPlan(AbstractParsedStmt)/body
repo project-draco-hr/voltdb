@@ -1,10 +1,21 @@
 {
   setupForNewPlans(parsedStmt);
+  ChildPlanResult subQueryResult=getBestCostPlanForSubQueries(parsedStmt);
+  if (subQueryResult != null && subQueryResult.m_compiledPlan == null) {
+    return null;
+  }
   CompiledPlan rawplan=null;
   while (true) {
     rawplan=getNextPlan();
     if (rawplan == null)     break;
     m_planSelector.considerCandidatePlan(rawplan);
   }
-  return m_planSelector.m_bestPlan;
+  CompiledPlan retval=m_planSelector.m_bestPlan;
+  if (subQueryResult != null) {
+    getCommonPartitioning(m_partitioning,subQueryResult.m_commonPartitioning);
+    boolean contentIsDeterministic=subQueryResult.m_contentIsDeterministic && retval.isContentDeterministic();
+    boolean orderIsDeterministic=subQueryResult.m_orderIsDeterministic && retval.isOrderDeterministic();
+    retval.statementGuaranteesDeterminism(contentIsDeterministic,orderIsDeterministic);
+  }
+  return retval;
 }

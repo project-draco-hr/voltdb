@@ -1,13 +1,6 @@
 {
   if (m_tableSchema == null) {
-    m_tableSchema=new NodeSchema();
-    CatalogMap<Column> cols=db.getTables().getIgnoreCase(m_targetTableName).getColumns();
-    for (    Column col : CatalogUtil.getSortedCatalogItems(cols,"index")) {
-      TupleValueExpression tve=new TupleValueExpression(m_targetTableName,m_targetTableAlias,col.getTypeName(),col.getTypeName(),col.getIndex());
-      tve.setValueType(VoltType.get((byte)col.getType()));
-      tve.setValueSize(col.getSize());
-      m_tableSchema.addColumn(new SchemaColumn(m_targetTableName,m_targetTableAlias,col.getTypeName(),col.getTypeName(),tve));
-    }
+    generateTableSchema(db);
   }
   ProjectionPlanNode proj=(ProjectionPlanNode)getInlinePlanNode(PlanNodeType.PROJECTION);
   if (proj != null) {
@@ -35,6 +28,28 @@
  else {
       m_outputSchema=m_tableSchema.clone();
       m_hasSignificantOutputSchema=true;
+    }
+  }
+  if (m_isSubQuery) {
+    Map<String,SchemaColumn> colMap=new HashMap<String,SchemaColumn>();
+    for (    SchemaColumn col : this.m_tableSchema.getColumns()) {
+      colMap.put(col.getColumnName(),col);
+    }
+    if (m_tableScanSchema != null) {
+      for (      SchemaColumn scanCol : m_tableScanSchema.getColumns()) {
+        assert(colMap.containsKey(scanCol.getColumnName()) == true);
+        SchemaColumn tableCol=colMap.get(scanCol.getColumnName());
+        scanCol.getExpression().setValueType(tableCol.getExpression().getValueType());
+        scanCol.getExpression().setValueSize(tableCol.getExpression().getValueSize());
+      }
+    }
+    if (m_outputSchema != null) {
+      for (      SchemaColumn outputCol : m_outputSchema.getColumns()) {
+        assert(colMap.containsKey(outputCol.getColumnName()) == true);
+        SchemaColumn tableCol=colMap.get(outputCol.getColumnName());
+        outputCol.getExpression().setValueType(tableCol.getExpression().getValueType());
+        outputCol.getExpression().setValueSize(tableCol.getExpression().getValueSize());
+      }
     }
   }
 }
