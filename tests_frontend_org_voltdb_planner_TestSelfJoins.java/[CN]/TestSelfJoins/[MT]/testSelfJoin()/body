@@ -1,0 +1,48 @@
+{
+  AbstractPlanNode pn=compile("select * FROM R1 A JOIN R1 B ON A.C = B.C WHERE B.A > 0 AND A.C < 3");
+  pn=pn.getChild(0).getChild(0);
+  assertTrue(pn instanceof NestLoopPlanNode);
+  assertEquals(4,pn.getOutputSchema().getColumns().size());
+  assertEquals(2,pn.getChildCount());
+  AbstractPlanNode c=pn.getChild(0);
+  assertTrue(c instanceof SeqScanPlanNode);
+  SeqScanPlanNode ss=(SeqScanPlanNode)c;
+  assertEquals("R1",ss.getTargetTableName());
+  assertEquals("A",ss.getTargetTableAlias());
+  assertEquals(ExpressionType.COMPARE_LESSTHAN,ss.getPredicate().getExpressionType());
+  c=pn.getChild(1);
+  assertTrue(c instanceof SeqScanPlanNode);
+  ss=(SeqScanPlanNode)c;
+  assertEquals("R1",ss.getTargetTableName());
+  assertEquals("B",ss.getTargetTableAlias());
+  assertEquals(ExpressionType.COMPARE_GREATERTHAN,ss.getPredicate().getExpressionType());
+  pn=compile("select * FROM R1 JOIN R1 B ON R1.C = B.C");
+  pn=pn.getChild(0).getChild(0);
+  assertTrue(pn instanceof NestLoopPlanNode);
+  assertEquals(4,pn.getOutputSchema().getColumns().size());
+  assertEquals(2,pn.getChildCount());
+  c=pn.getChild(0);
+  assertTrue(c instanceof SeqScanPlanNode);
+  ss=(SeqScanPlanNode)c;
+  assertEquals("R1",ss.getTargetTableName());
+  assertEquals("R1",ss.getTargetTableAlias());
+  c=pn.getChild(1);
+  assertTrue(c instanceof SeqScanPlanNode);
+  ss=(SeqScanPlanNode)c;
+  assertEquals("R1",ss.getTargetTableName());
+  assertEquals("B",ss.getTargetTableAlias());
+  pn=compile("select A.A, A.C, B.A, B.C FROM R1 A JOIN R1 B ON A.C = B.C");
+  pn=pn.getChild(0).getChild(0);
+  assertTrue(pn instanceof NestLoopPlanNode);
+  assertEquals(4,pn.getOutputSchema().getColumns().size());
+  pn=compile("select A,C  FROM R1 A JOIN R2 B USING(A)");
+  pn=pn.getChild(0);
+  assertTrue(pn instanceof ProjectionPlanNode);
+  NodeSchema ns=pn.getOutputSchema();
+  for (  SchemaColumn sc : ns.getColumns()) {
+    AbstractExpression e=sc.getExpression();
+    assertTrue(e instanceof TupleValueExpression);
+    TupleValueExpression tve=(TupleValueExpression)e;
+    assertNotSame(-1,tve.getColumnIndex());
+  }
+}
