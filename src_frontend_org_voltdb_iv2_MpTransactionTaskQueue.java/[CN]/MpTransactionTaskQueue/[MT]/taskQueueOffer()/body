@@ -1,0 +1,25 @@
+{
+  boolean retval=false;
+  if (!m_backlog.isEmpty()) {
+    TransactionTask task=m_backlog.peekFirst();
+    if (!task.getTransactionState().isReadOnly()) {
+      if (m_currentReads.isEmpty() && m_currentWrites.isEmpty()) {
+        task=m_backlog.pollFirst();
+        m_currentWrites.put(task.getTxnId(),task);
+        taskQueueOffer(task);
+        retval=true;
+      }
+    }
+ else     if (m_currentWrites.isEmpty()) {
+      while (task != null && task.getTransactionState().isReadOnly() && m_sitePool.canAcceptWork()) {
+        task=m_backlog.pollFirst();
+        assert(task.getTransactionState().isReadOnly());
+        m_currentReads.put(task.getTxnId(),task);
+        taskQueueOffer(task);
+        retval=true;
+        task=m_backlog.peekFirst();
+      }
+    }
+  }
+  return retval;
+}

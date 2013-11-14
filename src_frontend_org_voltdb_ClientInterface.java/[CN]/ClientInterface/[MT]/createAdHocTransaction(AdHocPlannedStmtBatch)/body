@@ -4,7 +4,7 @@
   task.originalTxnId=plannedStmtBatch.originalTxnId;
   task.originalUniqueId=plannedStmtBatch.originalUniqueId;
   boolean isSinglePartition=plannedStmtBatch.isSinglePartitionCompatible() || m_isConfiguredForHSQL;
-  int partitions[]=null;
+  int partition=-1;
   if (isSinglePartition) {
     if (plannedStmtBatch.isReadOnly()) {
       task.procName="@AdHoc_RO_SP";
@@ -16,7 +16,7 @@
     if (plannedStmtBatch.partitionParam != null) {
       type=VoltType.typeFromObject(plannedStmtBatch.partitionParam).getValue();
     }
-    partitions=new int[]{TheHashinator.getPartitionForParameter(type,plannedStmtBatch.partitionParam)};
+    partition=TheHashinator.getPartitionForParameter(type,plannedStmtBatch.partitionParam);
   }
  else {
     if (plannedStmtBatch.isReadOnly()) {
@@ -25,7 +25,6 @@
  else {
       task.procName="@AdHoc_RW_MP";
     }
-    partitions=m_allPartitions;
   }
   ByteBuffer buf=ByteBuffer.allocate(plannedStmtBatch.getPlanArraySerializedSize());
   try {
@@ -48,21 +47,11 @@
     task.setParams(buf.array());
   }
   task.clientHandle=plannedStmtBatch.clientHandle;
-  FastSerializer fs=new FastSerializer();
-  int serializedSize=0;
   try {
-    fs.writeObject(task);
-    ByteBuffer source=fs.getBuffer();
-    ByteBuffer copy=ByteBuffer.allocate(source.remaining());
-    serializedSize=copy.capacity();
-    copy.put(source);
-    copy.flip();
-    FastDeserializer fds=new FastDeserializer(copy);
-    task=new StoredProcedureInvocation();
-    task.readExternal(fds);
+    task=MiscUtils.roundTripForCL(task);
   }
  catch (  Exception e) {
     VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
   }
-  createTransaction(plannedStmtBatch.connectionId,task,plannedStmtBatch.isReadOnly(),isSinglePartition,false,partitions,serializedSize,EstTime.currentTimeMillis());
+  createTransaction(plannedStmtBatch.connectionId,task,plannedStmtBatch.isReadOnly(),isSinglePartition,false,partition,task.getSerializedSize(),EstTime.currentTimeMillis());
 }

@@ -1,0 +1,36 @@
+{
+  FailedBatchProcessor failureProcessor=null;
+  try {
+    if (m_config.useSuppliedProcedure) {
+      processUserSuppliedProcedure(m_insertProcedure);
+    }
+ else {
+      VoltTable table=new VoltTable(m_colInfo);
+      String procName=(m_isMP ? "@LoadMultipartitionTable" : "@LoadSinglepartitionTable");
+      m_failedQueue=new LinkedBlockingQueue<CSVLineWithMetaData>();
+      failureProcessor=new FailedBatchProcessor(this,procName);
+      failureProcessor.start();
+      processLoadTable(table,procName);
+    }
+    m_partitionQueue.clear();
+    m_log.debug("Waiting for all batches acknowledged.");
+    while (m_batchWaitCount.get() > 0) {
+      Thread.sleep(100);
+    }
+    m_log.debug("All batches acknowledged.");
+    if (failureProcessor != null) {
+      if (m_failedQueue != null) {
+        m_failedQueue.put(m_endOfData);
+      }
+      failureProcessor.join();
+    }
+  }
+ catch (  Exception ex) {
+    CSVFileReader.m_errored=true;
+    m_log.error("Failed to process partitioned data: " + ex);
+  }
+ finally {
+    CSVPartitionProcessor.m_processor_cdl.countDown();
+    m_log.debug("Done Processing partition: " + m_partitionId + " Processed: "+ m_partitionProcessedCount);
+  }
+}

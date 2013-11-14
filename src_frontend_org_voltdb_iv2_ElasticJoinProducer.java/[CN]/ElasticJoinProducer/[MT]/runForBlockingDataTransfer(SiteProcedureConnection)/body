@@ -1,2 +1,37 @@
 {
+  Pair<Integer,ByteBuffer> tableBlock=m_dataSink.poll(m_snapshotBufferAllocator);
+  if (tableBlock != null) {
+    if (JOINLOG.isTraceEnabled()) {
+      JOINLOG.trace(m_whoami + "restoring table " + tableBlock.getFirst()+ " block of ("+ tableBlock.getSecond().position()+ ","+ tableBlock.getSecond().limit()+ ")");
+    }
+    restoreBlock(tableBlock,siteConnection);
+  }
+  if (m_dataSink.isEOF() || m_snapshotCompletionMonitor.isDone()) {
+    m_dataSink.close();
+    if (m_streamSnapshotMb != null) {
+      VoltDB.instance().getHostMessenger().removeMailbox(m_streamSnapshotMb.getHSId());
+    }
+    JOINLOG.debug(m_whoami + " data transfer is finished");
+    if (m_snapshotCompletionMonitor.isDone()) {
+      try {
+        SnapshotCompletionEvent event=m_snapshotCompletionMonitor.get();
+        assert(event != null);
+        JOINLOG.debug("P" + m_partitionId + " noticed data transfer completion");
+        m_completionAction.setSnapshotTxnId(event.multipartTxnId);
+        setJoinComplete(siteConnection,event.exportSequenceNumbers,false);
+      }
+ catch (      InterruptedException e) {
+        VoltDB.crashLocalVoltDB("Impossible interruption happend",true,e);
+      }
+catch (      ExecutionException e) {
+        VoltDB.crashLocalVoltDB("Error waiting for snapshot to finish",true,e);
+      }
+    }
+ else {
+      m_taskQueue.offer(this);
+    }
+  }
+ else {
+    m_taskQueue.offer(this);
+  }
 }
