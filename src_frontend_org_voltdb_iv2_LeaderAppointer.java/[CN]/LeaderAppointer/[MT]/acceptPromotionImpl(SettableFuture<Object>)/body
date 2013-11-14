@@ -22,7 +22,7 @@
     m_state.set(AppointerState.DONE);
   }
   if (m_state.get() == AppointerState.CLUSTER_START) {
-    m_startupLatch=new CountDownLatch(1);
+    m_startupLatch=SettableFuture.create();
     writeKnownLiveNodes(new HashSet<Integer>(m_hostMessenger.getLiveHostIds()));
     try {
       final int initialPartitionCount=getInitialPartitionCount();
@@ -34,8 +34,18 @@
  catch (    IllegalAccessException e) {
       VoltDB.crashLocalVoltDB("Failed to get partition count on startup",true,e);
     }
-    m_startupLatch.await();
-    m_zk.getChildren(VoltZK.leaders_initiators,m_partitionCallback);
+    m_startupLatch.addListener(new Runnable(){
+      @Override public void run(){
+        try {
+          m_zk.getChildren(VoltZK.leaders_initiators,m_partitionCallback);
+          blocker.set(null);
+        }
+ catch (        Throwable t) {
+          blocker.setException(t);
+        }
+      }
+    }
+,m_es);
   }
  else {
     Map<Integer,Long> masters=m_iv2masters.pointInTimeCache();
@@ -48,5 +58,6 @@
       m_partitionWatchers.put(partId,sitterstuff.getFirst());
     }
     m_MPI.acceptPromotion();
+    blocker.set(null);
   }
 }
