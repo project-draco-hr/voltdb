@@ -1,0 +1,24 @@
+{
+  final CountDownLatch latch=new CountDownLatch(1);
+class QueryTimeoutMonitor implements ProcedureCallback {
+    @Override public void clientCallback(    ClientResponse clientResponse) throws Exception {
+      assert(clientResponse.getStatus() == ClientResponse.CONNECTION_TIMEOUT);
+      System.out.println("Query timeout called..");
+      latch.countDown();
+    }
+  }
+  MockVolt volt=new MockVolt(20000);
+  volt.start();
+  Distributer dist=new Distributer(false,ClientConfig.DEFAULT_PROCEDURE_TIMOUT_MS,1000,false);
+  dist.createConnection("localhost","","",20000);
+  assertTrue(volt.handler != null);
+  Thread.sleep(3000);
+  assertTrue(volt.handler.gotPing);
+  volt.handler.sendResponses.set(false);
+  ProcedureInvocation invocation=new ProcedureInvocation(44,"@Ping");
+  dist.queue(invocation,new QueryTimeoutMonitor(),true,10);
+  latch.await();
+  dist.shutdown();
+  volt.shutdown.set(true);
+  volt.join();
+}

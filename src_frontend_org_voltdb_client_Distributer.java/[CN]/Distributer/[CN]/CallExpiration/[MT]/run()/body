@@ -20,14 +20,15 @@ synchronized (c) {
           Entry<Long,CallbackBookeeping> e=iter.next();
           long handle=e.getKey();
           CallbackBookeeping cb=e.getValue();
-          if ((now - cb.timestamp) > m_procedureCallTimeoutMS) {
+          long expiredin=((cb.expired != 0) ? cb.expired : m_procedureCallTimeoutMS);
+          if ((now - cb.timestamp) > expiredin) {
             boolean isLongOp=false;
             isLongOp|=cb.name.equals("@UpdateApplicationCatalog");
             isLongOp|=cb.name.equals("@SnapshotSave");
             if (isLongOp && ((now - cb.timestamp) < MINIMUM_LONG_RUNNING_SYSTEM_CALL_TIMEOUT_MS)) {
               continue;
             }
-            ClientResponseImpl r=new ClientResponseImpl(ClientResponse.CONNECTION_TIMEOUT,ClientResponse.UNINITIALIZED_APP_STATUS_CODE,"",new VoltTable[0],String.format("No response received in the allotted time (set to %d ms).",m_procedureCallTimeoutMS));
+            ClientResponseImpl r=new ClientResponseImpl(ClientResponse.CONNECTION_TIMEOUT,ClientResponse.UNINITIALIZED_APP_STATUS_CODE,"",new VoltTable[0],String.format("No response received in the allotted time (set to %d ms).",expiredin));
             r.setClientHandle(handle);
             r.setClientRoundtrip((int)(now - cb.timestamp));
             r.setClusterRoundtrip((int)(now - cb.timestamp));
