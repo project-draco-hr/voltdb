@@ -1,0 +1,23 @@
+{
+  Set<Class<?>> dispatchTypes=flattenHierarchy(event.getClass());
+  boolean dispatched=false;
+  for (  Class<?> eventType : dispatchTypes) {
+    handlersByTypeLock.readLock().lock();
+    try {
+      Set<EventHandler> wrappers=handlersByType.get(eventType);
+      if (!wrappers.isEmpty()) {
+        dispatched=true;
+        for (        EventHandler wrapper : wrappers) {
+          enqueueEvent(event,wrapper);
+        }
+      }
+    }
+  finally {
+      handlersByTypeLock.readLock().unlock();
+    }
+  }
+  if (!dispatched && !(event instanceof DeadEvent)) {
+    post(new DeadEvent(this,event));
+  }
+  dispatchQueuedEvents();
+}

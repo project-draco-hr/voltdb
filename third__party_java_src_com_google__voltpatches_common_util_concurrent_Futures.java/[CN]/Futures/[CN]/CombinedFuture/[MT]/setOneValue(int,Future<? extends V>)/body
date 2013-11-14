@@ -1,0 +1,37 @@
+{
+  List<Optional<V>> localValues=values;
+  if (isDone() || localValues == null) {
+    checkState(allMustSucceed || isCancelled(),"Future was done before all dependencies completed");
+  }
+  try {
+    checkState(future.isDone(),"Tried to set value from future which is not done");
+    V returnValue=getUninterruptibly(future);
+    if (localValues != null) {
+      localValues.set(index,Optional.fromNullable(returnValue));
+    }
+  }
+ catch (  CancellationException e) {
+    if (allMustSucceed) {
+      cancel(false);
+    }
+  }
+catch (  ExecutionException e) {
+    setExceptionAndMaybeLog(e.getCause());
+  }
+catch (  Throwable t) {
+    setExceptionAndMaybeLog(t);
+  }
+ finally {
+    int newRemaining=remaining.decrementAndGet();
+    checkState(newRemaining >= 0,"Less than 0 remaining futures");
+    if (newRemaining == 0) {
+      FutureCombiner<V,C> localCombiner=combiner;
+      if (localCombiner != null && localValues != null) {
+        set(localCombiner.combine(localValues));
+      }
+ else {
+        checkState(isDone());
+      }
+    }
+  }
+}

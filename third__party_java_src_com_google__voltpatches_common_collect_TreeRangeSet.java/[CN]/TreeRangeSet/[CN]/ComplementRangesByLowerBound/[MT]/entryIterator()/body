@@ -1,0 +1,40 @@
+{
+  Collection<Range<C>> positiveRanges;
+  if (complementLowerBoundWindow.hasLowerBound()) {
+    positiveRanges=positiveRangesByUpperBound.tailMap(complementLowerBoundWindow.lowerEndpoint(),complementLowerBoundWindow.lowerBoundType() == BoundType.CLOSED).values();
+  }
+ else {
+    positiveRanges=positiveRangesByUpperBound.values();
+  }
+  final PeekingIterator<Range<C>> positiveItr=Iterators.peekingIterator(positiveRanges.iterator());
+  final Cut<C> firstComplementRangeLowerBound;
+  if (complementLowerBoundWindow.contains(Cut.<C>belowAll()) && (!positiveItr.hasNext() || positiveItr.peek().lowerBound != Cut.<C>belowAll())) {
+    firstComplementRangeLowerBound=Cut.belowAll();
+  }
+ else   if (positiveItr.hasNext()) {
+    firstComplementRangeLowerBound=positiveItr.next().upperBound;
+  }
+ else {
+    return Iterators.emptyIterator();
+  }
+  return new AbstractIterator<Entry<Cut<C>,Range<C>>>(){
+    Cut<C> nextComplementRangeLowerBound=firstComplementRangeLowerBound;
+    @Override protected Entry<Cut<C>,Range<C>> computeNext(){
+      if (complementLowerBoundWindow.upperBound.isLessThan(nextComplementRangeLowerBound) || nextComplementRangeLowerBound == Cut.<C>aboveAll()) {
+        return endOfData();
+      }
+      Range<C> negativeRange;
+      if (positiveItr.hasNext()) {
+        Range<C> positiveRange=positiveItr.next();
+        negativeRange=Range.create(nextComplementRangeLowerBound,positiveRange.lowerBound);
+        nextComplementRangeLowerBound=positiveRange.upperBound;
+      }
+ else {
+        negativeRange=Range.create(nextComplementRangeLowerBound,Cut.<C>aboveAll());
+        nextComplementRangeLowerBound=Cut.aboveAll();
+      }
+      return Maps.immutableEntry(negativeRange.lowerBound,negativeRange);
+    }
+  }
+;
+}
