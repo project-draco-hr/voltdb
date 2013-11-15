@@ -3,18 +3,21 @@
   String exprsjson=m_catalogIndex.getExpressionsjson();
   if (exprsjson.isEmpty()) {
     List<ColumnRef> indexedColRefs=CatalogUtil.getSortedCatalogItems(m_catalogIndex.getColumns(),"index");
-    for (int i=0; i <= nextKeyIndex; i++) {
+    for (int i=0; i <= numOfKeysToSetup; i++) {
       ColumnRef colRef=indexedColRefs.get(i);
       Column col=colRef.getColumn();
-      TupleValueExpression tve=new TupleValueExpression(m_targetTableName,m_targetTableAlias,col.getTypeName(),col.getTypeName());
+      TupleValueExpression tve=new TupleValueExpression(m_targetTableName,m_targetTableAlias,col.getTypeName(),col.getTypeName(),col.getIndex());
+      tve.setValueType(VoltType.get((byte)col.getType()));
+      tve.setValueSize(col.getSize());
       AbstractExpression expr;
-      if (i == nextKeyIndex) {
+      if (i == numOfKeysToSetup) {
         expr=new OperatorExpression(ExpressionType.OPERATOR_IS_NULL,tve,null);
       }
  else {
         expr=new ComparisonExpression(ExpressionType.COMPARE_EQUAL,tve,m_searchkeyExpressions.get(i));
       }
-      exprs.add((AbstractExpression)expr.clone());
+      ExpressionUtil.finalizeValueTypes(expr);
+      exprs.add(expr);
     }
   }
  else {
@@ -26,16 +29,17 @@
       e.printStackTrace();
       assert(false);
     }
-    for (int i=0; i <= nextKeyIndex; i++) {
+    for (int i=0; i <= numOfKeysToSetup; i++) {
       AbstractExpression idxExpr=indexedExprs.get(i);
       AbstractExpression expr;
-      if (i == nextKeyIndex) {
+      if (i == numOfKeysToSetup) {
         expr=new OperatorExpression(ExpressionType.OPERATOR_IS_NULL,idxExpr,null);
       }
  else {
         expr=new ComparisonExpression(ExpressionType.COMPARE_EQUAL,idxExpr,m_searchkeyExpressions.get(i));
       }
-      exprs.add((AbstractExpression)expr.clone());
+      ExpressionUtil.finalizeValueTypes(expr);
+      exprs.add(expr);
     }
   }
   m_countNULLKeyExpr=ExpressionUtil.combine(exprs);
