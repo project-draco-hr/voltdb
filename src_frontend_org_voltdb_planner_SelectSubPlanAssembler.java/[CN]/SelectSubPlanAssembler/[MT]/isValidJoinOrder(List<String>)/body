@@ -7,22 +7,23 @@
     JoinNode subTree=subTrees.get(i);
     List<JoinNode> subTableNodes=subTree.generateLeafNodesJoinOrder();
     if (subTree.m_joinType == JoinType.INNER) {
-      Map<String,JoinNode> nodeNameMap=new HashMap<String,JoinNode>();
+      Map<Integer,JoinNode> nodeNameMap=new HashMap<Integer,JoinNode>();
       for (      JoinNode tableNode : subTableNodes) {
-        assert(tableNode.m_table != null);
+        assert(tableNode.m_tableAliasIndex != StmtTableScan.NULL_ALIAS_INDEX);
         if (tableNode.m_id >= 0) {
-          nodeNameMap.put(tableNode.m_table.getTypeName(),tableNode);
+          nodeNameMap.put(tableNode.m_tableAliasIndex,tableNode);
         }
       }
       List<JoinNode> joinOrderSubNodes=new ArrayList<JoinNode>();
       for (int j=0; j < subTableNodes.size(); ++j) {
         if (subTableNodes.get(j).m_id >= 0) {
-          assert(tableNameIdx < tableNames.size());
-          String tableName=tableNames.get(tableNameIdx);
-          if (!nodeNameMap.containsKey(tableName)) {
+          assert(tableNameIdx < tableAliases.size());
+          String tableAlias=tableAliases.get(tableNameIdx);
+          Integer aliasIdx=m_parsedStmt.tableAliasIndexMap.get(tableAlias);
+          if (aliasIdx == null || !nodeNameMap.containsKey(aliasIdx)) {
             return false;
           }
-          joinOrderSubNodes.add(nodeNameMap.get(tableName));
+          joinOrderSubNodes.add(nodeNameMap.get(aliasIdx));
           ++tableNameIdx;
         }
  else {
@@ -39,9 +40,11 @@
     }
  else {
       for (      JoinNode tableNode : subTableNodes) {
-        assert(tableNode.m_table != null && tableNameIdx < tableNames.size());
+        assert(tableNode.m_tableAliasIndex != StmtTableScan.NULL_ALIAS_INDEX && tableNameIdx < tableAliases.size());
         if (tableNode.m_id >= 0) {
-          if (!tableNames.get(tableNameIdx++).equals(tableNode.m_table.getTypeName())) {
+          assert(m_parsedStmt.stmtCache.size() > tableNode.m_tableAliasIndex);
+          StmtTableScan tableCache=m_parsedStmt.stmtCache.get(tableNode.m_tableAliasIndex);
+          if (!tableAliases.get(tableNameIdx++).equals(tableCache.m_tableAlias)) {
             return false;
           }
         }

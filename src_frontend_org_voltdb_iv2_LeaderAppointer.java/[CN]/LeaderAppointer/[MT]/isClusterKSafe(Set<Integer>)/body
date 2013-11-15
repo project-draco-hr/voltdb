@@ -1,0 +1,65 @@
+{
+  boolean retval=true;
+  List<String> partitionDirs=null;
+  ImmutableSortedMap.Builder<Integer,Integer> lackingReplication=ImmutableSortedMap.naturalOrder();
+  try {
+    partitionDirs=m_zk.getChildren(VoltZK.leaders_initiators,null);
+  }
+ catch (  Exception e) {
+    VoltDB.crashLocalVoltDB("Unable to read partitions from ZK",true,e);
+  }
+  Queue<ZKUtil.ByteArrayCallback> dataCallbacks=new ArrayDeque<ZKUtil.ByteArrayCallback>();
+  Queue<ZKUtil.ChildrenCallback> childrenCallbacks=new ArrayDeque<ZKUtil.ChildrenCallback>();
+  for (  String partitionDir : partitionDirs) {
+    String dir=ZKUtil.joinZKPath(VoltZK.leaders_initiators,partitionDir);
+    try {
+      ZKUtil.ByteArrayCallback callback=new ZKUtil.ByteArrayCallback();
+      m_zk.getData(dir,false,callback,null);
+      dataCallbacks.offer(callback);
+      ZKUtil.ChildrenCallback childrenCallback=new ZKUtil.ChildrenCallback();
+      m_zk.getChildren(dir,false,childrenCallback,null);
+      childrenCallbacks.offer(childrenCallback);
+    }
+ catch (    Exception e) {
+      VoltDB.crashLocalVoltDB("Unable to read replicas in ZK dir: " + dir,true,e);
+    }
+  }
+  for (  String partitionDir : partitionDirs) {
+    int pid=LeaderElector.getPartitionFromElectionDir(partitionDir);
+    String dir=ZKUtil.joinZKPath(VoltZK.leaders_initiators,partitionDir);
+    try {
+      byte[] partitionState=dataCallbacks.poll().getData();
+      boolean isInitializing=false;
+      if (partitionState != null && partitionState.length == 1) {
+        isInitializing=partitionState[0] == LeaderElector.INITIALIZING;
+      }
+      List<String> replicas=childrenCallbacks.poll().getChildren();
+      if (pid == MpInitiator.MP_INIT_PID)       continue;
+      final boolean partitionNotOnHashRing=partitionNotOnHashRing(pid);
+      if (!isInitializing && replicas.isEmpty()) {
+        if (partitionNotOnHashRing) {
+          removeAndCleanupPartition(pid);
+          continue;
+        }
+        tmLog.fatal("K-Safety violation: No replicas found for partition: " + pid);
+        retval=false;
+      }
+ else       if (!partitionNotOnHashRing) {
+        for (        String replica : replicas) {
+          final String split[]=replica.split("/");
+          final long hsId=Long.valueOf(split[split.length - 1].split("_")[0]);
+          final int hostId=CoreUtils.getHostIdFromHSId(hsId);
+          hostsOnRing.add(hostId);
+        }
+      }
+      if (!isInitializing && replicas.size() <= m_kfactor && !partitionNotOnHashRing) {
+        lackingReplication.put(pid,m_kfactor + 1 - replicas.size());
+      }
+    }
+ catch (    Exception e) {
+      VoltDB.crashLocalVoltDB("Unable to read replicas in ZK dir: " + dir,true,e);
+    }
+  }
+  m_stats.setSafetyMap(lackingReplication.build());
+  return retval;
+}

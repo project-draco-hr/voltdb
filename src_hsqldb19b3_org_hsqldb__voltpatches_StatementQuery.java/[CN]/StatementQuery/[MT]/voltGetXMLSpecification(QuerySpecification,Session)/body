@@ -7,30 +7,35 @@
       throw new HSQLParseException("Parser did not create limit and offset expression for LIMIT.");
     }
     try {
+      VoltXMLElement offset=new VoltXMLElement("offset");
       if (limitCondition.nodes[0].isParam == false) {
-        Integer offset=(Integer)limitCondition.nodes[0].getValue(session);
-        if (offset > 0) {
-          query.attributes.put("offset",offset.toString());
+        Integer offsetValue=(Integer)limitCondition.nodes[0].getValue(session);
+        if (offsetValue > 0) {
+          Expression expr=new ExpressionValue(offsetValue,Type.SQL_BIGINT);
+          offset.children.add(expr.voltGetXML(session));
+          offset.attributes.put("offset",offsetValue.toString());
         }
       }
  else {
-        query.attributes.put("offset_paramid",limitCondition.nodes[0].getUniqueId(session));
+        offset.attributes.put("offset_paramid",limitCondition.nodes[0].getUniqueId(session));
       }
+      query.children.add(offset);
+      VoltXMLElement limit=new VoltXMLElement("limit");
       if (limitCondition.nodes[1].isParam == false) {
-        Integer limit=(Integer)limitCondition.nodes[1].getValue(session);
-        query.attributes.put("limit",limit.toString());
+        Integer limitValue=(Integer)limitCondition.nodes[1].getValue(session);
+        Expression expr=new ExpressionValue(limitValue,Type.SQL_BIGINT);
+        limit.children.add(expr.voltGetXML(session));
+        limit.attributes.put("limit",limitValue.toString());
       }
  else {
-        query.attributes.put("limit_paramid",limitCondition.nodes[1].getUniqueId(session));
+        limit.attributes.put("limit_paramid",limitCondition.nodes[1].getUniqueId(session));
       }
+      query.children.add(limit);
     }
  catch (    HsqlException ex) {
       ex.printStackTrace();
     }
   }
-  VoltXMLElement scanCols=new VoltXMLElement("scan_columns");
-  query.children.add(scanCols);
-  assert(scanCols != null);
   HsqlList col_list=new HsqlArrayList();
   select.collectAllExpressions(col_list,Expression.columnExpressionSet,Expression.emptyExpressionSet);
   if (select.queryCondition != null) {
@@ -49,18 +54,6 @@
     if (rv.nonIndexJoinCondition != null) {
       Expression.collectAllExpressions(col_list,rv.nonIndexJoinCondition,Expression.columnExpressionSet,Expression.emptyExpressionSet);
     }
-  }
-  HsqlList uniq_col_list=new HsqlArrayList();
-  for (int i=0; i < col_list.size(); i++) {
-    Expression orig=(Expression)col_list.get(i);
-    if (!uniq_col_list.contains(orig)) {
-      uniq_col_list.add(orig);
-    }
-  }
-  for (int i=0; i < uniq_col_list.size(); i++) {
-    VoltXMLElement xml=((Expression)uniq_col_list.get(i)).voltGetXML(session);
-    scanCols.children.add(xml);
-    assert(xml != null);
   }
   VoltXMLElement cols=new VoltXMLElement("columns");
   query.children.add(cols);
@@ -114,7 +107,6 @@
   for (  RangeVariable rangeVariable : select.rangeVariables) {
     scans.children.add(rangeVariable.voltGetRangeVariableXML(session));
   }
-  resolveUsingColumns(cols,select.rangeVariables);
   if (select.havingCondition != null) {
     throw new HSQLParseException("VoltDB does not support the HAVING clause");
   }
@@ -136,5 +128,8 @@
       orderCols.children.add(xml);
     }
   }
+  List<VoltXMLElement> exprCols=new ArrayList<VoltXMLElement>();
+  extractColumnReferences(query,exprCols);
+  resolveUsingColumns(exprCols,select.rangeVariables);
   return query;
 }

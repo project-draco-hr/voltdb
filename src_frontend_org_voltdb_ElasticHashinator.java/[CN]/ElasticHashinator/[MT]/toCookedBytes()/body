@@ -1,23 +1,24 @@
 {
-  ByteBuffer buf=ByteBuffer.allocate(4 + (m_tokens.size() * (4 + TokenCompressor.COMPRESSED_SIZE)));
-  int numEntries=m_tokens.size();
-  buf.putInt(numEntries);
-  for (  Map.Entry<Long,Integer> e : m_tokens.entrySet()) {
-    int optimizedToken=TokenCompressor.compress(e.getKey());
-    buf.putInt(optimizedToken);
+  ByteBuffer buf=ByteBuffer.allocate(4 + (m_tokenCount * 8));
+  buf.putInt(m_tokenCount);
+  for (int zz=3; zz >= 0; zz--) {
+    int lastToken=Integer.MIN_VALUE;
+    for (int ii=0; ii < m_tokenCount; ii++) {
+      int token=unsafe.getInt(m_tokens + (ii * 8));
+      Preconditions.checkArgument(token >= lastToken);
+      lastToken=token;
+      token=token >>> (zz * 8);
+      token=token & 0xFF;
+      buf.put((byte)token);
+    }
   }
-  for (  Map.Entry<Long,Integer> e : m_tokens.entrySet()) {
-    int partitionId=e.getValue();
-    buf.putInt(partitionId);
+  for (int ii=0; ii < m_tokenCount; ii++) {
+    buf.putInt(unsafe.getInt(m_tokens + (ii * 8) + 4));
   }
-  ByteArrayOutputStream bos=new ByteArrayOutputStream(buf.array().length);
-  DeflaterOutputStream dos=new DeflaterOutputStream(bos);
   try {
-    dos.write(buf.array());
-    dos.close();
+    return CompressionService.gzipBytes(buf.array());
   }
  catch (  IOException e) {
-    throw new RuntimeException(String.format("Failed to deflate cooked bytes: %s",e.toString()));
+    throw new RuntimeException("Failed to compress bytes",e);
   }
-  return bos.toByteArray();
 }

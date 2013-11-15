@@ -1,0 +1,51 @@
+{
+  if (!index.getUnique()) {
+    return;
+  }
+  boolean containsPartitionColumn=false;
+  String jsonExpr=index.getExpressionsjson();
+  if (jsonExpr.isEmpty()) {
+    for (    ColumnRef cref : index.getColumns()) {
+      Column col=cref.getColumn();
+      if (col.equals(partitionCol)) {
+        containsPartitionColumn=true;
+        break;
+      }
+    }
+  }
+ else {
+    try {
+      List<AbstractExpression> indexExpressions=AbstractExpression.fromJSONArrayString(jsonExpr);
+      for (      AbstractExpression expr : indexExpressions) {
+        if (expr instanceof TupleValueExpression && ((TupleValueExpression)expr).getColumnName().equals(partitionCol.getName())) {
+          containsPartitionColumn=true;
+          break;
+        }
+      }
+    }
+ catch (    JSONException e) {
+      e.printStackTrace();
+      assert(false);
+    }
+  }
+  if (containsPartitionColumn) {
+    if (index.getAssumeunique()) {
+      String exceptionMsg=String.format("ASSUMEUNIQUE is not valid " + "for an index that includes the partitioning column. Please use UNIQUE instead.");
+      throw new VoltCompilerException(exceptionMsg);
+    }
+  }
+ else   if (!index.getAssumeunique()) {
+    String indexName=index.getTypeName();
+    String keyword="";
+    if (indexName.startsWith("SYS_IDX_PK_") || indexName.startsWith("SYS_IDX_SYS_PK_")) {
+      indexName="PRIMARY KEY";
+      keyword="PRIMARY KEY";
+    }
+ else {
+      indexName="UNIQUE INDEX " + indexName;
+      keyword="UNIQUE";
+    }
+    String exceptionMsg="Invalid use of " + keyword + ". The "+ indexName+ " on the partitioned table "+ tableName+ " does not include the partitioning column "+ partitionCol.getName()+ ". See the documentation for the 'CREATE TABLE' and 'CREATE INDEX' commands and the 'ASSUMEUNIQUE' keyword.";
+    throw new VoltCompilerException(exceptionMsg);
+  }
+}
