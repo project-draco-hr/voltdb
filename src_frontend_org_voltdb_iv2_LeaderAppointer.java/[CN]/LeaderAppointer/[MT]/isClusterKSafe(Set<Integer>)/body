@@ -1,6 +1,9 @@
 {
   boolean retval=true;
   List<String> partitionDirs=null;
+  int[] stamp=new int[1];
+  NavigableMap<Integer,Integer> expected=m_stats.getKSafetyMapReference().get(stamp);
+  ImmutableSortedMap.Builder<Integer,Integer> lackingReplication=ImmutableSortedMap.naturalOrder();
   try {
     partitionDirs=m_zk.getChildren(VoltZK.leaders_initiators,null);
   }
@@ -51,10 +54,15 @@
           hostsOnRing.add(hostId);
         }
       }
+      if (!isInitializing && replicas.size() <= m_kfactor && !partitionNotOnHashRing) {
+        lackingReplication.put(pid,m_kfactor + 1 - replicas.size());
+      }
     }
  catch (    Exception e) {
       VoltDB.crashLocalVoltDB("Unable to read replicas in ZK dir: " + dir,true,e);
     }
   }
+  NavigableMap<Integer,Integer> lackingReplicationMap=lackingReplication.build();
+  boolean setSatus=m_stats.getKSafetyMapReference().compareAndSet(expected,lackingReplicationMap,stamp[0],stamp[0] + 1);
   return retval;
 }

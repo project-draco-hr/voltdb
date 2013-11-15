@@ -178,13 +178,17 @@ synchronized (m_startAndStopLock) {
     m_liveClientsStats=new LiveClientsStats();
     getStatsAgent().registerStatsSource(StatsSelector.LIVECLIENTS,0,m_liveClientsStats);
     m_latencyStats=new LatencyStats(m_myHostId);
+    BalancePartitionsStatistics rebalanceStats=new BalancePartitionsStatistics();
+    getStatsAgent().registerStatsSource(StatsSelector.REBALANCE,0,rebalanceStats);
+    KSafetyStats kSafetyStats=new KSafetyStats();
+    getStatsAgent().registerStatsSource(StatsSelector.KSAFETY,0,kSafetyStats);
     if (m_commandLog != null && (isRejoin || m_joining)) {
       m_commandLog.initForRejoin(m_catalogContext,Long.MIN_VALUE,m_configuredNumberOfPartitions,true,m_config.m_commandLogBinding,m_iv2InitiatorStartingTxnIds);
     }
     boolean usingCommandLog=false;
     try {
       usingCommandLog=m_config.m_isEnterprise && m_catalogContext.cluster.getLogconfig().get("log").getEnabled();
-      m_leaderAppointer=new LeaderAppointer(m_messenger,m_configuredNumberOfPartitions,m_deployment.getCluster().getKfactor(),m_catalogContext.cluster.getNetworkpartition(),m_catalogContext.cluster.getFaultsnapshots().get("CLUSTER_PARTITION"),usingCommandLog,topo,m_MPI);
+      m_leaderAppointer=new LeaderAppointer(m_messenger,m_configuredNumberOfPartitions,m_deployment.getCluster().getKfactor(),m_catalogContext.cluster.getNetworkpartition(),m_catalogContext.cluster.getFaultsnapshots().get("CLUSTER_PARTITION"),usingCommandLog,topo,m_MPI,kSafetyStats);
       m_globalServiceElector.registerService(m_leaderAppointer);
       for (      Initiator iv2init : m_iv2Initiators) {
         iv2init.configure(getBackendTargetType(),m_serializedCatalog,m_catalogContext,m_deployment.getCluster().getKfactor(),csp,m_configuredNumberOfPartitions,m_config.m_startAction,getStatsAgent(),m_memoryStats,m_commandLog,m_nodeDRGateway,m_config.m_executionCoreBindings.poll());
@@ -294,8 +298,8 @@ synchronized (m_startAndStopLock) {
         if (elasticServiceClass == null) {
           VoltDB.crashLocalVoltDB("Missing the ElasticJoinCoordinator class file in the enterprise " + "edition",false,null);
         }
-        Constructor<?> constructor=elasticServiceClass.getConstructor(HostMessenger.class,ClientInterface.class,Cartographer.class,String.class,int.class);
-        m_elasticJoinService=(ElasticJoinService)constructor.newInstance(m_messenger,m_clientInterfaces.get(0),m_cartographer,clSnapshotPath,m_deployment.getCluster().getKfactor());
+        Constructor<?> constructor=elasticServiceClass.getConstructor(HostMessenger.class,ClientInterface.class,Cartographer.class,BalancePartitionsStatistics.class,String.class,int.class);
+        m_elasticJoinService=(ElasticJoinService)constructor.newInstance(m_messenger,m_clientInterfaces.get(0),m_cartographer,rebalanceStats,clSnapshotPath,m_deployment.getCluster().getKfactor());
       }
     }
  catch (    Exception e) {
