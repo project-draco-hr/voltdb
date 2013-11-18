@@ -2,7 +2,7 @@
   if (msg == null) {
     return null;
   }
-  Pair<Integer,ByteBuffer> processed=null;
+  RestoreWork restoreWork=null;
   long hsId=msg.getFirst();
   long targetId=msg.getSecond().getFirst();
   BBContainer container=msg.getSecond().getSecond();
@@ -37,8 +37,7 @@
       long version=block.getLong();
       byte[] hashinatorConfig=new byte[block.remaining()];
       block.get(hashinatorConfig);
-      rejoinLog.debug("Updating the hashinator to version " + version);
-      TheHashinator.updateConfiguredHashinator(version,hashinatorConfig);
+      restoreWork=new HashinatorRestoreWork(version,hashinatorConfig);
     }
  else {
       final int tableId=block.getInt(StreamSnapshotDataTarget.tableIdOffset);
@@ -48,10 +47,10 @@
       block.position(StreamSnapshotDataTarget.contentOffset);
       ByteBuffer nextChunk=getNextChunk(m_schemas.get(tableId),block,resultBufferAllocator);
       m_bytesReceived+=nextChunk.remaining();
-      processed=Pair.of(tableId,nextChunk);
+      restoreWork=new TableRestoreWork(tableId,nextChunk);
     }
     m_ack.ack(hsId,m_EOF,targetId,blockIndex);
-    return processed;
+    return restoreWork;
   }
   finally {
     container.discard();
