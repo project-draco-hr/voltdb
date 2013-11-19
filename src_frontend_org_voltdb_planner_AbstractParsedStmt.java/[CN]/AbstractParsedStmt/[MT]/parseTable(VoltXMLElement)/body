@@ -9,11 +9,13 @@
   int aliasIdx=addTableToStmtCache(tableName,tableAlias,subQuery);
   AbstractExpression joinExpr=parseJoinCondition(tableNode);
   AbstractExpression whereExpr=parseWhereCondition(tableNode);
-  if (stmtCache.get(aliasIdx).m_table != null) {
-    tableList.add(stmtCache.get(aliasIdx).m_table);
+  StmtTableScan tableCache=stmtCache.get(aliasIdx);
+  if (tableCache.getScanType() == StmtTableScan.TABLE_SCAN_TYPE.TARGET_TABLE_SCAN) {
+    Table table=tableCache.getTargetTable();
+    tableList.add(table);
   }
-  int nodeId=(joinTree == null) ? 0 : joinTree.m_id + 1;
-  JoinNode leafNode=(subQuery == null) ? new JoinNode(nodeId,NodeType.LEAF,JoinType.INNER,aliasIdx,joinExpr,whereExpr) : new JoinNode(nodeId,NodeType.SUBQUERY,JoinType.INNER,aliasIdx,joinExpr,whereExpr);
+  int nodeId=(joinTree == null) ? 0 : joinTree.getId() + 1;
+  JoinNode leafNode=(subQuery == null) ? new TableLeafNode(nodeId,aliasIdx,joinExpr,whereExpr) : new SubqueryLeafNode(nodeId,aliasIdx,joinExpr,whereExpr);
   if (joinTree == null) {
     joinTree=leafNode;
   }
@@ -23,7 +25,7 @@
     if (joinType == JoinType.FULL) {
       throw new PlanningErrorException("VoltDB does not support full outer joins");
     }
-    JoinNode joinNode=new JoinNode(nodeId + 1,joinType,joinTree,leafNode);
+    JoinNode joinNode=new BranchNode(nodeId + 1,joinType,joinTree,leafNode);
     joinTree=joinNode;
   }
 }

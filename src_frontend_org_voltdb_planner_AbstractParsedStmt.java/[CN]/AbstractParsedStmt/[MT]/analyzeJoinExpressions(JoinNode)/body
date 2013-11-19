@@ -2,34 +2,36 @@
   if (joinNode == null) {
     return;
   }
-  if (joinNode.m_tableAliasIndex != StmtTableScan.NULL_ALIAS_INDEX) {
-    assert(joinNode.m_leftNode == null && joinNode.m_rightNode == null);
-    joinNode.m_joinInnerList.addAll(ExpressionUtil.uncombineAny(joinNode.m_joinExpr));
-    joinNode.m_whereInnerList.addAll(ExpressionUtil.uncombineAny(joinNode.m_whereExpr));
+  if (joinNode.getNodeType() == JoinNode.NodeType.LEAF || joinNode.getNodeType() == JoinNode.NodeType.SUBQUERY) {
+    assert(joinNode.getLeftNode() == null && joinNode.getRightNode() == null);
+    joinNode.m_joinInnerList.addAll(ExpressionUtil.uncombineAny(joinNode.getJoinExpression()));
+    joinNode.m_whereInnerList.addAll(ExpressionUtil.uncombineAny(joinNode.getWhereExpression()));
     return;
   }
-  assert(joinNode.m_leftNode != null && joinNode.m_rightNode != null);
-  analyzeJoinExpressions(joinNode.m_leftNode);
-  analyzeJoinExpressions(joinNode.m_rightNode);
-  assert(joinNode.m_joinType == JoinType.LEFT || joinNode.m_joinType == JoinType.INNER);
+  assert(joinNode.getNodeType() == JoinNode.NodeType.JOIN);
+  analyzeJoinExpressions(joinNode.getLeftNode());
+  analyzeJoinExpressions(joinNode.getRightNode());
+  assert(joinNode.getJoinType() == JoinType.LEFT || joinNode.getJoinType() == JoinType.INNER);
   ArrayList<AbstractExpression> joinList=new ArrayList<AbstractExpression>();
   ArrayList<AbstractExpression> whereList=new ArrayList<AbstractExpression>();
-  joinList.addAll(ExpressionUtil.uncombineAny(joinNode.m_joinExpr));
-  whereList.addAll(ExpressionUtil.uncombineAny(joinNode.m_whereExpr));
-  if (joinNode.m_leftNode.m_tableAliasIndex != StmtTableScan.NULL_ALIAS_INDEX) {
-    joinList.addAll(joinNode.m_leftNode.m_joinInnerList);
-    joinNode.m_leftNode.m_joinInnerList.clear();
-    whereList.addAll(joinNode.m_leftNode.m_whereInnerList);
-    joinNode.m_leftNode.m_whereInnerList.clear();
+  joinList.addAll(ExpressionUtil.uncombineAny(joinNode.getJoinExpression()));
+  whereList.addAll(ExpressionUtil.uncombineAny(joinNode.getWhereExpression()));
+  JoinNode leftChild=joinNode.getLeftNode();
+  if (leftChild.getNodeType() == JoinNode.NodeType.LEAF || leftChild.getNodeType() == JoinNode.NodeType.SUBQUERY) {
+    joinList.addAll(leftChild.m_joinInnerList);
+    leftChild.m_joinInnerList.clear();
+    whereList.addAll(leftChild.m_whereInnerList);
+    leftChild.m_whereInnerList.clear();
   }
-  if (joinNode.m_rightNode.m_tableAliasIndex != StmtTableScan.NULL_ALIAS_INDEX) {
-    joinList.addAll(joinNode.m_rightNode.m_joinInnerList);
-    joinNode.m_rightNode.m_joinInnerList.clear();
-    whereList.addAll(joinNode.m_rightNode.m_whereInnerList);
-    joinNode.m_rightNode.m_whereInnerList.clear();
+  JoinNode rightChild=joinNode.getRightNode();
+  if (rightChild.getNodeType() == JoinNode.NodeType.LEAF || rightChild.getNodeType() == JoinNode.NodeType.SUBQUERY) {
+    joinList.addAll(rightChild.m_joinInnerList);
+    rightChild.m_joinInnerList.clear();
+    whereList.addAll(rightChild.m_whereInnerList);
+    rightChild.m_whereInnerList.clear();
   }
-  Collection<Integer> outerTables=joinNode.m_leftNode.generateTableJoinOrder();
-  Collection<Integer> innerTables=joinNode.m_rightNode.generateTableJoinOrder();
+  Collection<Integer> outerTables=leftChild.generateTableJoinOrder();
+  Collection<Integer> innerTables=rightChild.generateTableJoinOrder();
   classifyJoinExpressions(joinList,outerTables,innerTables,joinNode.m_joinOuterList,joinNode.m_joinInnerList,joinNode.m_joinInnerOuterList);
   applyTransitiveEquivalence(joinNode.m_joinOuterList,joinNode.m_joinInnerList,joinNode.m_joinInnerOuterList);
   classifyJoinExpressions(whereList,outerTables,innerTables,joinNode.m_whereOuterList,joinNode.m_whereInnerList,joinNode.m_whereInnerOuterList);
