@@ -7,19 +7,20 @@
   if (subQueryNodes.isEmpty()) {
     return null;
   }
-  ChildPlanResult parseResult=new ChildPlanResult();
+  ParsedResultAccumulator parsedResult=new ParsedResultAccumulator();
   for (  JoinNode subQueryNode : subQueryNodes) {
     assert(subQueryNode.getTableAliasIndex() != StmtTableScan.NULL_ALIAS_INDEX);
     StmtTableScan tableCache=parsedStmt.stmtCache.get(subQueryNode.getTableAliasIndex());
     assert(tableCache.getScanType() == StmtTableScan.TABLE_SCAN_TYPE.TEMP_TABLE_SCAN);
     AbstractParsedStmt subQuery=tableCache.getTempTable().getSubQuery();
     assert(subQuery != null);
-    planForChildStmt(subQuery,parseResult);
-    if (parseResult.m_compiledPlan == null) {
-      return parseResult;
+    parsedResult=planForParsedStmt(subQuery,parsedResult);
+    tableCache.setPartitioning(parsedResult.m_currentPartitioning);
+    if (parsedResult.m_compiledPlan == null) {
+      return parsedResult;
     }
-    tableCache.getTempTable().setBetsCostPlan(parseResult.m_compiledPlan);
+    tableCache.getTempTable().setBetsCostPlan(parsedResult.m_compiledPlan);
   }
-  m_planSelector.m_planId=parseResult.m_planId;
-  return parseResult;
+  m_planSelector.m_planId=parsedResult.m_planId;
+  return parsedResult;
 }

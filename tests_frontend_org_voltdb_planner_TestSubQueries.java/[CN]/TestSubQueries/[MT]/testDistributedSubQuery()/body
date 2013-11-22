@@ -4,7 +4,7 @@
     assertTrue(lpn.size() == 2);
     AbstractPlanNode n=lpn.get(0).getChild(0);
     assertTrue(n instanceof SeqScanPlanNode);
-    assertEquals("SYSTEM_SUBQUERY",((SeqScanPlanNode)n).getTargetTableName());
+    assertEquals("TEMP",((SeqScanPlanNode)n).getTargetTableName());
     n=lpn.get(1).getChild(0);
     assertTrue(n instanceof IndexScanPlanNode);
   }
@@ -23,22 +23,18 @@
     assertTrue(n instanceof IndexScanPlanNode);
   }
 {
-    failToCompile("select A, C FROM (SELECT A FROM P1) TEMP1, (SELECT C FROM P2) TEMP2 WHERE TEMP1.A = TEMP2.C ","Statements are too complex in set operation or sub-query using multiple partitioned");
+    failToCompile("select A, C FROM (SELECT A FROM P1) TEMP1, (SELECT C FROM P2) TEMP2 WHERE TEMP1.A = TEMP2.C ","Statements are too complex in set operation or statement with sub-query using multiple partitioned");
   }
 {
-    List<AbstractPlanNode> lpn=compileToFragments("select D1, D2 FROM (SELECT D D1 FROM P1 WHERE A=1) TEMP1, (SELECT D D2 FROM P2 WHERE A=1) TEMP2 WHERE TEMP1.D1 = TEMP2.D2 ");
+    List<AbstractPlanNode> lpn=compileToFragments("select D1, P2.D FROM (SELECT A, D D1 FROM P1 WHERE A=1) TEMP1, P2 WHERE TEMP1.A = P2.A AND P2.A = 1");
     assertTrue(lpn.size() == 1);
     AbstractPlanNode n=lpn.get(0).getChild(0).getChild(0);
     assertTrue(n instanceof NestLoopPlanNode);
     AbstractPlanNode c=n.getChild(0);
     assertTrue(c instanceof SeqScanPlanNode);
     assertEquals("TEMP1",((SeqScanPlanNode)c).getTargetTableAlias());
-    c=n.getChild(1);
-    assertTrue(c instanceof SeqScanPlanNode);
-    assertEquals("TEMP2",((SeqScanPlanNode)c).getTargetTableAlias());
   }
 {
-    List<AbstractPlanNode> lpn=compileToFragments("select A1, A2 FROM (SELECT A A1 FROM P1) TEMP1, (SELECT A A2 FROM P2) TEMP2 WHERE TEMP1.A1 = TEMP2.A2 ");
-    assertTrue(lpn.size() == 2);
+    failToCompile("select D1, P2.D FROM (SELECT A, D D1 FROM P1 WHERE A=2) TEMP1, P2 WHERE TEMP1.A = P2.A AND P2.A = 1","Statements use conflicting partitioned table filters in set operation or sub-query.");
   }
 }
