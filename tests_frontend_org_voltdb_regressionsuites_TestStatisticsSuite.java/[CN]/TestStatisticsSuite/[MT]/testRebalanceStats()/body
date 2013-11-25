@@ -6,43 +6,23 @@
   final int BYTES_TO_MOVE=10000000;
   final int ROWS_TO_MOVE=1000000;
   final double FUZZ_FACTOR=.1;
+  RebalanceStatsChecker checker=new RebalanceStatsChecker(RANGES_TO_MOVE,FUZZ_FACTOR);
   BalancePartitionsStatistics bps=new BalancePartitionsStatistics(RANGES_TO_MOVE);
   Random r=new Random(2222);
-  long rangesMoved=0;
-  long bytesMoved=0;
-  long rowsMoved=0;
-  long invocations=0;
-  long totalInvTimeMS=0;
-  long tStartMS=System.currentTimeMillis();
   final int loopCount=(DURATION_SECONDS * 1000) / (INVOCATION_SLEEP_MILLIS + IDLE_SLEEP_MILLIS);
   for (int i=0; i < loopCount; i++) {
     bps.logBalanceStarts();
     int invocationTimeMS=r.nextInt(INVOCATION_SLEEP_MILLIS);
     Thread.sleep(invocationTimeMS);
-    totalInvTimeMS+=invocationTimeMS;
+    checker.totalInvTimeMS+=invocationTimeMS;
     int ranges=r.nextInt(RANGES_TO_MOVE / loopCount);
     int bytes=r.nextInt(BYTES_TO_MOVE / loopCount);
     int rows=r.nextInt(ROWS_TO_MOVE / loopCount);
-    rangesMoved+=ranges;
-    bytesMoved+=bytes;
-    rowsMoved+=rows;
-    invocations++;
     bps.logBalanceEnds(ranges,bytes,invocationTimeMS,rows);
+    checker.update(ranges,bytes,rows);
+    checker.check(bps.getLastStatsPoint());
     int idleTimeMS=r.nextInt(IDLE_SLEEP_MILLIS);
     Thread.sleep(idleTimeMS);
   }
-  double totalTimeS=(System.currentTimeMillis() - tStartMS) / 1000.0;
-  StatsPoint stats=bps.getOverallStats();
-  double statsRangesMoved1=(stats.getPercentageMoved() / 100.0) * RANGES_TO_MOVE;
-  assertTrue(Math.abs((rangesMoved - statsRangesMoved1) / rangesMoved) <= FUZZ_FACTOR);
-  double statsRangesMoved2=stats.getRangesPerSecond() * totalTimeS;
-  assertTrue(Math.abs((rangesMoved - statsRangesMoved2) / rangesMoved) <= FUZZ_FACTOR);
-  double statsBytesMoved=stats.getMegabytesPerSecond() * 1000000.0 * totalTimeS;
-  assertTrue(Math.abs((bytesMoved - statsBytesMoved) / bytesMoved) <= FUZZ_FACTOR);
-  double statsRowsMoved=stats.getRowsPerSecond() * totalTimeS;
-  assertTrue(Math.abs((rowsMoved - statsRowsMoved) / rowsMoved) <= FUZZ_FACTOR);
-  double statsInvocations=stats.getInvocationsPerSecond() * totalTimeS;
-  assertTrue(Math.abs((invocations - statsInvocations) / invocations) <= FUZZ_FACTOR);
-  double statsInvTimeMS=stats.getAverageInvocationTime() * invocations;
-  assertTrue(Math.abs((totalInvTimeMS - statsInvTimeMS) / totalInvTimeMS) <= FUZZ_FACTOR);
+  checker.check(bps.getOverallStats());
 }
