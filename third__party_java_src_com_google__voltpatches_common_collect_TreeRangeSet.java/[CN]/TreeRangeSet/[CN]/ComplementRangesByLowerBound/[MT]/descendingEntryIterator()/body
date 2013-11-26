@@ -1,0 +1,40 @@
+{
+  Iterator<Range<C>> itr;
+  Cut<C> startingPoint=complementLowerBoundWindow.hasUpperBound() ? complementLowerBoundWindow.upperEndpoint() : Cut.<C>aboveAll();
+  boolean inclusive=complementLowerBoundWindow.hasUpperBound() && complementLowerBoundWindow.upperBoundType() == BoundType.CLOSED;
+  final PeekingIterator<Range<C>> positiveItr=Iterators.peekingIterator(positiveRangesByUpperBound.headMap(startingPoint,inclusive).descendingMap().values().iterator());
+  Cut<C> cut;
+  if (positiveItr.hasNext()) {
+    cut=(positiveItr.peek().upperBound == Cut.<C>aboveAll()) ? positiveItr.next().lowerBound : positiveRangesByLowerBound.higherKey(positiveItr.peek().upperBound);
+  }
+ else   if (!complementLowerBoundWindow.contains(Cut.<C>belowAll()) || positiveRangesByLowerBound.containsKey(Cut.belowAll())) {
+    return Iterators.emptyIterator();
+  }
+ else {
+    cut=positiveRangesByLowerBound.higherKey(Cut.<C>belowAll());
+  }
+  final Cut<C> firstComplementRangeUpperBound=Objects.firstNonNull(cut,Cut.<C>aboveAll());
+  return new AbstractIterator<Entry<Cut<C>,Range<C>>>(){
+    Cut<C> nextComplementRangeUpperBound=firstComplementRangeUpperBound;
+    @Override protected Entry<Cut<C>,Range<C>> computeNext(){
+      if (nextComplementRangeUpperBound == Cut.<C>belowAll()) {
+        return endOfData();
+      }
+ else       if (positiveItr.hasNext()) {
+        Range<C> positiveRange=positiveItr.next();
+        Range<C> negativeRange=Range.create(positiveRange.upperBound,nextComplementRangeUpperBound);
+        nextComplementRangeUpperBound=positiveRange.lowerBound;
+        if (complementLowerBoundWindow.lowerBound.isLessThan(negativeRange.lowerBound)) {
+          return Maps.immutableEntry(negativeRange.lowerBound,negativeRange);
+        }
+      }
+ else       if (complementLowerBoundWindow.lowerBound.isLessThan(Cut.<C>belowAll())) {
+        Range<C> negativeRange=Range.create(Cut.<C>belowAll(),nextComplementRangeUpperBound);
+        nextComplementRangeUpperBound=Cut.belowAll();
+        return Maps.immutableEntry(Cut.<C>belowAll(),negativeRange);
+      }
+      return endOfData();
+    }
+  }
+;
+}

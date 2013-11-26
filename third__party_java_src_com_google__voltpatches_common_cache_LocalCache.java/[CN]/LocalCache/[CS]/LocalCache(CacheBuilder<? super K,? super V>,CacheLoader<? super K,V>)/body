@@ -1,0 +1,54 @@
+{
+  concurrencyLevel=Math.min(builder.getConcurrencyLevel(),MAX_SEGMENTS);
+  keyStrength=builder.getKeyStrength();
+  valueStrength=builder.getValueStrength();
+  keyEquivalence=builder.getKeyEquivalence();
+  valueEquivalence=builder.getValueEquivalence();
+  maxWeight=builder.getMaximumWeight();
+  weigher=builder.getWeigher();
+  expireAfterAccessNanos=builder.getExpireAfterAccessNanos();
+  expireAfterWriteNanos=builder.getExpireAfterWriteNanos();
+  refreshNanos=builder.getRefreshNanos();
+  removalListener=builder.getRemovalListener();
+  removalNotificationQueue=(removalListener == NullListener.INSTANCE) ? LocalCache.<RemovalNotification<K,V>>discardingQueue() : new ConcurrentLinkedQueue<RemovalNotification<K,V>>();
+  ticker=builder.getTicker(recordsTime());
+  entryFactory=EntryFactory.getFactory(keyStrength,usesAccessEntries(),usesWriteEntries());
+  globalStatsCounter=builder.getStatsCounterSupplier().get();
+  defaultLoader=loader;
+  int initialCapacity=Math.min(builder.getInitialCapacity(),MAXIMUM_CAPACITY);
+  if (evictsBySize() && !customWeigher()) {
+    initialCapacity=Math.min(initialCapacity,(int)maxWeight);
+  }
+  int segmentShift=0;
+  int segmentCount=1;
+  while (segmentCount < concurrencyLevel && (!evictsBySize() || segmentCount * 20 <= maxWeight)) {
+    ++segmentShift;
+    segmentCount<<=1;
+  }
+  this.segmentShift=32 - segmentShift;
+  segmentMask=segmentCount - 1;
+  this.segments=newSegmentArray(segmentCount);
+  int segmentCapacity=initialCapacity / segmentCount;
+  if (segmentCapacity * segmentCount < initialCapacity) {
+    ++segmentCapacity;
+  }
+  int segmentSize=1;
+  while (segmentSize < segmentCapacity) {
+    segmentSize<<=1;
+  }
+  if (evictsBySize()) {
+    long maxSegmentWeight=maxWeight / segmentCount + 1;
+    long remainder=maxWeight % segmentCount;
+    for (int i=0; i < this.segments.length; ++i) {
+      if (i == remainder) {
+        maxSegmentWeight--;
+      }
+      this.segments[i]=createSegment(segmentSize,maxSegmentWeight,builder.getStatsCounterSupplier().get());
+    }
+  }
+ else {
+    for (int i=0; i < this.segments.length; ++i) {
+      this.segments[i]=createSegment(segmentSize,UNSET_INT,builder.getStatsCounterSupplier().get());
+    }
+  }
+}

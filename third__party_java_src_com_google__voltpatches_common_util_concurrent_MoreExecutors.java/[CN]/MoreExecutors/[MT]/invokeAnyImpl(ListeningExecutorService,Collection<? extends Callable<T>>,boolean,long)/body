@@ -1,0 +1,61 @@
+{
+  checkNotNull(executorService);
+  int ntasks=tasks.size();
+  checkArgument(ntasks > 0);
+  List<Future<T>> futures=Lists.newArrayListWithCapacity(ntasks);
+  BlockingQueue<Future<T>> futureQueue=Queues.newLinkedBlockingQueue();
+  try {
+    ExecutionException ee=null;
+    long lastTime=timed ? System.nanoTime() : 0;
+    Iterator<? extends Callable<T>> it=tasks.iterator();
+    futures.add(submitAndAddQueueListener(executorService,it.next(),futureQueue));
+    --ntasks;
+    int active=1;
+    for (; ; ) {
+      Future<T> f=futureQueue.poll();
+      if (f == null) {
+        if (ntasks > 0) {
+          --ntasks;
+          futures.add(submitAndAddQueueListener(executorService,it.next(),futureQueue));
+          ++active;
+        }
+ else         if (active == 0) {
+          break;
+        }
+ else         if (timed) {
+          f=futureQueue.poll(nanos,TimeUnit.NANOSECONDS);
+          if (f == null) {
+            throw new TimeoutException();
+          }
+          long now=System.nanoTime();
+          nanos-=now - lastTime;
+          lastTime=now;
+        }
+ else {
+          f=futureQueue.take();
+        }
+      }
+      if (f != null) {
+        --active;
+        try {
+          return f.get();
+        }
+ catch (        ExecutionException eex) {
+          ee=eex;
+        }
+catch (        RuntimeException rex) {
+          ee=new ExecutionException(rex);
+        }
+      }
+    }
+    if (ee == null) {
+      ee=new ExecutionException(null);
+    }
+    throw ee;
+  }
+  finally {
+    for (    Future<T> f : futures) {
+      f.cancel(true);
+    }
+  }
+}

@@ -1,0 +1,39 @@
+{
+  long size=file.length();
+  if (size == 0) {
+    return super.read();
+  }
+  if (size > Integer.MAX_VALUE) {
+    throw new OutOfMemoryError("file is too large to fit in a byte array: " + size + " bytes");
+  }
+  byte[] bytes=new byte[(int)size];
+  Closer closer=Closer.create();
+  try {
+    InputStream in=closer.register(openStream());
+    int off=0;
+    int read=0;
+    while (off < size && ((read=in.read(bytes,off,(int)size - off)) != -1)) {
+      off+=read;
+    }
+    if (off < size) {
+      return Arrays.copyOf(bytes,off);
+    }
+    int b=in.read();
+    if (b == -1) {
+      return bytes;
+    }
+    InternalByteArrayOutputStream out=new InternalByteArrayOutputStream();
+    out.write(b);
+    ByteStreams.copy(in,out);
+    byte[] result=new byte[bytes.length + out.size()];
+    System.arraycopy(bytes,0,result,0,bytes.length);
+    out.writeTo(result,bytes.length);
+    return result;
+  }
+ catch (  Throwable e) {
+    throw closer.rethrow(e);
+  }
+ finally {
+    closer.close();
+  }
+}
