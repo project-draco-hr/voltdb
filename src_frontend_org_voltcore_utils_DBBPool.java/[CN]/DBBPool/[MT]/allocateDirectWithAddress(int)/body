@@ -1,16 +1,18 @@
 {
-  final ByteBuffer retval=ByteBuffer.allocateDirect(capacity);
-  bytesAllocatedGlobally.getAndAdd(capacity);
-  return new BBContainer(retval,DBBPool.getBufferAddress(retval)){
-    @Override public void discard(){
-      try {
-        DirectMemoryUtils.destroyDirectByteBuffer(retval);
-        bytesAllocatedGlobally.getAndAdd(-capacity);
-      }
- catch (      Throwable e) {
-        VoltDB.crashLocalVoltDB("Failed to deallocate direct byte buffer",false,e);
-      }
+  ByteBuffer retval=null;
+  try {
+    retval=ByteBuffer.allocateDirect(capacity);
+  }
+ catch (  OutOfMemoryError e) {
+    if (e.getMessage().contains("Direct buffer memory")) {
+      clear();
+      retval=ByteBuffer.allocateDirect(capacity);
+    }
+ else {
+      throw new Error(e);
     }
   }
-;
+  bytesAllocatedGlobally.getAndAdd(capacity);
+  logAllocation(capacity);
+  return new DeallocatingContainer(retval,DBBPool.getBufferAddress(retval));
 }
