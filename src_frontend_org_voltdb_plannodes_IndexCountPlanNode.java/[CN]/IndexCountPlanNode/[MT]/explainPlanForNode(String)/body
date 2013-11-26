@@ -1,15 +1,53 @@
 {
   assert(m_catalogIndex != null);
   int indexSize=CatalogUtil.getCatalogIndexSize(m_catalogIndex);
-  int keySize=m_searchkeyExpressions.size();
+  int searchkeySize=m_searchkeyExpressions.size();
+  int endkeySize=m_endkeyExpressions.size();
+  int keySize=Math.max(searchkeySize,endkeySize);
   String scanType="tree-counter";
-  if (m_lookupType != IndexLookupType.EQ)   scanType="tree-counter";
   String cover="covering";
   if (indexSize > keySize)   cover=String.format("%d/%d cols",keySize,indexSize);
   String usageInfo=String.format("(%s %s)",scanType,cover);
-  if (keySize == 0)   usageInfo="(for sort order only)";
+  String[] asIndexed=new String[indexSize];
+  for (int ii=0; ii < keySize; ++ii) {
+    asIndexed[ii]="(index key " + ii + ")";
+  }
+  String jsonExpr=m_catalogIndex.getExpressionsjson();
+  if (jsonExpr.isEmpty()) {
+    for (    ColumnRef cref : m_catalogIndex.getColumns()) {
+      Column col=cref.getColumn();
+      asIndexed[cref.getIndex()]=col.getName();
+    }
+  }
+ else {
+    try {
+      List<AbstractExpression> indexExpressions=AbstractExpression.fromJSONArrayString(jsonExpr);
+      int ii=0;
+      for (      AbstractExpression ae : indexExpressions) {
+        asIndexed[ii++]=ae.explain(m_targetTableName);
+      }
+    }
+ catch (    JSONException e) {
+    }
+  }
+  if (searchkeySize > 0) {
+    String start=explainKeys(asIndexed,m_searchkeyExpressions,m_targetTableName,m_lookupType);
+    usageInfo+="\n" + indent + " count matches from "+ start;
+  }
+  if (endkeySize > 0) {
+    String end=explainKeys(asIndexed,m_endkeyExpressions,m_targetTableName,m_endType);
+    usageInfo+="\n" + indent + " count matches to "+ end;
+  }
+  if (m_skip_null_predicate != null) {
+    String predicate=m_skip_null_predicate.explain(m_targetTableName);
+    usageInfo+="\n" + indent + " discounting rows where "+ predicate;
+  }
   String retval="INDEX COUNT of \"" + m_targetTableName + "\"";
-  retval+=" using \"" + m_targetIndexName + "\"";
-  retval+=" " + usageInfo;
+  String indexDescription=" using \"" + m_targetIndexName + "\"";
+  if (m_targetIndexName.startsWith("SYS_IDX_PK_") || m_targetIndexName.startsWith("SYS_IDX_SYS_PK_") || m_targetIndexName.startsWith("MATVIEW_PK_INDEX")) {
+    indexDescription=" using its primary key index";
+  }
+  retval+=indexDescription;
+  retval+=usageInfo;
   return retval;
 }
