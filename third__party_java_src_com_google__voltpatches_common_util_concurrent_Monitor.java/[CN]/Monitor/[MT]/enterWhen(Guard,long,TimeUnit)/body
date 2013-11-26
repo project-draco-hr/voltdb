@@ -1,0 +1,34 @@
+{
+  long timeoutNanos=unit.toNanos(time);
+  if (guard.monitor != this) {
+    throw new IllegalMonitorStateException();
+  }
+  final ReentrantLock lock=this.lock;
+  boolean reentrant=lock.isHeldByCurrentThread();
+  if (fair || !lock.tryLock()) {
+    long deadline=System.nanoTime() + timeoutNanos;
+    if (!lock.tryLock(time,unit)) {
+      return false;
+    }
+    timeoutNanos=deadline - System.nanoTime();
+  }
+  boolean satisfied=false;
+  boolean threw=true;
+  try {
+    satisfied=guard.isSatisfied() || awaitNanos(guard,timeoutNanos,reentrant);
+    threw=false;
+    return satisfied;
+  }
+  finally {
+    if (!satisfied) {
+      try {
+        if (threw && !reentrant) {
+          signalNextWaiter();
+        }
+      }
+  finally {
+        lock.unlock();
+      }
+    }
+  }
+}
