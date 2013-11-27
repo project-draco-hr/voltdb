@@ -1,0 +1,37 @@
+{
+  checkNotNull(element);
+  if (occurrences == 0) {
+    return count(element);
+  }
+  checkArgument(occurrences > 0,"Invalid occurrences: %s",occurrences);
+  while (true) {
+    AtomicInteger existingCounter=Maps.safeGet(countMap,element);
+    if (existingCounter == null) {
+      existingCounter=countMap.putIfAbsent(element,new AtomicInteger(occurrences));
+      if (existingCounter == null) {
+        return 0;
+      }
+    }
+    while (true) {
+      int oldValue=existingCounter.get();
+      if (oldValue != 0) {
+        try {
+          int newValue=IntMath.checkedAdd(oldValue,occurrences);
+          if (existingCounter.compareAndSet(oldValue,newValue)) {
+            return oldValue;
+          }
+        }
+ catch (        ArithmeticException overflow) {
+          throw new IllegalArgumentException("Overflow adding " + occurrences + " occurrences to a count of "+ oldValue);
+        }
+      }
+ else {
+        AtomicInteger newCounter=new AtomicInteger(occurrences);
+        if ((countMap.putIfAbsent(element,newCounter) == null) || countMap.replace(element,existingCounter,newCounter)) {
+          return 0;
+        }
+        break;
+      }
+    }
+  }
+}
