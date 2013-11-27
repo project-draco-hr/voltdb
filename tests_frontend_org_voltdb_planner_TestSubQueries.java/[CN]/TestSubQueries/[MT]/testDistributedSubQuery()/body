@@ -2,16 +2,21 @@
 {
     List<AbstractPlanNode> lpn=compileToFragments("select A, C FROM (SELECT A, C FROM P1) TEMP ");
     assertTrue(lpn.size() == 2);
-    AbstractPlanNode n=lpn.get(0).getChild(0);
+    AbstractPlanNode n=lpn.get(1);
+    n=n.getChild(0);
     assertTrue(n instanceof SeqScanPlanNode);
     assertEquals("TEMP",((SeqScanPlanNode)n).getTargetTableName());
-    n=lpn.get(1).getChild(0);
+    n=n.getChild(0);
     assertTrue(n instanceof IndexScanPlanNode);
   }
 {
     List<AbstractPlanNode> lpn=compileToFragments("select A, C FROM (SELECT A FROM R1) TEMP1, (SELECT C FROM P2) TEMP2 WHERE TEMP1.A = TEMP2.C ");
     assertTrue(lpn.size() == 2);
-    AbstractPlanNode n=lpn.get(0).getChild(0).getChild(0);
+    AbstractPlanNode n=lpn.get(0);
+    assertTrue(n instanceof SendPlanNode);
+    n=lpn.get(1);
+    assertTrue(n instanceof SendPlanNode);
+    n=n.getChild(0);
     assertTrue(n instanceof NestLoopPlanNode);
     AbstractPlanNode c=n.getChild(0);
     assertTrue(c instanceof SeqScanPlanNode);
@@ -19,11 +24,9 @@
     c=n.getChild(1);
     assertTrue(c instanceof SeqScanPlanNode);
     assertEquals("TEMP2",((SeqScanPlanNode)c).getTargetTableAlias());
-    n=lpn.get(1).getChild(0);
-    assertTrue(n instanceof IndexScanPlanNode);
   }
 {
-    failToCompile("select A, C FROM (SELECT A FROM P1) TEMP1, (SELECT C FROM P2) TEMP2 WHERE TEMP1.A = TEMP2.C ","Statements are too complex in set operation or statement with sub-query using multiple partitioned");
+    failToCompile("select A, C FROM (SELECT A FROM P1) TEMP1, (SELECT C FROM P2) TEMP2 WHERE TEMP1.A = TEMP2.C ","Join of multiple partitioned tables has insufficient join criteria.");
   }
 {
     List<AbstractPlanNode> lpn=compileToFragments("select D1, P2.D FROM (SELECT A, D D1 FROM P1 WHERE A=1) TEMP1, P2 WHERE TEMP1.A = P2.A AND P2.A = 1");
@@ -35,6 +38,17 @@
     assertEquals("TEMP1",((SeqScanPlanNode)c).getTargetTableAlias());
   }
 {
-    failToCompile("select D1, P2.D FROM (SELECT A, D D1 FROM P1 WHERE A=2) TEMP1, P2 WHERE TEMP1.A = P2.A AND P2.A = 1","Statements use conflicting partitioned table filters in set operation or sub-query.");
+    List<AbstractPlanNode> lpn=compileToFragments("select D1, D2 FROM (SELECT A, D D1 FROM P1 ) TEMP1, (SELECT A, D D2 FROM P2 ) TEMP2 WHERE TEMP1.A = TEMP2.A");
+    assertTrue(lpn.size() == 2);
+    AbstractPlanNode n=lpn.get(1);
+    assertTrue(n instanceof SendPlanNode);
+    n=n.getChild(0);
+    assertTrue(n instanceof NestLoopPlanNode);
+  }
+{
+    failToCompile("select D1, D2 FROM (SELECT A, D D1 FROM P1 WHERE A=2) TEMP1, (SELECT A, D D2 FROM P2 WHERE A=2) TEMP2","Join of multiple partitioned tables has insufficient join criteria.");
+  }
+{
+    failToCompile("select D1, D2 FROM (SELECT A, D D1 FROM P1) TEMP1, (SELECT A, D D2 FROM P2) TEMP2 WHERE TEMP1.A = 1 AND TEMP2.A = 2","Join of multiple partitioned tables has insufficient join criteria.");
   }
 }
