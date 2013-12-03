@@ -6,10 +6,15 @@
     msg+="has " + String.valueOf(stmt.tableList.size()) + " sources. "+ "Only one source view or source table is allowed.";
     throw m_compiler.new VoltCompilerException(msg);
   }
+  if (stmt.orderByColumns().size() != 0) {
+    msg+="with ORDER BY clause is not supported.";
+    throw m_compiler.new VoltCompilerException(msg);
+  }
   if (displayColCount <= groupColCount) {
     msg+="has too few columns.";
     throw m_compiler.new VoltCompilerException(msg);
   }
+  List<AbstractExpression> checkExpressions=new ArrayList<AbstractExpression>();
   int i;
   for (i=0; i < groupColCount; i++) {
     ParsedSelectStmt.ParsedColInfo gbcol=stmt.groupByColumns.get(i);
@@ -18,6 +23,7 @@
       msg+="must exactly match the GROUP BY clause at index " + String.valueOf(i) + " of SELECT list.";
       throw m_compiler.new VoltCompilerException(msg);
     }
+    checkExpressions.add(outcol.expression);
   }
   AbstractExpression coli=stmt.displayColumns.get(i).expression;
   if (coli.getExpressionType() != ExpressionType.AGGREGATE_COUNT_STAR) {
@@ -28,6 +34,15 @@
     ParsedSelectStmt.ParsedColInfo outcol=stmt.displayColumns.get(i);
     if ((outcol.expression.getExpressionType() != ExpressionType.AGGREGATE_COUNT) && (outcol.expression.getExpressionType() != ExpressionType.AGGREGATE_SUM) && (outcol.expression.getExpressionType() != ExpressionType.AGGREGATE_MIN)&& (outcol.expression.getExpressionType() != ExpressionType.AGGREGATE_MAX)) {
       msg+="must have non-group by columns aggregated by sum, count, min or max.";
+      throw m_compiler.new VoltCompilerException(msg);
+    }
+    checkExpressions.add(outcol.expression);
+  }
+  AbstractExpression where=stmt.getSingleTableFilterExpression();
+  checkExpressions.add(where);
+  for (  AbstractExpression expr : checkExpressions) {
+    if (containsTimeSensitiveFunction(expr,FunctionSQL.voltGetCurrentTimestampId())) {
+      msg+="cannot include the function NOW or CURRENT_TIMESTAMP.";
       throw m_compiler.new VoltCompilerException(msg);
     }
   }

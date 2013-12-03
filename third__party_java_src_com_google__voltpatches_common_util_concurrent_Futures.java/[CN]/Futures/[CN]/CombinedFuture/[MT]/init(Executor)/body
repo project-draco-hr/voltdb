@@ -1,0 +1,32 @@
+{
+  addListener(new Runnable(){
+    @Override public void run(){
+      if (CombinedFuture.this.isCancelled()) {
+        for (        ListenableFuture<?> future : CombinedFuture.this.futures) {
+          future.cancel(CombinedFuture.this.wasInterrupted());
+        }
+      }
+      CombinedFuture.this.futures=null;
+      CombinedFuture.this.values=null;
+      CombinedFuture.this.combiner=null;
+    }
+  }
+,MoreExecutors.sameThreadExecutor());
+  if (futures.isEmpty()) {
+    set(combiner.combine(ImmutableList.<Optional<V>>of()));
+    return;
+  }
+  for (int i=0; i < futures.size(); ++i) {
+    values.add(null);
+  }
+  int i=0;
+  for (  final ListenableFuture<? extends V> listenable : futures) {
+    final int index=i++;
+    listenable.addListener(new Runnable(){
+      @Override public void run(){
+        setOneValue(index,listenable);
+      }
+    }
+,listenerExecutor);
+  }
+}
