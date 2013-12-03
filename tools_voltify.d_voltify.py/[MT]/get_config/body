@@ -1,0 +1,40 @@
+def get_config(runner, reset=False):
+    '\n    Utility function to look for and validate a set of configuration properties.\n    '
+    config = Configuration()
+    missing = []
+    defaults = []
+    msgblocks = []
+    for name in sorted(Global.config_properties.keys()):
+        config_property = Global.config_properties[name]
+        key = config_key(name)
+        value = runner.config.get(key)
+        if ((not value) or reset):
+            if (config_property.default is None):
+                missing.append(name)
+                runner.config.set_permanent(key, '')
+            else:
+                defaults.append(name)
+                value = Global.config_properties[name].default
+                runner.config.set_permanent(key, value)
+                setattr(config, name, value)
+        else:
+            config[name] = value
+    samples = []
+    if ((not reset) and missing):
+        table = [(name, Global.config_properties[name].description) for name in missing]
+        msgblocks.append(['The following settings must be configured before proceeding:', '', utility.format_table(table, headings=['PROPERTY', 'DESCRIPTION'], indent=3, separator='  ')])
+        samples.extend(missing)
+        config = None
+    if defaults:
+        msgblocks.append(['The following setting defaults were applied and saved permanently:', '', utility.format_table([(name, Global.config_properties[name].default) for name in defaults], indent=3, separator='  ', headings=['PROPERTY', 'VALUE'])])
+    if reset:
+        config = None
+    elif (config is None):
+        msgblocks.append([config_help(samples=samples)])
+    if msgblocks:
+        for msgblock in msgblocks:
+            print ''
+            for msg in msgblock:
+                print msg
+        print ''
+    return config
