@@ -1,7 +1,9 @@
 {
-  AdHocPlannedStmtBatch plannedStmtBatch=new AdHocPlannedStmtBatch("select * from a where i = 3",3,0,0,"localhost",false,ProcedureInvocationType.ORIGINAL,0,0,null);
-  AdHocPlannedStatement s=new AdHocPlannedStatement("select * from a where i = 3".getBytes(Constants.UTF8ENCODING),new CorePlan(new byte[0],null,new byte[20],null,false,false,true,new VoltType[0],0),ParameterSet.fromArrayNoCopy(new Object[0]),null,null,3);
-  plannedStmtBatch.addStatement(s);
+  String query="select * from a where i = ?";
+  int partitionParamIndex=0;
+  Object[] extractedValues=new Object[0];
+  VoltType[] extractedTypes=new VoltType[0];
+  AdHocPlannedStmtBatch plannedStmtBatch=AdHocPlannedStmtBatch.mockStatementBatch(query,extractedValues,extractedTypes,new Object[]{3},partitionParamIndex);
   m_ci.processFinishedCompilerWork(plannedStmtBatch).run();
   ArgumentCaptor<Long> destinationCaptor=ArgumentCaptor.forClass(Long.class);
   ArgumentCaptor<Iv2InitiateTaskMessage> messageCaptor=ArgumentCaptor.forClass(Iv2InitiateTaskMessage.class);
@@ -15,9 +17,13 @@
   VoltType type=VoltType.get((Byte)message.getStoredProcedureInvocation().getParameterAtIndex(1));
   assertTrue(type.isInteger());
   byte[] serializedData=(byte[])message.getStoredProcedureInvocation().getParameterAtIndex(2);
-  AdHocPlannedStatement[] statements=AdHocPlannedStmtBatch.planArrayFromBuffer(ByteBuffer.wrap(serializedData));
+  ByteBuffer buf=ByteBuffer.wrap(serializedData);
+  Object[] parameters=AdHocPlannedStmtBatch.userParamsFromBuffer(buf);
+  assertEquals(1,parameters.length);
+  assertEquals(3,parameters[0]);
+  AdHocPlannedStatement[] statements=AdHocPlannedStmtBatch.planArrayFromBuffer(buf);
   assertTrue(Arrays.equals(TheHashinator.valueToBytes(3),(byte[])partitionParam));
   assertEquals(1,statements.length);
   String sql=new String(statements[0].sql,Constants.UTF8ENCODING);
-  assertEquals("select * from a where i = 3",sql);
+  assertEquals(query,sql);
 }
