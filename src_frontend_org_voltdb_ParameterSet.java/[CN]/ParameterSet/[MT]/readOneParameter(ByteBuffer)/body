@@ -1,15 +1,16 @@
 {
   Object value;
+  int len;
   byte[] encodedString=null;
   byte[][] encodedStringArray=null;
-  byte nextTypeByte=in.readByte();
+  byte nextTypeByte=in.get();
   if (nextTypeByte == ARRAY) {
-    VoltType nextType=VoltType.get(in.readByte());
+    VoltType nextType=VoltType.get(in.get());
     if (nextType == null) {
       value=null;
     }
  else     if (nextType == VoltType.STRING) {
-      encodedStringArray=(byte[][])in.readArray(byte[].class);
+      encodedStringArray=(byte[][])SerializationHelper.readArray(byte[].class,in);
       String[] sval=new String[encodedStringArray.length];
       for (int i=0; i < encodedStringArray.length; ++i) {
         if (encodedStringArray[i] == null) {
@@ -22,7 +23,7 @@
       value=sval;
     }
  else {
-      value=in.readArray(nextType.classFromType());
+      value=SerializationHelper.readArray(nextType.classFromType(),in);
     }
   }
  else {
@@ -32,59 +33,53 @@ case NULL:
       value=null;
     break;
 case TINYINT:
-  value=in.readByte();
+  value=in.get();
 break;
 case SMALLINT:
-value=in.readShort();
+value=in.getShort();
 break;
 case INTEGER:
-value=in.readInt();
+value=in.getInt();
 break;
 case BIGINT:
-value=in.readLong();
+value=in.getLong();
 break;
 case FLOAT:
-value=in.readDouble();
+value=in.getDouble();
 break;
 case STRING:
-encodedString=in.readVarbinary();
-if (encodedString == null) {
+len=in.getInt();
+if (len == VoltType.NULL_STRING_LENGTH) {
 value=VoltType.NULL_STRING_OR_VARBINARY;
 }
  else {
+encodedString=new byte[len];
+in.get(encodedString);
 value=new String(encodedString,Constants.UTF8ENCODING);
 }
 break;
 case VARBINARY:
-byte[] bin_val=in.readVarbinary();
-if (bin_val == null) {
+len=in.getInt();
+if (len == VoltType.NULL_STRING_LENGTH) {
 value=VoltType.NULL_STRING_OR_VARBINARY;
 }
  else {
-value=bin_val;
+encodedString=new byte[len];
+in.get(encodedString);
+value=encodedString;
 }
 break;
 case TIMESTAMP:
-final long micros=in.readLong();
+final long micros=in.getLong();
 value=new TimestampType(micros);
 break;
 case VOLTTABLE:
-value=in.readObject(VoltTable.class);
+value=PrivateVoltTableFactory.createVoltTableFromSharedBuffer(in.slice());
+in.position(in.position() + ((VoltTable)value).getSerializedSize());
 break;
 case DECIMAL:
 {
-BigDecimal decimal_val=in.readBigDecimal();
-if (decimal_val == null) {
-value=VoltType.NULL_DECIMAL;
-}
- else {
-value=decimal_val;
-}
-break;
-}
-case DECIMAL_STRING:
-{
-BigDecimal decimal_val=in.readBigDecimalFromString();
+BigDecimal decimal_val=SerializationHelper.getBigDecimal(in);
 if (decimal_val == null) {
 value=VoltType.NULL_DECIMAL;
 }
