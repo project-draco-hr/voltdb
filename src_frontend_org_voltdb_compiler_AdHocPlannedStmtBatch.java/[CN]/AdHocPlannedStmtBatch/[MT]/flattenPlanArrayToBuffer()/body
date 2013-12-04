@@ -1,6 +1,28 @@
 {
   int size=0;
-  ParameterSet userParamCache=work.userParamSet == null ? ParameterSet.emptyParameterSet() : ParameterSet.fromArrayNoCopy(work.userParamSet);
+  ParameterSet userParamCache=null;
+  if (work.userParamSet == null) {
+    userParamCache=ParameterSet.emptyParameterSet();
+  }
+ else {
+    Object[] typedUserParams=new Object[work.userParamSet.length];
+    int ii=0;
+    for (    AdHocPlannedStatement cs : plannedStatements) {
+      for (      VoltType paramType : cs.core.parameterTypes) {
+        if (ii >= typedUserParams.length) {
+          String errorMsg="Too few actual arguments were passed for the parameters in the sql statement(s): (" + typedUserParams.length + " vs. "+ ii+ ")";
+          throw new VoltTypeException(errorMsg);
+        }
+        typedUserParams[ii]=ParameterConverter.tryToMakeCompatible(paramType.classFromType(),work.userParamSet[ii]);
+        ii++;
+      }
+    }
+    if (ii < typedUserParams.length) {
+      String errorMsg="Too many actual arguments were passed for the parameters in the sql statement(s): (" + typedUserParams.length + " vs. "+ ii+ ")";
+      throw new VoltTypeException(errorMsg);
+    }
+    userParamCache=ParameterSet.fromArrayNoCopy(typedUserParams);
+  }
   size+=userParamCache.getSerializedSize();
   size+=2;
   for (  AdHocPlannedStatement cs : plannedStatements) {
