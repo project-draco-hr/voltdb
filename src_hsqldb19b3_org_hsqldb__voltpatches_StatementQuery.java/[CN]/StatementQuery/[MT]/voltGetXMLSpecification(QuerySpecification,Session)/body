@@ -83,6 +83,11 @@
  else     if (expr.opType == OpTypes.ORDER_BY) {
       orderByCols.add(expr);
     }
+ else     if (expr.equals(select.havingCondition)) {
+      if (!(expr instanceof ExpressionLogical && expr.isAggregate)) {
+        throw new HSQLParseException("VoltDB does not support HAVING clause without aggregation. " + "Consider using WHERE clause if possible");
+      }
+    }
  else     if (expr.opType != OpTypes.SIMPLE_COLUMN || (expr.isAggregate && expr.alias != null)) {
       displayCols.add(expr);
     }
@@ -91,6 +96,12 @@
     select.exprColumns[alias.getFirst()].alias=alias.getSecond();
   }
   Set<Integer> ignoredColsIndexes=new HashSet<Integer>();
+  if (select.havingCondition != null) {
+    VoltXMLElement having=new VoltXMLElement("having");
+    query.children.add(having);
+    VoltXMLElement havingExpr=select.havingCondition.voltGetXML(session,displayCols,ignoredColsIndexes,0);
+    having.children.add(havingExpr);
+  }
   for (int jj=0; jj < displayCols.size(); ++jj) {
     Expression expr=displayCols.get(jj);
     if (ignoredColsIndexes.contains(jj)) {
@@ -106,9 +117,6 @@
   assert(scans != null);
   for (  RangeVariable rangeVariable : select.rangeVariables) {
     scans.children.add(rangeVariable.voltGetRangeVariableXML(session));
-  }
-  if (select.havingCondition != null) {
-    throw new HSQLParseException("VoltDB does not support the HAVING clause");
   }
   if (select.isGrouped) {
     VoltXMLElement groupCols=new VoltXMLElement("groupcolumns");
