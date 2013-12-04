@@ -1,5 +1,6 @@
 {
-  Statement catalogStmt=proc.getStatements().add("stmt-" + String.valueOf(compileCounter++));
+  String stmtLabel="stmt-" + String.valueOf(compileCounter++);
+  Statement catalogStmt=proc.getStatements().add(stmtLabel);
   catalogStmt.setSqltext(sql);
   catalogStmt.setSinglepartition(forceSingle);
   catalogStmt.setBatched(false);
@@ -32,14 +33,16 @@
  else {
     partitioning=PartitioningForStatement.forceMP();
   }
-  QueryPlanner planner=new QueryPlanner(catalogStmt.getSqltext(),catalogStmt.getTypeName(),catalogStmt.getParent().getTypeName(),catalog.getClusters().get("cluster"),db,partitioning,hsql,estimates,false,StatementCompiler.DEFAULT_MAX_JOIN_TABLES,costModel,null,joinOrder,detMode);
-  if (partitioning.isInferred()) {
-    catalogStmt.setSinglepartition(partitioning.isInferredSingle());
-  }
+  String procName=catalogStmt.getParent().getTypeName();
+  Cluster catalogCluster=catalog.getClusters().get("cluster");
+  QueryPlanner planner=new QueryPlanner(sql,stmtLabel,procName,catalogCluster,db,partitioning,hsql,estimates,false,StatementCompiler.DEFAULT_MAX_JOIN_TABLES,costModel,null,joinOrder,detMode);
   CompiledPlan plan=null;
   planner.parse();
   plan=planner.plan();
   assert(plan != null);
+  if (partitioning.isInferred()) {
+    catalogStmt.setSinglepartition(partitioning.isInferredSingle());
+  }
   for (int i=0; i < plan.parameters.length; ++i) {
     StmtParameter catalogParam=catalogStmt.getParameters().add(String.valueOf(i));
     ParameterValueExpression pve=plan.parameters[i];
