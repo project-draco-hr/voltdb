@@ -1,0 +1,51 @@
+{
+  long timeoutNanos=unit.toNanos(time);
+  if (guard.monitor != this) {
+    throw new IllegalMonitorStateException();
+  }
+  final ReentrantLock lock=this.lock;
+  long deadline=System.nanoTime() + timeoutNanos;
+  boolean signalBeforeWaiting=lock.isHeldByCurrentThread();
+  boolean interrupted=Thread.interrupted();
+  try {
+    if (fair || !lock.tryLock()) {
+      boolean locked=false;
+      do {
+        try {
+          locked=lock.tryLock(timeoutNanos,TimeUnit.NANOSECONDS);
+          if (!locked) {
+            return false;
+          }
+        }
+ catch (        InterruptedException interrupt) {
+          interrupted=true;
+        }
+        timeoutNanos=deadline - System.nanoTime();
+      }
+ while (!locked);
+    }
+    boolean satisfied=false;
+    try {
+      while (true) {
+        try {
+          return satisfied=guard.isSatisfied() || awaitNanos(guard,timeoutNanos,signalBeforeWaiting);
+        }
+ catch (        InterruptedException interrupt) {
+          interrupted=true;
+          signalBeforeWaiting=false;
+          timeoutNanos=deadline - System.nanoTime();
+        }
+      }
+    }
+  finally {
+      if (!satisfied) {
+        lock.unlock();
+      }
+    }
+  }
+  finally {
+    if (interrupted) {
+      Thread.currentThread().interrupt();
+    }
+  }
+}

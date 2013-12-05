@@ -1,0 +1,51 @@
+{
+  try {
+    I sourceResult;
+    try {
+      sourceResult=getUninterruptibly(inputFuture);
+    }
+ catch (    CancellationException e) {
+      cancel(false);
+      return;
+    }
+catch (    ExecutionException e) {
+      setException(e.getCause());
+      return;
+    }
+    final ListenableFuture<? extends O> outputFuture=this.outputFuture=function.apply(sourceResult);
+    if (isCancelled()) {
+      outputFuture.cancel(wasInterrupted());
+      this.outputFuture=null;
+      return;
+    }
+    outputFuture.addListener(new Runnable(){
+      @Override public void run(){
+        try {
+          set(getUninterruptibly(outputFuture));
+        }
+ catch (        CancellationException e) {
+          cancel(false);
+          return;
+        }
+catch (        ExecutionException e) {
+          setException(e.getCause());
+        }
+ finally {
+          ChainingListenableFuture.this.outputFuture=null;
+        }
+      }
+    }
+,MoreExecutors.sameThreadExecutor());
+  }
+ catch (  UndeclaredThrowableException e) {
+    setException(e.getCause());
+  }
+catch (  Throwable t) {
+    setException(t);
+  }
+ finally {
+    function=null;
+    inputFuture=null;
+    outputCreated.countDown();
+  }
+}
