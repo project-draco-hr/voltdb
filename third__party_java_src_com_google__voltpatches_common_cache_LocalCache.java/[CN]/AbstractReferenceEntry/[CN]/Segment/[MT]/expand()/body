@@ -1,0 +1,47 @@
+{
+  AtomicReferenceArray<ReferenceEntry<K,V>> oldTable=table;
+  int oldCapacity=oldTable.length();
+  if (oldCapacity >= MAXIMUM_CAPACITY) {
+    return;
+  }
+  int newCount=count;
+  AtomicReferenceArray<ReferenceEntry<K,V>> newTable=newEntryArray(oldCapacity << 1);
+  threshold=newTable.length() * 3 / 4;
+  int newMask=newTable.length() - 1;
+  for (int oldIndex=0; oldIndex < oldCapacity; ++oldIndex) {
+    ReferenceEntry<K,V> head=oldTable.get(oldIndex);
+    if (head != null) {
+      ReferenceEntry<K,V> next=head.getNext();
+      int headIndex=head.getHash() & newMask;
+      if (next == null) {
+        newTable.set(headIndex,head);
+      }
+ else {
+        ReferenceEntry<K,V> tail=head;
+        int tailIndex=headIndex;
+        for (ReferenceEntry<K,V> e=next; e != null; e=e.getNext()) {
+          int newIndex=e.getHash() & newMask;
+          if (newIndex != tailIndex) {
+            tailIndex=newIndex;
+            tail=e;
+          }
+        }
+        newTable.set(tailIndex,tail);
+        for (ReferenceEntry<K,V> e=head; e != tail; e=e.getNext()) {
+          int newIndex=e.getHash() & newMask;
+          ReferenceEntry<K,V> newNext=newTable.get(newIndex);
+          ReferenceEntry<K,V> newFirst=copyEntry(e,newNext);
+          if (newFirst != null) {
+            newTable.set(newIndex,newFirst);
+          }
+ else {
+            removeCollectedEntry(e);
+            newCount--;
+          }
+        }
+      }
+    }
+  }
+  table=newTable;
+  this.count=newCount;
+}

@@ -1,0 +1,57 @@
+{
+  lock();
+  try {
+    preWriteCleanup();
+    int newCount=this.count + 1;
+    if (newCount > this.threshold) {
+      expand();
+      newCount=this.count + 1;
+    }
+    AtomicReferenceArray<ReferenceEntry<K,V>> table=this.table;
+    int index=hash & (table.length() - 1);
+    ReferenceEntry<K,V> first=table.get(index);
+    for (ReferenceEntry<K,V> e=first; e != null; e=e.getNext()) {
+      K entryKey=e.getKey();
+      if (e.getHash() == hash && entryKey != null && map.keyEquivalence.equivalent(key,entryKey)) {
+        ValueReference<K,V> valueReference=e.getValueReference();
+        V entryValue=valueReference.get();
+        if (entryValue == null) {
+          ++modCount;
+          setValue(e,value);
+          if (!valueReference.isComputingReference()) {
+            enqueueNotification(key,hash,entryValue,RemovalCause.COLLECTED);
+            newCount=this.count;
+          }
+ else           if (evictEntries()) {
+            newCount=this.count + 1;
+          }
+          this.count=newCount;
+          return null;
+        }
+ else         if (onlyIfAbsent) {
+          recordLockedRead(e);
+          return entryValue;
+        }
+ else {
+          ++modCount;
+          enqueueNotification(key,hash,entryValue,RemovalCause.REPLACED);
+          setValue(e,value);
+          return entryValue;
+        }
+      }
+    }
+    ++modCount;
+    ReferenceEntry<K,V> newEntry=newEntry(key,hash,first);
+    setValue(newEntry,value);
+    table.set(index,newEntry);
+    if (evictEntries()) {
+      newCount=this.count + 1;
+    }
+    this.count=newCount;
+    return null;
+  }
+  finally {
+    unlock();
+    postWriteCleanup();
+  }
+}

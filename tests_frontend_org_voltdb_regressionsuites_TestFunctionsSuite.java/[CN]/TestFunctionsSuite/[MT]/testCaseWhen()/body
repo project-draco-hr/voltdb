@@ -1,0 +1,116 @@
+{
+  System.out.println("STARTING test Case When...");
+  Client cl=getClient();
+  VoltTable vt;
+  String sql;
+  cl.callProcedure("R1.insert",1,"VoltDB",1,1.0,new Timestamp(1000000000000L));
+  cl.callProcedure("R1.insert",2,"Memsql",5,5.0,new Timestamp(1000000000000L));
+  sql="SELECT ID, CASE WHEN num < 3 THEN 0 ELSE 8 END FROM R1 ORDER BY 1;";
+  validateTableOfLongs(cl,sql,new long[][]{{1,0},{2,8}});
+  sql="SELECT ID, CASE WHEN num < 3 THEN num/2 ELSE num + 10 END FROM R1 ORDER BY 1;";
+  validateTableOfLongs(cl,sql,new long[][]{{1,0},{2,15}});
+  sql="SELECT ID, CASE WHEN num > 0 AND num < 5 THEN num * 5 " + "WHEN num >=5 THEN num * 10  ELSE num END FROM R1 ORDER BY 1;";
+  validateTableOfLongs(cl,sql,new long[][]{{1,5},{2,50}});
+  sql="SELECT ID, CASE WHEN num > 0 AND num < 5 THEN NULL " + "WHEN num >=5 THEN num * 10  ELSE num END FROM R1 ORDER BY 1;";
+  vt=cl.callProcedure("@AdHoc",sql).getResults()[0];
+  assertEquals(VoltType.BIGINT,vt.getColumnType(1));
+  if (isHSQL()) {
+    validateTableOfLongs(vt,new long[][]{{1,0},{2,50}});
+  }
+ else {
+    validateTableOfLongs(vt,new long[][]{{1,Long.MIN_VALUE},{2,50}});
+  }
+  sql="SELECT ID, CASE WHEN num > 0 AND num < 5 THEN NULL " + "WHEN num >=5 THEN NULL  ELSE num END FROM R1 ORDER BY 1;";
+  vt=cl.callProcedure("@AdHoc",sql).getResults()[0];
+  assertEquals(VoltType.INTEGER,vt.getColumnType(1));
+  if (isHSQL()) {
+    validateTableOfLongs(vt,new long[][]{{1,0},{2,0}});
+  }
+ else {
+    validateTableOfLongs(vt,new long[][]{{1,Long.MIN_VALUE},{2,Long.MIN_VALUE}});
+  }
+  try {
+    sql="SELECT ID, CASE WHEN num > 0 AND num < 5 THEN NULL " + "WHEN num >=5 THEN NULL ELSE NULL END FROM R1 ORDER BY 1;";
+    vt=cl.callProcedure("@AdHoc",sql).getResults()[0];
+    fail();
+  }
+ catch (  Exception ex) {
+    assertNotNull(ex);
+    assertTrue(ex.getMessage().contains("data type cast needed for parameter or null literal"));
+  }
+  try {
+    sql="SELECT ID, CASE WHEN num > 0 AND num < 5 THEN NULL " + "WHEN num >=5 THEN NULL ELSE 'NULL' END FROM R1 ORDER BY 1;";
+    vt=cl.callProcedure("@AdHoc",sql).getResults()[0];
+  }
+ catch (  Exception ex) {
+    fail();
+  }
+  try {
+    sql="SELECT ID, CASE WHEN num > 0 AND num < 5 THEN NULL " + "WHEN num >=5 THEN 'I am null'  ELSE num END FROM R1 ORDER BY 1;";
+    vt=cl.callProcedure("@AdHoc",sql).getResults()[0];
+    fail();
+  }
+ catch (  Exception ex) {
+    assertNotNull(ex);
+    assertTrue(ex.getMessage().contains("incompatible data types in combination"));
+  }
+  sql="SELECT ID, CASE WHEN desc > 'Volt' THEN 'Good' ELSE 'Bad' END FROM R1 ORDER BY 1;";
+  vt=cl.callProcedure("@AdHoc",sql).getResults()[0];
+  assertEquals(2,vt.getRowCount());
+  vt.advanceRow();
+  assertEquals(vt.getLong(0),1);
+  assertTrue(vt.getString(1).equals("Good"));
+  vt.advanceRow();
+  assertEquals(vt.getLong(0),2);
+  if (isHSQL()) {
+    assertTrue(vt.getString(1).contains("Bad"));
+  }
+ else {
+    assertTrue(vt.getString(1).equals("Bad"));
+  }
+  sql="SELECT ID, desc || ':' ||  CASE WHEN desc > 'Volt' THEN 'Good' ELSE 'Bad' END FROM R1 ORDER BY 1;";
+  vt=cl.callProcedure("@AdHoc",sql).getResults()[0];
+  assertEquals(2,vt.getRowCount());
+  vt.advanceRow();
+  assertEquals(vt.getLong(0),1);
+  assertTrue(vt.getString(1).equals("VoltDB:Good"));
+  vt.advanceRow();
+  assertEquals(vt.getLong(0),2);
+  if (isHSQL()) {
+    assertTrue(vt.getString(1).contains("Memsql:Bad"));
+  }
+ else {
+    assertTrue(vt.getString(1).equals("Memsql:Bad"));
+  }
+  cl.callProcedure("R1.insert",3,"ORACLE",8,8.0,new Timestamp(1000000000000L));
+  sql="SELECT ID, CASE WHEN num < 5 THEN num * 5 " + "WHEN num < 10 THEN CASE WHEN num > 7 THEN num * 10 ELSE num * 8 END " + "END FROM R1 ORDER BY 1;";
+  validateTableOfLongs(cl,sql,new long[][]{{1,5},{2,40},{3,80}});
+  sql="SELECT ID, CASE WHEN num > 3 AND num < 5 THEN 4 " + "WHEN num >=5 THEN num END FROM R1 ORDER BY 1;";
+  vt=cl.callProcedure("@AdHoc",sql).getResults()[0];
+  assertEquals(VoltType.INTEGER,vt.getColumnType(1));
+  if (isHSQL()) {
+    validateTableOfLongs(vt,new long[][]{{1,0},{2,5},{3,8}});
+  }
+ else {
+    validateTableOfLongs(vt,new long[][]{{1,Long.MIN_VALUE},{2,5},{3,8}});
+  }
+  sql="SELECT ID, CASE WHEN num > 3 AND num < 5 THEN 4 " + "WHEN num >=5 THEN num*10 END FROM R1 ORDER BY 1;";
+  vt=cl.callProcedure("@AdHoc",sql).getResults()[0];
+  assertEquals(VoltType.BIGINT,vt.getColumnType(1));
+  if (isHSQL()) {
+    validateTableOfLongs(vt,new long[][]{{1,0},{2,50},{3,80}});
+  }
+ else {
+    validateTableOfLongs(vt,new long[][]{{1,Long.MIN_VALUE},{2,50},{3,80}});
+  }
+  cl.callProcedure("R1.insert",4,"DB2",null,null,new Timestamp(1000000000000L));
+  sql="SELECT ID, CASE WHEN num < 3 THEN num/2 ELSE num + 10 END FROM R1 ORDER BY 1;";
+  vt=cl.callProcedure("@AdHoc",sql).getResults()[0];
+  assertEquals(VoltType.INTEGER,vt.getColumnType(1));
+  if (isHSQL()) {
+    validateTableOfLongs(vt,new long[][]{{1,0},{2,15},{3,18},{4,0}});
+  }
+ else {
+    validateTableOfLongs(vt,new long[][]{{1,0},{2,15},{3,18},{4,Long.MIN_VALUE}});
+  }
+}
