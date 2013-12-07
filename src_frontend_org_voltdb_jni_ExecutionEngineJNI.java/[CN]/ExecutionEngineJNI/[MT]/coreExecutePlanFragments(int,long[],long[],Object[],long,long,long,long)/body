@@ -7,21 +7,25 @@
       LOG.trace("Batch Executing planfragment:" + planFragmentIds[i] + ", params="+ parameterSets[i].toString());
     }
   }
-  fsForParameterSet.clear();
+  int allPsetSize=0;
+  for (int i=0; i < batchSize; ++i) {
+    if (parameterSets[i] instanceof ByteBuffer) {
+      allPsetSize+=((ByteBuffer)parameterSets[i]).limit();
+    }
+ else {
+      allPsetSize+=((ParameterSet)parameterSets[i]).getSerializedSize();
+    }
+  }
+  clearPsetAndEnsureCapacity(allPsetSize);
   for (int i=0; i < batchSize; ++i) {
     if (parameterSets[i] instanceof ByteBuffer) {
       ByteBuffer buf=(ByteBuffer)parameterSets[i];
-      try {
-        fsForParameterSet.write(buf);
-      }
- catch (      IOException exception) {
-        throw new RuntimeException("Error serializing parameters for SQL batch element: " + i + " with plan fragment ID: "+ planFragmentIds[i]+ " and with pre-serialized params of length: "+ buf.capacity(),exception);
-      }
+      psetBuffer.b.put(buf);
     }
  else {
       ParameterSet pset=(ParameterSet)parameterSets[i];
       try {
-        pset.writeExternal(fsForParameterSet);
+        pset.flattenToBuffer(psetBuffer.b);
       }
  catch (      final IOException exception) {
         throw new RuntimeException("Error serializing parameters for SQL batch element: " + i + " with plan fragment ID: "+ planFragmentIds[i]+ " and with params: "+ pset.toJSONString(),exception);
