@@ -3,18 +3,10 @@
     Table targetTable=m_catalogDb.getTables().get(((SeqScanPlanNode)root).getTargetTableName());
     CatalogMap<Index> allIndexes=targetTable.getIndexes();
     ArrayList<ParsedColInfo> groupBys=m_parsedSelect.groupByColumns;
-    List<AbstractExpression> tves=groupBys.get(0).expression.findBaseTVEs();
-    String fromTable=null;
-    for (    AbstractExpression expr : tves) {
-      String newTableAlias=((TupleValueExpression)expr).getTableAlias();
-      if (fromTable == null) {
-        fromTable=newTableAlias;
-      }
- else       if (!fromTable.equals(newTableAlias)) {
-        return root;
-      }
-    }
-    assert(fromTable != null);
+    String fromTableAlias=groupBys.get(0).expression.findFromTableAlias();
+    assert(fromTableAlias != null);
+    int idx=m_parsedSelect.tableAliasIndexMap.get(fromTableAlias);
+    StmtTableScan fromTableScan=m_parsedSelect.stmtCache.get(idx);
     for (    Index index : allIndexes) {
       if (!IndexType.isScannable(index.getType())) {
         continue;
@@ -32,7 +24,7 @@
             replacable=false;
             break;
           }
-          if (!fromTable.equals(((TupleValueExpression)expr).getTableAlias())) {
+          if (!fromTableAlias.equals(((TupleValueExpression)expr).getTableAlias())) {
             replacable=false;
             break;
           }
@@ -54,8 +46,6 @@
         }
       }
  else {
-        int idx=m_parsedSelect.tableAliasIndexMap.get(fromTable);
-        StmtTableScan fromTableScan=m_parsedSelect.stmtCache.get(idx);
         List<AbstractExpression> indexedExprs=null;
         try {
           indexedExprs=AbstractExpression.fromJSONArrayString(exprsjson);
