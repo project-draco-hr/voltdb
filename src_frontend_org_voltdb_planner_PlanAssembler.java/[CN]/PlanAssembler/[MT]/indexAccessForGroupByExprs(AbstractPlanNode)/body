@@ -3,6 +3,18 @@
     Table targetTable=m_catalogDb.getTables().get(((SeqScanPlanNode)root).getTargetTableName());
     CatalogMap<Index> allIndexes=targetTable.getIndexes();
     ArrayList<ParsedColInfo> groupBys=m_parsedSelect.groupByColumns;
+    List<AbstractExpression> tves=groupBys.get(0).expression.findBaseTVEs();
+    String fromTable=null;
+    for (    AbstractExpression expr : tves) {
+      String newTableAlias=((TupleValueExpression)expr).getTableAlias();
+      if (fromTable == null) {
+        fromTable=newTableAlias;
+      }
+ else       if (!fromTable.equals(newTableAlias)) {
+        return root;
+      }
+    }
+    assert(fromTable != null);
     for (    Index index : allIndexes) {
       if (!IndexType.isScannable(index.getType())) {
         continue;
@@ -15,7 +27,12 @@
           continue;
         }
         for (int i=0; i < groupBys.size(); i++) {
-          if (groupBys.get(i).expression.getExpressionType() != ExpressionType.VALUE_TUPLE) {
+          AbstractExpression expr=groupBys.get(i).expression;
+          if (expr.getExpressionType() != ExpressionType.VALUE_TUPLE) {
+            replacable=false;
+            break;
+          }
+          if (!fromTable.equals(((TupleValueExpression)expr).getTableAlias())) {
             replacable=false;
             break;
           }
@@ -37,6 +54,8 @@
         }
       }
  else {
+        int idx=m_parsedSelect.tableAliasIndexMap.get(fromTable);
+        StmtTableScan fromTableScan=m_parsedSelect.stmtCache.get(idx);
         List<AbstractExpression> indexedExprs=null;
         try {
           indexedExprs=AbstractExpression.fromJSONArrayString(exprsjson);
@@ -52,7 +71,8 @@
         for (int i=0; i < groupBys.size(); i++) {
           boolean foundMatch=false;
           for (int j=0; j < groupBys.size(); j++) {
-            if (groupBys.get(i).expression.equals(indexedExprs.get(j))) {
+            AbstractExpression indexExpr=indexedExprs.get(j).replaceTVEsWithAlias(fromTableScan);
+            if (groupBys.get(i).expression.bindingToIndexedExpression(indexExpr) != null) {
               foundMatch=true;
               break;
             }
