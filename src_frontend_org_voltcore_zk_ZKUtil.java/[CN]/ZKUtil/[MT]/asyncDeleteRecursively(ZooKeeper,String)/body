@@ -1,0 +1,44 @@
+{
+  Preconditions.checkArgument(dirDN != null && !dirDN.trim().isEmpty() && !"/".equals(dirDN) && dirDN.startsWith("/"));
+  int beforeSize=0;
+  TreeSet<ListingNode> listing=new TreeSet<>();
+  listing.add(new ListingNode(0,dirDN));
+  Queue<Pair<ChildrenCallback,ListingNode>> callbacks=new ArrayDeque<>();
+  while (beforeSize < listing.size()) {
+    for (    ListingNode node : listing) {
+      if (node.childCount == ListingNode.UNPROBED) {
+        ChildrenCallback cb=new ChildrenCallback();
+        zk.getChildren(node.node,false,cb,null);
+        callbacks.offer(Pair.of(cb,node));
+      }
+    }
+    beforeSize=listing.size();
+    Iterator<Pair<ChildrenCallback,ListingNode>> itr=callbacks.iterator();
+    while (itr.hasNext()) {
+      Pair<ChildrenCallback,ListingNode> callbackPair=itr.next();
+      try {
+        List<String> children=callbackPair.getFirst().getChildren();
+        callbackPair.getSecond().childCount=children.size();
+        for (        String child : children) {
+          listing.add(new ListingNode(callbackPair.getSecond(),child));
+        }
+      }
+ catch (      KeeperException.NoNodeException ignoreIt) {
+      }
+      itr.remove();
+    }
+  }
+  VoidCallback lastCallback=null;
+  Iterator<ListingNode> lnitr=listing.iterator();
+  while (lnitr.hasNext()) {
+    ListingNode node=lnitr.next();
+    lastCallback=new VoidCallback();
+    zk.delete(node.node,-1,lastCallback,null);
+    lnitr.remove();
+  }
+  try {
+    lastCallback.get();
+  }
+ catch (  KeeperException.NoNodeException ignoreIt) {
+  }
+}
