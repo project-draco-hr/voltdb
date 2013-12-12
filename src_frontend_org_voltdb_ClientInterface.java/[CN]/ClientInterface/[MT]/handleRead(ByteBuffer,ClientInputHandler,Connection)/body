@@ -1,7 +1,7 @@
 {
   final long now=System.currentTimeMillis();
-  final FastDeserializer fds=new FastDeserializer(buf);
-  final StoredProcedureInvocation task=fds.readObject(StoredProcedureInvocation.class);
+  final StoredProcedureInvocation task=new StoredProcedureInvocation();
+  task.initFromBuffer(buf);
   ClientResponseImpl error=null;
   VoltDBInterface instance=VoltDB.instance();
   if (instance.getMode() == OperationMode.PAUSED && !handler.isAdmin()) {
@@ -115,14 +115,8 @@
     try {
       partition=getPartitionForProcedure(catProc.getPartitionparameter(),catProc.getPartitioncolumn().getType(),task);
     }
- catch (    RuntimeException e) {
-      String errorMessage="Error sending procedure " + task.procName + " to the correct partition. Make sure parameter values are correct.";
-      authLog.l7dlog(Level.WARN,LogKeys.host_ClientInterface_unableToRouteSinglePartitionInvocation.name(),new Object[]{task.procName},null);
-      return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],errorMessage,task.clientHandle);
-    }
-catch (    Exception e) {
-      authLog.l7dlog(Level.WARN,LogKeys.host_ClientInterface_unableToRouteSinglePartitionInvocation.name(),new Object[]{task.procName},null);
-      return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],e.getMessage(),task.clientHandle);
+ catch (    Exception e) {
+      return getMispartitionedErrorResponse(task,catProc,e);
     }
   }
   boolean success=createTransaction(handler.connectionId(),task,catProc.getReadonly(),catProc.getSinglepartition(),catProc.getEverysite(),partition,buf.capacity(),now);
