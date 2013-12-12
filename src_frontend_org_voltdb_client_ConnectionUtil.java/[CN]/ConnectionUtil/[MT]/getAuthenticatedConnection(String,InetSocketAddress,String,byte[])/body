@@ -15,19 +15,19 @@
   try {
     aChannel.configureBlocking(true);
     aChannel.socket().setTcpNoDelay(true);
-    FastSerializer fs=new FastSerializer();
-    fs.writeInt(0);
-    fs.writeByte(0);
-    fs.writeString(service);
-    fs.writeString(username);
-    fs.write(hashedPassword);
-    final ByteBuffer fsBuffer=fs.getBuffer();
-    final ByteBuffer b=ByteBuffer.allocate(fsBuffer.remaining());
-    b.put(fsBuffer);
-    final int size=fsBuffer.limit() - 4;
+    byte[] serviceBytes=service == null ? null : service.getBytes(Constants.UTF8ENCODING);
+    byte[] usernameBytes=username == null ? null : username.getBytes(Constants.UTF8ENCODING);
+    int requestSize=4 + 1;
+    requestSize+=serviceBytes == null ? 4 : 4 + serviceBytes.length;
+    requestSize+=usernameBytes == null ? 4 : 4 + usernameBytes.length;
+    requestSize+=hashedPassword.length;
+    ByteBuffer b=ByteBuffer.allocate(requestSize);
+    b.putInt(requestSize - 4);
+    b.put((byte)0);
+    SerializationHelper.writeVarbinary(serviceBytes,b);
+    SerializationHelper.writeVarbinary(usernameBytes,b);
+    b.put(hashedPassword);
     b.flip();
-    b.putInt(size);
-    b.position(0);
     boolean successfulWrite=false;
     IOException writeException=null;
     try {
@@ -76,15 +76,15 @@
     if (loginResponseCode != 0) {
       aChannel.close();
 switch (loginResponseCode) {
-case ClientInterface.MAX_CONNECTIONS_LIMIT_ERROR:
+case Constants.MAX_CONNECTIONS_LIMIT_ERROR:
         throw new IOException("Server has too many connections");
-case ClientInterface.WIRE_PROTOCOL_TIMEOUT_ERROR:
+case Constants.WIRE_PROTOCOL_TIMEOUT_ERROR:
       throw new IOException("Connection timed out during authentication. " + "The VoltDB server may be overloaded.");
-case ClientInterface.EXPORT_DISABLED_REJECTION:
+case Constants.EXPORT_DISABLED_REJECTION:
     throw new IOException("Export not enabled for server");
-case ClientInterface.WIRE_PROTOCOL_FORMAT_ERROR:
+case Constants.WIRE_PROTOCOL_FORMAT_ERROR:
   throw new IOException("Wire protocol format violation error");
-case ClientInterface.AUTHENTICATION_FAILURE_DUE_TO_REJOIN:
+case Constants.AUTHENTICATION_FAILURE_DUE_TO_REJOIN:
 throw new IOException("Failed to authenticate to rejoining node");
 default :
 throw new IOException("Authentication rejected");
