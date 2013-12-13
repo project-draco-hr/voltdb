@@ -6,7 +6,7 @@
         if (result instanceof AdHocPlannedStmtBatch) {
           final AdHocPlannedStmtBatch plannedStmtBatch=(AdHocPlannedStmtBatch)result;
           if ((plannedStmtBatch.getPlannedStatementCount() > 0) && (plannedStmtBatch.getPlannedStatement(0).core.catalogVersion != m_catalogContext.get().catalogVersion)) {
-            LocalObjectMessage work=new LocalObjectMessage(new AdHocPlannerWork(m_siteId,false,plannedStmtBatch.clientHandle,plannedStmtBatch.connectionId,plannedStmtBatch.hostname,plannedStmtBatch.adminConnection,plannedStmtBatch.clientData,plannedStmtBatch.sqlBatchText,plannedStmtBatch.getSQLStatements(),plannedStmtBatch.partitionParam,null,false,true,plannedStmtBatch.type,plannedStmtBatch.originalTxnId,plannedStmtBatch.originalUniqueId,m_adhocCompletionHandler));
+            LocalObjectMessage work=new LocalObjectMessage(AdHocPlannerWork.rework(plannedStmtBatch.work,m_adhocCompletionHandler));
             m_mailbox.send(m_plannerSiteId,work);
           }
  else           if (plannedStmtBatch.isExplainWork()) {
@@ -17,7 +17,7 @@
               createAdHocTransaction(plannedStmtBatch);
             }
  catch (            VoltTypeException vte) {
-              String msg="Unable to hash the partition for adhoc partition value: " + plannedStmtBatch.partitionParam + ", msg: "+ vte.getMessage();
+              String msg="Unable to execute adhoc sql statement(s): " + vte.getMessage();
               ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.GRACEFUL_FAILURE,new VoltTable[0],msg,result.clientHandle);
               ByteBuffer buf=ByteBuffer.allocate(errorResponse.getSerializedSize() + 4);
               buf.putInt(buf.capacity() - 4);
@@ -79,11 +79,19 @@
         ft.get();
       }
  catch (      Exception e) {
-        StringWriter sw=new StringWriter();
-        PrintWriter pw=new PrintWriter(sw);
-        e.printStackTrace(pw);
-        pw.flush();
-        ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],result.errorMsg,result.clientHandle);
+        String realReason=result.errorMsg;
+        if (realReason == null) {
+          StringWriter sw=new StringWriter();
+          PrintWriter pw=new PrintWriter(sw);
+          e.printStackTrace(pw);
+          Throwable cause=e.getCause();
+          if (cause != null) {
+            cause.printStackTrace(pw);
+          }
+          pw.flush();
+          realReason=sw.toString();
+        }
+        ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],realReason,result.clientHandle);
         ByteBuffer buf=ByteBuffer.allocate(errorResponse.getSerializedSize() + 4);
         buf.putInt(buf.capacity() - 4);
         errorResponse.flattenToBuffer(buf);
