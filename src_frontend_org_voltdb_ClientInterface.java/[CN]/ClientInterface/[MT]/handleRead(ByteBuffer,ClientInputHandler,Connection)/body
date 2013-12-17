@@ -1,7 +1,12 @@
 {
   final long now=System.currentTimeMillis();
-  final FastDeserializer fds=new FastDeserializer(buf);
-  final StoredProcedureInvocation task=fds.readObject(StoredProcedureInvocation.class);
+  StoredProcedureInvocation task=new StoredProcedureInvocation();
+  try {
+    task.initFromBuffer(buf);
+  }
+ catch (  Exception ex) {
+    return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],ex.getMessage(),ccxn.connectionId());
+  }
   ClientResponseImpl error=null;
   VoltDBInterface instance=VoltDB.instance();
   if (instance.getMode() == OperationMode.PAUSED && !handler.isAdmin()) {
@@ -25,7 +30,7 @@
     }
   }
   if (catProc == null) {
-    if (task.procName.equals("@AdHoc")) {
+    if (task.procName.equals("@AdHoc") || task.procName.equals("@AdHocSpForTest")) {
       catProc=SystemProcedureCatalog.listing.get("@AdHoc_RW_MP").asCatalogProcedure();
       assert(catProc != null);
     }
@@ -60,6 +65,9 @@
   if (catProc.getSystemproc()) {
     if (task.procName.equals("@AdHoc")) {
       return dispatchAdHoc(task,handler,ccxn,false);
+    }
+ else     if (task.procName.equals("@AdHocSpForTest")) {
+      return dispatchAdHocSpForTest(task,handler,ccxn,false);
     }
  else     if (task.procName.equals("@UpdateApplicationCatalog")) {
       return dispatchUpdateApplicationCatalog(task,handler,ccxn);
@@ -115,14 +123,8 @@
     try {
       partition=getPartitionForProcedure(catProc.getPartitionparameter(),catProc.getPartitioncolumn().getType(),task);
     }
- catch (    RuntimeException e) {
-      String errorMessage="Error sending procedure " + task.procName + " to the correct partition. Make sure parameter values are correct.";
-      authLog.l7dlog(Level.WARN,LogKeys.host_ClientInterface_unableToRouteSinglePartitionInvocation.name(),new Object[]{task.procName},null);
-      return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],errorMessage,task.clientHandle);
-    }
-catch (    Exception e) {
-      authLog.l7dlog(Level.WARN,LogKeys.host_ClientInterface_unableToRouteSinglePartitionInvocation.name(),new Object[]{task.procName},null);
-      return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],e.getMessage(),task.clientHandle);
+ catch (    Exception e) {
+      return getMispartitionedErrorResponse(task,catProc,e);
     }
   }
   boolean success=createTransaction(handler.connectionId(),task,catProc.getReadonly(),catProc.getSinglepartition(),catProc.getEverysite(),partition,buf.capacity(),now);

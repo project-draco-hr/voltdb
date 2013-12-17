@@ -47,7 +47,7 @@
  else   if (inputClz == byte[].class) {
     if (expectedClz == byte[].class)     return param;
  else     if (expectedClz == String.class) {
-      String value=new String((byte[])param,Charsets.UTF_8);
+      String value=new String((byte[])param,Constants.UTF8ENCODING);
       if (value.equals(VoltTable.CSV_NULL))       return nullValueForType(expectedClz);
  else       return value;
     }
@@ -58,11 +58,8 @@
  else   if (param == VoltType.NULL_DECIMAL) {
     return nullValueForType(expectedClz);
   }
- else   if (param instanceof SystemProcedureExecutionContext) {
-    return param;
-  }
   if (expectedClz.isArray() != inputClz.isArray()) {
-    throw new Exception(String.format("Array / Scalar parameter mismatch (%s to %s)",inputClz.getName(),expectedClz.getName()));
+    throw new VoltTypeException(String.format("Array / Scalar parameter mismatch (%s to %s)",inputClz.getName(),expectedClz.getName()));
   }
   if (expectedClz.isArray()) {
     return tryToMakeCompatibleArray(expectedClz.getComponentType(),inputClz.getComponentType(),param);
@@ -70,7 +67,7 @@
   if ((expectedClz == int.class) && (numberParam != null)) {
     long val=numberParam.longValue();
     if (val == VoltType.NULL_INTEGER) {
-      throw new Exception("tryToMakeCompatible: The provided long value: (" + param.toString() + ") might be interpreted as integer null. "+ "Try explicitly using a int parameter.");
+      throw new VoltTypeException("tryToMakeCompatible: The provided long value: (" + param.toString() + ") might be interpreted as integer null. "+ "Try explicitly using a int parameter.");
     }
     if ((val <= Integer.MAX_VALUE) && (val >= Integer.MIN_VALUE))     return numberParam.intValue();
   }
@@ -78,7 +75,7 @@
     if ((inputClz == Long.class) || (inputClz == Integer.class)) {
       long val=numberParam.longValue();
       if (val == VoltType.NULL_SMALLINT) {
-        throw new Exception("tryToMakeCompatible: The provided int or long value: (" + param.toString() + ") might be interpreted as smallint null. "+ "Try explicitly using a short parameter.");
+        throw new VoltTypeException("tryToMakeCompatible: The provided int or long value: (" + param.toString() + ") might be interpreted as smallint null. "+ "Try explicitly using a short parameter.");
       }
       if ((val <= Short.MAX_VALUE) && (val >= Short.MIN_VALUE))       return numberParam.shortValue();
     }
@@ -87,7 +84,7 @@
     if ((inputClz == Long.class) || (inputClz == Integer.class) || (inputClz == Short.class)) {
       long val=numberParam.longValue();
       if (val == VoltType.NULL_TINYINT) {
-        throw new Exception("tryToMakeCompatible: The provided short, int or long value: (" + param.toString() + ") might be interpreted as tinyint null. "+ "Try explicitly using a byte parameter.");
+        throw new VoltTypeException("tryToMakeCompatible: The provided short, int or long value: (" + param.toString() + ") might be interpreted as tinyint null. "+ "Try explicitly using a byte parameter.");
       }
       if ((val <= Byte.MAX_VALUE) && (val >= Byte.MIN_VALUE))       return numberParam.byteValue();
     }
@@ -96,6 +93,7 @@
     return numberParam.doubleValue();
   }
  else   if (expectedClz == TimestampType.class) {
+    if (inputClz == Integer.class)     return new TimestampType((Integer)param);
     if (inputClz == Long.class)     return new TimestampType((Long)param);
     if (inputClz == TimestampType.class)     return param;
     if (inputClz == Date.class)     return new TimestampType((Date)param);
@@ -167,12 +165,27 @@
       return bd;
     }
     if (inputClz == Float.class || inputClz == Double.class) {
-      return VoltDecimalHelper.deserializeBigDecimalFromString(String.format("%.12f",param));
+      try {
+        return VoltDecimalHelper.deserializeBigDecimalFromString(String.format("%.12f",param));
+      }
+ catch (      IOException ex) {
+        throw new VoltTypeException(String.format("deserialize Float from string failed. (%s to %s)",inputClz.getName(),expectedClz.getName()));
+      }
     }
-    return VoltDecimalHelper.deserializeBigDecimalFromString(String.valueOf(param));
+    try {
+      return VoltDecimalHelper.deserializeBigDecimalFromString(String.valueOf(param));
+    }
+ catch (    IOException ex) {
+      throw new VoltTypeException(String.format("deserialize BigDecimal from string failed. (%s to %s)",inputClz.getName(),expectedClz.getName()));
+    }
   }
  else   if (expectedClz == VoltTable.class && inputClz == VoltTable.class) {
     return param;
   }
-  throw new Exception("tryToMakeCompatible: The provided value: (" + param.toString() + ") of type: "+ inputClz.getName()+ " is not a match or is out of range for the target parameter type: "+ expectedClz.getName());
+  if (expectedClz.getSimpleName().equals("SystemProcedureExecutionContext")) {
+    if (expectedClz.isAssignableFrom(inputClz)) {
+      return param;
+    }
+  }
+  throw new VoltTypeException("tryToMakeCompatible: The provided value: (" + param.toString() + ") of type: "+ inputClz.getName()+ " is not a match or is out of range for the target parameter type: "+ expectedClz.getName());
 }

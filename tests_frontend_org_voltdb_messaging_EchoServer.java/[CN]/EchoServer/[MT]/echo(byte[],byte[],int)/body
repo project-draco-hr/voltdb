@@ -1,5 +1,6 @@
 {
   VoltType type=null;
+  ByteBuffer buf;
   if (t[0] == ARRAY_BEGIN) {
     isArray=true;
     return;
@@ -61,12 +62,18 @@ long micros=fds.readLong();
 fs.writeLong(micros);
 break;
 case DECIMAL:
-BigDecimal bd=VoltDecimalHelper.deserializeBigDecimal(fds);
-VoltDecimalHelper.serializeBigDecimal(bd,fs);
+BigDecimal bd=VoltDecimalHelper.deserializeBigDecimal(fds.buffer());
+buf=ByteBuffer.allocate(16);
+VoltDecimalHelper.serializeBigDecimal(bd,buf);
+buf.flip();
+fs.write(buf);
 break;
 case VOLTTABLE:
-VoltTable table=fds.readObject(VoltTable.class);
-fs.writeObject(table);
+VoltTable table=PrivateVoltTableFactory.createVoltTableFromSharedBuffer(fds.buffer());
+buf=ByteBuffer.allocate(table.getSerializedSize());
+table.flattenToBuffer(buf);
+buf.flip();
+fs.write(buf);
 break;
 default :
 throw new RuntimeException("FIXME: Unsupported type " + type);

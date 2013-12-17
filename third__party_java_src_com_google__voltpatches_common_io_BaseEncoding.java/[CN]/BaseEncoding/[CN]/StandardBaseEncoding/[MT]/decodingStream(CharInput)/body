@@ -1,0 +1,45 @@
+{
+  checkNotNull(reader);
+  return new ByteInput(){
+    int bitBuffer=0;
+    int bitBufferLength=0;
+    int readChars=0;
+    boolean hitPadding=false;
+    final CharMatcher paddingMatcher=padding();
+    @Override public int read() throws IOException {
+      while (true) {
+        int readChar=reader.read();
+        if (readChar == -1) {
+          if (!hitPadding && !alphabet.isValidPaddingStartPosition(readChars)) {
+            throw new DecodingException("Invalid input length " + readChars);
+          }
+          return -1;
+        }
+        readChars++;
+        char ch=(char)readChar;
+        if (paddingMatcher.matches(ch)) {
+          if (!hitPadding && (readChars == 1 || !alphabet.isValidPaddingStartPosition(readChars - 1))) {
+            throw new DecodingException("Padding cannot start at index " + readChars);
+          }
+          hitPadding=true;
+        }
+ else         if (hitPadding) {
+          throw new DecodingException("Expected padding character but found '" + ch + "' at index "+ readChars);
+        }
+ else {
+          bitBuffer<<=alphabet.bitsPerChar;
+          bitBuffer|=alphabet.decode(ch);
+          bitBufferLength+=alphabet.bitsPerChar;
+          if (bitBufferLength >= 8) {
+            bitBufferLength-=8;
+            return (bitBuffer >> bitBufferLength) & 0xFF;
+          }
+        }
+      }
+    }
+    @Override public void close() throws IOException {
+      reader.close();
+    }
+  }
+;
+}
