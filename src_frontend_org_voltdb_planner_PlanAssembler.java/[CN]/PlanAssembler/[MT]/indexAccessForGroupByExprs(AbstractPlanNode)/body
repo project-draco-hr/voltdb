@@ -3,6 +3,9 @@
     Table targetTable=m_catalogDb.getTables().get(((SeqScanPlanNode)root).getTargetTableName());
     CatalogMap<Index> allIndexes=targetTable.getIndexes();
     ArrayList<ParsedColInfo> groupBys=m_parsedSelect.groupByColumns;
+    String fromTableAlias=groupBys.get(0).expression.baseTableAlias();
+    assert(fromTableAlias != null);
+    int idx=m_parsedSelect.tableAliasIndexMap.get(fromTableAlias);
     for (    Index index : allIndexes) {
       if (!IndexType.isScannable(index.getType())) {
         continue;
@@ -15,7 +18,12 @@
           continue;
         }
         for (int i=0; i < groupBys.size(); i++) {
-          if (groupBys.get(i).expression.getExpressionType() != ExpressionType.VALUE_TUPLE) {
+          AbstractExpression expr=groupBys.get(i).expression;
+          if (expr.getExpressionType() != ExpressionType.VALUE_TUPLE) {
+            replacable=false;
+            break;
+          }
+          if (!fromTableAlias.equals(((TupleValueExpression)expr).getTableAlias())) {
             replacable=false;
             break;
           }
@@ -38,8 +46,9 @@
       }
  else {
         List<AbstractExpression> indexedExprs=null;
+        StmtTableScan fromTableScan=m_parsedSelect.stmtCache.get(idx);
         try {
-          indexedExprs=AbstractExpression.fromJSONArrayString(exprsjson);
+          indexedExprs=AbstractExpression.fromJSONArrayString(exprsjson,fromTableScan);
         }
  catch (        JSONException e) {
           e.printStackTrace();
@@ -49,10 +58,14 @@
         if (groupBys.size() > indexedExprs.size()) {
           continue;
         }
+        ArrayList<AbstractExpression> allBindings=new ArrayList<AbstractExpression>();
         for (int i=0; i < groupBys.size(); i++) {
           boolean foundMatch=false;
           for (int j=0; j < groupBys.size(); j++) {
-            if (groupBys.get(i).expression.equals(indexedExprs.get(j))) {
+            AbstractExpression indexExpr=indexedExprs.get(j);
+            List<AbstractExpression> binding=groupBys.get(i).expression.bindingToIndexedExpression(indexExpr);
+            if (binding != null) {
+              allBindings.addAll(binding);
               foundMatch=true;
               break;
             }
@@ -64,6 +77,7 @@
         }
         if (replacable) {
           IndexScanPlanNode indexScanNode=new IndexScanPlanNode((SeqScanPlanNode)root,null,index,SortDirectionType.ASC);
+          indexScanNode.setBindings(allBindings);
           return indexScanNode;
         }
       }

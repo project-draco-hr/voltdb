@@ -1,0 +1,28 @@
+{
+  ZooKeeper zk=getClient(0);
+  ZooKeeper zk2=getClient(1);
+  final Semaphore sem=new Semaphore(0);
+  zk2.create("/foo",new byte[1],Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+  zk.getData("/foo",new Watcher(){
+    @Override public void process(    WatchedEvent event){
+      if (event.getType() == EventType.NodeDataChanged) {
+        sem.release();
+        System.out.println(event);
+      }
+    }
+  }
+,null);
+  zk2.setData("/foo",new byte[2],-1);
+  Stat stat=new Stat();
+  zk.getData("/foo",false,stat);
+  boolean threwException=false;
+  try {
+    zk2.setData("/foo",new byte[3],stat.getVersion());
+    zk.setData("/foo",new byte[3],stat.getVersion());
+  }
+ catch (  BadVersionException e) {
+    threwException=true;
+    e.printStackTrace();
+  }
+  assertTrue(threwException);
+}
