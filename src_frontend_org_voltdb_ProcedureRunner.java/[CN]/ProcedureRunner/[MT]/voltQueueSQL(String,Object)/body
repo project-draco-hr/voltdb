@@ -3,36 +3,34 @@
     throw new IllegalArgumentException("SQL statement '" + sql + "' is null or the empty string");
   }
   try {
-    AdHocPlannedStmtBatch paw=m_csp.plan(sql,!m_catProc.getSinglepartition(),ProcedureInvocationType.ORIGINAL,0,0).get();
-    if (paw.errorMsg != null) {
-      throw new VoltAbortException("Failed to plan sql '" + sql + "' error: "+ paw.errorMsg);
+    AdHocPlannedStmtBatch batch=m_csp.plan(sql,args,m_catProc.getSinglepartition()).get();
+    if (batch.errorMsg != null) {
+      throw new VoltAbortException("Failed to plan sql '" + sql + "' error: "+ batch.errorMsg);
     }
-    if (m_catProc.getReadonly() && !paw.isReadOnly()) {
+    if (m_catProc.getReadonly() && !batch.isReadOnly()) {
       throw new VoltAbortException("Attempted to queue DML adhoc sql '" + sql + "' from read only procedure");
     }
-    assert(1 == paw.plannedStatements.size());
+    assert(1 == batch.plannedStatements.size());
     QueuedSQL queuedSQL=new QueuedSQL();
-    AdHocPlannedStatement plannedStatement=paw.plannedStatements.get(0);
+    AdHocPlannedStatement plannedStatement=batch.plannedStatements.get(0);
     long aggFragId=ActivePlanRepository.loadOrAddRefPlanFragment(plannedStatement.core.aggregatorHash,plannedStatement.core.aggregatorFragment);
     long collectorFragId=0;
     if (plannedStatement.core.collectorFragment != null) {
       collectorFragId=ActivePlanRepository.loadOrAddRefPlanFragment(plannedStatement.core.collectorHash,plannedStatement.core.collectorFragment);
     }
     queuedSQL.stmt=SQLStmtAdHocHelper.createWithPlan(plannedStatement.sql,aggFragId,plannedStatement.core.aggregatorHash,true,collectorFragId,plannedStatement.core.collectorHash,true,plannedStatement.core.isReplicatedTableDML,plannedStatement.core.readOnly,plannedStatement.core.parameterTypes,m_site);
-    if (plannedStatement.extractedParamValues.size() == 0) {
-      queuedSQL.params=getCleanParams(queuedSQL.stmt,args);
-    }
- else {
+    Object[] argumentParams=args;
+    if (plannedStatement.hasExtractedParams()) {
       if (args.length > 0) {
-        throw new ExpectedProcedureException("Number of arguments provided was " + args.length + " where 0 were expected for statement "+ sql);
+        throw new ExpectedProcedureException("Number of arguments provided was " + args.length + " where 0 were expected for statement: "+ sql);
       }
-      Object[] extractedParams=plannedStatement.extractedParamValues.toArray();
-      if (extractedParams.length != queuedSQL.stmt.statementParamJavaTypes.length) {
-        String msg=String.format("Wrong number of extracted param for parameterized statement: %s",sql);
+      argumentParams=plannedStatement.extractedParamArray();
+      if (argumentParams.length != queuedSQL.stmt.statementParamJavaTypes.length) {
+        String msg=String.format("Wrong number of params for parameterized statement: %s",sql);
         throw new VoltAbortException(msg);
       }
-      queuedSQL.params=getCleanParams(queuedSQL.stmt,extractedParams);
     }
+    queuedSQL.params=getCleanParams(queuedSQL.stmt,argumentParams);
     updateCRC(queuedSQL);
     m_batch.add(queuedSQL);
   }

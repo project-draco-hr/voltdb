@@ -1,0 +1,16 @@
+def _initialize(self):
+    try:
+        self.schema = schemaobject.SchemaObject(self.uri)
+    except MySQLdb.DatabaseError as e:
+        utility.abort('MySQL database connection exception:', (('URI: %s' % self.uri), e))
+    num_databases = len(self.schema.databases)
+    if (num_databases != 1):
+        utility.abort('Expect the URI to uniquely identify a single database.', ('"%s" returns %d databases.' % (self.uri, num_databases)))
+    self.database = self.schema.databases[self.schema.databases.keys()[0]]
+    for table_name in self.database.tables:
+        self.table_names.append(table_name)
+        result = self.execute(('SELECT count(*) FROM %s' % table_name))
+        row_count = result[0]['count(*)']
+        self.tables[table_name] = MySQLTable(self.database.tables[table_name], row_count)
+    self.table_names.sort()
+    self._determine_partitioning()
