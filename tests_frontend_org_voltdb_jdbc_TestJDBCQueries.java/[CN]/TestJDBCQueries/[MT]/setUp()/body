@@ -1,0 +1,30 @@
+{
+  String ddl="";
+  for (  Data d : data) {
+    ddl+=String.format("CREATE TABLE %s(ID %s NOT NULL, VALUE VARCHAR(255)); ",d.tablename,d.typedecl);
+  }
+  pb=new VoltProjectBuilder();
+  pb.addLiteralSchema(ddl);
+  boolean success=pb.compile(Configuration.getPathToCatalogForTest(TEST_JAR),3,1,0);
+  assert(success);
+  MiscUtils.copyFile(pb.getPathToDeployment(),Configuration.getPathToCatalogForTest(TEST_XML));
+  testjar=Configuration.getPathToCatalogForTest(TEST_JAR);
+  startServer();
+  for (  Data d : data) {
+    String q=String.format("insert into %s values(?, ?)",d.tablename);
+    for (    String id : d.good) {
+      try {
+        PreparedStatement sel=conn.prepareStatement(q);
+        sel.setString(1,id);
+        sel.setString(2,String.format("VALUE:%s:%s",d.tablename,id));
+        sel.execute();
+        int count=sel.getUpdateCount();
+        assertTrue(count == 1);
+      }
+ catch (      SQLException e) {
+        System.err.printf("ERROR(INSERT): %s value='%s': %s\n",d.typename,d.good[0],e.getMessage());
+        fail();
+      }
+    }
+  }
+}

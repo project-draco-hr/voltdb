@@ -1,8 +1,16 @@
 {
+  ByteBuffer buf=null;
+  try {
+    buf=plannedStmtBatch.flattenPlanArrayToBuffer();
+  }
+ catch (  IOException e) {
+    VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
+  }
+  assert(buf.hasArray());
   StoredProcedureInvocation task=new StoredProcedureInvocation();
-  task.type=plannedStmtBatch.type;
-  task.originalTxnId=plannedStmtBatch.originalTxnId;
-  task.originalUniqueId=plannedStmtBatch.originalUniqueId;
+  task.type=plannedStmtBatch.work.type;
+  task.originalTxnId=plannedStmtBatch.work.originalTxnId;
+  task.originalUniqueId=plannedStmtBatch.work.originalUniqueId;
   boolean isSinglePartition=plannedStmtBatch.isSinglePartitionCompatible() || m_isConfiguredForHSQL;
   int partition=-1;
   if (isSinglePartition) {
@@ -13,10 +21,14 @@
       task.procName="@AdHoc_RW_SP";
     }
     int type=VoltType.NULL.getValue();
-    if (plannedStmtBatch.partitionParam != null) {
-      type=VoltType.typeFromObject(plannedStmtBatch.partitionParam).getValue();
+    Object partitionParam=plannedStmtBatch.partitionParam();
+    byte[] param=null;
+    if (partitionParam != null) {
+      type=VoltType.typeFromClass(partitionParam.getClass()).getValue();
+      param=TheHashinator.valueToBytes(partitionParam);
     }
-    partition=TheHashinator.getPartitionForParameter(type,plannedStmtBatch.partitionParam);
+    partition=TheHashinator.getPartitionForParameter(type,partitionParam);
+    task.setParams(param,(byte)type,buf.array());
   }
  else {
     if (plannedStmtBatch.isReadOnly()) {
@@ -25,25 +37,6 @@
  else {
       task.procName="@AdHoc_RW_MP";
     }
-  }
-  ByteBuffer buf=ByteBuffer.allocate(plannedStmtBatch.getPlanArraySerializedSize());
-  try {
-    plannedStmtBatch.flattenPlanArrayToBuffer(buf);
-  }
- catch (  Exception e) {
-    VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
-  }
-  assert(buf.hasArray());
-  if (isSinglePartition) {
-    byte[] param=null;
-    byte type=VoltType.NULL.getValue();
-    if (plannedStmtBatch.partitionParam != null) {
-      type=VoltType.typeFromClass(plannedStmtBatch.partitionParam.getClass()).getValue();
-      param=TheHashinator.valueToBytes(plannedStmtBatch.partitionParam);
-    }
-    task.setParams(param,type,buf.array());
-  }
- else {
     task.setParams(buf.array());
   }
   task.clientHandle=plannedStmtBatch.clientHandle;
