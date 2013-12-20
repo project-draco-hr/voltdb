@@ -1,13 +1,7 @@
 {
   final String className=procedureDescriptor.m_className;
-  Class<?> procClass=null;
-  try {
-    procClass=Class.forName(className);
-  }
- catch (  ClassNotFoundException e) {
-    String msg="Cannot load class for procedure: " + className;
-    throw compiler.new VoltCompilerException(msg);
-  }
+  final Language lang=procedureDescriptor.m_language;
+  Class<?> procClass=procedureDescriptor.m_class;
   String shortName=deriveShortProcedureName(className);
   final Procedure procedure=db.getProcedures().add(shortName);
   for (  String groupName : procedureDescriptor.m_authGroups) {
@@ -22,6 +16,7 @@
   procedure.setSystemproc(false);
   procedure.setDefaultproc(procedureDescriptor.m_builtInStmt);
   procedure.setHasjava(true);
+  procedure.setLanguage(lang.name());
   ProcInfoData info=compiler.getProcInfoOverride(shortName);
   ProcInfoData ddlInfo=null;
   if (procedureDescriptor.m_partitionString != null && !procedureDescriptor.m_partitionString.trim().isEmpty()) {
@@ -53,25 +48,17 @@
       throw compiler.new VoltCompilerException(msg);
     }
   }
-  VoltProcedure procInstance=null;
-  try {
-    procInstance=(VoltProcedure)procClass.newInstance();
-  }
- catch (  InstantiationException e1) {
-    e1.printStackTrace();
-  }
-catch (  IllegalAccessException e1) {
-    e1.printStackTrace();
-  }
   boolean procHasWriteStmts=false;
   boolean procHasSeqScans=false;
   boolean procWantsCommonPartitioning=true;
   AbstractExpression commonPartitionExpression=null;
   String exampleSPstatement=null;
   Object exampleSPvalue=null;
-  Map<String,SQLStmt> stmtMap=getValidSQLStmts(compiler,procClass.getSimpleName(),procClass,procInstance,true);
+  Map<String,Object> fields=lang.accept(procedureIntrospector(compiler),procClass);
   boolean readWrite=false;
-  for (  SQLStmt stmt : stmtMap.values()) {
+  for (  Object field : fields.values()) {
+    if (!(field instanceof SQLStmt))     continue;
+    SQLStmt stmt=(SQLStmt)field;
     QueryType qtype=QueryType.getFromSQL(stmt.getText());
     if (!qtype.isReadOnly()) {
       readWrite=true;
@@ -79,9 +66,10 @@ catch (  IllegalAccessException e1) {
     }
   }
   final DeterminismMode detMode=readWrite ? DeterminismMode.SAFER : DeterminismMode.FASTER;
-  for (  Entry<String,SQLStmt> entry : stmtMap.entrySet()) {
+  for (  Entry<String,Object> entry : fields.entrySet()) {
+    if (!(entry.getValue() instanceof SQLStmt))     continue;
     String stmtName=entry.getKey();
-    SQLStmt stmt=entry.getValue();
+    SQLStmt stmt=(SQLStmt)entry.getValue();
     Statement catalogStmt=procedure.getStatements().add(stmtName);
     Object partitionParameter=null;
     if (info.singlePartition) {
@@ -163,35 +151,8 @@ catch (  IllegalAccessException e1) {
       compiler.addWarn(warnMsg);
     }
   }
-  Method procMethod=null;
-  Method[] methods=procClass.getDeclaredMethods();
-  for (  final Method m : methods) {
-    String name=m.getName();
-    if (name.equals("run")) {
-      assert(m.getDeclaringClass() == procClass);
-      if (procMethod != null) {
-        String msg="Procedure: " + shortName + " has multiple public run(...) methods. ";
-        msg+="Only a single run(...) method is supported.";
-        throw compiler.new VoltCompilerException(msg);
-      }
-      if (Modifier.isPublic(m.getModifiers())) {
-        procMethod=m;
-      }
- else {
-        compiler.addWarn("Procedure: " + shortName + " has non-public run(...) method.");
-      }
-    }
-  }
-  if (procMethod == null) {
-    String msg="Procedure: " + shortName + " has no run(...) method.";
-    throw compiler.new VoltCompilerException(msg);
-  }
-  if ((procMethod.getReturnType() != VoltTable[].class) && (procMethod.getReturnType() != VoltTable.class) && (procMethod.getReturnType() != long.class)&& (procMethod.getReturnType() != Long.class)) {
-    String msg="Procedure: " + shortName + " has run(...) method that doesn't return long, Long, VoltTable or VoltTable[].";
-    throw compiler.new VoltCompilerException(msg);
-  }
   CatalogMap<ProcParameter> params=procedure.getParameters();
-  Class<?>[] paramTypes=procMethod.getParameterTypes();
+  Class<?>[] paramTypes=lang.accept(procedureEntryPointParametersTypeExtractor,fields);
   for (int i=0; i < paramTypes.length; i++) {
     Class<?> cls=paramTypes[i];
     ProcParameter param=params.add(String.valueOf(i));
