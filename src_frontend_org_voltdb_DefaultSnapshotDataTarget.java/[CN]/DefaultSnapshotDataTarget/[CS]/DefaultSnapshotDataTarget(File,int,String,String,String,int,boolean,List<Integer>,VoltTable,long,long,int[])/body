@@ -86,18 +86,23 @@ catch (  ExecutionException e) {
   ScheduledFuture<?> syncTask=null;
   syncTask=m_syncService.scheduleAtFixedRate(new Runnable(){
     @Override public void run(){
-      int bytesSinceLastSync=0;
-      while ((bytesSinceLastSync=m_bytesWrittenSinceLastSync.getAndSet(0)) > 0) {
+      while (m_bytesWrittenSinceLastSync.get() > (1024 * 1024 * 4)) {
+        final int bytesSinceLastSync=m_bytesWrittenSinceLastSync.getAndSet(0);
         try {
           m_channel.force(false);
         }
  catch (        IOException e) {
-          SNAP_LOG.error("Error syncing snapshot",e);
+          if (!(e instanceof java.nio.channels.AsynchronousCloseException)) {
+            SNAP_LOG.error("Error syncing snapshot",e);
+          }
+ else {
+            SNAP_LOG.debug("Asynchronous close syncing snasphot data, presumably graceful",e);
+          }
         }
         m_bytesAllowedBeforeSync.release(bytesSinceLastSync);
       }
     }
   }
-,1,1,TimeUnit.SECONDS);
+,SNAPSHOT_SYNC_FREQUENCY,SNAPSHOT_SYNC_FREQUENCY,TimeUnit.MILLISECONDS);
   m_syncTask=syncTask;
 }
