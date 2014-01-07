@@ -1,0 +1,55 @@
+{
+  try {
+    long currentRowCount=getRowCount();
+    ArrayList<Long> cpList=new ArrayList<Long>();
+    while ((currentRowCount < targetCount) && (m_shouldContinue.get())) {
+      byte shouldCopy=(byte)(m_random.nextInt(5) == 0 ? 1 : 0);
+      CountDownLatch latch=new CountDownLatch(batchSize);
+      String fields[]=new String[3];
+      for (int i=0; i < batchSize; i++) {
+        m_table.clearRowData();
+        m_permits.acquire();
+        long p=Math.abs(r.nextLong());
+        fields[0]=Long.toString(p);
+        fields[1]=Long.toString(p);
+        fields[2]=Long.toString(Calendar.getInstance().getTimeInMillis());
+        addRowToVoltTableFromLine(m_table,fields);
+        if (shouldCopy != 0) {
+          cpList.add(p);
+        }
+        if (!m_isMP) {
+          Object rpartitionParam=TheHashinator.valueToBytes(m_table.fetchRow(0).get(m_partitionedColumnIndex,m_partitionColumnType));
+          client.callProcedure(new InsertCallback(latch),m_procName,rpartitionParam,m_tableName,m_table);
+        }
+ else {
+          client.callProcedure(new InsertCallback(latch),m_procName,m_tableName,m_table);
+        }
+      }
+      latch.await(10,TimeUnit.SECONDS);
+      long nextRowCount=getRowCount();
+      if (nextRowCount == currentRowCount) {
+        Thread.sleep(1000);
+      }
+      if (!m_isMP) {
+        CountDownLatch clatch=new CountDownLatch(cpList.size());
+        for (        Long lcid : cpList) {
+          client.callProcedure(new InsertCallback(clatch),"CopyLoadPartitionedSP",lcid);
+        }
+        clatch.await(10,TimeUnit.SECONDS);
+        cpList.clear();
+      }
+ else {
+        CountDownLatch clatch=new CountDownLatch(cpList.size());
+        for (        Long lcid : cpList) {
+          client.callProcedure(new InsertCallback(clatch),"CopyLoadPartitionedMP",lcid);
+        }
+        clatch.await(10,TimeUnit.SECONDS);
+        cpList.clear();
+      }
+      currentRowCount=nextRowCount;
+    }
+  }
+ catch (  Exception e) {
+    log.error("LoadTableLoader failed a procedure call for table " + m_tableName + " and the thread will now stop.",e);
+  }
+}
