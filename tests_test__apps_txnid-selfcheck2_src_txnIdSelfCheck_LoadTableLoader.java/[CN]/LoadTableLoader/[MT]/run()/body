@@ -1,9 +1,8 @@
 {
   try {
-    long currentRowCount=getRowCount();
     ArrayList<Long> cpList=new ArrayList<Long>();
-    while ((currentRowCount < targetCount) && (m_shouldContinue.get())) {
-      byte shouldCopy=(byte)(m_random.nextInt(5) == 0 ? 1 : 0);
+    while ((currentRowCount.get() < targetCount) && (m_shouldContinue.get())) {
+      byte shouldCopy=(byte)(m_random.nextInt(3) == 0 ? 1 : 0);
       CountDownLatch latch=new CountDownLatch(batchSize);
       String fields[]=new String[3];
       for (int i=0; i < batchSize; i++) {
@@ -25,9 +24,9 @@
           client.callProcedure(new InsertCallback(latch),m_procName,m_tableName,m_table);
         }
       }
-      latch.await(10,TimeUnit.SECONDS);
+      latch.await(60,TimeUnit.SECONDS);
       long nextRowCount=getRowCount();
-      if (nextRowCount == currentRowCount) {
+      if (nextRowCount == currentRowCount.get()) {
         Thread.sleep(1000);
       }
       if (!m_isMP) {
@@ -36,6 +35,11 @@
           client.callProcedure(new InsertCopyCallback(clatch),"CopyLoadPartitionedSP",lcid);
         }
         clatch.await(10,TimeUnit.SECONDS);
+        CountDownLatch dlatch=new CountDownLatch(cpList.size());
+        for (        Long lcid : cpList) {
+          client.callProcedure(new DeleteCallback(dlatch),"DeleteLoadPartitionedSP",lcid);
+        }
+        dlatch.await(10,TimeUnit.SECONDS);
         cpList.clear();
       }
  else {
@@ -44,9 +48,13 @@
           client.callProcedure(new InsertCopyCallback(clatch),"CopyLoadPartitionedMP",lcid);
         }
         clatch.await(10,TimeUnit.SECONDS);
+        CountDownLatch dlatch=new CountDownLatch(cpList.size());
+        for (        Long lcid : cpList) {
+          client.callProcedure(new DeleteCallback(dlatch),"DeleteLoadPartitionedMP",lcid);
+        }
+        dlatch.await(10,TimeUnit.SECONDS);
         cpList.clear();
       }
-      currentRowCount=nextRowCount;
     }
   }
  catch (  Exception e) {
