@@ -1,6 +1,7 @@
 {
   try {
     ArrayList<Long> cpList=new ArrayList<Long>();
+    ArrayList<Long> onlyDeleteList=new ArrayList<Long>();
     while (m_shouldContinue.get()) {
       byte shouldCopy=(byte)(m_random.nextInt(3) == 0 ? 1 : 0);
       CountDownLatch latch=new CountDownLatch(batchSize);
@@ -17,8 +18,13 @@
  else {
           success=client.callProcedure(new InsertCallback(latch),m_procName,m_tableName,m_table);
         }
-        if (shouldCopy != 0 && success) {
-          cpList.add(p);
+        if (success) {
+          if (shouldCopy != 0) {
+            cpList.add(p);
+          }
+ else {
+            onlyDeleteList.add(p);
+          }
         }
       }
       latch.await();
@@ -33,11 +39,20 @@
       clatch.await();
       CountDownLatch dlatch=new CountDownLatch(cpList.size());
       for (      Long lcid : cpList) {
-        client.callProcedure(new DeleteCallback(dlatch),m_delprocName,lcid);
+        client.callProcedure(new DeleteCallback(dlatch,2),m_delprocName,lcid);
       }
       dlatch.await();
       cpList.clear();
+      if (onlyDeleteList.size() > 100) {
+        CountDownLatch odlatch=new CountDownLatch(cpList.size());
+        for (        Long lcid : onlyDeleteList) {
+          client.callProcedure(new DeleteCallback(odlatch,1),m_onlydelprocName,lcid);
+        }
+        odlatch.await();
+        onlyDeleteList.clear();
+      }
     }
+    System.out.println("LoadTableLoader left : " + onlyDeleteList.size() + " At load end.");
   }
  catch (  Exception e) {
     log.error("LoadTableLoader failed a procedure call for table " + m_tableName + " and the thread will now stop.",e);
