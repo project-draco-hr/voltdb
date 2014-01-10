@@ -1,0 +1,28 @@
+{
+  System.out.println("Starting Copy Delete Task for table: " + m_tableName);
+  try {
+    List<Long> workList=new ArrayList<Long>();
+    while (m_shouldContinue.get()) {
+      cpDelQueue.drainTo(workList,10);
+      if (workList.size() <= 0) {
+        Thread.sleep(2000);
+      }
+      CountDownLatch clatch=new CountDownLatch(workList.size());
+      for (      Long lcid : workList) {
+        client.callProcedure(new InsertCopyCallback(clatch),m_cpprocName,lcid);
+      }
+      clatch.await();
+      CountDownLatch dlatch=new CountDownLatch(workList.size());
+      for (      Long lcid : workList) {
+        client.callProcedure(new DeleteCallback(dlatch,2),m_delprocName,lcid);
+      }
+      dlatch.await();
+      m_copyDeleteDoneCount+=workList.size();
+      workList.clear();
+    }
+    System.out.println("CopyAndDeleteTask row count: " + m_copyDeleteDoneCount);
+  }
+ catch (  Exception e) {
+    log.error("CopyAndDeleteDataTask failed a procedure call for table " + m_tableName + " and the thread will now stop.",e);
+  }
+}
