@@ -3,17 +3,37 @@
   Client client=getClient();
   VoltTable vt=null;
   String[] procs={"RTABLE.insert","PTABLE.insert"};
-  String[] tbs={"RTABLE"};
+  String[] tbs={"RTABLE","PTABLE"};
   loadTableForTruncateTest(client,procs);
   vt=client.callProcedure("@AdHoc","select count(*) from RTABLE;").getResults()[0];
   validateTableOfScalarLongs(vt,new long[]{6});
+  if (isHSQL()) {
+    return;
+  }
+  Exception e=null;
   try {
     client.callProcedure("TruncateTable");
   }
  catch (  ProcCallException ex) {
     System.out.println(ex.getMessage());
+    e=ex;
     assertTrue(ex.getMessage().contains("CONSTRAINT VIOLATION"));
   }
-  vt=client.callProcedure("@AdHoc","select count(*) from RTABLE;").getResults()[0];
-  validateTableOfScalarLongs(vt,new long[]{6});
+ finally {
+    assertNotNull(e);
+  }
+  for (  String tb : tbs) {
+    vt=client.callProcedure("@AdHoc","select count(*) from " + tb).getResults()[0];
+    validateTableOfScalarLongs(vt,new long[]{6});
+    client.callProcedure("@AdHoc","INSERT INTO " + tb + " VALUES (7,  30,  1.1, 'Jedi','Winchester');");
+    vt=client.callProcedure("@AdHoc","select count(ID) from " + tb).getResults()[0];
+    validateTableOfScalarLongs(vt,new long[]{7});
+    vt=client.callProcedure("@AdHoc","Truncate table " + tb).getResults()[0];
+    System.out.println(vt);
+    vt=client.callProcedure("@AdHoc","select count(*) from " + tb).getResults()[0];
+    validateTableOfScalarLongs(vt,new long[]{0});
+    client.callProcedure("@AdHoc","INSERT INTO " + tb + " VALUES (7,  30,  1.1, 'Jedi','Winchester');");
+    vt=client.callProcedure("@AdHoc","select ID from " + tb).getResults()[0];
+    validateTableOfScalarLongs(vt,new long[]{7});
+  }
 }
