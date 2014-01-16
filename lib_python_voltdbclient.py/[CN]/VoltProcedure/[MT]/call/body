@@ -15,10 +15,19 @@ def call(self, params=None, response=True, timeout=None):
             self.fser.writeWireType(self.paramtypes[i], params[i])
     self.fser.prependLength()
     self.fser.flush()
+    if (timeout is None):
+        timeout = self.procedure_timeout
+    original_timeout = self.fser.socket.gettimeout()
+    self.fser.socket.settimeout(timeout)
     try:
-        self.fser.socket.settimeout(timeout)
-        res = VoltResponse(self.fser)
-    except IOError as err:
-        res = VoltResponse(None)
-        res.statusString = str(err)
+        try:
+            res = VoltResponse(self.fser)
+        except socket.timeout:
+            res = VoltResponse(None)
+            res.statusString = ('timeout: procedure call took longer than %d seconds' % timeout)
+        except IOError as err:
+            res = VoltResponse(None)
+            res.statusString = str(err)
+    finally:
+        self.fser.socket.settimeout(original_timeout)
     return ((response and res) or None)
