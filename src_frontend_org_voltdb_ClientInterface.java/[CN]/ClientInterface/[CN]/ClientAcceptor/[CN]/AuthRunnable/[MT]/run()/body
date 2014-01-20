@@ -1,0 +1,43 @@
+{
+  if (m_socket != null) {
+    boolean success=false;
+    AtomicReference<String> timeoutRef=new AtomicReference<String>();
+    try {
+      final InputHandler handler=authenticate(m_socket,timeoutRef);
+      if (handler != null) {
+        m_socket.configureBlocking(false);
+        if (handler instanceof ClientInputHandler) {
+          m_socket.socket().setTcpNoDelay(true);
+        }
+        m_socket.socket().setKeepAlive(true);
+        if (handler instanceof ClientInputHandler) {
+          final Connection c=m_network.registerChannel(m_socket,handler,0,ReverseDNSPolicy.ASYNCHRONOUS);
+        }
+ else {
+          m_network.registerChannel(m_socket,handler,SelectionKey.OP_READ,ReverseDNSPolicy.ASYNCHRONOUS);
+        }
+        success=true;
+      }
+    }
+ catch (    Exception e) {
+      try {
+        m_socket.close();
+      }
+ catch (      IOException e1) {
+      }
+      if (m_running) {
+        if (timeoutRef.get() != null) {
+          hostLog.warn(timeoutRef.get());
+        }
+ else {
+          hostLog.warn("Exception authenticating and " + "registering user in ClientAcceptor",e);
+        }
+      }
+    }
+ finally {
+      if (!success) {
+        m_numConnections.decrementAndGet();
+      }
+    }
+  }
+}
