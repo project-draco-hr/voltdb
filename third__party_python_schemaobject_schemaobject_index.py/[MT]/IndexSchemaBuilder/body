@@ -1,0 +1,30 @@
+def IndexSchemaBuilder(table):
+    '\n    Returns a dictionary loaded with all of the indexes available in the table.\n    ``table`` must be an instance of TableSchema.\n\n    .. note::\n      This function is automatically called for you and set to\n      ``schema.databases[name].tables[name].indexes`` when you create an instance of SchemaObject\n    '
+    conn = table.parent.parent.connection
+    idx = OrderedDict()
+    indexes = conn.execute(('SHOW INDEXES FROM `%s`.`%s`' % (table.parent.name, table.name)))
+    if (not indexes):
+        return idx
+    for index in indexes:
+        n = index['Key_name']
+        if (n not in idx):
+            Indexitem = IndexSchema(name=n, parent=table)
+            Indexitem.non_unique = bool(index['Non_unique'])
+            Indexitem.table_name = index['Table']
+            key_type = index['Index_type'].upper()
+            if (index['Key_name'].upper() == 'PRIMARY'):
+                Indexitem.kind = 'PRIMARY'
+            elif (not Indexitem.non_unique):
+                Indexitem.kind = 'UNIQUE'
+            elif (key_type in ('FULLTEXT', 'SPATIAL')):
+                Indexitem.kind = key_type
+            else:
+                Indexitem.kind = 'INDEX'
+            if (key_type in ('BTREE', 'HASH', 'RTREE')):
+                Indexitem.type = key_type
+            Indexitem.collation = index['Collation']
+            Indexitem.comment = index['Comment']
+            idx[n] = Indexitem
+        if (index['Column_name'] not in idx[n].fields):
+            idx[n].fields.insert(index['Seq_in_index'], (index['Column_name'], (index['Sub_part'] or 0)))
+    return idx
