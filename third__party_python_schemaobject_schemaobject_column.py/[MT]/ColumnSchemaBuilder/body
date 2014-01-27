@@ -1,0 +1,26 @@
+def ColumnSchemaBuilder(table):
+    '\n    Returns a dictionary loaded with all of the columns availale in the table.\n    ``table`` must be an instance of TableSchema.\n\n    .. note::\n      This function is automatically called for you and set to\n      ``schema.databases[name].tables[name].columns``\n      when you create an instance of SchemaObject\n    '
+    conn = table.parent.parent.connection
+    cols = OrderedDict()
+    sql = "\n          SELECT TABLE_NAME, COLUMN_NAME, ORDINAL_POSITION, COLUMN_DEFAULT,\n                IS_NULLABLE, COLUMN_TYPE, COLUMN_KEY, CHARACTER_MAXIMUM_LENGTH,\n                CHARACTER_SET_NAME, COLLATION_NAME, EXTRA, COLUMN_COMMENT\n          FROM information_schema.COLUMNS\n          WHERE TABLE_SCHEMA='%s'\n          AND TABLE_NAME='%s'\n          ORDER BY ORDINAL_POSITION\n          "
+    columns = conn.execute((sql % (table.parent.name, table.name)))
+    if (not columns):
+        return cols
+    for col in columns:
+        field = col['COLUMN_NAME']
+        column = ColumnSchema(name=field, parent=table)
+        column.ordinal_position = col['ORDINAL_POSITION']
+        column.field = col['COLUMN_NAME']
+        column.type = col['COLUMN_TYPE']
+        column.charset = col['CHARACTER_SET_NAME']
+        column.collation = col['COLLATION_NAME']
+        column.key = col['COLUMN_KEY']
+        column.default = col['COLUMN_DEFAULT']
+        column.extra = col['EXTRA']
+        column.comment = col['COLUMN_COMMENT']
+        if (col['IS_NULLABLE'] == 'YES'):
+            column.null = True
+        else:
+            column.null = False
+        cols[field] = column
+    return cols
