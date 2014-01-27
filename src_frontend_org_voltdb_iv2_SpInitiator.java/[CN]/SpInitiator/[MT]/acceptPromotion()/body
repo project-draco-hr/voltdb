@@ -5,18 +5,22 @@
     m_term=createTerm(m_messenger.getZK(),m_partitionId,getInitiatorHSId(),m_initiatorMailbox,m_whoami);
     m_term.start();
     while (!success) {
-      RepairAlgo repair=null;
-      repair=createPromoteAlgo(m_term.getInterestingHSIds(),m_initiatorMailbox,m_whoami);
+      RepairAlgo repair=m_initiatorMailbox.constructRepairAlgo(m_term.getInterestingHSIds(),m_whoami);
       if (!m_initiatorMailbox.acceptPromotion()) {
         tmLog.error(m_whoami + "rejoining site can not be promoted to leader. Terminating.");
         VoltDB.crashLocalVoltDB("A rejoining site can not be promoted to leader.",false,null);
         return;
       }
-      m_initiatorMailbox.setRepairAlgo(repair);
-      Pair<Boolean,Long> result=repair.start().get();
-      success=result.getFirst();
+      Long txnid=Long.MIN_VALUE;
+      try {
+        txnid=repair.start().get();
+        success=true;
+      }
+ catch (      CancellationException e) {
+        success=false;
+      }
       if (success) {
-        m_initiatorMailbox.setLeaderState(result.getSecond());
+        m_initiatorMailbox.setLeaderState(txnid);
         tmLog.info(m_whoami + "finished leader promotion. Took " + (System.currentTimeMillis() - startTime)+ " ms.");
         LeaderCacheWriter iv2masters=new LeaderCache(m_messenger.getZK(),m_zkMailboxNode);
         iv2masters.put(m_partitionId,m_initiatorMailbox.getHSId());
