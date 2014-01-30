@@ -20,8 +20,15 @@ synchronized (this) {
   while ((ds=oldlist.poll()) != null) {
     ByteBuffer data[]=ds.serialize();
     for (    ByteBuffer buf : data) {
-      assert(buf.limit() == buf.capacity());
-      buf.clear();
+      if (buf.limit() != buf.capacity()) {
+        boolean assertOn=false;
+        assert(assertOn=true);
+        if (assertOn) {
+          VoltDB.crashLocalVoltDB("Sloppy serialization size for message class " + ds,true,null);
+        }
+        RateLimitedLogger.tryLogForMessage("Sloppy serialization size for message class " + ds,System.currentTimeMillis(),1,TimeUnit.HOURS,networkLog,Level.WARN);
+      }
+      buf.position(0);
       bytesQueued+=buf.remaining();
       while (buf.hasRemaining()) {
         BBContainer outCont=m_queuedBuffers.peekLast();
