@@ -1,0 +1,49 @@
+{
+  DatabaseType database=null;
+  m_currentFilename=(projectFileURL != null ? new File(projectFileURL).getName() : "null");
+  if (projectFileURL != null && !projectFileURL.isEmpty()) {
+    try {
+      JAXBContext jc=JAXBContext.newInstance("org.voltdb.compiler.projectfile");
+      SchemaFactory sf=SchemaFactory.newInstance(javax.xml.XMLConstants.W3C_XML_SCHEMA_NS_URI);
+      Schema schema=sf.newSchema(this.getClass().getResource("ProjectFileSchema.xsd"));
+      Unmarshaller unmarshaller=jc.createUnmarshaller();
+      unmarshaller.setSchema(schema);
+      @SuppressWarnings("unchecked") JAXBElement<ProjectType> result=(JAXBElement<ProjectType>)unmarshaller.unmarshal(new File(projectFileURL));
+      ProjectType project=result.getValue();
+      database=project.getDatabase();
+    }
+ catch (    JAXBException e) {
+      if (e.getLinkedException() instanceof java.io.FileNotFoundException) {
+        addErr(e.getLinkedException().getMessage());
+        compilerLog.error(e.getLinkedException().getMessage());
+      }
+ else {
+        DeprecatedProjectElement deprecated=DeprecatedProjectElement.valueOf(e);
+        if (deprecated != null) {
+          addErr("Found deprecated XML element \"" + deprecated.name() + "\" in project.xml file, "+ deprecated.getSuggestion());
+          addErr("Error schema validating project.xml file. " + e.getLinkedException().getMessage());
+          compilerLog.error("Found deprecated XML element \"" + deprecated.name() + "\" in project.xml file");
+          compilerLog.error(e.getMessage());
+          compilerLog.error(projectFileURL);
+        }
+ else         if (e.getLinkedException() instanceof org.xml.sax.SAXParseException) {
+          addErr("Error schema validating project.xml file. " + e.getLinkedException().getMessage());
+          compilerLog.error("Error schema validating project.xml file: " + e.getLinkedException().getMessage());
+          compilerLog.error(e.getMessage());
+          compilerLog.error(projectFileURL);
+        }
+ else {
+          throw new RuntimeException(e);
+        }
+      }
+    }
+catch (    SAXException e) {
+      addErr("Error schema validating project.xml file. " + e.getMessage());
+      compilerLog.error("Error schema validating project.xml file. " + e.getMessage());
+    }
+  }
+ else {
+    database=new DatabaseType();
+  }
+  return database;
+}

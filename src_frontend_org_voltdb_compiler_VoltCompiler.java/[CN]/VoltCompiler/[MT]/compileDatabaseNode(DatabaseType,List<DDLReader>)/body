@@ -1,0 +1,44 @@
+{
+  final ArrayList<Class<?>> classDependencies=new ArrayList<Class<?>>();
+  final VoltDDLElementTracker voltDdlTracker=new VoltDDLElementTracker(this);
+  Database db=initCatalogDatabase();
+  if (database.getSchemas() != null) {
+    for (    SchemasType.Schema schema : database.getSchemas().getSchema()) {
+      compilerLog.l7dlog(Level.INFO,LogKeys.compiler_VoltCompiler_CatalogPath.name(),new Object[]{schema.getPath()},null);
+      ddlReaderList.add(createDDLFileReader(schema.getPath()));
+    }
+  }
+  if (database.getGroups() != null) {
+    for (    GroupsType.Group group : database.getGroups().getGroup()) {
+      org.voltdb.catalog.Group catGroup=db.getGroups().add(group.getName());
+      catGroup.setAdhoc(group.isAdhoc());
+      catGroup.setSysproc(group.isSysproc());
+      catGroup.setDefaultproc(group.isDefaultproc());
+    }
+  }
+  if (database.getRoles() != null) {
+    for (    RolesType.Role role : database.getRoles().getRole()) {
+      org.voltdb.catalog.Group catGroup=db.getGroups().add(role.getName());
+      catGroup.setAdhoc(role.isAdhoc());
+      catGroup.setSysproc(role.isSysproc());
+      catGroup.setDefaultproc(role.isDefaultproc());
+    }
+  }
+  if (database.getProcedures() != null) {
+    for (    ProceduresType.Procedure proc : database.getProcedures().getProcedure()) {
+      voltDdlTracker.add(getProcedure(proc));
+    }
+  }
+  if (database.getClassdependencies() != null) {
+    for (    Classdependency dep : database.getClassdependencies().getClassdependency()) {
+      classDependencies.add(getClassDependency(dep));
+    }
+  }
+  if (database.getPartitions() != null) {
+    for (    PartitionsType.Partition table : database.getPartitions().getPartition()) {
+      voltDdlTracker.put(table.getTable(),table.getColumn());
+    }
+  }
+  HSQLInterface hsql=HSQLInterface.loadHsqldb();
+  compileDatabase(db,hsql,voltDdlTracker,ddlReaderList,database.getExport(),classDependencies,DdlProceduresToLoad.ALL_DDL_PROCEDURES);
+}
