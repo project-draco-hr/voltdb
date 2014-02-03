@@ -5,4 +5,25 @@
   m_fc=ras.getChannel();
   m_needsFinalClose=needsFinalClose;
   m_es=CoreUtils.getSingleThreadExecutor("Snapshot write thread for " + m_file);
+  ScheduledFuture<?> syncTask=null;
+  syncTask=DefaultSnapshotDataTarget.m_syncService.scheduleAtFixedRate(new Runnable(){
+    @Override public void run(){
+      while (m_bytesSinceLastSync.get() > 1024 * 1024 * 4) {
+        try {
+          m_fc.force(false);
+        }
+ catch (        IOException e) {
+          if (!(e instanceof java.nio.channels.AsynchronousCloseException)) {
+            SNAP_LOG.error("Error syncing snapshot",e);
+          }
+ else {
+            SNAP_LOG.debug("Asynchronous close syncing snapshot data, presumably graceful",e);
+          }
+        }
+        m_bytesSinceLastSync.set(0);
+      }
+    }
+  }
+,DefaultSnapshotDataTarget.SNAPSHOT_SYNC_FREQUENCY,DefaultSnapshotDataTarget.SNAPSHOT_SYNC_FREQUENCY,TimeUnit.MILLISECONDS);
+  m_syncTask=syncTask;
 }

@@ -6,7 +6,7 @@
       assert(stmt != null);
       Statement statement=m_catProc.getStatements().get(VoltDB.ANON_STMT_NAME);
       String s=statement.getSqltext();
-      stmt.setSQLStr(s);
+      SQLStmtAdHocHelper.setSQLStr(stmt,s);
       m_cachedSingleStmt.stmt=stmt;
       int numParams=m_catProc.getParameters().size();
       m_paramTypes=new Class<?>[numParams];
@@ -36,26 +36,23 @@
     }
   }
  else {
-    Method[] methods=m_procedure.getClass().getDeclaredMethods();
-    for (    final Method m : methods) {
-      String name=m.getName();
-      if (name.equals("run")) {
-        if (Modifier.isPublic(m.getModifiers()) == false)         continue;
-        m_procMethod=m;
-        m_paramTypes=m.getParameterTypes();
-      }
-    }
-    if (m_procMethod == null) {
+    m_paramTypes=m_language.accept(parametersTypeRetriever,this);
+    if (m_procMethod == null && m_language == Language.JAVA) {
       throw new RuntimeException("No \"run\" method found in: " + m_procedure.getClass().getName());
     }
   }
   Map<String,SQLStmt> stmtMap=null;
-  try {
-    stmtMap=ProcedureCompiler.getValidSQLStmts(null,m_procedureName,m_procedure.getClass(),m_procedure,true);
+  if (m_catProc.getHasjava() == false) {
+    try {
+      stmtMap=ProcedureCompiler.getValidSQLStmts(null,m_procedureName,m_procedure.getClass(),m_procedure,true);
+    }
+ catch (    Exception e1) {
+      e1.printStackTrace();
+      return;
+    }
   }
- catch (  Exception e1) {
-    e1.printStackTrace();
-    return;
+ else {
+    stmtMap=m_language.accept(sqlStatementsRetriever,this);
   }
   for (  final Entry<String,SQLStmt> entry : stmtMap.entrySet()) {
     String name=entry.getKey();

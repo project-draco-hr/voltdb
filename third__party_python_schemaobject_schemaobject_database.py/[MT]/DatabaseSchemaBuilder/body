@@ -1,0 +1,20 @@
+def DatabaseSchemaBuilder(instance):
+    '\n    Returns a dictionary loaded with all of the databases availale on\n    the MySQL instance. ``instance`` must be an instance SchemaObject.\n\n    .. note::\n      This function is automatically called for you and set to\n      ``schema.databases`` when you create an instance of SchemaObject\n\n    '
+    conn = instance.connection
+    d = OrderedDict()
+    sql = '\n        SELECT SCHEMA_NAME, DEFAULT_CHARACTER_SET_NAME,\n               DEFAULT_COLLATION_NAME\n               FROM information_schema.SCHEMATA\n        '
+    if conn.db:
+        sql += ' WHERE SCHEMA_NAME = %s'
+        params = [conn.db]
+    else:
+        params = None
+    databases = conn.execute(sql, params)
+    if (not databases):
+        return d
+    for db_info in databases:
+        name = db_info['SCHEMA_NAME']
+        db = DatabaseSchema(name=name, parent=instance)
+        db.options['charset'] = SchemaOption('CHARACTER SET', db_info['DEFAULT_CHARACTER_SET_NAME'])
+        db.options['collation'] = SchemaOption('COLLATE', db_info['DEFAULT_COLLATION_NAME'])
+        d[name] = db
+    return d
