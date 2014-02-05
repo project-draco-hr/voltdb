@@ -1,5 +1,5 @@
 {
-  byte[] buildInfoBytes=jarfile.get(CatalogUtil.CATALOG_BUILDINFO_FILENAME);
+  byte[] buildInfoBytes=outputJar.get(CatalogUtil.CATALOG_BUILDINFO_FILENAME);
   if (buildInfoBytes == null) {
     throw new IOException("Catalog build information not found - please build your application using the current version of VoltDB.");
   }
@@ -9,27 +9,53 @@
     throw new IOException("Catalog built with an old version of VoltDB - please build your application using the current version of VoltDB.");
   }
   String voltVersionString=buildInfoLines[0].trim();
-  if (!CatalogUtil.isCatalogCompatible(voltVersionString)) {
+  if (VoltDB.instance().getConfig().m_forceCatalogUpgrade || !CatalogUtil.isCatalogCompatible(voltVersionString)) {
     String version=VoltDB.instance().getVersionString();
     buildInfoLines[0]=version;
+    buildInfoLines[1]=String.format("voltdb-auto-upgrade-to-%s",version);
     buildInfoBytes=StringUtils.join(buildInfoLines,"\n").getBytes();
-    jarfile.put(CatalogUtil.CATALOG_BUILDINFO_FILENAME,buildInfoBytes);
-    String projectPath=null;
-    List<VoltCompilerReader> ddlReaderList=new ArrayList<VoltCompilerReader>();
-    Entry<String,byte[]> entry=jarfile.firstEntry();
-    while (entry != null) {
-      entry=jarfile.higherEntry(entry.getKey());
-      String path=entry.getKey();
-      if (path.toLowerCase().endsWith(".sql")) {
-        ddlReaderList.add(new VoltCompilerJarFileReader(jarfile,path));
+    outputJar.put(CatalogUtil.CATALOG_BUILDINFO_FILENAME,buildInfoBytes);
+    Set<String> ddlNames=new HashSet<String>();
+    VoltCompilerReader projectReader=(outputJar.containsKey("project.xml") ? new VoltCompilerJarFileReader(outputJar,"project.xml") : null);
+    if (projectReader != null) {
+      DatabaseType database=getProjectDatabase(projectReader);
+      SchemasType schemas=database.getSchemas();
+      if (schemas != null) {
+        for (        SchemasType.Schema schema : schemas.getSchema()) {
+          ddlNames.add(new File(schema.getPath()).getName());
+        }
       }
     }
-    String voltroot=VoltDB.instance().getCatalogContext().cluster.getVoltroot();
-    String outputJarPath=new File(voltroot,String.format("catalog-%s.jar",version)).getPath();
-    VoltCompilerReader projectReader=new VoltCompilerFileReader(projectPath);
-    boolean success=compileInternal(projectReader,outputJarPath,ddlReaderList);
-    if (!success) {
-      compilerLog.warn(String.format("Failed to generate upgraded catalog file \"%s\".",outputJarPath));
+    List<VoltCompilerReader> ddlReaderList=new ArrayList<VoltCompilerReader>();
+    Entry<String,byte[]> entry=outputJar.firstEntry();
+    while (entry != null) {
+      String path=entry.getKey();
+      if (path.toLowerCase().endsWith(".sql")) {
+        if (!ddlNames.contains(new File(path).getName())) {
+          ddlReaderList.add(new VoltCompilerJarFileReader(outputJar,path));
+        }
+      }
+      entry=outputJar.higherEntry(entry.getKey());
+    }
+    File tempfile=File.createTempFile("catalog",".jar");
+    VoltCompilerClassLoader originalClassLoader=m_classLoader;
+    try {
+      outputJar.writeToFile(tempfile);
+      m_classLoader=new VoltCompilerClassLoader(tempfile.toURI().toURL());
+      String jarName=String.format("catalog-%s.jar",version);
+      CatalogContext catalogContext=VoltDB.instance().getCatalogContext();
+      final String outputJarPath=(catalogContext != null ? new File(catalogContext.cluster.getVoltroot(),jarName).getPath() : VoltDB.Configuration.getPathToCatalogForTest(jarName));
+      boolean success=compileInternal(projectReader,outputJarPath,ddlReaderList,true,outputJar);
+      if (success) {
+        consoleLog.info(String.format("The catalog was automatically upgraded from " + "version %s to %s and saved to \"%s\"",voltVersionString,version,outputJarPath));
+      }
+ else {
+        throw new IOException(String.format("Failed to generate upgraded catalog file \"%s\".",outputJarPath));
+      }
+    }
+  finally {
+      m_classLoader=originalClassLoader;
+      tempfile.delete();
     }
   }
 }
