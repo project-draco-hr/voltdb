@@ -1,26 +1,23 @@
 {
-  List<JoinNode> subQueryNodes=null;
+  List<StmtSubqueryScan> subqueryNodes=new ArrayList<StmtSubqueryScan>();
   if (parsedStmt.joinTree == null) {
     return null;
   }
-  subQueryNodes=parsedStmt.joinTree.extractSubQueries();
-  if (subQueryNodes.isEmpty()) {
+  parsedStmt.joinTree.extractSubQueries(subqueryNodes);
+  if (subqueryNodes.isEmpty()) {
     return null;
   }
   ParsedResultAccumulator parsedResult=new ParsedResultAccumulator();
-  for (  JoinNode subQueryNode : subQueryNodes) {
-    assert(subQueryNode.getTableAliasIndex() != StmtTableScan.NULL_ALIAS_INDEX);
-    StmtTableScan tableCache=parsedStmt.stmtCache.get(subQueryNode.getTableAliasIndex());
-    assert(tableCache.getScanType() == StmtTableScan.TABLE_SCAN_TYPE.TEMP_TABLE_SCAN);
-    AbstractParsedStmt subQuery=tableCache.getTempTable().getSubQuery();
+  for (  StmtSubqueryScan subqueryScan : subqueryNodes) {
+    AbstractParsedStmt subQuery=subqueryScan.getSubquery();
     assert(subQuery != null);
     parsedResult=planForParsedStmt(subQuery,parsedResult);
     parsedResult.m_compiledPlan.rootPlanGraph=removeCoordinatorSendReceivePair(parsedResult.m_compiledPlan.rootPlanGraph);
-    tableCache.setPartitioning(parsedResult.m_currentPartitioning);
+    subqueryScan.setPartitioning(parsedResult.m_currentPartitioning);
     if (parsedResult.m_compiledPlan == null) {
       return parsedResult;
     }
-    tableCache.getTempTable().setBetsCostPlan(parsedResult.m_compiledPlan);
+    subqueryScan.setBestCostPlan(parsedResult.m_compiledPlan);
   }
   m_planSelector.m_planId=parsedResult.m_planId;
   return parsedResult;

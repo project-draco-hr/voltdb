@@ -2,12 +2,12 @@
   TupleValueExpression tokenPartitionKey=null;
   Set<Set<AbstractExpression>> eqSets=new HashSet<Set<AbstractExpression>>();
   int unfilteredPartitionKeyCount=0;
-  for (  StmtTableScan tableCache : tableCacheList) {
-    if (tableCache.getIsreplicated()) {
+  for (  StmtTableScan tableScan : tableScanList) {
+    if (tableScan.getIsReplicated()) {
       continue;
     }
-    String partitionedTableAlias=tableCache.getTableAlias();
-    String columnNeedingCoverage=m_partitionColumnByTable.get(partitionedTableAlias);
+    String columnNeedingCoverage=tableScan.getPartitionColumnName();
+    String partitionedTableAlias=tableScan.getTableAlias();
     boolean unfiltered=true;
     for (    AbstractExpression candidateColumn : valueEquivalence.keySet()) {
       if (!(candidateColumn instanceof TupleValueExpression)) {
@@ -19,18 +19,8 @@
         continue;
       }
       String candidateColumnName=candidatePartitionKey.getColumnName();
-      if (tableCache.getScanType() == StmtTableScan.TABLE_SCAN_TYPE.TARGET_TABLE_SCAN) {
-        if (!candidateColumnName.equals(columnNeedingCoverage)) {
-          continue;
-        }
-      }
- else       if (tableCache.getScanType() == StmtTableScan.TABLE_SCAN_TYPE.TEMP_TABLE_SCAN) {
-        if (!tableCache.isPartitioningColumn(candidateColumnName)) {
-          continue;
-        }
-      }
- else {
-        assert(false);
+      if (!candidateColumnName.equals(columnNeedingCoverage)) {
+        continue;
       }
       unfiltered=false;
       if (tokenPartitionKey == null) {
@@ -49,9 +39,8 @@
         if (constExpr instanceof TupleValueExpression) {
           continue;
         }
-        addPartitioningExpression(tokenPartitionKey.getTableName() + '.' + tokenPartitionKey.getColumnName(),constExpr);
-        Object partitioningObject=ConstantValueExpression.extractPartitioningValue(tokenPartitionKey.getValueType(),constExpr);
-        setInferredValue(partitioningObject);
+        VoltType valueType=tokenPartitionKey.getValueType();
+        addPartitioningExpression(tokenPartitionKey.getTableName() + '.' + tokenPartitionKey.getColumnName(),constExpr,valueType);
         break;
       }
     }

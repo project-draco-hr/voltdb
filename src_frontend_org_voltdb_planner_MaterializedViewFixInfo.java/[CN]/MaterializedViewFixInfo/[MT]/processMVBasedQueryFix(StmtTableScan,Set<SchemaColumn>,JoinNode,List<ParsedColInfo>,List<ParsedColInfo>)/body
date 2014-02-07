@@ -1,8 +1,8 @@
 {
-  if (mvTableScan.getScanType() != StmtTableScan.TABLE_SCAN_TYPE.TARGET_TABLE_SCAN) {
+  if (!(mvTableScan instanceof StmtTargetTableScan)) {
     return false;
   }
-  Table table=mvTableScan.getTargetTable();
+  Table table=((StmtTargetTableScan)mvTableScan).getTargetTable();
   assert(table != null);
   String mvTableName=table.getTypeName();
   Table srcTable=table.getMaterializer();
@@ -13,14 +13,14 @@
   if (partitionCol == null) {
     return false;
   }
-  String partitionColName=partitionCol.getName();
+  int partitionColIndex=partitionCol.getIndex();
   MaterializedViewInfo mvInfo=srcTable.getViews().get(mvTableName);
   int numOfGroupByColumns;
   String complexGroupbyJson=mvInfo.getGroupbyexpressionsjson();
   if (complexGroupbyJson.length() > 0) {
     List<AbstractExpression> mvComplexGroupbyCols=null;
     try {
-      mvComplexGroupbyCols=AbstractExpression.fromJSONArrayString(complexGroupbyJson);
+      mvComplexGroupbyCols=AbstractExpression.fromJSONArrayString(complexGroupbyJson,null);
     }
  catch (    JSONException e) {
       e.printStackTrace();
@@ -29,7 +29,7 @@
     for (    AbstractExpression expr : mvComplexGroupbyCols) {
       if (expr instanceof TupleValueExpression) {
         TupleValueExpression tve=(TupleValueExpression)expr;
-        if (tve.getColumnName().equals(partitionColName)) {
+        if (tve.getColumnIndex() == partitionColIndex) {
           return false;
         }
       }
@@ -39,7 +39,7 @@
     CatalogMap<ColumnRef> mvSimpleGroupbyCols=mvInfo.getGroupbycols();
     numOfGroupByColumns=mvSimpleGroupbyCols.size();
     for (    ColumnRef colRef : mvSimpleGroupbyCols) {
-      if (colRef.getColumn().getName().equals(partitionColName)) {
+      if (colRef.getColumn().getIndex() == partitionColIndex) {
         return false;
       }
     }

@@ -37,6 +37,7 @@
  catch (  AsynchronousCloseException e) {
   }
   if (lengthBuffer.hasRemaining()) {
+    timeoutFuture.cancel(false);
     authLog.debug("Failure to authenticate connection(" + socket.socket().getRemoteSocketAddress() + "): wire protocol violation (timeout reading message length).");
     responseBuffer.put(WIRE_PROTOCOL_TIMEOUT_ERROR).flip();
     socket.write(responseBuffer);
@@ -46,6 +47,7 @@
   lengthBuffer.flip();
   final int messageLength=lengthBuffer.getInt();
   if (messageLength < 0) {
+    timeoutFuture.cancel(false);
     authLog.warn("Failure to authenticate connection(" + socket.socket().getRemoteSocketAddress() + "): wire protocol violation (message length "+ messageLength+ " is negative).");
     responseBuffer.put(WIRE_PROTOCOL_FORMAT_ERROR).flip();
     socket.write(responseBuffer);
@@ -53,6 +55,7 @@
     return null;
   }
   if (messageLength > ((1024 * 1024) * 2)) {
+    timeoutFuture.cancel(false);
     authLog.warn("Failure to authenticate connection(" + socket.socket().getRemoteSocketAddress() + "): wire protocol violation (message length "+ messageLength+ " is too large).");
     responseBuffer.put(WIRE_PROTOCOL_FORMAT_ERROR).flip();
     socket.write(responseBuffer);
@@ -73,6 +76,7 @@
  catch (  AsynchronousCloseException e) {
   }
   if (message.hasRemaining()) {
+    timeoutFuture.cancel(false);
     authLog.warn("Failure to authenticate connection(" + socket.socket().getRemoteSocketAddress() + "): wire protocol violation (timeout reading authentication strings).");
     responseBuffer.put(WIRE_PROTOCOL_TIMEOUT_ERROR).flip();
     socket.write(responseBuffer);
@@ -87,6 +91,13 @@
   final String service=fds.readString();
   final String username=fds.readString();
   final byte password[]=new byte[20];
+  if (message.remaining() != 20) {
+    authLog.warn("Failure to authenticate connection(" + socket.socket().getRemoteSocketAddress() + "): user "+ username+ " failed authentication.");
+    responseBuffer.put(AUTHENTICATION_FAILURE).flip();
+    socket.write(responseBuffer);
+    socket.close();
+    return null;
+  }
   message.get(password);
   CatalogContext context=m_catalogContext.get();
   if (!VoltDB.instance().rejoining()) {

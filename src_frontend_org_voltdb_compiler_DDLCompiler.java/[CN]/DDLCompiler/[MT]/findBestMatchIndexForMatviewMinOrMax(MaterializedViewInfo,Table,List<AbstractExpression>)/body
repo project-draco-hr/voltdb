@@ -1,63 +1,60 @@
 {
   CatalogMap<Index> allIndexes=srcTable.getIndexes();
-  ArrayList<Index> candidates=new ArrayList<Index>();
-  for (  Index index : allIndexes) {
-    String expressionjson=index.getExpressionsjson();
-    if (groupbyExprs == null && !expressionjson.isEmpty() || groupbyExprs != null && expressionjson.isEmpty()) {
-      continue;
+  if (groupbyExprs == null) {
+    for (    Index index : allIndexes) {
+      String expressionjson=index.getExpressionsjson();
+      if (!expressionjson.isEmpty()) {
+        continue;
+      }
+      List<ColumnRef> indexedColRefs=CatalogUtil.getSortedCatalogItems(index.getColumns(),"index");
+      List<ColumnRef> groupbyColRefs=CatalogUtil.getSortedCatalogItems(matviewinfo.getGroupbycols(),"index");
+      if (indexedColRefs.size() != groupbyColRefs.size()) {
+        continue;
+      }
+      boolean matchedAll=true;
+      for (int i=0; i < indexedColRefs.size(); ++i) {
+        int groupbyColIndex=groupbyColRefs.get(i).getColumn().getIndex();
+        int indexedColIndex=indexedColRefs.get(i).getColumn().getIndex();
+        if (groupbyColIndex != indexedColIndex) {
+          matchedAll=false;
+          break;
+        }
+      }
+      if (matchedAll) {
+        return index;
+      }
     }
-    List<AbstractExpression> indexedExprs=null;
-    List<ColumnRef> indexedColRefs=null;
-    if (groupbyExprs != null) {
+  }
+ else {
+    for (    Index index : allIndexes) {
+      String expressionjson=index.getExpressionsjson();
+      if (expressionjson.isEmpty()) {
+        continue;
+      }
+      List<AbstractExpression> indexedExprs=null;
+      StmtTableScan tableScan=new StmtTargetTableScan(srcTable,srcTable.getTypeName());
       try {
-        indexedExprs=AbstractExpression.fromJSONArrayString(expressionjson);
+        indexedExprs=AbstractExpression.fromJSONArrayString(expressionjson,tableScan);
       }
  catch (      JSONException e) {
         e.printStackTrace();
         assert(false);
         return null;
       }
-      if (!prefixCompatibleExprs(indexedExprs,groupbyExprs)) {
+      if (indexedExprs.size() != groupbyExprs.size()) {
         continue;
       }
- else {
-        candidates.add(index);
-      }
-    }
- else {
-      indexedColRefs=CatalogUtil.getSortedCatalogItems(index.getColumns(),"index");
-      List<ColumnRef> groupbyColRefs=CatalogUtil.getSortedCatalogItems(matviewinfo.getGroupbycols(),"index");
-      if (indexedColRefs.size() > groupbyColRefs.size()) {
-        continue;
-      }
-      List<Integer> indexedColIds=new ArrayList<Integer>();
-      List<Integer> groupbyColIds=new ArrayList<Integer>();
-      for (      ColumnRef cr : indexedColRefs) {
-        indexedColIds.add(cr.getColumn().getIndex());
-      }
-      for (      ColumnRef cr : groupbyColRefs) {
-        groupbyColIds.add(cr.getColumn().getIndex());
-      }
-      boolean found=true;
-      for (int i=0; i < indexedColIds.size(); i++) {
-        if (!indexedColIds.contains(groupbyColIds.get(i))) {
-          found=false;
+      boolean matchedAll=true;
+      for (int i=0; i < indexedExprs.size(); ++i) {
+        if (!indexedExprs.get(i).equals(groupbyExprs.get(i))) {
+          matchedAll=false;
           break;
         }
       }
-      if (found) {
-        candidates.add(index);
+      if (matchedAll) {
+        return index;
       }
     }
   }
-  Index ret=null;
-  for (  Index index : candidates) {
-    if (ret == null) {
-      ret=index;
-    }
- else     if (CatalogUtil.getCatalogIndexSize(index) > CatalogUtil.getCatalogIndexSize(ret)) {
-      ret=index;
-    }
-  }
-  return ret;
+  return null;
 }
