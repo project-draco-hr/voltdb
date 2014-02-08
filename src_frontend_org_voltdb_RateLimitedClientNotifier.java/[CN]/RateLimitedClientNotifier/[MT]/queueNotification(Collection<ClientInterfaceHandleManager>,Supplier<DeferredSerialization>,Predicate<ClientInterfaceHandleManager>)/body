@@ -1,0 +1,44 @@
+{
+  m_submissionQueue.offer(new Runnable(){
+    @Override public void run(){
+      for (      ClientInterfaceHandleManager cihm : connections) {
+        if (!wantsNotificationPredicate.apply(cihm))         continue;
+        final Connection c=cihm.connection;
+        if (VoltPort.class != c.getClass())         continue;
+        Object pendingNotifications=m_clientsPendingNotification.get(c);
+        try {
+          if (pendingNotifications == null) {
+            m_clientsPendingNotification.put(c,notification);
+          }
+ else           if (pendingNotifications instanceof Supplier) {
+            if (pendingNotifications == notification)             return;
+            @SuppressWarnings("unchecked") Node n1=new Node((Supplier<DeferredSerialization>)pendingNotifications,null);
+            n1=m_cachedNodes.get(n1,n1);
+            Node n2=new Node(notification,n1);
+            n2=m_cachedNodes.get(n2,n2);
+            m_clientsPendingNotification.put(c,n2);
+          }
+ else {
+            Node head=(Node)pendingNotifications;
+            boolean dup=false;
+            while (head != null) {
+              if (head.notification == notification) {
+                dup=true;
+                break;
+              }
+              head=head.next;
+            }
+            if (dup)             continue;
+            Node replacement=new Node(notification,(Node)pendingNotifications);
+            replacement=m_cachedNodes.get(replacement,replacement);
+            m_clientsPendingNotification.put(c,replacement);
+          }
+        }
+ catch (        ExecutionException e) {
+          VoltDB.crashLocalVoltDB("Unexpected exception pushing client notifications",true,Throwables.getRootCause(e));
+        }
+      }
+    }
+  }
+);
+}
