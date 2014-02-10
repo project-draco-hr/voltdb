@@ -1,6 +1,6 @@
 {
   m_bestAndOnlyPlanWasGenerated=false;
-  m_partitioning.analyzeTablePartitioning(parsedStmt.stmtCache);
+  m_partitioning.analyzeTablePartitioning(parsedStmt.tableAliasMap.values());
   if (parsedStmt instanceof ParsedUnionStmt) {
     m_parsedUnion=(ParsedUnionStmt)parsedStmt;
     return;
@@ -10,6 +10,10 @@
       throw new RuntimeException("Illegal to read an export table.");
     }
     m_parsedSelect=(ParsedSelectStmt)parsedStmt;
+    if (m_parsedSelect.joinTree instanceof BranchNode) {
+      ((BranchNode)m_parsedSelect.joinTree).toLeftJoin();
+      simplifyOuterJoin((BranchNode)m_parsedSelect.joinTree);
+    }
     subAssembler=new SelectSubPlanAssembler(m_catalogDb,parsedStmt,m_partitioning);
     return;
   }
@@ -49,7 +53,7 @@
   }
   if (!m_partitioning.wasSpecifiedAsSingle()) {
     HashMap<AbstractExpression,Set<AbstractExpression>> valueEquivalence=parsedStmt.analyzeValueEquivalence();
-    m_partitioning.analyzeForMultiPartitionAccess(parsedStmt.stmtCache,valueEquivalence);
+    m_partitioning.analyzeForMultiPartitionAccess(parsedStmt.tableAliasMap.values(),valueEquivalence);
   }
   subAssembler=new WriterSubPlanAssembler(m_catalogDb,parsedStmt,m_partitioning);
 }
