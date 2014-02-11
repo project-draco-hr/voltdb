@@ -3,9 +3,6 @@
   if (!m_parsedSelect.hasOrderByColumns()) {
     return root;
   }
-  if (m_parsedSelect.guaranteesUniqueRow()) {
-    return root;
-  }
   SortDirectionType sortDirection=SortDirectionType.INVALID;
   AbstractPlanNode nonAggPlan=root;
   if (root.getPlanNodeType() == PlanNodeType.AGGREGATE) {
@@ -25,58 +22,5 @@
     orderByNode.addSort(col.expression,col.ascending ? SortDirectionType.ASC : SortDirectionType.DESC);
   }
   orderByNode.addAndLinkChild(root);
-  List<AbstractExpression> orderExpressions=orderByNode.getSortExpressions();
-  int intScanIndex=-1;
-  for (  AbstractExpression orderExpression : orderExpressions) {
-    String fromTableAlias=orderExpression.baseTableAlias();
-    if (m_parsedSelect.tableAliasIndexMap.containsKey(fromTableAlias)) {
-      intScanIndex=m_parsedSelect.tableAliasIndexMap.get(fromTableAlias);
-      break;
-    }
-  }
-  if (intScanIndex == -1) {
-    return orderByNode;
-  }
-  boolean allScansAreDeterministic=true;
-  for (  Table table : m_parsedSelect.tableList) {
-    allScansAreDeterministic=false;
-    for (    Index index : table.getIndexes()) {
-      if (!index.getUnique()) {
-        continue;
-      }
-      List<AbstractExpression> indexExpressions=new ArrayList<AbstractExpression>();
-      String jsonExpr=index.getExpressionsjson();
-      if (jsonExpr.isEmpty()) {
-        for (        ColumnRef cref : index.getColumns()) {
-          Column col=cref.getColumn();
-          TupleValueExpression tve=new TupleValueExpression(table.getTypeName(),col.getName(),col.getIndex());
-          tve.setValueSize(col.getSize());
-          tve.setValueType(VoltType.get((byte)col.getType()));
-          indexExpressions.add(tve);
-        }
-      }
- else {
-        StmtTableScan tableScan=m_parsedSelect.stmtCache.get(intScanIndex);
-        try {
-          indexExpressions=AbstractExpression.fromJSONArrayString(jsonExpr,tableScan);
-        }
- catch (        JSONException e) {
-          e.printStackTrace();
-          assert(false);
-          return null;
-        }
-      }
-      if (orderExpressions.containsAll(indexExpressions)) {
-        allScansAreDeterministic=true;
-        break;
-      }
-    }
-    if (!allScansAreDeterministic) {
-      break;
-    }
-  }
-  if (allScansAreDeterministic) {
-    orderByNode.setOrderingByUniqueColumns();
-  }
   return orderByNode;
 }
