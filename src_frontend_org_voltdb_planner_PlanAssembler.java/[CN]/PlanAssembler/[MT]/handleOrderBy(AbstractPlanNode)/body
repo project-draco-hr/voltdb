@@ -3,9 +3,6 @@
   if (!m_parsedSelect.hasOrderByColumns()) {
     return root;
   }
-  if (m_parsedSelect.guaranteesUniqueRow()) {
-    return root;
-  }
   SortDirectionType sortDirection=SortDirectionType.INVALID;
   if (root.getPlanNodeType() == PlanNodeType.INDEXSCAN) {
     sortDirection=((IndexScanPlanNode)root).getSortDirection();
@@ -24,48 +21,5 @@
     orderByNode.addSort(col.expression,col.ascending ? SortDirectionType.ASC : SortDirectionType.DESC);
   }
   orderByNode.addAndLinkChild(root);
-  List<AbstractExpression> orderExpressions=orderByNode.getSortExpressions();
-  String fromTableAlias=orderExpressions.get(0).baseTableAlias();
-  boolean allScansAreDeterministic=true;
-  for (  Table table : m_parsedSelect.tableList) {
-    allScansAreDeterministic=false;
-    for (    Index index : table.getIndexes()) {
-      if (!index.getUnique()) {
-        continue;
-      }
-      List<AbstractExpression> indexExpressions=new ArrayList<AbstractExpression>();
-      String jsonExpr=index.getExpressionsjson();
-      if (jsonExpr.isEmpty()) {
-        for (        ColumnRef cref : index.getColumns()) {
-          Column col=cref.getColumn();
-          TupleValueExpression tve=new TupleValueExpression(table.getTypeName(),col.getName(),col.getIndex());
-          tve.setValueSize(col.getSize());
-          tve.setValueType(VoltType.get((byte)col.getType()));
-          indexExpressions.add(tve);
-        }
-      }
- else {
-        StmtTableScan tableScan=m_parsedSelect.tableAliasMap.get(fromTableAlias);
-        try {
-          indexExpressions=AbstractExpression.fromJSONArrayString(jsonExpr,tableScan);
-        }
- catch (        JSONException e) {
-          e.printStackTrace();
-          assert(false);
-          return null;
-        }
-      }
-      if (orderExpressions.containsAll(indexExpressions)) {
-        allScansAreDeterministic=true;
-        break;
-      }
-    }
-    if (!allScansAreDeterministic) {
-      break;
-    }
-  }
-  if (allScansAreDeterministic) {
-    orderByNode.setOrderingByUniqueColumns();
-  }
   return orderByNode;
 }
