@@ -1,0 +1,22 @@
+{
+  final MockChannel channel=new MockChannel(MockChannel.FULL);
+  MockPort port=new MockPort();
+  final AtomicLong queue=new AtomicLong();
+  NIOWriteStream wstream=new NIOWriteStream(port,null,null,new QueueMonitor(){
+    @Override public boolean queue(    int bytes){
+      queue.addAndGet(bytes);
+      return false;
+    }
+  }
+);
+  wstream.enqueue(ByteBuffer.allocate(32));
+  wstream.swapAndSerializeQueuedWrites(pool);
+  assertEquals(32,queue.get());
+  wstream.drainTo(channel);
+  assertEquals(32,queue.get());
+  wstream.enqueue(ByteBuffer.allocate(32));
+  wstream.swapAndSerializeQueuedWrites(pool);
+  assertEquals(64,queue.get());
+  wstream.shutdown();
+  assertEquals(0,queue.get());
+}
