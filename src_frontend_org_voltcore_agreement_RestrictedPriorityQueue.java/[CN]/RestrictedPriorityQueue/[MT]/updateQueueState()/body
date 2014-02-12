@@ -27,22 +27,36 @@
     }
   }
   assert(newState == QueueState.UNBLOCKED);
-  if (ts.txnId > m_newestCandidateTransaction) {
-    newState=QueueState.BLOCKED_ORDERING;
+  if (ts instanceof AgreementTransactionState) {
+    AgreementTransactionState ats=(AgreementTransactionState)ts;
+switch (ats.m_request.type) {
+case OpCode.exists:
+case OpCode.getChildren:
+case OpCode.getChildren2:
+case OpCode.getData:
+      newState=QueueState.UNBLOCKED;
     executeStateChange(newState,ts,lid);
-    return m_state;
-  }
-  assert(newState == QueueState.UNBLOCKED);
-  lid=m_initiatorData.get(ts.initiatorHSId);
-  if (lid == null) {
-  }
- else   if (m_useSafetyDance && (ts.txnId > lid.m_lastSafeTxnId)) {
-    newState=QueueState.BLOCKED_SAFETY;
-    executeStateChange(newState,ts,lid);
-    return m_state;
-  }
-  assert(newState == QueueState.UNBLOCKED);
-  assert(ts != null);
-  executeStateChange(newState,ts,lid);
   return newState;
+default :
+break;
+}
+}
+if (ts.txnId > m_newestCandidateTransaction) {
+newState=QueueState.BLOCKED_ORDERING;
+executeStateChange(newState,ts,lid);
+return m_state;
+}
+assert(newState == QueueState.UNBLOCKED);
+lid=m_initiatorData.get(ts.initiatorHSId);
+if (lid == null) {
+}
+ else if (m_useSafetyDance && (ts.txnId > lid.m_lastSafeTxnId)) {
+newState=QueueState.BLOCKED_SAFETY;
+executeStateChange(newState,ts,lid);
+return m_state;
+}
+assert(newState == QueueState.UNBLOCKED);
+assert(ts != null);
+executeStateChange(newState,ts,lid);
+return newState;
 }
