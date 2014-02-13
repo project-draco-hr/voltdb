@@ -5,6 +5,7 @@
   }
   initialize(m_startupConfig.m_serializedCatalog,m_startupConfig.m_timestamp);
   m_startupConfig=null;
+  final MinimumRatioMaintainer mrm=new MinimumRatioMaintainer(m_taskLogReplayRatio);
   try {
     while (m_shouldContinue) {
       if (m_rejoinState == kStateRunning) {
@@ -16,11 +17,18 @@
         task.run(getSiteProcedureConnection());
       }
  else {
-        SiteTasker task=m_scheduler.poll();
-        if (task != null) {
+        SiteTasker task=null;
+        boolean didWork=false;
+        while ((task=m_scheduler.poll()) != null) {
+          didWork=true;
+          while (!m_rejoinTaskLog.isEmpty() && !mrm.canDoRestricted()) {
+            replayFromTaskLog(mrm);
+          }
+          mrm.didRestricted();
           task.runForRejoin(getSiteProcedureConnection(),m_rejoinTaskLog);
         }
-        replayFromTaskLog();
+        didWork|=replayFromTaskLog(mrm);
+        if (!didWork)         Thread.yield();
       }
     }
   }
