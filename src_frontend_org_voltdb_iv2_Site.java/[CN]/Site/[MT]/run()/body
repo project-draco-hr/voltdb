@@ -16,19 +16,30 @@
         }
         task.run(getSiteProcedureConnection());
       }
- else {
-        SiteTasker task=null;
+ else       if (m_rejoinState == kStateReplayingRejoin) {
+        SiteTasker task=m_scheduler.poll();
         boolean didWork=false;
-        while ((task=m_scheduler.poll()) != null) {
+        if (task != null) {
           didWork=true;
           while (!m_rejoinTaskLog.isEmpty() && !mrm.canDoRestricted()) {
             replayFromTaskLog(mrm);
           }
           mrm.didRestricted();
-          task.runForRejoin(getSiteProcedureConnection(),m_rejoinTaskLog);
+          if (m_rejoinState == kStateRunning) {
+            task.run(getSiteProcedureConnection());
+          }
+ else {
+            task.runForRejoin(getSiteProcedureConnection(),m_rejoinTaskLog);
+          }
         }
-        didWork|=replayFromTaskLog(mrm);
+ else {
+          didWork|=replayFromTaskLog(mrm);
+        }
         if (!didWork)         Thread.yield();
+      }
+ else {
+        SiteTasker task=m_scheduler.take();
+        task.runForRejoin(getSiteProcedureConnection(),m_rejoinTaskLog);
       }
     }
   }
