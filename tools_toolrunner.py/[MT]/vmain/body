@@ -2,35 +2,26 @@ def vmain(description='(no description)', standalone=False, directory='', packag
     '\n    Main entry point for commands running in an auto-generated virtual environment.\n    :param description:\n    :param standalone:\n    :param directory:\n    :param packages:\n    :param verbose:\n    '
     G.verbose = verbose
     start_logging()
-    vname = ('%s.venv' % G.script_name)
-    venv_base = os.path.join(G.script_dir, vname)
+    output_dir = os.path.join(G.user_dir, G.script_name)
+    if (not os.path.isdir(output_dir)):
+        if os.path.exists(output_dir):
+            abort(('Output path "%s" exists, but is not a directory.' % output_dir), 'Please move or delete it before running this command again.')
+        try:
+            os.makedirs(output_dir)
+        except (IOError, OSError) as e:
+            abort(('Output path "%s" exists, but is not a directory.' % output_dir), 'Please move or delete it before running this command again.', e)
+    venv_base = os.path.join(output_dir, 'venv')
     venv_dir = os.path.join(venv_base, sys.platform)
     venv_complete = False
+    version = get_version(os.path.dirname(G.script_dir))
     try:
         try:
-            if (not os.path.isdir(venv_base)):
-                os.makedirs(venv_base)
-            if (not os.path.isdir(venv_dir)):
-                save_dir = os.getcwd()
-                save_lc_all = os.environ.get('LC_ALL', None)
-                os.environ['LC_ALL'] = 'C'
-                try:
-                    os.chdir(venv_base)
-                    args = get_virtualenv()
-                    pip = os.path.join(venv_dir, 'bin', 'pip')
-                    info(('Preparing the %s Python virtual environment:' % G.script_name), ['(an Internet connection is required)', ('Folder: %s' % venv_dir)])
-                    args += ['--clear', '--system-site-packages', sys.platform]
-                    run_cmd(*args)
-                    if packages:
-                        for package in packages:
-                            info(('Installing virtual environment package: %s' % package))
-                            run_cmd(pip, 'install', package)
-                finally:
-                    os.chdir(save_dir)
-                    if (save_lc_all is None):
-                        del os.environ['LC_ALL']
-                    else:
-                        os.environ['LC_ALL'] = save_lc_all
+            build_venv = (not os.path.isdir(venv_dir))
+            if (not build_venv):
+                venv_version = get_version(venv_dir, error_abort=False)
+                build_venv = ((not venv_version) or (venv_version != version))
+            if build_venv:
+                _build_virtual_environment(venv_dir, version, packages)
             venv_complete = True
             python = os.path.join(venv_dir, 'bin', 'python')
             args = ([python, G.module_path, G.script_name, G.script_dir, os.path.dirname(G.script_dir), str(description), str(standalone), str(directory), str(verbose), libpath] + sys.argv[1:])
