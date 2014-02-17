@@ -5,6 +5,7 @@
   }
   initialize(m_startupConfig.m_serializedCatalog,m_startupConfig.m_timestamp);
   m_startupConfig=null;
+  final MinimumRatioMaintainer mrm=new MinimumRatioMaintainer(m_taskLogReplayRatio);
   try {
     while (m_shouldContinue) {
       if (m_rejoinState == kStateRunning) {
@@ -15,12 +16,30 @@
         }
         task.run(getSiteProcedureConnection());
       }
- else {
+ else       if (m_rejoinState == kStateReplayingRejoin) {
         SiteTasker task=m_scheduler.poll();
+        boolean didWork=false;
         if (task != null) {
-          task.runForRejoin(getSiteProcedureConnection(),m_rejoinTaskLog);
+          didWork=true;
+          while (!m_rejoinTaskLog.isEmpty() && !mrm.canDoRestricted()) {
+            replayFromTaskLog(mrm);
+          }
+          mrm.didRestricted();
+          if (m_rejoinState == kStateRunning) {
+            task.run(getSiteProcedureConnection());
+          }
+ else {
+            task.runForRejoin(getSiteProcedureConnection(),m_rejoinTaskLog);
+          }
         }
-        replayFromTaskLog();
+ else {
+          didWork|=replayFromTaskLog(mrm);
+        }
+        if (!didWork)         Thread.yield();
+      }
+ else {
+        SiteTasker task=m_scheduler.take();
+        task.runForRejoin(getSiteProcedureConnection(),m_rejoinTaskLog);
       }
     }
   }
