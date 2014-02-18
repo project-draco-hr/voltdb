@@ -85,10 +85,13 @@ catch (  ExecutionException e) {
   }
   ScheduledFuture<?> syncTask=null;
   syncTask=m_syncService.scheduleAtFixedRate(new Runnable(){
+    private long fadvisedBytes=0;
     @Override public void run(){
       while (m_bytesWrittenSinceLastSync.get() > (1024 * 1024 * 4)) {
         final int bytesSinceLastSync=m_bytesWrittenSinceLastSync.getAndSet(0);
+        long positionAtSync=0;
         try {
+          positionAtSync=m_channel.position();
           m_channel.force(false);
         }
  catch (        IOException e) {
@@ -100,6 +103,20 @@ catch (  ExecutionException e) {
           }
         }
         m_bytesAllowedBeforeSync.release(bytesSinceLastSync);
+        try {
+          if (positionAtSync - fadvisedBytes > SNAPSHOT_FADVISE_BYTES) {
+            final long fadviseStart=fadvisedBytes;
+            fadvisedBytes=((positionAtSync / 4096) - 1) * 4096;
+            final long retval=PosixAdvise.fadvise(m_fos.getFD(),fadviseStart,fadvisedBytes - fadviseStart,PosixAdvise.POSIX_FADV_DONTNEED);
+            if (retval != 0) {
+              SNAP_LOG.error("Error fadvising snapshot data: " + retval);
+              SNAP_LOG.error("Params offset " + fadviseStart + " length "+ (fadvisedBytes - fadviseStart));
+            }
+          }
+        }
+ catch (        Throwable t) {
+          SNAP_LOG.error("Error fadvising snapshot data",t);
+        }
       }
     }
   }
