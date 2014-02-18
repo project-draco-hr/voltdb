@@ -1,32 +1,33 @@
 {
+  LOG.info("CALLING processSSC");
   SocketChannel sc=null;
   while ((sc=ssc.accept()) != null) {
     sc.socket().setTcpNoDelay(true);
     sc.socket().setPerformancePreferences(0,2,1);
     final String remoteAddress=sc.socket().getRemoteSocketAddress().toString();
-    ByteBuffer currentTime=ByteBuffer.allocate(8);
-    currentTime.putLong(System.currentTimeMillis());
-    currentTime.flip();
-    while (currentTime.hasRemaining()) {
-      sc.write(currentTime);
+    LOG.info("Primary sending clock skew to connector.");
+    ByteBuffer currentTimeBuf=ByteBuffer.allocate(8);
+    currentTimeBuf.putLong(System.currentTimeMillis());
+    currentTimeBuf.flip();
+    while (currentTimeBuf.hasRemaining()) {
+      sc.write(currentTimeBuf);
     }
-    ByteBuffer lengthBuffer=ByteBuffer.allocate(4);
-    while (lengthBuffer.remaining() > 0) {
-      int read=sc.read(lengthBuffer);
-      if (read == -1) {
-        throw new EOFException(remoteAddress);
-      }
+    LOG.info("Primary reading address info from connector.");
+    JSONObject jsObj=readJSONObjFromWire(sc,remoteAddress);
+    LOG.info(jsObj.toString(2));
+    String remoteBuildString=jsObj.getString("versionString");
+    JSONObject returnJs=new JSONObject();
+    returnJs.put("versionString",VoltDB.instance().getVersionString());
+    returnJs.put("buildString",VoltDB.instance().getBuildString());
+    returnJs.put("versionCompatible",VoltDB.instance().isCompatibleVersionString(remoteBuildString));
+    byte jsBytes[]=returnJs.toString(4).getBytes(Constants.UTF8ENCODING);
+    ByteBuffer returnJsBuffer=ByteBuffer.allocate(4 + jsBytes.length);
+    returnJsBuffer.putInt(jsBytes.length);
+    returnJsBuffer.put(jsBytes).flip();
+    LOG.info("Primary sending version info to connector.");
+    while (returnJsBuffer.hasRemaining()) {
+      sc.write(returnJsBuffer);
     }
-    lengthBuffer.flip();
-    ByteBuffer messageBytes=ByteBuffer.allocate(lengthBuffer.getInt());
-    while (messageBytes.hasRemaining()) {
-      int read=sc.read(messageBytes);
-      if (read == -1) {
-        throw new EOFException(remoteAddress);
-      }
-    }
-    messageBytes.flip();
-    JSONObject jsObj=new JSONObject(new String(messageBytes.array(),"UTF-8"));
     String type=jsObj.getString("type");
     InetSocketAddress listeningAddress;
     if (jsObj.has("address")) {
