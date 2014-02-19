@@ -1,12 +1,27 @@
 {
   m_volt=mock(VoltDBInterface.class);
-  m_statsAgent=mock(StatsAgent.class);
   m_sysinfoAgent=mock(SystemInformationAgent.class);
   m_messenger=mock(HostMessenger.class);
   m_handler=mock(ClientInputHandler.class);
   m_cartographer=mock(Cartographer.class);
   m_zk=mock(ZooKeeper.class);
-  m_cxn=mock(SimpleClientResponseAdapter.class);
+  responses=new LinkedTransferQueue<ByteBuffer>();
+  responsesDS=new LinkedTransferQueue<DeferredSerialization>();
+  drStatsInvoked=0;
+  m_cxn=new SimpleClientResponseAdapter(0,"foo"){
+    @Override public void enqueue(    ByteBuffer buf){
+      responses.offer(buf);
+    }
+    @Override public void enqueue(    ByteBuffer bufs[]){
+      responses.offer(bufs[0]);
+    }
+    @Override public void enqueue(    DeferredSerialization ds){
+      responsesDS.offer(ds);
+    }
+    @Override public void queueTask(    Runnable r){
+    }
+  }
+;
   VoltDB.replaceVoltDBInstanceForTest(m_volt);
   doReturn(m_statsAgent).when(m_volt).getStatsAgent();
   doReturn(m_statsAgent).when(m_volt).getOpsAgent(OpsSelector.STATISTICS);
@@ -19,11 +34,11 @@
   doReturn(32L).when(m_messenger).getHSIdForLocalSite(HostMessenger.ASYNC_COMPILER_SITE_ID);
   doAnswer(new Answer<Object>(){
     @Override public Object answer(    InvocationOnMock invocation){
-      return null;
+      Object args[]=invocation.getArguments();
+      return ses.scheduleAtFixedRate((Runnable)args[0],(long)args[1],(long)args[2],(TimeUnit)args[3]);
     }
   }
-).when(m_cxn).queueTask(any(Runnable.class));
-  doReturn(m_cxn).when(m_cxn).writeStream();
+).when(m_volt).scheduleWork(any(Runnable.class),anyLong(),anyLong(),(TimeUnit)anyObject());
   m_ci=spy(new ClientInterface(null,VoltDB.DEFAULT_PORT,null,VoltDB.DEFAULT_ADMIN_PORT,m_context,m_messenger,ReplicationRole.NONE,m_cartographer,m_allPartitions));
   m_ci.bindAdapter(m_cxn);
 }
