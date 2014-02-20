@@ -1,0 +1,28 @@
+{
+  final ByteBuffer buf=cont.b;
+  if (cont.b.remaining() < 32)   compress=false;
+  final int maxCompressedSize=compress ? Snappy.maxCompressedLength(buf.remaining()) : buf.remaining();
+  if (m_buf.remaining() < maxCompressedSize + 8)   return false;
+  m_syncedSinceLastEdit=false;
+  try {
+    final int objSizePosition=m_buf.position();
+    m_buf.position(m_buf.position() + 8);
+    int written=maxCompressedSize;
+    if (compress) {
+      final long destAddr=m_bufAddr + m_buf.position();
+      written=(int)Snappy.rawCompress(((DirectBuffer)buf).address() + buf.position(),buf.remaining(),destAddr);
+      m_buf.position(m_buf.position() + written);
+    }
+ else {
+      m_buf.put(buf);
+    }
+    m_buf.putInt(objSizePosition,written);
+    m_buf.putInt(objSizePosition + 4,compress ? FLAG_COMPRESSED : 0);
+    buf.position(buf.limit());
+    incrementNumEntries();
+  }
+  finally {
+    cont.discard();
+  }
+  return true;
+}

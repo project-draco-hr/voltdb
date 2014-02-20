@@ -1,42 +1,58 @@
 {
+  EELibraryLoader.loadExecutionEngineLibrary(true);
   m_path=path;
   m_nonce=nonce;
   if (!path.exists() || !path.canRead() || !path.canWrite()|| !path.canExecute()|| !path.isDirectory()) {
     throw new IOException(path + " is not usable ( !exists || !readable " + "|| !writable || !executable || !directory)");
   }
-  path.listFiles(new FileFilter(){
-    @Override public boolean accept(    File pathname){
-      String[] parts=pathname.getName().split("\\.");
-      String parsedNonce=null;
-      String seqNum=null;
-      String extension=null;
-      if (parts.length > 3) {
-        Joiner joiner=Joiner.on('.').skipNulls();
-        parsedNonce=joiner.join(Arrays.asList(parts).subList(0,parts.length - 2));
-        seqNum=parts[parts.length - 2];
-        extension=parts[parts.length - 1];
-      }
- else       if (parts.length == 3) {
-        parsedNonce=parts[0];
-        seqNum=parts[1];
-        extension=parts[2];
-      }
-      if (nonce.equals(parsedNonce) && "pbd".equals(extension)) {
-        if (pathname.length() == 4) {
-          pathname.delete();
-          return false;
+  final TreeMap<Long,PBDSegment> segments=new TreeMap<Long,PBDSegment>();
+  try {
+    path.listFiles(new FileFilter(){
+      @Override public boolean accept(      File pathname){
+        String[] parts=pathname.getName().split("\\.");
+        String parsedNonce=null;
+        String seqNum=null;
+        String extension=null;
+        if (parts.length > 3) {
+          Joiner joiner=Joiner.on('.').skipNulls();
+          parsedNonce=joiner.join(Arrays.asList(parts).subList(0,parts.length - 2));
+          seqNum=parts[parts.length - 2];
+          extension=parts[parts.length - 1];
         }
-        Long index=Long.valueOf(seqNum);
-        DequeSegment ds=new DequeSegment(index,pathname);
-        m_finishedSegments.put(index,ds);
-        m_sizeInBytes.addAndGet(ds.sizeInBytes());
+ else         if (parts.length == 3) {
+          parsedNonce=parts[0];
+          seqNum=parts[1];
+          extension=parts[2];
+        }
+        if (nonce.equals(parsedNonce) && "pbd".equals(extension)) {
+          if (pathname.length() == 4) {
+            pathname.delete();
+            return false;
+          }
+          Long index=Long.valueOf(seqNum);
+          PBDSegment qs=new PBDSegment(index,pathname);
+          try {
+            qs.open(false);
+          }
+ catch (          IOException e) {
+            new RuntimeException(e);
+          }
+          segments.put(index,qs);
+        }
+        return false;
       }
-      return false;
     }
-  }
 );
+  }
+ catch (  RuntimeException e) {
+    if (e.getCause() instanceof IOException) {
+      throw new IOException(e);
+    }
+    Throwables.propagate(e);
+  }
   Long lastKey=null;
-  for (  Long key : m_finishedSegments.keySet()) {
+  for (  Map.Entry<Long,PBDSegment> e : segments.entrySet()) {
+    final Long key=e.getKey();
     if (lastKey == null) {
       lastKey=key;
     }
@@ -46,16 +62,16 @@
       }
       lastKey=key;
     }
+    m_segments.offer(e.getValue());
   }
   Long writeSegmentIndex=0L;
   try {
-    m_currentPollSegmentIndex=m_finishedSegments.firstKey();
-    writeSegmentIndex=m_finishedSegments.lastKey() + 1;
+    writeSegmentIndex=segments.lastKey() + 1;
   }
  catch (  NoSuchElementException e) {
   }
-  m_writeSegment=new DequeSegment(writeSegmentIndex,new VoltFile(m_path,m_nonce + "." + writeSegmentIndex+ ".pbd"));
-  m_writeSegment.open();
-  m_writeSegment.initNumEntries();
+  PBDSegment writeSegment=new PBDSegment(writeSegmentIndex,new VoltFile(m_path,m_nonce + "." + writeSegmentIndex+ ".pbd"));
+  m_segments.offer(writeSegment);
+  writeSegment.open(true);
   assertions();
 }
