@@ -1,0 +1,40 @@
+{
+  Client clientTmp=this.client;
+  this.users=0;
+  this.client=null;
+  if (clientTmp != null) {
+    try {
+      clientTmp.close();
+    }
+ catch (    InterruptedException e) {
+    }
+  }
+  clientTmp=ClientFactory.createClient(this.config);
+  for (  String server : this.servers) {
+    try {
+      int iretry;
+      for (iretry=0; iretry < JDBC4ClientConnection.RETRY_ATTEMPTS.length; ++iretry) {
+        try {
+          clientTmp.createConnection(server);
+          break;
+        }
+ catch (        IOException e) {
+          if (!retry) {
+            throw e;
+          }
+          System.err.printf("Retrying connection to \"%s\" in %d seconds...\n",server,JDBC4ClientConnection.RETRY_ATTEMPTS[iretry]);
+          Thread.sleep(JDBC4ClientConnection.RETRY_ATTEMPTS[iretry] * 1000);
+        }
+      }
+      if (iretry == JDBC4ClientConnection.RETRY_ATTEMPTS.length) {
+        throw new IOException(String.format("Client connection failed after %d retries.",iretry));
+      }
+    }
+ catch (    InterruptedException ie) {
+      this.client=null;
+      throw new IOException("Client connection retry sleep was interrupted " + "before a connection could be made.");
+    }
+  }
+  this.client=clientTmp;
+  this.users++;
+}
