@@ -34,18 +34,21 @@ case Tokens.UNIQUE:
     throw this.unexpectedTokenRequire(Tokens.T_CHECK);
   }
   read();
-  List<Expression> indexExprs=XreadExpressions(null);
+  java.util.List<Expression> indexExprs=XreadExpressions(null);
   OrderedHashSet set=getSimpleColumnNames(indexExprs);
   if (constName == null) {
     constName=database.nameManager.newAutoName("CT",schemaObject.getSchemaName(),schemaObject.getName(),SchemaObject.CONSTRAINT);
   }
-  if ((indexExprs != null) && (set == null)) {
+  boolean hasNonColumnExprs=false;
+  if (set == null) {
+    hasNonColumnExprs=true;
     set=getBaseColumnNames(indexExprs);
-    Constraint exprc=new Constraint(constName,set,indexExprs.toArray(new Expression[indexExprs.size()])).setAssumeUnique(assumeUnique);
-    constraintList.add(exprc);
-    break;
   }
-  Constraint c=new Constraint(constName,set,Constraint.UNIQUE).setAssumeUnique(assumeUnique);
+  Constraint c=new Constraint(constName,set,Constraint.UNIQUE);
+  c.setAssumeUnique(assumeUnique);
+  if (hasNonColumnExprs) {
+    c=c.withExpressions(indexExprs.toArray(new Expression[indexExprs.size()]));
+  }
   constraintList.add(c);
   break;
 }
@@ -69,6 +72,17 @@ constName=database.nameManager.newAutoName("CT",schemaObject.getSchemaName(),sch
 }
 Constraint c=new Constraint(constName,null,Constraint.CHECK);
 readCheckConstraintCondition(c);
+constraintList.add(c);
+break;
+}
+case Tokens.LIMIT:
+{
+read();
+if (constName == null) {
+constName=database.nameManager.newAutoName("LIMIT",schemaObject.getSchemaName(),schemaObject.getName(),SchemaObject.CONSTRAINT);
+}
+Constraint c=new Constraint(constName,null,Constraint.LIMIT);
+readLimitConstraintCondition(c);
 constraintList.add(c);
 break;
 }
