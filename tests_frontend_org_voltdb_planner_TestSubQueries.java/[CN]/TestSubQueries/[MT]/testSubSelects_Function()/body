@@ -1,0 +1,33 @@
+{
+  AbstractPlanNode pn;
+  String tableAliases[]={" "," T1"};
+  String fromTables[]={SYSTEM_SUBQUERY,"T1"};
+  for (int i=0; i < tableAliases.length; i++) {
+    String alias=tableAliases[i];
+    String tbName=fromTables[i];
+    pn=compile("select ABS(C) FROM (SELECT A, C FROM R1)" + alias);
+    pn=pn.getChild(0);
+    checkSimpleSubSelects(pn,tbName,null,"C1");
+    pn=pn.getChild(0);
+    checkSimpleSubSelects(pn,"R1",null,"A","C");
+    failToCompile("select A, ABS(C) FROM (SELECT A A1, C FROM R1)" + alias,"user lacks privilege or object not found: A");
+    failToCompile("select A+1, ABS(C) FROM (SELECT A A1, C FROM R1)" + alias,"user lacks privilege or object not found: A");
+    pn=compile("select A1, ABS(C) FROM (SELECT A A1, C FROM R1)" + alias);
+    pn=pn.getChild(0);
+    checkSimpleSubSelects(pn,tbName,null,"A1","C2");
+    pn=pn.getChild(0);
+    checkSimpleSubSelects(pn,"R1",null,"A","C");
+    pn=compile("select A1 + 3, ABS(C) FROM (SELECT A A1, C FROM R1)" + alias);
+    pn=pn.getChild(0);
+    checkSimpleSubSelects(pn,tbName,null,"C1","C2");
+    assertEquals(((SeqScanPlanNode)pn).getInlinePlanNodes().size(),1);
+    pn=pn.getChild(0);
+    checkSimpleSubSelects(pn,"R1",null,"A","C");
+    pn=compile("select A1 + 3, ABS(C) FROM (SELECT A A1, C FROM R1) " + alias + " WHERE ABS(A1) > 3");
+    pn=pn.getChild(0);
+    checkSimpleSubSelects(pn,tbName,null,"C1","C2");
+    assertEquals(((SeqScanPlanNode)pn).getInlinePlanNodes().size(),1);
+    pn=pn.getChild(0);
+    checkSimpleSubSelects(pn,"R1",null,"A","C");
+  }
+}
