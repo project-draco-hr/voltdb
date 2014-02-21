@@ -1,6 +1,30 @@
 {
   ByteBuffer fileInputBuffer=ByteBuffer.allocateDirect(CompressionService.maxCompressedLength(DEFAULT_CHUNKSIZE));
+  long sinceLastFAdvise=Long.MAX_VALUE;
+  long positionAtLastFAdvise=0;
   while (m_hasMoreChunks) {
+    if (sinceLastFAdvise > 1024 * 1024 * 48) {
+      sinceLastFAdvise=0;
+      VoltLogger log=new VoltLogger("SNAPSHOT");
+      try {
+        final long position=m_saveFile.position();
+        long retval=PosixAdvise.fadvise(m_fd,position,position + 1024 * 1024 * 64,PosixAdvise.POSIX_FADV_WILLNEED);
+        if (retval != 0) {
+          log.info("Failed to fadvise in TableSaveFile, this is harmless: " + retval);
+        }
+        long length=position - 4096 - positionAtLastFAdvise;
+        if (length > 0) {
+          retval=PosixAdvise.fadvise(m_fd,positionAtLastFAdvise,position - 4096 - positionAtLastFAdvise,PosixAdvise.POSIX_FADV_DONTNEED);
+        }
+        if (retval != 0) {
+          log.info("Failed to fadvise in TableSaveFile, this is harmless: " + retval);
+        }
+        positionAtLastFAdvise=position;
+      }
+ catch (      Throwable t) {
+        log.info("Exception attempting fadvise",t);
+      }
+    }
     try {
       m_chunkReads.acquire();
     }
@@ -15,6 +39,7 @@
         if (read == -1) {
           throw new EOFException();
         }
+        sinceLastFAdvise+=read;
       }
       int nextChunkLength=chunkLengthB.getInt(0);
       expectedAnotherChunk=true;
@@ -45,6 +70,7 @@
         if (read == -1) {
           throw new EOFException();
         }
+        sinceLastFAdvise+=read;
       }
       fileInputBuffer.flip();
       nextChunkLength=CompressionService.uncompressedLength(fileInputBuffer);
