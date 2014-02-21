@@ -1,12 +1,9 @@
 {
-  LOG.info("CALLING connectToPrimary");
   List<Long> skews=new ArrayList<Long>();
   Set<String> activeVersions=new TreeSet<String>();
-  List<String> adminModeErrors=new ArrayList<String>();
   SocketChannel socket=null;
   try {
-    LOG.debug("Non-Primary Starting");
-    LOG.debug("Non-Primary Connecting to Primary");
+    LOG.debug("Non-Primary Starting & Connecting to Primary");
     while (socket == null) {
       try {
         socket=SocketChannel.open(m_coordIp);
@@ -23,7 +20,6 @@
     socket.socket().setTcpNoDelay(true);
     socket.socket().setPerformancePreferences(0,2,1);
     final String remoteAddress=socket.socket().getRemoteSocketAddress().toString();
-    LOG.info("reading timeskew int from primary 1.");
     ByteBuffer currentTimeBuf=ByteBuffer.allocate(8);
     while (currentTimeBuf.hasRemaining()) {
       socket.read(currentTimeBuf);
@@ -41,7 +37,6 @@
     if (!m_internalInterface.isEmpty()) {
       jsObj.put("address",m_internalInterface);
     }
-    LOG.info("Sending address info to primary 1");
     byte jsBytes[]=jsObj.toString(4).getBytes(Constants.UTF8ENCODING);
     ByteBuffer requestHostIdBuffer=ByteBuffer.allocate(4 + jsBytes.length);
     requestHostIdBuffer.putInt(jsBytes.length);
@@ -49,9 +44,7 @@
     while (requestHostIdBuffer.hasRemaining()) {
       socket.write(requestHostIdBuffer);
     }
-    LOG.info("Reading version info json from primary 1.");
     processVersionJSONResponse(socket,remoteAddress,localVersionString,localBuildString,activeVersions);
-    LOG.info("Reading host id info json from primary 1.");
     JSONObject jsonObj=readJSONObjFromWire(socket,remoteAddress);
     m_localHostId=jsonObj.getInt("newHostId");
     m_reportedInternalInterface=jsonObj.getString("reportedAddress");
@@ -64,7 +57,7 @@
       String address=host.getString("address");
       int port=host.getInt("port");
       final int hostId=host.getInt("hostId");
-      LOG.info("Leader provided address " + address);
+      LOG.info("Leader provided address " + address + ":"+ port);
       InetSocketAddress hostAddr=new InetSocketAddress(address,port);
       if (ii == 0) {
         hostIds[ii]=hostId;
@@ -72,7 +65,6 @@
         hostSockets[ii]=socket;
         continue;
       }
-      LOG.info("PROCESSING VALID OTHER SOCKET IN connectToPrimary");
       SocketChannel hostSocket=null;
       while (hostSocket == null) {
         try {
@@ -87,13 +79,13 @@
           }
         }
       }
-      LOG.info("Reading clock skew info json from primary N.");
       currentTimeBuf.clear();
       while (currentTimeBuf.hasRemaining()) {
         hostSocket.read(currentTimeBuf);
       }
       currentTimeBuf.flip();
       skew=System.currentTimeMillis() - currentTimeBuf.getLong();
+      assert(currentTimeBuf.remaining() == 0);
       skews.add(skew);
       jsObj=new JSONObject();
       jsObj.put("type","PUBLISH_HOSTID");
@@ -112,8 +104,7 @@
       hostIds[ii]=hostId;
       hostSockets[ii]=hostSocket;
       listeningAddresses[ii]=hostAddr;
-      LOG.info("Read version json from primary N.");
-      processVersionJSONResponse(socket,remoteAddress,localVersionString,localBuildString,activeVersions);
+      processVersionJSONResponse(hostSocket,remoteAddress,localVersionString,localBuildString,activeVersions);
     }
     long maxSkew=Collections.max(skews);
     long minSkew=Collections.min(skews);
@@ -142,15 +133,13 @@
           versions+=version + ", ";
         }
       }
-      versions=versions.substring(0,versions.length() - 2 - 1);
-      VoltDB.crashLocalVoltDB("Cluster aldready is running mixed voltdb versions (" + versions + ").\n"+ "Adding version "+ localVersionString+ "would add a third version.\n"+ "VoltDB hotfix support supports only two unique versions simulaniously.",false,null);
+      versions=versions.substring(0,versions.length() - 2);
+      VoltDB.crashLocalVoltDB("Cluster aldready is running mixed voltdb versions (" + versions + ").\n"+ "Adding version "+ localVersionString+ " would add a third version.\n"+ "VoltDB hotfix support supports only two unique versions simulaniously.",false,null);
     }
-    LOG.info("Version stuff seems cool.");
     ByteBuffer joinCompleteBuffer=ByteBuffer.allocate(1);
     while (joinCompleteBuffer.hasRemaining()) {
       hostSockets[0].write(joinCompleteBuffer);
     }
-    LOG.info("Wrote Join Completion.");
     m_joinHandler.notifyOfHosts(m_localHostId,hostIds,hostSockets,listeningAddresses);
   }
  catch (  ClosedByInterruptException e) {
