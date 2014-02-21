@@ -1,0 +1,45 @@
+{
+  Callable<Object> work=new Callable<Object>(){
+    @Override public Object call() throws Exception {
+      final JSONObject jsObj=new JSONObject((String)params[0]);
+      final String format=jsObj.optString("format",SnapshotFormat.NATIVE.toString());
+      boolean initiateSnapshot;
+      VoltTable checkResult=null;
+      if (SnapshotFormat.getEnumIgnoreCase(format).isFileBased()) {
+        VoltMessage msg=new SnapshotCheckRequestMessage((String)params[0]);
+        List<Integer> liveHosts=VoltDB.instance().getHostMessenger().getLiveHostIds();
+        for (        int hostId : liveHosts) {
+          m_mb.send(CoreUtils.getHSIdFromHostAndSite(hostId,HostMessenger.SNAPSHOT_IO_AGENT_ID),msg);
+        }
+        Map<Integer,VoltTable> responses=Maps.newHashMap();
+        final long endTime=System.currentTimeMillis() + 10 * 1000;
+        while (responses.size() != liveHosts.size() && System.currentTimeMillis() < endTime) {
+          SnapshotCheckResponseMessage response;
+          while ((response=(SnapshotCheckResponseMessage)m_mb.recv()) != null) {
+            if (jsObj.getString("path").equals(response.getPath()) && jsObj.getString("nonce").equals(response.getNonce())) {
+              responses.put(CoreUtils.getHostIdFromHSId(response.m_sourceHSId),response.getResponse());
+            }
+          }
+        }
+        if (responses.size() != liveHosts.size()) {
+          throw new CoreUtils.RetryException();
+        }
+        checkResult=VoltTableUtil.unionTables(responses.values());
+        initiateSnapshot=SnapshotUtil.didSnapshotRequestSucceed(new VoltTable[]{checkResult});
+      }
+ else {
+        initiateSnapshot=true;
+      }
+      if (initiateSnapshot) {
+        m_initiator.initiateSnapshotDaemonWork("@SnapshotSave",handle,params);
+      }
+ else       if (requestId != null) {
+        final ClientResponseImpl failureResponse=new ClientResponseImpl(ClientResponseImpl.SUCCESS,new VoltTable[]{checkResult},null);
+        saveResponseToZKAndReset(requestId,failureResponse);
+      }
+      return null;
+    }
+  }
+;
+  CoreUtils.retryHelper(VoltDB.instance().getSES(true),m_es,work,3,10,TimeUnit.SECONDS,1,TimeUnit.HOURS);
+}

@@ -66,6 +66,16 @@ synchronized (m_startAndStopLock) {
     }
     m_periodicWorkThread=CoreUtils.getScheduledThreadPoolExecutor("Periodic Work",1,CoreUtils.SMALL_STACK_SIZE);
     m_periodicPriorityWorkThread=CoreUtils.getScheduledThreadPoolExecutor("Periodic Priority Work",1,CoreUtils.SMALL_STACK_SIZE);
+    Class<?> snapshotIOAgentClass=MiscUtils.loadProClass("org.voltdb.SnapshotIOAgentImpl","Snapshot",false);
+    if (snapshotIOAgentClass != null) {
+      try {
+        m_snapshotIOAgent=(SnapshotIOAgent)snapshotIOAgentClass.getConstructor(HostMessenger.class,long.class).newInstance(m_messenger,m_messenger.getHSIdForLocalSite(HostMessenger.SNAPSHOT_IO_AGENT_ID));
+        m_messenger.createMailbox(m_snapshotIOAgent.getHSId(),m_snapshotIOAgent);
+      }
+ catch (      Exception e) {
+        VoltDB.crashLocalVoltDB("Failed to instantiate snapshot IO agent",true,e);
+      }
+    }
     m_licenseApi=MiscUtils.licenseApiFactory(m_config.m_pathToLicense);
     if (m_licenseApi == null) {
       VoltDB.crashLocalVoltDB("Failed to initialize license verifier. " + "See previous log message for details.",false,null);
@@ -289,7 +299,7 @@ synchronized (m_startAndStopLock) {
       hostLog.warn("Running a redundant (k-safe) cluster with network " + "partition detection disabled is not recommended for production use.");
     }
     assert(m_clientInterface != null);
-    m_clientInterface.initializeSnapshotDaemon(m_messenger.getZK(),m_globalServiceElector);
+    m_clientInterface.initializeSnapshotDaemon(m_messenger,m_globalServiceElector);
     try {
       String clSnapshotPath=null;
       if (m_catalogContext.cluster.getLogconfig().get("log").getEnabled()) {
