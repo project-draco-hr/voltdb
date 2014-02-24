@@ -1,0 +1,55 @@
+{
+  while (true) {
+    try {
+      VoltBulkLoaderRow currRow;
+      currRow=m_failedQueue.take();
+      if (currRow.isNotificationRow()) {
+        m_log.debug("notificationRow for table " + m_tableName + " received by failure process");
+        assert(m_failedBatchProcessor_cdl == null);
+        BulkLoaderNotification notifier=((BulkLoaderNotification)currRow.rowHandle);
+        m_failedBatchProcessor_cdl=notifier.getLatch();
+        if (m_failedBatchSentRowCnt.get() == 0) {
+          m_failedBatchProcessor_cdl.countDown();
+          m_failedBatchProcessor_cdl=null;
+        }
+        if (notifier instanceof VoltBulkLoaderRow.CloseNotificationCallBack)         break;
+        continue;
+      }
+      m_failedBatchQueuedRowCnt.decrementAndGet();
+      m_failedBatchSentRowCnt.incrementAndGet();
+      try {
+        VoltTable table=new VoltTable(m_colInfo);
+        try {
+          Object row_args[]=new Object[currRow.objectList.length];
+          for (int i=0; i < row_args.length; i++) {
+            final VoltType type=m_columnTypes[i];
+            row_args[i]=ParameterConverter.tryToMakeCompatible(type.classFromType(),currRow.objectList[i]);
+          }
+          table.addRow(row_args);
+        }
+ catch (        VoltTypeException ex) {
+          continue;
+        }
+        PartitionFailureExecuteProcedureCallback callback=new PartitionFailureExecuteProcedureCallback(currRow);
+        if (!m_isMP) {
+          Object rpartitionParam=TheHashinator.valueToBytes(table.fetchRow(0).get(m_partitionedColumnIndex,m_partitionColumnType));
+          m_clientImpl.callProcedure(callback,m_procName,rpartitionParam,m_tableName,table);
+        }
+ else         m_clientImpl.callProcedure(callback,m_procName,m_tableName,table);
+      }
+ catch (      IOException ioex) {
+        m_log.warn("Fallback to single row inserts failed, failures will not be processed: " + ioex);
+        m_failedQueue.clear();
+        m_failedQueue=null;
+        break;
+      }
+    }
+ catch (    InterruptedException ex) {
+      m_log.debug("Stopped failure processor.");
+      m_failedQueue.clear();
+      m_failedQueue=null;
+      break;
+    }
+  }
+  m_log.debug("Done Processing failed bulk rows for table: " + m_tableName);
+}

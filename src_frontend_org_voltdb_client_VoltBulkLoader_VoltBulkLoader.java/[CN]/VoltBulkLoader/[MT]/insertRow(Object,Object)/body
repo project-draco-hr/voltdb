@@ -1,0 +1,35 @@
+{
+  int partitionId=0;
+  if (fieldList == null || fieldList.length <= 0) {
+    String errMsg;
+    if (rowHandle == null)     errMsg="Error: insertRow received empty fieldList";
+ else     errMsg="Error: insertRow received empty fieldList for row: " + rowHandle.toString();
+    m_log.error(errMsg);
+    generateError(rowHandle,fieldList,errMsg);
+    return;
+  }
+  if (fieldList.length != m_columnCnt) {
+    String errMsg;
+    if (rowHandle == null)     errMsg="Error: insertRow received incorrect number of columns; " + fieldList.length + " found, "+ m_columnCnt+ " expected";
+ else     errMsg="Error: insertRow received incorrect number of columns; " + fieldList.length + " found, "+ m_columnCnt+ " expected for row: "+ rowHandle.toString();
+    m_log.error(errMsg);
+    generateError(rowHandle,fieldList,errMsg);
+    return;
+  }
+  VoltBulkLoaderRow newRow=new VoltBulkLoaderRow(this,rowHandle,fieldList);
+  if (m_isMP) {
+    m_partitionTable[m_firstPartitionTable].insertRowInTable(newRow);
+  }
+ else {
+    try {
+      partitionId=(int)m_clientImpl.getPartitionForParameter(m_partitionColumnType.getValue(),fieldList[m_partitionedColumnIndex]);
+      m_partitionTable[partitionId].insertRowInTable(newRow);
+    }
+ catch (    VoltTypeException e) {
+      m_log.error(e.getMessage());
+      generateError(rowHandle,fieldList,e.getMessage());
+      return;
+    }
+  }
+  m_loaderQueuedRowCnt.incrementAndGet();
+}

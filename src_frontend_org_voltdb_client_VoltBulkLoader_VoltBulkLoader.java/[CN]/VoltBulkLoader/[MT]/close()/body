@@ -1,0 +1,48 @@
+{
+  PerPartitionTable tmpTable;
+synchronized (m_vblGlobals.m_TableNameToLoader) {
+    List<VoltBulkLoader> loaderList=m_vblGlobals.m_TableNameToLoader.get(m_tableName);
+    if (loaderList.size() == 1) {
+      m_vblGlobals.m_TableNameToLoader.remove(m_tableName);
+    }
+ else     loaderList.remove(this);
+    CountDownLatch tableWaitLatch=new CountDownLatch(m_lastPartitionTable - m_firstPartitionTable + 1);
+    tmpTable=m_partitionTable[m_firstPartitionTable];
+    for (int i=m_firstPartitionTable; i <= m_lastPartitionTable; i++) {
+      VoltBulkLoaderRow closeTableRow=new VoltBulkLoaderRow(this);
+      closeTableRow.new CloseNotificationCallBack(m_partitionTable[i],tableWaitLatch);
+      m_partitionTable[i].drainTableQueue(closeTableRow);
+    }
+    try {
+      tableWaitLatch.await();
+    }
+ catch (    InterruptedException e) {
+    }
+    assert(m_loaderBatchedRowCnt.get() == 0 && m_loaderQueuedRowCnt.get() == 0);
+    CountDownLatch failureThreadLatch=new CountDownLatch(1);
+    VoltBulkLoaderRow closeFailureProcRow=new VoltBulkLoaderRow(this);
+    closeFailureProcRow.new CloseNotificationCallBack(tmpTable,failureThreadLatch);
+    m_failedQueue.add(closeFailureProcRow);
+    try {
+      failureThreadLatch.await();
+    }
+ catch (    InterruptedException e) {
+    }
+  }
+  assert(m_failedBatchQueuedRowCnt.get() == 0 && m_failedBatchSentRowCnt.get() == 0);
+synchronized (m_clientImpl) {
+    if (m_clientImpl.isLastTerminatingVoltBulkLoader()) {
+      m_vblGlobals.m_shutdownPartitionProcessors=true;
+      for (int i=0; i < m_maxPartitionProcessors; i++) {
+        m_vblGlobals.m_partitionProcessors[i].m_PendingTables.add(tmpTable);
+      }
+      try {
+        for (        Thread th : m_vblGlobals.m_spawnedPartitionProcessors) {
+          th.join();
+        }
+      }
+ catch (      InterruptedException e) {
+      }
+    }
+  }
+}
