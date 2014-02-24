@@ -19,10 +19,25 @@
     m_rvdb.m_restoreAgent.setCatalogContext(m_rvdb.m_catalogContext);
     Pair<Integer,String> catalog=m_rvdb.m_restoreAgent.findRestoreCatalog();
     if (catalog != null) {
-      hostLog.debug("Found catalog to load on host " + catalog.getFirst() + ": "+ catalog.getSecond());
-      m_rvdb.m_hostIdWithStartupCatalog=catalog.getFirst().intValue();
+      int hostId=catalog.getFirst().intValue();
+      String catalogPath=catalog.getSecond();
+      try {
+        byte[] catalogBytes=readCatalog(catalogPath);
+        InMemoryJarfile inMemoryJar=CatalogUtil.loadInMemoryJarFile(catalogBytes);
+        String[] buildInfo=CatalogUtil.getBuildInfoFromJar(inMemoryJar);
+        String catalogVersion=buildInfo[0];
+        String serverVersion=m_rvdb.getVersionString();
+        if (!catalogVersion.equals(serverVersion)) {
+          VoltDB.crashLocalVoltDB(String.format("Unable to load version %s catalog \"%s\" " + "from snapshot into a version %s server.",catalogVersion,catalogPath,serverVersion),false,null);
+        }
+      }
+ catch (      IOException e) {
+        VoltDB.crashLocalVoltDB("Unable to load catalog for version check.",false,e);
+      }
+      hostLog.debug("Found catalog to load on host " + hostId + ": "+ catalogPath);
+      m_rvdb.m_hostIdWithStartupCatalog=hostId;
       assert(m_rvdb.m_hostIdWithStartupCatalog >= 0);
-      m_rvdb.m_pathToStartupCatalog=catalog.getSecond();
+      m_rvdb.m_pathToStartupCatalog=catalogPath;
       assert(m_rvdb.m_pathToStartupCatalog != null);
     }
   }
