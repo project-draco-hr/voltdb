@@ -32,6 +32,7 @@
       return;
     }
     boolean expectedAnotherChunk=false;
+    Container c=null;
     try {
       ByteBuffer chunkLengthB=ByteBuffer.allocate(16);
       while (chunkLengthB.hasRemaining()) {
@@ -85,7 +86,7 @@
           throw new IOException("CRC mismatch in saved table chunk");
         }
       }
-      Container c=getOutputBuffer(nextChunkPartitionId);
+      c=getOutputBuffer(nextChunkPartitionId);
       boolean completedRead=false;
       try {
         c.b().clear();
@@ -100,7 +101,6 @@
           for (          int partitionId : m_partitionIds) {
             m_corruptedPartitions.add(partitionId);
           }
-          c.discard();
           if (m_continueOnCorruptedChunk) {
             m_chunkReads.release();
             continue;
@@ -112,7 +112,6 @@
       }
       if (m_relevantPartitionIds != null) {
         if (!m_relevantPartitionIds.contains(nextChunkPartitionId)) {
-          c.discard();
           m_chunkReads.release();
           continue;
         }
@@ -120,6 +119,7 @@
       c.b().position(0);
 synchronized (TableSaveFile.this) {
         m_availableChunks.offer(c);
+        c=null;
         TableSaveFile.this.notifyAll();
       }
     }
@@ -160,6 +160,9 @@ synchronized (TableSaveFile.this) {
         m_chunkReaderException=new IOException(e);
         TableSaveFile.this.notifyAll();
       }
+    }
+ finally {
+      if (c != null)       c.discard();
     }
   }
   DBBPool.cleanByteBuffer(fileInputBuffer);
