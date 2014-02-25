@@ -1,0 +1,19 @@
+@VOLT.Command(description='Patch a catalog file version (buildinfo.txt).', description2='This command does not overwrite the original catalog file.', arguments=[VOLT.PathArgument('catalog_path', 'path to catalog jar', exists=True), VOLT.StringArgument('version', 'new version number')])
+def patch_version(runner):
+    version_new = runner.opts.version
+    if (not version_new):
+        runner.abort('A non-empty version number is required.')
+    catalog_old = runner.opts.catalog_path
+    (basename, extension) = os.path.splitext(catalog_old)
+    catalog_new = ('%(basename)s-%(version_new)s%(extension)s' % locals())
+    runner.info(('Extracting "%s"...' % catalog_old))
+    tempdir = extract_catalog(runner, catalog_old)
+    try:
+        buildinfo_in = os.path.join(tempdir, 'buildinfo.txt')
+        runner.info(('Patching version to "%s"...' % version_new))
+        patch_buildinfo(runner, buildinfo_in, version_new)
+        runner.info(('Compressing output file "%s"...' % catalog_new))
+        compress_catalog(runner, catalog_new, tempdir)
+    finally:
+        runner.verbose_info(('Removing temporary directory "%s"...' % tempdir))
+        shutil.rmtree(tempdir)
