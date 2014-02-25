@@ -1,0 +1,60 @@
+{
+  return new Language.CheckedExceptionVisitor<Map<String,Object>,Class<?>,VoltCompilerException>(){
+    @Override public Map<String,Object> visitJava(    Class<?> p) throws VoltCompilerException {
+      String shortName=deriveShortProcedureName(p.getName());
+      VoltProcedure procInstance;
+      try {
+        procInstance=(VoltProcedure)p.newInstance();
+      }
+ catch (      InstantiationException e) {
+        throw new RuntimeException("Error instantiating procedure \"%s\"" + p.getName(),e);
+      }
+catch (      IllegalAccessException e) {
+        throw new RuntimeException("Error instantiating procedure \"%s\"" + p.getName(),e);
+      }
+      Map<String,SQLStmt> stmtMap=getValidSQLStmts(compiler,p.getSimpleName(),p,procInstance,true);
+      ImmutableMap.Builder<String,Object> builder=ImmutableMap.builder();
+      builder.putAll(stmtMap);
+      Method procMethod=null;
+      Method[] methods=p.getDeclaredMethods();
+      for (      final Method m : methods) {
+        String name=m.getName();
+        if (name.equals("run")) {
+          assert(m.getDeclaringClass() == p);
+          if (procMethod != null) {
+            String msg="Procedure: " + shortName + " has multiple public run(...) methods. ";
+            msg+="Only a single run(...) method is supported.";
+            throw compiler.new VoltCompilerException(msg);
+          }
+          if (Modifier.isPublic(m.getModifiers())) {
+            procMethod=m;
+          }
+ else {
+            compiler.addWarn("Procedure: " + shortName + " has non-public run(...) method.");
+          }
+        }
+      }
+      if (procMethod == null) {
+        String msg="Procedure: " + shortName + " has no run(...) method.";
+        throw compiler.new VoltCompilerException(msg);
+      }
+      if ((procMethod.getReturnType() != VoltTable[].class) && (procMethod.getReturnType() != VoltTable.class) && (procMethod.getReturnType() != long.class)&& (procMethod.getReturnType() != Long.class)) {
+        String msg="Procedure: " + shortName + " has run(...) method that doesn't return long, Long, VoltTable or VoltTable[].";
+        throw compiler.new VoltCompilerException(msg);
+      }
+      builder.put("@run",procMethod);
+      return builder.build();
+    }
+    @Override public Map<String,Object> visitGroovy(    Class<?> p) throws VoltCompilerException {
+      GroovyScriptProcedureDelegate scripDelegate;
+      try {
+        scripDelegate=new GroovyScriptProcedureDelegate(p);
+      }
+ catch (      GroovyScriptProcedureDelegate.SetupException tupex) {
+        throw compiler.new VoltCompilerException(tupex.getMessage());
+      }
+      return scripDelegate.getIntrospectedFields();
+    }
+  }
+;
+}

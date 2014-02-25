@@ -1,12 +1,28 @@
 {
-  if (root.getPlanNodeType() == PlanNodeType.SEQSCAN && m_parsedSelect.isGrouped()) {
-    Table targetTable=m_catalogDb.getTables().get(((SeqScanPlanNode)root).getTargetTableName());
+  ArrayList<ParsedColInfo> groupBys=m_parsedSelect.groupByColumns;
+  String fromTableAlias=null;
+  for (  ParsedColInfo col : groupBys) {
+    List<AbstractExpression> baseTVEs=col.expression.findBaseTVEs();
+    for (    AbstractExpression baseTVE : baseTVEs) {
+      String nextTableAlias=((TupleValueExpression)baseTVE).getTableAlias();
+      assert(nextTableAlias != null);
+      if (fromTableAlias == null) {
+        fromTableAlias=nextTableAlias;
+      }
+ else       if (!fromTableAlias.equals(nextTableAlias)) {
+        return root;
+      }
+    }
+  }
+  assert(fromTableAlias != null);
+  Table targetTable=m_catalogDb.getTables().get(((SeqScanPlanNode)root).getTargetTableName());
+  if (targetTable != null) {
     CatalogMap<Index> allIndexes=targetTable.getIndexes();
-    ArrayList<ParsedColInfo> groupBys=m_parsedSelect.groupByColumns;
     for (    Index index : allIndexes) {
       if (!IndexType.isScannable(index.getType())) {
         continue;
       }
+      ArrayList<AbstractExpression> allBindings=new ArrayList<AbstractExpression>();
       boolean replacable=true;
       String exprsjson=index.getExpressionsjson();
       if (exprsjson.isEmpty()) {
@@ -14,14 +30,21 @@
         if (groupBys.size() > indexedColRefs.size()) {
           continue;
         }
-        for (int i=0; i < groupBys.size(); i++) {
-          if (groupBys.get(i).expression.getExpressionType() != ExpressionType.VALUE_TUPLE) {
+        for (        ParsedColInfo gbCol : groupBys) {
+          AbstractExpression expr=gbCol.expression;
+          if (!(expr instanceof TupleValueExpression)) {
             replacable=false;
             break;
           }
+          TupleValueExpression grouptve=(TupleValueExpression)expr;
+          if (!fromTableAlias.equals(grouptve.getTableAlias())) {
+            replacable=false;
+            break;
+          }
+          String gbColName=grouptve.getColumnName();
           boolean foundMatch=false;
           for (int j=0; j < groupBys.size(); j++) {
-            if (indexedColRefs.get(j).getColumn().getName().equals(groupBys.get(i).columnName)) {
+            if (indexedColRefs.get(j).getColumn().getName().equals(gbColName)) {
               foundMatch=true;
               break;
             }
@@ -31,15 +54,13 @@
             break;
           }
         }
-        if (replacable) {
-          IndexScanPlanNode indexScanNode=new IndexScanPlanNode((SeqScanPlanNode)root,null,index,SortDirectionType.ASC);
-          return indexScanNode;
-        }
       }
  else {
         List<AbstractExpression> indexedExprs=null;
+        int idx=m_parsedSelect.tableAliasIndexMap.get(fromTableAlias);
+        StmtTableScan fromTableScan=m_parsedSelect.stmtCache.get(idx);
         try {
-          indexedExprs=AbstractExpression.fromJSONArrayString(exprsjson);
+          indexedExprs=AbstractExpression.fromJSONArrayString(exprsjson,fromTableScan);
         }
  catch (        JSONException e) {
           e.printStackTrace();
@@ -49,10 +70,14 @@
         if (groupBys.size() > indexedExprs.size()) {
           continue;
         }
-        for (int i=0; i < groupBys.size(); i++) {
+        for (        ParsedColInfo gbCol : groupBys) {
+          AbstractExpression expr=gbCol.expression;
           boolean foundMatch=false;
           for (int j=0; j < groupBys.size(); j++) {
-            if (groupBys.get(i).expression.equals(indexedExprs.get(j))) {
+            AbstractExpression indexExpr=indexedExprs.get(j);
+            List<AbstractExpression> binding=expr.bindingToIndexedExpression(indexExpr);
+            if (binding != null) {
+              allBindings.addAll(binding);
               foundMatch=true;
               break;
             }
@@ -62,11 +87,14 @@
             break;
           }
         }
-        if (replacable) {
-          IndexScanPlanNode indexScanNode=new IndexScanPlanNode((SeqScanPlanNode)root,null,index,SortDirectionType.ASC);
-          return indexScanNode;
-        }
       }
+      if (!replacable) {
+        continue;
+      }
+      IndexScanPlanNode indexScanNode=new IndexScanPlanNode((SeqScanPlanNode)root,null,index,SortDirectionType.INVALID);
+      indexScanNode.setForGroupingOnly();
+      indexScanNode.setBindings(allBindings);
+      return indexScanNode;
     }
   }
   return root;

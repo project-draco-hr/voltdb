@@ -1,5 +1,5 @@
 {
-  AbstractPlanNode pn=compileWithJoinOrder("select * FROM T1, T2, T3, T4, T5, T6, T7","T7,T6,T5,T4,T3,T2,T1");
+  AbstractPlanNode pn=compileSPWithJoinOrder("select * FROM T1, T2, T3, T4, T5, T6, T7","T7,T6,T5,T4,T3,T2,T1");
   AbstractPlanNode n=pn.getChild(0).getChild(0);
   for (int ii=1; ii <= 7; ii++) {
     if (ii == 6) {
@@ -13,7 +13,7 @@
       n=node.getChild(0);
     }
   }
-  pn=compileWithJoinOrder("select * FROM T1, T2, T3, T4, T5, T6, T7","T1,T2,T3,T4,T5,T6,T7");
+  pn=compileSPWithJoinOrder("select * FROM T1, T2, T3, T4, T5, T6, T7","T1,T2,T3,T4,T5,T6,T7");
   n=pn.getChild(0).getChild(0);
   for (int ii=7; ii > 0; ii--) {
     if (ii == 2) {
@@ -26,5 +26,57 @@
       assertTrue(((SeqScanPlanNode)n.getChild(1)).getTargetTableName().endsWith(Integer.toString(ii)));
       n=node.getChild(0);
     }
+  }
+  pn=compileSPWithJoinOrder("select * from T1, T2 where A=B","  T1  ,  T2  ");
+  System.out.println(pn.toExplainPlanString());
+  n=pn.getChild(0).getChild(0);
+  assertEquals("T1",((SeqScanPlanNode)n.getChild(0)).getTargetTableName());
+  assertEquals("T2",((SeqScanPlanNode)n.getChild(1)).getTargetTableName());
+  pn=compileSPWithJoinOrder("select * from T1, T2 where A=B","  T2,T1  ");
+  n=pn.getChild(0).getChild(0);
+  assertEquals("T2",((SeqScanPlanNode)n.getChild(0)).getTargetTableName());
+  assertEquals("T1",((SeqScanPlanNode)n.getChild(1)).getTargetTableName());
+  pn=compileSPWithJoinOrder("select * from T1, T2 where A=B","T2,T1,  ");
+  n=pn.getChild(0).getChild(0);
+  assertEquals("T2",((SeqScanPlanNode)n.getChild(0)).getTargetTableName());
+  assertEquals("T1",((SeqScanPlanNode)n.getChild(1)).getTargetTableName());
+  pn=compileSPWithJoinOrder("select * from T1, T2 where A=B","T1,T2,");
+  n=pn.getChild(0).getChild(0);
+  assertEquals("T1",((SeqScanPlanNode)n.getChild(0)).getTargetTableName());
+  assertEquals("T2",((SeqScanPlanNode)n.getChild(1)).getTargetTableName());
+  try {
+    compileWithInvalidJoinOrder("select * from T1, T2 where A=B","T1,Z");
+    fail();
+  }
+ catch (  Exception ex) {
+    assertTrue(ex.getMessage().indexOf(" doesn't exist ") != -1);
+  }
+  try {
+    compileWithInvalidJoinOrder("select * from T1, T2 where A=B","T1;T2");
+    fail();
+  }
+ catch (  Exception ex) {
+    assertTrue(ex.getMessage().indexOf(" does not contain the correct number of elements") != -1);
+  }
+  try {
+    compileWithInvalidJoinOrder("select * from T1, T2 where A=B","T1,,T2");
+    fail();
+  }
+ catch (  Exception ex) {
+    assertTrue(ex.getMessage().indexOf(" does not contain the correct number of elements") != -1);
+  }
+  try {
+    compileWithInvalidJoinOrder("select * from T1, T2 where A=B",",T1,T2");
+    fail();
+  }
+ catch (  Exception ex) {
+    assertTrue(ex.getMessage().indexOf(" does not contain the correct number of elements") != -1);
+  }
+  try {
+    compileWithInvalidJoinOrder("select * from T1, T2 where A=B"," ,T1,T2");
+    fail();
+  }
+ catch (  Exception ex) {
+    assertTrue(ex.getMessage().indexOf(" does not contain the correct number of elements") != -1);
   }
 }

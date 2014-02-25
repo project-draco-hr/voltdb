@@ -1,7 +1,7 @@
 {
   System.out.println("\n\nTESTING TABLE STATS\n\n\n");
   Client client=getFullyConnectedClient();
-  ColumnInfo[] expectedSchema=new ColumnInfo[11];
+  ColumnInfo[] expectedSchema=new ColumnInfo[12];
   expectedSchema[0]=new ColumnInfo("TIMESTAMP",VoltType.BIGINT);
   expectedSchema[1]=new ColumnInfo("HOST_ID",VoltType.INTEGER);
   expectedSchema[2]=new ColumnInfo("HOSTNAME",VoltType.STRING);
@@ -13,14 +13,30 @@
   expectedSchema[8]=new ColumnInfo("TUPLE_ALLOCATED_MEMORY",VoltType.INTEGER);
   expectedSchema[9]=new ColumnInfo("TUPLE_DATA_MEMORY",VoltType.INTEGER);
   expectedSchema[10]=new ColumnInfo("STRING_DATA_MEMORY",VoltType.INTEGER);
+  expectedSchema[11]=new ColumnInfo("TUPLE_LIMIT",VoltType.INTEGER);
   VoltTable expectedTable=new VoltTable(expectedSchema);
   VoltTable[] results=null;
-  results=client.callProcedure("@Statistics","table",0).getResults();
-  System.out.println("Test statistics table: " + results[0].toString());
-  assertEquals(1,results.length);
-  validateSchema(results[0],expectedTable);
-  assertEquals(HOSTS * SITES * 3,results[0].getRowCount());
-  validateRowSeenAtAllSites(results[0],"TABLE_NAME","WAREHOUSE",true);
-  validateRowSeenAtAllSites(results[0],"TABLE_NAME","NEW_ORDER",true);
-  validateRowSeenAtAllSites(results[0],"TABLE_NAME","ITEM",true);
+  boolean success=false;
+  long start=System.currentTimeMillis();
+  while (!success) {
+    if (System.currentTimeMillis() - start > 60000)     fail("Took too long");
+    success=true;
+    results=client.callProcedure("@Statistics","table",0).getResults();
+    System.out.println("Test statistics table: " + results[0].toString());
+    assertEquals(1,results.length);
+    validateSchema(results[0],expectedTable);
+    if (HOSTS * SITES * 3 != results[0].getRowCount()) {
+      success=false;
+    }
+    if (success) {
+      success=validateRowSeenAtAllSites(results[0],"TABLE_NAME","WAREHOUSE",true);
+    }
+    if (success) {
+      success=validateRowSeenAtAllSites(results[0],"TABLE_NAME","NEW_ORDER",true);
+    }
+    if (success) {
+      validateRowSeenAtAllSites(results[0],"TABLE_NAME","ITEM",true);
+    }
+    if (success)     break;
+  }
 }

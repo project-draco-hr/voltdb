@@ -1,0 +1,73 @@
+{
+  HashMap<String,List<AbstractExpression>> baseTableAliases=new HashMap<String,List<AbstractExpression>>();
+  for (  ParsedColInfo col : orderColumns) {
+    AbstractExpression expr=col.expression;
+    List<AbstractExpression> baseTVEs=expr.findBaseTVEs();
+    if (baseTVEs.size() != 1) {
+      continue;
+    }
+    AbstractExpression baseTVE=baseTVEs.get(0);
+    String nextTableAlias=((TupleValueExpression)baseTVE).getTableAlias();
+    assert(nextTableAlias != null);
+    List<AbstractExpression> perTable=baseTableAliases.get(nextTableAlias);
+    if (perTable == null) {
+      perTable=new ArrayList<AbstractExpression>();
+      baseTableAliases.put(nextTableAlias,perTable);
+    }
+    perTable.add(expr);
+  }
+  if (tableAliasIndexMap.size() > baseTableAliases.size()) {
+    return false;
+  }
+  boolean allScansAreDeterministic=true;
+  for (  Entry<String,List<AbstractExpression>> orderedAlias : baseTableAliases.entrySet()) {
+    List<AbstractExpression> orderedAliasExprs=orderedAlias.getValue();
+    Integer tableId=tableAliasIndexMap.get(orderedAlias.getKey());
+    if (tableId == null) {
+      assert(false);
+      return false;
+    }
+    StmtTableScan tableScan=stmtCache.get(tableId);
+    if (tableScan == null) {
+      assert(false);
+      return false;
+    }
+    Table table=tableScan.m_table;
+    if (table == null) {
+      return false;
+    }
+    allScansAreDeterministic=false;
+    for (    Index index : table.getIndexes()) {
+      if (!index.getUnique()) {
+        continue;
+      }
+      List<AbstractExpression> indexExpressions=new ArrayList<AbstractExpression>();
+      String jsonExpr=index.getExpressionsjson();
+      if (jsonExpr.isEmpty()) {
+        for (        ColumnRef cref : index.getColumns()) {
+          Column col=cref.getColumn();
+          TupleValueExpression tve=new TupleValueExpression(table.getTypeName(),orderedAlias.getKey(),col.getName(),col.getName(),col.getIndex());
+          indexExpressions.add(tve);
+        }
+      }
+ else {
+        try {
+          indexExpressions=AbstractExpression.fromJSONArrayString(jsonExpr,tableScan);
+        }
+ catch (        JSONException e) {
+          e.printStackTrace();
+          assert(false);
+          continue;
+        }
+      }
+      if (orderedAliasExprs.containsAll(indexExpressions)) {
+        allScansAreDeterministic=true;
+        break;
+      }
+    }
+    if (!allScansAreDeterministic) {
+      return false;
+    }
+  }
+  return true;
+}
