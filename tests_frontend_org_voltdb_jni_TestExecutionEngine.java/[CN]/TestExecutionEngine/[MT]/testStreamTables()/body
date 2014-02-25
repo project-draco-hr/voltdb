@@ -16,15 +16,16 @@
   loadTestTables(sourceEngine,m_catalog);
   sourceEngine.activateTableStream(WAREHOUSE_TABLEID,TableStreamType.RECOVERY,Long.MAX_VALUE,new SnapshotPredicates(-1).toBytes());
   sourceEngine.activateTableStream(STOCK_TABLEID,TableStreamType.RECOVERY,Long.MAX_VALUE,new SnapshotPredicates(-1).toBytes());
-  BBContainer origin=DBBPool.allocateDirect(1024 * 1024 * 2);
-  try {
-    origin.b().clear();
-    BBContainer container=new BBContainer(origin.b()){
-      @Override public void discard(){
-        checkDoubleFree();
-      }
+  final BBContainer origin=DBBPool.allocateDirect(1024 * 1024 * 2);
+  origin.b().clear();
+  final BBContainer container=new BBContainer(origin.b()){
+    @Override public void discard(){
+      checkDoubleFree();
+      origin.discard();
     }
+  }
 ;
+  try {
     List<BBContainer> output=new ArrayList<BBContainer>();
     output.add(container);
     int serialized=sourceEngine.tableStreamSerializeMore(WAREHOUSE_TABLEID,TableStreamType.RECOVERY,output).getSecond()[0];
@@ -47,6 +48,6 @@
     assertEquals(sourceEngine.tableHashCode(STOCK_TABLEID),destinationEngine.get().tableHashCode(STOCK_TABLEID));
   }
   finally {
-    origin.discard();
+    container.discard();
   }
 }

@@ -16,20 +16,21 @@
   SnapshotPredicates predicates=new SnapshotPredicates(-1);
   predicates.addPredicate(new HashRangeExpressionBuilder().put(0x00000000,0x7fffffff).build(0),true);
   sourceEngine.activateTableStream(STOCK_TABLEID,TableStreamType.ELASTIC_INDEX,Long.MAX_VALUE,predicates.toBytes());
-  BBContainer origin=DBBPool.allocateDirect(1024 * 1024 * 2);
-  try {
-    origin.b().clear();
-    BBContainer container=new BBContainer(origin.b()){
-      @Override public void discard(){
-        checkDoubleFree();
-      }
+  final BBContainer origin=DBBPool.allocateDirect(1024 * 1024 * 2);
+  origin.b().clear();
+  BBContainer container=new BBContainer(origin.b()){
+    @Override public void discard(){
+      checkDoubleFree();
+      origin.discard();
     }
+  }
 ;
+  try {
     List<BBContainer> output=new ArrayList<BBContainer>();
     output.add(container);
     assertEquals(0,sourceEngine.tableStreamSerializeMore(STOCK_TABLEID,TableStreamType.ELASTIC_INDEX,output).getSecond()[0]);
   }
   finally {
-    origin.discard();
+    container.discard();
   }
 }
