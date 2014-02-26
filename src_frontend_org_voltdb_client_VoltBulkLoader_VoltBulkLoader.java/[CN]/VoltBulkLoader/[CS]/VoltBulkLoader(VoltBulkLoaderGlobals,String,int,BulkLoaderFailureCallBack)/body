@@ -5,16 +5,29 @@
   m_vblGlobals=vblGlobals;
   m_tableName=tableName;
   VoltTable procInfo=m_clientImpl.callProcedure("@SystemCatalog","COLUMNS").getResults()[0];
-  TreeMap<Integer,VoltType> columnTypes=new TreeMap<Integer,VoltType>();
+  m_mappedColumnTypes=new TreeMap<Integer,VoltType>();
   m_colNames=new TreeMap<Integer,String>();
   m_partitionedColumnIndex=-1;
   m_partitionColumnType=VoltType.NULL;
+  int sleptTimes=0;
+  while (!m_clientImpl.isHashinatorInitialized() && sleptTimes < 120) {
+    try {
+      Thread.sleep(500);
+      sleptTimes++;
+    }
+ catch (    InterruptedException ex) {
+      ;
+    }
+  }
+  if (sleptTimes >= 120) {
+    throw new Exception("VoltBulkLoader unable to start due to uninitialized Client.");
+  }
   while (procInfo.advanceRow()) {
     String table=procInfo.getString("TABLE_NAME");
     if (tableName.equalsIgnoreCase(table)) {
       VoltType vtype=VoltType.typeFromString(procInfo.getString("TYPE_NAME"));
       int idx=(int)procInfo.getLong("ORDINAL_POSITION") - 1;
-      columnTypes.put(idx,vtype);
+      m_mappedColumnTypes.put(idx,vtype);
       m_colNames.put(idx,procInfo.getString("COLUMN_NAME"));
       String remarks=procInfo.getString("REMARKS");
       if (remarks != null && remarks.equalsIgnoreCase("PARTITION_COLUMN")) {
@@ -25,12 +38,12 @@
       }
     }
   }
-  m_columnCnt=columnTypes.size();
+  m_columnCnt=m_mappedColumnTypes.size();
   if (m_columnCnt == 0) {
     m_log.error("Table " + tableName + " Not found");
     throw new Exception("Table Name parameter does not match any known table.");
   }
-  m_columnTypes=(VoltType[])columnTypes.values().toArray(new VoltType[columnTypes.size()]);
+  m_columnTypes=getColumnTypes();
   m_colInfo=new VoltTable.ColumnInfo[m_columnCnt];
   for (int i=0; i < m_columnCnt; i++) {
     VoltType type=m_columnTypes[i];

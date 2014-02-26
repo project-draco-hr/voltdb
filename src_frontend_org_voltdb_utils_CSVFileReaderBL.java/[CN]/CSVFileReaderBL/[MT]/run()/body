@@ -1,17 +1,17 @@
 {
   List<String> lineList;
   ClientImpl clientImpl=(ClientImpl)m_csvClient;
-  int sleptTimes=0;
-  while (!clientImpl.isHashinatorInitialized() && sleptTimes < 120) {
-    try {
-      Thread.sleep(500);
-      sleptTimes++;
-    }
- catch (    InterruptedException ex) {
-      ;
-    }
+  csvFailureCallback errorCB=new csvFailureCallback();
+  try {
+    bulkLoader=clientImpl.getNewBulkLoader(m_config.table,m_config.batch,errorCB);
+  }
+ catch (  Exception e) {
+    m_log.info("CSV Loader failed: " + e.getMessage());
+    return;
   }
   m_log.debug("Client Initialization Done.");
+  m_columnTypes=bulkLoader.getColumnTypes();
+  m_columnCount=m_columnTypes.length;
   while ((m_config.limitrows-- > 0)) {
     if (m_errored) {
       break;
@@ -34,10 +34,13 @@
         break;
       }
       m_totalRowCount.incrementAndGet();
-      int currLineNumber=m_listReader.getLineNumber();
       String[] correctedLine=lineList.toArray(new String[lineList.size()]);
+      if (correctedLine == null || correctedLine.length <= 0) {
+        continue;
+      }
+      Object row_args[]=new Object[correctedLine.length];
       String lineCheckResult;
-      if ((lineCheckResult=checkparams_trimspace(correctedLine,m_columnCnt)) != null) {
+      if ((lineCheckResult=checkparams_trimspace(correctedLine,row_args)) != null) {
         String[] info={lineList.toString(),lineCheckResult};
         if (synchronizeErrorInfo(m_totalLineCount.get() + 1,info)) {
           m_errored=true;
@@ -45,22 +48,8 @@
         }
         continue;
       }
-      CSVLineWithMetaData lineData=new CSVLineWithMetaData(correctedLine,lineList,currLineNumber);
-      try {
-        PartitionSingleExecuteProcedureCallback cbmt=new PartitionSingleExecuteProcedureCallback(lineData);
-        if (m_csvClient.callProcedure(cbmt,m_insertProcedure,(Object[])correctedLine)) {
-          m_processedCount.incrementAndGet();
-        }
- else {
-          m_log.fatal("Failed to send CSV insert to VoltDB cluster.");
-          System.exit(1);
-        }
-      }
- catch (      IOException ex) {
-        String[] info={lineList.toString(),ex.toString()};
-        m_errored=synchronizeErrorInfo(currLineNumber,info);
-        return;
-      }
+      CSVLineWithMetaData lineData=new CSVLineWithMetaData(correctedLine,lineList,m_listReader.getLineNumber());
+      bulkLoader.insertRow(lineData,row_args);
     }
  catch (    SuperCsvException e) {
       m_log.error("Failed to process CSV line: " + e);
@@ -76,5 +65,13 @@ catch (    IOException ex) {
   }
   if (m_errorInfo.size() >= m_config.maxerrors) {
     m_log.warn("The number of failed rows exceeds the configured maximum failed rows: " + m_config.maxerrors);
+  }
+  try {
+    m_log.debug("Waiting for VoltBulkLoader to finish.");
+    bulkLoader.close();
+    m_log.debug("VoltBulkLoader Done.");
+  }
+ catch (  InterruptedException ex) {
+    m_log.warn("Stopped processing because of connection error. " + "A report will be generated with what we processed so far. Error: " + ex);
   }
 }
