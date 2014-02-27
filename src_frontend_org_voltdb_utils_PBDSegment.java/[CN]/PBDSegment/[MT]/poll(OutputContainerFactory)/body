@@ -1,7 +1,9 @@
 {
+  final ByteBuffer mbuf=m_buf.b();
+  final long mBufAddr=m_buf.address();
   if (!m_haveMAdvised) {
     m_haveMAdvised=true;
-    final long retval=PosixAdvise.madvise(m_bufAddr,m_buf.position(),PosixAdvise.POSIX_MADV_WILLNEED);
+    final long retval=PosixAdvise.madvise(m_buf.address(),mbuf.position(),PosixAdvise.POSIX_MADV_WILLNEED);
     if (retval != 0) {
       LOG.warn("madvise will need failed: " + retval);
     }
@@ -13,13 +15,13 @@
   final int nextCompressedLength=m_readBuf.getInt();
   final int nextFlags=m_readBuf.getInt();
   final boolean compressed=nextFlags == FLAG_COMPRESSED;
-  final int nextUncompressedLength=compressed ? (int)Snappy.uncompressedLength(m_bufAddr + m_readBuf.position(),nextCompressedLength) : nextCompressedLength;
+  final int nextUncompressedLength=compressed ? (int)Snappy.uncompressedLength(mBufAddr + m_readBuf.position(),nextCompressedLength) : nextCompressedLength;
   m_bytesRead+=nextUncompressedLength;
   if (compressed) {
     final BBContainer retcont=factory.getContainer(nextUncompressedLength);
     final ByteBuffer retbuf=retcont.b();
     retbuf.limit(nextUncompressedLength);
-    final long sourceAddr=m_bufAddr + m_readBuf.position();
+    final long sourceAddr=mBufAddr + m_readBuf.position();
     final long destAddr=retcont.address();
     Snappy.rawUncompress(sourceAddr,nextCompressedLength,destAddr);
     m_readBuf.position(m_readBuf.position() + nextCompressedLength);
