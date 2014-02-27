@@ -3,22 +3,23 @@
   final int remaining=cont.b().remaining();
   if (remaining < 32 || !buf.isDirect())   compress=false;
   final int maxCompressedSize=compress ? Snappy.maxCompressedLength(remaining) : remaining;
-  if (m_buf.remaining() < maxCompressedSize + m_objectHeaderBytes)   return false;
+  final ByteBuffer mbuf=m_buf.b();
+  if (mbuf.remaining() < maxCompressedSize + m_objectHeaderBytes)   return false;
   m_syncedSinceLastEdit=false;
   try {
-    final int objSizePosition=m_buf.position();
-    m_buf.position(m_buf.position() + m_objectHeaderBytes);
+    final int objSizePosition=mbuf.position();
+    mbuf.position(mbuf.position() + m_objectHeaderBytes);
     int written=maxCompressedSize;
     if (compress) {
-      final long destAddr=m_bufAddr + m_buf.position();
-      written=(int)Snappy.rawCompress(((DirectBuffer)buf).address() + buf.position(),remaining,destAddr);
-      m_buf.position(m_buf.position() + written);
+      final long destAddr=m_buf.address() + mbuf.position();
+      written=(int)Snappy.rawCompress(cont.address() + buf.position(),remaining,destAddr);
+      mbuf.position(mbuf.position() + written);
     }
  else {
-      m_buf.put(buf);
+      mbuf.put(buf);
     }
-    m_buf.putInt(objSizePosition,written);
-    m_buf.putInt(objSizePosition + 4,compress ? FLAG_COMPRESSED : 0);
+    mbuf.putInt(objSizePosition,written);
+    mbuf.putInt(objSizePosition + 4,compress ? FLAG_COMPRESSED : 0);
     buf.position(buf.limit());
     incrementNumEntries(remaining);
   }
