@@ -8,6 +8,7 @@
       return;
     }
     boolean expectedAnotherChunk=false;
+    Container c=null;
     try {
       ByteBuffer chunkLengthB=ByteBuffer.allocate(16);
       while (chunkLengthB.hasRemaining()) {
@@ -62,37 +63,37 @@
         fileInputBuffer.flip();
         nextChunkLength=CompressionService.uncompressedLength(fileInputBuffer);
       }
-      Container c=getOutputBuffer(nextChunkPartitionId);
+      c=getOutputBuffer(nextChunkPartitionId);
       boolean completedRead=false;
       int checksumStartPosition=0;
       int rowCount=0;
       try {
-        c.b.clear();
+        c.b().clear();
         if (isCompressed()) {
-          c.b.limit(nextChunkLength + m_tableHeader.capacity() + 4);
+          c.b().limit(nextChunkLength + m_tableHeader.capacity() + 4);
         }
  else {
-          c.b.limit((nextChunkLength - 8) + m_tableHeader.capacity());
+          c.b().limit((nextChunkLength - 8) + m_tableHeader.capacity());
         }
         m_tableHeader.position(0);
-        c.b.put(m_tableHeader);
-        c.b.position(c.b.position() + 4);
-        checksumStartPosition=c.b.position();
+        c.b().put(m_tableHeader);
+        c.b().position(c.b().position() + 4);
+        checksumStartPosition=c.b().position();
         if (isCompressed()) {
-          CompressionService.decompressBuffer(fileInputBuffer,c.b);
-          c.b.position(c.b.limit());
+          CompressionService.decompressBuffer(fileInputBuffer,c.b());
+          c.b().position(c.b().limit());
         }
  else {
-          while (c.b.hasRemaining()) {
-            final int read=m_saveFile.read(c.b);
+          while (c.b().hasRemaining()) {
+            final int read=m_saveFile.read(c.b());
             if (read == -1) {
               throw new EOFException();
             }
           }
         }
-        c.b.position(c.b.position() - 4);
-        rowCount=c.b.getInt();
-        c.b.position(checksumStartPosition);
+        c.b().position(c.b().position() - 4);
+        rowCount=c.b().getInt();
+        c.b().position(checksumStartPosition);
         completedRead=true;
       }
   finally {
@@ -102,11 +103,10 @@
           }
         }
       }
-      final int calculatedCRC=m_checksumType == ChecksumType.CRC32C ? DBBPool.getCRC32C(c.address(),c.b.position(),c.b.remaining()) : DBBPool.getCRC32(c.address(),c.b.position(),c.b.remaining());
+      final int calculatedCRC=m_checksumType == ChecksumType.CRC32C ? DBBPool.getCRC32C(c.address(),c.b().position(),c.b().remaining()) : DBBPool.getCRC32(c.address(),c.b().position(),c.b().remaining());
       if (calculatedCRC != nextChunkCRC) {
         m_corruptedPartitions.add(nextChunkPartitionId);
         if (m_continueOnCorruptedChunk) {
-          c.discard();
           m_chunkReads.release();
           continue;
         }
@@ -116,17 +116,16 @@
       }
       if (m_relevantPartitionIds != null) {
         if (!m_relevantPartitionIds.contains(nextChunkPartitionId)) {
-          c.discard();
           m_chunkReads.release();
           continue;
         }
       }
       boolean success=false;
       try {
-        c.b.limit(c.b.limit() - 4);
-        c.b.position(checksumStartPosition - 4);
-        c.b.putInt(rowCount);
-        c.b.position(0);
+        c.b().limit(c.b().limit() - 4);
+        c.b().position(checksumStartPosition - 4);
+        c.b().putInt(rowCount);
+        c.b().position(0);
         success=true;
       }
   finally {
@@ -138,6 +137,7 @@
       }
 synchronized (TableSaveFile.this) {
         m_availableChunks.offer(c);
+        c=null;
         TableSaveFile.this.notifyAll();
       }
     }
@@ -177,6 +177,9 @@ synchronized (TableSaveFile.this) {
         m_chunkReaderException=new IOException(e);
         TableSaveFile.this.notifyAll();
       }
+    }
+ finally {
+      if (c != null)       c.discard();
     }
   }
   DBBPool.cleanByteBuffer(fileInputBuffer);

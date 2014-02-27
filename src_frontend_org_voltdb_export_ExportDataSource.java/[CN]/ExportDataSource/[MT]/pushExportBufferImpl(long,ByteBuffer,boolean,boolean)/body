@@ -2,7 +2,6 @@
   final java.util.concurrent.atomic.AtomicBoolean deleted=new java.util.concurrent.atomic.AtomicBoolean(false);
   if (endOfStream) {
     assert(!m_endOfStream);
-    assert(bufferPtr == 0);
     assert(buffer == null);
     assert(!sync);
     m_endOfStream=endOfStream;
@@ -31,8 +30,9 @@
       try {
         m_committedBuffers.offer(new StreamBlock(new BBContainer(buffer){
           @Override public void discard(){
-            if (b.isDirect()) {
-              DBBPool.deleteCharArrayMemory(address());
+            final ByteBuffer buf=checkDoubleFree();
+            if (buf.isDirect()) {
+              DBBPool.cleanByteBuffer(buf);
             }
             deleted.set(true);
           }
@@ -42,7 +42,7 @@
  catch (      IOException e) {
         exportLog.error(e);
         if (!deleted.get()) {
-          DBBPool.deleteCharArrayMemory(bufferPtr);
+          DBBPool.cleanByteBuffer(buffer);
         }
       }
     }

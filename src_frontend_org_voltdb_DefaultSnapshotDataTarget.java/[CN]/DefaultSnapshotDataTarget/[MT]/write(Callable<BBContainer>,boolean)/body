@@ -18,9 +18,9 @@
   Future<BBContainer> compressionTask=null;
   if (prependLength) {
     BBContainer cont=DBBPool.allocateDirectAndPool(SnapshotSiteProcessor.m_snapshotBufferCompressedLen);
-    tupleData.b.position(tupleData.b.position() + 4);
-    cont.b.position(12);
-    compressionTask=CompressionService.compressAndCRC32cBufferAsync(tupleData.b,cont);
+    tupleData.b().position(tupleData.b().position() + 4);
+    cont.b().position(12);
+    compressionTask=CompressionService.compressAndCRC32cBufferAsync(tupleData.b(),cont);
   }
   final Future<BBContainer> compressionTaskFinal=compressionTask;
   ListenableFuture<?> writeTask=m_es.submit(new Callable<Object>(){
@@ -34,6 +34,7 @@
             m_simulateBlockedWrite.await();
           }
           if (m_simulateFullDiskWritingChunk) {
+            compressionTaskFinal.get().discard();
             throw new IOException("Disk full");
           }
         }
@@ -41,12 +42,12 @@
         if (prependLength) {
           BBContainer payloadContainer=compressionTaskFinal.get();
           try {
-            final ByteBuffer payloadBuffer=payloadContainer.b;
+            final ByteBuffer payloadBuffer=payloadContainer.b();
             payloadBuffer.position(0);
             ByteBuffer lengthPrefix=ByteBuffer.allocate(12);
             m_bytesAllowedBeforeSync.acquire(payloadBuffer.remaining());
             lengthPrefix.putInt(payloadBuffer.remaining() - 16);
-            lengthPrefix.putInt(tupleData.b.getInt(0));
+            lengthPrefix.putInt(tupleData.b().getInt(0));
             PureJavaCrc32C crc=new PureJavaCrc32C();
             crc.update(lengthPrefix.array(),0,8);
             lengthPrefix.putInt((int)crc.getValue());
@@ -62,8 +63,8 @@
           }
         }
  else {
-          while (tupleData.b.hasRemaining()) {
-            totalWritten+=m_channel.write(tupleData.b);
+          while (tupleData.b().hasRemaining()) {
+            totalWritten+=m_channel.write(tupleData.b());
           }
         }
         m_bytesWritten+=totalWritten;
