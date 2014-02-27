@@ -9,18 +9,19 @@
  catch (  Throwable t) {
     return Futures.immediateFailedFuture(t);
   }
-  final BBContainer tupleData=tupleDataTemp;
+  final BBContainer tupleDataCont=tupleDataTemp;
   if (m_writeFailed) {
-    tupleData.discard();
+    tupleDataCont.discard();
     return null;
   }
+  ByteBuffer tupleData=tupleDataCont.b();
   m_outstandingWriteTasks.incrementAndGet();
   Future<BBContainer> compressionTask=null;
   if (prependLength) {
     BBContainer cont=DBBPool.allocateDirectAndPool(SnapshotSiteProcessor.m_snapshotBufferCompressedLen);
-    tupleData.b().position(tupleData.b().position() + 4);
+    tupleData.position(tupleData.position() + 4);
     cont.b().position(12);
-    compressionTask=CompressionService.compressAndCRC32cBufferAsync(tupleData.b(),cont);
+    compressionTask=CompressionService.compressAndCRC32cBufferAsync(tupleData,cont);
   }
   final Future<BBContainer> compressionTaskFinal=compressionTask;
   ListenableFuture<?> writeTask=m_es.submit(new Callable<Object>(){
@@ -38,6 +39,7 @@
             throw new IOException("Disk full");
           }
         }
+        final ByteBuffer tupleData=tupleDataCont.b();
         int totalWritten=0;
         if (prependLength) {
           BBContainer payloadContainer=compressionTaskFinal.get();
@@ -47,7 +49,7 @@
             ByteBuffer lengthPrefix=ByteBuffer.allocate(12);
             m_bytesAllowedBeforeSync.acquire(payloadBuffer.remaining());
             lengthPrefix.putInt(payloadBuffer.remaining() - 16);
-            lengthPrefix.putInt(tupleData.b().getInt(0));
+            lengthPrefix.putInt(tupleData.getInt(0));
             PureJavaCrc32C crc=new PureJavaCrc32C();
             crc.update(lengthPrefix.array(),0,8);
             lengthPrefix.putInt((int)crc.getValue());
@@ -63,8 +65,8 @@
           }
         }
  else {
-          while (tupleData.b().hasRemaining()) {
-            totalWritten+=m_channel.write(tupleData.b());
+          while (tupleData.hasRemaining()) {
+            totalWritten+=m_channel.write(tupleData);
           }
         }
         m_bytesWritten+=totalWritten;
@@ -78,7 +80,7 @@
       }
  finally {
         try {
-          tupleData.discard();
+          tupleDataCont.discard();
         }
   finally {
           m_outstandingWriteTasksLock.lock();
