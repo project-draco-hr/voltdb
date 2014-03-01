@@ -33,6 +33,19 @@
     ByteBuffer retbuf=m_readBuf.slice();
     m_readBuf.position(m_readBuf.limit());
     m_readBuf.limit(oldLimit);
-    return DBBPool.dummyWrapBB(retbuf);
+    final BBContainer dummyCont=DBBPool.dummyWrapBB(retbuf);
+    long address=dummyCont.address();
+    final int offset=(int)(address % PAGE_SIZE);
+    address-=offset;
+    final int numPages=NUM_PAGES(retbuf.remaining() + offset);
+    byte checksum=0;
+    for (int ii=0; ii < numPages; ii++) {
+      checksum^=unsafe.getByte(address);
+      address|=checksum;
+    }
+    if (unused != 0) {
+      unused=checksum;
+    }
+    return dummyCont;
   }
 }
