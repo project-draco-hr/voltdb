@@ -12,30 +12,54 @@
     partitioningColumn=targetTable.getPartitioncolumn();
   }
   CompiledPlan retval;
-  ParsedSelectStmt subselectStmt=m_parsedInsert.getSubselect();
-  if (subselectStmt != null) {
-    CompiledPlan subselectPlan=getBestCostPlan(subselectStmt,false);
+  AbstractParsedStmt subStmt=m_parsedInsert.getSubselect();
+  if (subStmt != null) {
+    CompiledPlan subselectPlan=getBestCostPlan(subStmt,false);
     int partitionedTableCount=m_partitioning.getCountOfPartitionedTables();
     Set<Integer> exportedPartitioningColumns=new HashSet<>(partitionedTableCount);
     if (partitionedTableCount > 0) {
       if (targetIsReplicated) {
-        throw new PlanningErrorException("The replicated table, '" + targetTable.getTypeName() + "', must not be the recipient of partitioned data in a single statement. "+ " Use separate INSERT and SELECT statements, "+ " optionally within a stored procedure.");
+        throw new PlanningErrorException("The replicated table, '" + targetTable.getTypeName() + "', must not be the recipient of partitioned data in a single statement. "+ " Use separate INSERT and SELECT statements,"+ " optionally within a stored procedure.");
       }
-      exportedPartitioningColumns.add(0);
-      if (exportedPartitioningColumns.isEmpty()) {
-        throw new PlanningErrorException("The partitioning column '" + partitioningColumn.getName() + "' of the partitioned table '"+ targetTable.getTypeName()+ "' must be explicitly set to a partitioning column in the SELECT clause.");
+      if (!(subStmt instanceof ParsedSelectStmt)) {
+        throw new PlanningErrorException("The partitioned table '" + targetTable.getTypeName() + "' must not be updated directly from a UNION or other set operation.");
       }
-    }
-    int ii=0;
-    for (    Column column : columns) {
-      VoltType exprType=subselectStmt.displayColumns().get(ii).expression.getValueType();
-      assert(VoltType.get((byte)column.getType()) == exprType);
-      if (column.equals(partitioningColumn)) {
-        if ((!exportedPartitioningColumns.isEmpty()) && !exportedPartitioningColumns.contains(ii)) {
-          throw new PlanningErrorException("The value being assigned to the partitioning column '" + partitioningColumn.getName() + "' of the partitioned table '"+ targetTable.getTypeName()+ "' is not a partitioning column value in the SELECT clause. index="+ ii);
+      ParsedSelectStmt subselectStmt=(ParsedSelectStmt)subStmt;
+      int columnPosition=0;
+      for (      ParsedColInfo displayCol : subselectStmt.displayColumns()) {
+        AbstractExpression expr=displayCol.expression;
+        if (expr instanceof TupleValueExpression) {
+          TupleValueExpression tve=(TupleValueExpression)expr;
+          StmtTableScan scan=subselectStmt.m_tableAliasMap.get(tve.getTableAlias());
+          if (scan.isPartitionedOnColumnIndex(tve.getColumnIndex())) {
+            exportedPartitioningColumns.add(columnPosition);
+          }
         }
+        ++columnPosition;
       }
-      ++ii;
+      if (exportedPartitioningColumns.isEmpty()) {
+        throw new PlanningErrorException("The partitioning column '" + partitioningColumn.getName() + "' of the partitioned table '"+ targetTable.getTypeName()+ "' must be explicitly set to a partitioning column in the SELECT clause."+ " Use separate INSERT and SELECT statements,"+ " optionally within a stored procedure.");
+      }
+      int ii=0;
+      for (      Column column : columns) {
+        int jj=m_parsedInsert.m_targetNames.indexOf(column.getTypeName());
+        if (jj == -1) {
+          throw new PlanningErrorException("Default values are not supported in 'INSERT ONTO SELECT FROM'." + " Each column in table '" + targetTable.getTypeName() + "' must be provided an explicit value.");
+        }
+        if (jj != ii) {
+          throw new PlanningErrorException("Columns in 'INSERT ONTO SELECT FROM'." + " for table '" + targetTable.getTypeName() + "' must be listed in the order that they were defined.");
+        }
+        VoltType exprType=subselectStmt.displayColumns().get(jj).expression.getValueType();
+        if (VoltType.get((byte)column.getType()) != exprType) {
+          throw new PlanningErrorException("Column '" + column.getName() + "' in 'INSERT ONTO SELECT FROM'."+ " for table '"+ targetTable.getTypeName()+ "' must be set to value of the same exact type.");
+        }
+        if (column.equals(partitioningColumn)) {
+          if ((!exportedPartitioningColumns.isEmpty()) && !exportedPartitioningColumns.contains(ii)) {
+            throw new PlanningErrorException("The value being assigned to the partitioning column '" + partitioningColumn.getName() + "' of the partitioned table '"+ targetTable.getTypeName()+ "' is not a partitioning column value in the SELECT clause. index="+ ii);
+          }
+        }
+        ++ii;
+      }
     }
     retval=subselectPlan;
     retval.readOnly=false;
