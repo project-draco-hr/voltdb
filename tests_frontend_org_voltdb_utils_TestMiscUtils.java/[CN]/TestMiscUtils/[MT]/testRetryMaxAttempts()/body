@@ -1,22 +1,21 @@
 {
   ScheduledExecutorService stpe=Executors.newScheduledThreadPool(1);
   ExecutorService es=Executors.newFixedThreadPool(1);
-  final Semaphore sem=new Semaphore(0);
+  final AtomicInteger count=new AtomicInteger();
   Callable<Object> c=new Callable<Object>(){
-    private int count=0;
     public Object call() throws Exception {
-      count++;
-      if (count > 5) {
-        sem.release();
-        return null;
-      }
-      System.out.println(count);
+      count.incrementAndGet();
       throw new RetryException();
     }
   }
 ;
-  CoreUtils.retryHelper(stpe,es,c,0,1,TimeUnit.MILLISECONDS,10,TimeUnit.MILLISECONDS);
-  sem.acquire();
+  try {
+    CoreUtils.retryHelper(stpe,es,c,5,1,TimeUnit.MILLISECONDS,10,TimeUnit.MILLISECONDS).get();
+    fail();
+  }
+ catch (  Exception e) {
+  }
   stpe.shutdown();
   es.shutdown();
+  assertEquals(5,count.get());
 }
