@@ -1,42 +1,23 @@
 {
-  byte[] buildInfoBytes=outputJar.get(CatalogUtil.CATALOG_BUILDINFO_FILENAME);
-  if (buildInfoBytes == null) {
-    throw new IOException("Catalog build information not found - please build your application using the current version of VoltDB.");
-  }
-  String buildInfo;
-  buildInfo=new String(buildInfoBytes,Constants.UTF8ENCODING);
-  String[] buildInfoLines=buildInfo.split("\n");
-  if (buildInfoLines.length != 5) {
-    throw new IOException("Catalog built with an old version of VoltDB - please build your application using the current version of VoltDB.");
-  }
-  String versionFromCatalog=buildInfoLines[0].trim();
-  if (VoltDB.Configuration.m_forceCatalogUpgrade || !CatalogUtil.isCatalogCompatible(versionFromCatalog)) {
+  String[] buildInfoLines=CatalogUtil.getBuildInfoFromJar(outputJar);
+  String versionFromCatalog=buildInfoLines[0];
+  if (VoltDB.Configuration.m_forceCatalogUpgrade || !versionFromCatalog.equals(VoltDB.instance().getVersionString())) {
+    VoltCompilerReader projectReader=(outputJar.containsKey("project.xml") ? new VoltCompilerJarFileReader(outputJar,"project.xml") : null);
     String versionFromVoltDB=VoltDB.instance().getVersionString();
     buildInfoLines[0]=versionFromVoltDB;
     buildInfoLines[1]=String.format("voltdb-auto-upgrade-to-%s",versionFromVoltDB);
-    buildInfoBytes=StringUtils.join(buildInfoLines,"\n").getBytes();
+    byte[] buildInfoBytes=StringUtils.join(buildInfoLines,"\n").getBytes();
     outputJar.put(CatalogUtil.CATALOG_BUILDINFO_FILENAME,buildInfoBytes);
-    Set<String> ddlNames=new HashSet<String>();
-    VoltCompilerReader projectReader=(outputJar.containsKey("project.xml") ? new VoltCompilerJarFileReader(outputJar,"project.xml") : null);
-    if (projectReader != null) {
-      DatabaseType database=getProjectDatabase(projectReader);
-      SchemasType schemas=database.getSchemas();
-      if (schemas != null) {
-        for (        SchemasType.Schema schema : schemas.getSchema()) {
-          ddlNames.add(new File(schema.getPath()).getName());
-        }
-      }
-    }
     List<VoltCompilerReader> ddlReaderList=new ArrayList<VoltCompilerReader>();
-    Entry<String,byte[]> entry=outputJar.firstEntry();
-    while (entry != null) {
-      String path=entry.getKey();
-      if (path.toLowerCase().endsWith(".sql")) {
-        if (!ddlNames.contains(new File(path).getName())) {
+    if (projectReader == null) {
+      Entry<String,byte[]> entry=outputJar.firstEntry();
+      while (entry != null) {
+        String path=entry.getKey();
+        if (path.toLowerCase().endsWith(".sql")) {
           ddlReaderList.add(new VoltCompilerJarFileReader(outputJar,path));
         }
+        entry=outputJar.higherEntry(entry.getKey());
       }
-      entry=outputJar.higherEntry(entry.getKey());
     }
     ClassLoader originalClassLoader=m_classLoader;
     try {
@@ -46,6 +27,7 @@
       CatalogContext catalogContext=VoltDB.instance().getCatalogContext();
       final String outputJarPath=(catalogContext != null ? new File(catalogContext.cluster.getVoltroot(),jarName).getPath() : VoltDB.Configuration.getPathToCatalogForTest(jarName));
       final String outputTextPath=(catalogContext != null ? new File(catalogContext.cluster.getVoltroot(),textName).getPath() : VoltDB.Configuration.getPathToCatalogForTest(textName));
+      consoleLog.info(String.format("Version %s catalog will be automatically upgraded to version %s.",versionFromCatalog,versionFromVoltDB));
       boolean success=compileInternal(projectReader,outputJarPath,ddlReaderList,outputJar);
       PrintStream outputStream=new PrintStream(outputTextPath);
       try {
