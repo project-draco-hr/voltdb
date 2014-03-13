@@ -1,25 +1,16 @@
 {
-  CompiledPlan retval=new CompiledPlan();
+  CompiledPlan retval;
   AbstractParsedStmt nextStmt=null;
   if (m_parsedUnion != null) {
     nextStmt=m_parsedUnion;
     retval=getNextUnionPlan();
-    if (retval != null) {
-      retval.readOnly=true;
-    }
   }
  else   if (m_parsedSelect != null) {
     nextStmt=m_parsedSelect;
-    retval.rootPlanGraph=getNextSelectPlan();
-    retval.readOnly=true;
-    if (retval.rootPlanGraph != null) {
-      retval.selectStmt=m_parsedSelect;
-      boolean orderIsDeterministic=m_parsedSelect.isOrderDeterministic();
-      boolean contentIsDeterministic=(m_parsedSelect.hasLimitOrOffset() == false) || orderIsDeterministic;
-      retval.statementGuaranteesDeterminism(contentIsDeterministic,orderIsDeterministic);
-    }
+    retval=getNextSelectPlan();
   }
  else {
+    retval=new CompiledPlan();
     retval.readOnly=false;
     if (m_parsedInsert != null) {
       nextStmt=m_parsedInsert;
@@ -36,9 +27,11 @@
  else {
       throw new RuntimeException("setupForNewPlans not called or not successfull.");
     }
-    assert(nextStmt.tableList.size() == 1);
-    if (nextStmt.tableList.get(0).getIsreplicated())     retval.replicatedTableDML=true;
-    retval.statementGuaranteesDeterminism(true,true);
+    assert(nextStmt.m_tableList.size() == 1);
+    if (nextStmt.m_tableList.get(0).getIsreplicated()) {
+      retval.replicatedTableDML=true;
+    }
+    retval.statementGuaranteesDeterminism(false,true);
   }
   if (retval == null || retval.rootPlanGraph == null) {
     return null;

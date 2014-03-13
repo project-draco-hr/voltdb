@@ -1,7 +1,7 @@
 {
   assert(subAssembler != null);
-  assert(m_parsedDelete.tableList.size() == 1);
-  Table targetTable=m_parsedDelete.tableList.get(0);
+  assert(m_parsedDelete.m_tableList.size() == 1);
+  Table targetTable=m_parsedDelete.m_tableList.get(0);
   AbstractPlanNode subSelectRoot=subAssembler.nextPlan();
   if (subSelectRoot == null) {
     return null;
@@ -17,15 +17,19 @@
   proj_schema.addColumn(new SchemaColumn("VOLT_TEMP_TABLE","VOLT_TEMP_TABLE","tuple_address","tuple_address",addressExpr));
   projectionNode.setOutputSchema(proj_schema);
   assert(subSelectRoot instanceof AbstractScanPlanNode);
-  if (m_partitioning.wasSpecifiedAsSingle() && (subSelectRoot instanceof SeqScanPlanNode) && (((SeqScanPlanNode)subSelectRoot).getPredicate() == null)) {
+  if ((subSelectRoot instanceof SeqScanPlanNode) && (((SeqScanPlanNode)subSelectRoot).getPredicate() == null)) {
     deleteNode.setTruncate(true);
-    return deleteNode;
+    if (m_partitioning.wasSpecifiedAsSingle()) {
+      return deleteNode;
+    }
   }
-  subSelectRoot.addInlinePlanNode(projectionNode);
-  deleteNode.addAndLinkChild(subSelectRoot);
+ else {
+    deleteNode.addAndLinkChild(subSelectRoot);
+    subSelectRoot.addInlinePlanNode(projectionNode);
+  }
   if (m_partitioning.wasSpecifiedAsSingle() || m_partitioning.isInferredSingle()) {
     return deleteNode;
   }
-  AbstractPlanNode recvNode=subAssembler.addSendReceivePair(deleteNode);
+  AbstractPlanNode recvNode=SubPlanAssembler.addSendReceivePair(deleteNode);
   return addSumOrLimitAndSendToDMLNode(recvNode,targetTable.getIsreplicated());
 }

@@ -1,8 +1,8 @@
 {
   if (m_bestAndOnlyPlanWasGenerated)   return null;
   m_bestAndOnlyPlanWasGenerated=true;
-  assert(m_parsedInsert.tableList.size() == 1);
-  Table targetTable=m_parsedInsert.tableList.get(0);
+  assert(m_parsedInsert.m_tableList.size() == 1);
+  Table targetTable=m_parsedInsert.m_tableList.get(0);
   InsertPlanNode insertNode=new InsertPlanNode();
   insertNode.setTargetTableName(targetTable.getTypeName());
   MaterializePlanNode materializeNode=new MaterializePlanNode();
@@ -61,6 +61,11 @@
       String fullColumnName=targetTable.getTypeName() + "." + column.getTypeName();
       m_partitioning.addPartitioningExpression(fullColumnName,expr,expr.getValueType());
     }
+    if (expr.getValueType().getValue() != column.getType() || expr.getValueSize() != column.getSize()) {
+      expr=new OperatorExpression(ExpressionType.OPERATOR_CAST,expr,null);
+      expr.setValueType(VoltType.get((byte)column.getType()));
+      expr.setValueSize(column.getSize());
+    }
     mat_schema.addColumn(new SchemaColumn("VOLT_TEMP_TABLE","VOLT_TEMP_TABLE",column.getTypeName(),column.getTypeName(),expr));
   }
   materializeNode.setOutputSchema(mat_schema);
@@ -70,9 +75,6 @@
     return insertNode;
   }
   insertNode.setMultiPartition(true);
-  SendPlanNode sendNode=new SendPlanNode();
-  sendNode.addAndLinkChild(insertNode);
-  AbstractPlanNode recvNode=new ReceivePlanNode();
-  recvNode.addAndLinkChild(sendNode);
+  AbstractPlanNode recvNode=SubPlanAssembler.addSendReceivePair(insertNode);
   return addSumOrLimitAndSendToDMLNode(recvNode,targetTable.getIsreplicated());
 }

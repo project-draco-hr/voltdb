@@ -6,8 +6,6 @@
   AbstractPlanNode subUnionRoot=new UnionPlanNode(m_parsedUnion.m_unionType);
   m_recentErrorMsg=null;
   ArrayList<CompiledPlan> childrenPlans=new ArrayList<CompiledPlan>();
-  boolean orderIsDeterministic=true;
-  boolean contentIsDeterministic=true;
   PartitioningForStatement commonPartitioning=null;
   int planId=0;
   for (  AbstractParsedStmt parsedChildStmt : m_parsedUnion.m_children) {
@@ -16,6 +14,7 @@
     processor.m_planId=planId;
     PlanAssembler assembler=new PlanAssembler(m_catalogCluster,m_catalogDb,partitioning,processor);
     CompiledPlan bestChildPlan=assembler.getBestCostPlan(parsedChildStmt);
+    partitioning=assembler.getPartition();
     if (bestChildPlan == null) {
       if (m_recentErrorMsg == null) {
         m_recentErrorMsg="Unable to plan for statement. Error unknown.";
@@ -23,8 +22,6 @@
       return null;
     }
     childrenPlans.add(bestChildPlan);
-    orderIsDeterministic=orderIsDeterministic && bestChildPlan.isOrderDeterministic();
-    contentIsDeterministic=contentIsDeterministic && bestChildPlan.isContentDeterministic();
     planId=processor.m_planId;
     if (commonPartitioning == null) {
       commonPartitioning=partitioning;
@@ -49,11 +46,11 @@
       continue;
     }
     if (!commonPartitionExpression.equals(statementPartitionExpression)) {
-      throw new PlanningErrorException("Statements use conflicting partitioned table filters in set operation.");
+      throw new PlanningErrorException("Statements use conflicting partitioned table filters in set operation or sub-query.");
     }
   }
   if (commonPartitioning != null) {
-    m_partitioning=(PartitioningForStatement)commonPartitioning.clone();
+    m_partitioning=commonPartitioning;
   }
   m_planSelector.m_planId=planId;
   for (  CompiledPlan selectPlan : childrenPlans) {
@@ -63,7 +60,9 @@
   retval.rootPlanGraph=subUnionRoot;
   retval.readOnly=true;
   retval.sql=m_planSelector.m_sql;
-  retval.statementGuaranteesDeterminism(contentIsDeterministic,orderIsDeterministic);
+  boolean orderIsDeterministic=m_parsedUnion.isOrderDeterministic();
+  boolean hasLimitOrOffset=m_parsedUnion.hasLimitOrOffset();
+  retval.statementGuaranteesDeterminism(hasLimitOrOffset,orderIsDeterministic);
   retval.cost=0.0;
   for (  CompiledPlan bestChildPlan : childrenPlans) {
     retval.cost+=bestChildPlan.cost;

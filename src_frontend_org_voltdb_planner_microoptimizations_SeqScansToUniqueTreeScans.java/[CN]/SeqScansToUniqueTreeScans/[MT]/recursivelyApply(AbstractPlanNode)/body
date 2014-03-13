@@ -1,5 +1,8 @@
 {
   assert(plan != null);
+  if (plan instanceof ReceivePlanNode) {
+    return plan;
+  }
   ArrayList<AbstractPlanNode> children=new ArrayList<AbstractPlanNode>();
   for (int i=0; i < plan.getChildCount(); i++) {
     children.add(plan.getChild(i));
@@ -10,18 +13,20 @@
       continue;
     }
     boolean replaced=plan.replaceChild(child,newChild);
-    assert(true == replaced);
+    assert(replaced);
   }
-  if ((plan instanceof SeqScanPlanNode) == false) {
+  if (!(plan instanceof SeqScanPlanNode)) {
     return plan;
   }
-  assert(plan.getChildCount() == 0);
   SeqScanPlanNode scanNode=(SeqScanPlanNode)plan;
-  String tableName=scanNode.getTargetTableName();
-  Table table=m_parsedStmt.m_db.getTables().get(tableName);
-  assert(table != null);
+  if (scanNode.isSubQuery()) {
+    return plan;
+  }
+  assert(scanNode.getChildCount() == 0);
+  StmtTableScan tableScan=scanNode.getTableScan();
+  assert(tableScan != null);
   Index indexToScan=null;
-  for (  Index index : table.getIndexes()) {
+  for (  Index index : tableScan.getIndexes()) {
     if (index.getUnique() == false) {
       continue;
     }
@@ -43,7 +48,6 @@
     return plan;
   }
   IndexScanPlanNode indexScanNode=new IndexScanPlanNode(scanNode,null,indexToScan,SortDirectionType.ASC);
-  indexScanNode.setKeyIterate(true);
   indexScanNode.setForDeterminismOnly();
   return indexScanNode;
 }

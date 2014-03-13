@@ -10,18 +10,36 @@
     }
     org.voltdb.catalog.CommandLog cl=m_rvdb.m_catalogContext.cluster.getLogconfig().get("log");
     try {
-      m_rvdb.m_restoreAgent=new RestoreAgent(m_rvdb.m_messenger.getZK(),m_rvdb.getSnapshotCompletionMonitor(),m_rvdb,m_rvdb.m_myHostId,m_config.m_startAction,cl.getEnabled(),cl.getLogpath(),cl.getInternalsnapshotpath(),snapshotPath,allPartitions,ImmutableSet.copyOf(m_rvdb.m_messenger.getLiveHostIds()),CatalogUtil.getVoltDbRoot(m_deployment.getPaths()).getAbsolutePath());
+      m_rvdb.m_restoreAgent=new RestoreAgent(m_rvdb.m_messenger,m_rvdb.getSnapshotCompletionMonitor(),m_rvdb,m_config.m_startAction,cl.getEnabled(),cl.getLogpath(),cl.getInternalsnapshotpath(),snapshotPath,allPartitions,CatalogUtil.getVoltDbRoot(m_deployment.getPaths()).getAbsolutePath());
     }
  catch (    IOException e) {
       VoltDB.crashLocalVoltDB("Unable to construct the RestoreAgent",true,e);
     }
+    m_rvdb.m_globalServiceElector.registerService(m_rvdb.m_restoreAgent);
     m_rvdb.m_restoreAgent.setCatalogContext(m_rvdb.m_catalogContext);
     Pair<Integer,String> catalog=m_rvdb.m_restoreAgent.findRestoreCatalog();
     if (catalog != null) {
-      hostLog.debug("Found catalog to load on host " + catalog.getFirst() + ": "+ catalog.getSecond());
-      m_rvdb.m_hostIdWithStartupCatalog=catalog.getFirst().intValue();
+      int hostId=catalog.getFirst().intValue();
+      String catalogPath=catalog.getSecond();
+      if (m_rvdb.m_myHostId == hostId) {
+        try {
+          byte[] catalogBytes=readCatalog(catalogPath);
+          InMemoryJarfile inMemoryJar=CatalogUtil.loadInMemoryJarFile(catalogBytes);
+          String[] buildInfo=CatalogUtil.getBuildInfoFromJar(inMemoryJar);
+          String catalogVersion=buildInfo[0];
+          String serverVersion=m_rvdb.getVersionString();
+          if (!catalogVersion.equals(serverVersion)) {
+            VoltDB.crashLocalVoltDB(String.format("Unable to load version %s catalog \"%s\" " + "from snapshot into a version %s server.",catalogVersion,catalogPath,serverVersion),false,null);
+          }
+        }
+ catch (        IOException e) {
+          hostLog.warn(String.format("Unable to load catalog for version check due to exception: %s.",e.getMessage()));
+        }
+      }
+      hostLog.debug("Found catalog to load on host " + hostId + ": "+ catalogPath);
+      m_rvdb.m_hostIdWithStartupCatalog=hostId;
       assert(m_rvdb.m_hostIdWithStartupCatalog >= 0);
-      m_rvdb.m_pathToStartupCatalog=catalog.getSecond();
+      m_rvdb.m_pathToStartupCatalog=catalogPath;
       assert(m_rvdb.m_pathToStartupCatalog != null);
     }
   }

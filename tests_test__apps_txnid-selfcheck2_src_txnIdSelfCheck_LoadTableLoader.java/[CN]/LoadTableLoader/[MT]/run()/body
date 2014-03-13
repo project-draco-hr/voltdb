@@ -1,0 +1,58 @@
+{
+  CopyAndDeleteDataTask cdtask=new CopyAndDeleteDataTask();
+  cdtask.start();
+  try {
+    while (m_shouldContinue.get()) {
+      byte shouldCopy=(byte)(m_random.nextInt(3) == 0 ? 1 : 0);
+      CountDownLatch latch=new CountDownLatch(batchSize);
+      for (int i=0; i < batchSize; i++) {
+        m_table.clearRowData();
+        m_permits.acquire();
+        long p=Math.abs(r.nextLong());
+        m_table.addRow(p,p,Calendar.getInstance().getTimeInMillis());
+        boolean success=false;
+        if (!m_isMP) {
+          Object rpartitionParam=TheHashinator.valueToBytes(m_table.fetchRow(0).get(m_partitionedColumnIndex,VoltType.BIGINT));
+          success=client.callProcedure(new InsertCallback(latch,p,shouldCopy),m_procName,rpartitionParam,m_tableName,m_table);
+        }
+ else {
+          success=client.callProcedure(new InsertCallback(latch,p,shouldCopy),m_procName,m_tableName,m_table);
+        }
+        if (success) {
+          if (shouldCopy != 0) {
+            cpDelQueue.add(p);
+          }
+ else {
+            onlyDelQueue.add(p);
+          }
+        }
+      }
+      latch.await();
+      long nextRowCount=getRowCount();
+      if (nextRowCount == currentRowCount.get()) {
+        Thread.sleep(1000);
+      }
+      if (onlyDelQueue.size() > 100) {
+        List<Long> workList=new ArrayList<Long>();
+        onlyDelQueue.drainTo(workList,100);
+        CountDownLatch odlatch=new CountDownLatch(workList.size());
+        for (        Long lcid : workList) {
+          client.callProcedure(new DeleteCallback(odlatch,1),m_onlydelprocName,lcid);
+        }
+        odlatch.await();
+      }
+    }
+  }
+ catch (  Exception e) {
+    log.error("LoadTableLoader failed a procedure call for table " + m_tableName + " and the thread will now stop.",e);
+  }
+ finally {
+    cdtask.shutdown();
+    try {
+      cdtask.join();
+    }
+ catch (    InterruptedException ex) {
+      log.error("CopyDelete Task was stopped.",ex);
+    }
+  }
+}

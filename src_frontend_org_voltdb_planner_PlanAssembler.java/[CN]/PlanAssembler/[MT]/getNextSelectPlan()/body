@@ -8,17 +8,15 @@
   AbstractPlanNode root=subSelectRoot;
   boolean mvFixNeedsProjection=false;
   if (m_partitioning.requiresTwoFragments()) {
+    if (m_parsedSelect.m_joinTree.containSubSelects()) {
+      throw new PlanningErrorException("Subqueries on partitioned data are only supported in single partition stored procedures.");
+    }
     boolean mvFixInfoCoordinatorNeeded=true;
     boolean mvFixInfoEdgeCaseOuterJoin=false;
     ArrayList<AbstractPlanNode> receivers=root.findAllNodesOfType(PlanNodeType.RECEIVE);
     if (receivers.size() == 1) {
-      HashSet<String> tablesRead=new HashSet<String>();
-      root.getTablesReadByFragment(tablesRead);
-      for (      String tableName : tablesRead) {
-        Table table=m_parsedSelect.getTableFromDB(tableName);
-        if (!table.getIsreplicated()) {
-          throw new PlanningErrorException("This special case join between an outer replicated table and " + "an inner partitioned table is too complex and is not supported.");
-        }
+      if (!root.hasReplicatedResult()) {
+        throw new PlanningErrorException("This special case join between an outer replicated table and " + "an inner partitioned table is too complex and is not supported.");
       }
       if (m_parsedSelect.mvFixInfo.needed()) {
         mvFixInfoCoordinatorNeeded=false;
@@ -40,12 +38,12 @@
       throw new PlanningErrorException("This special case join between an outer replicated table and " + "an inner partitioned table is too complex and is not supported.");
     }
  else {
-      root=subAssembler.addSendReceivePair(root);
+      root=SubPlanAssembler.addSendReceivePair(root);
       assert(root instanceof ReceivePlanNode);
       if (m_parsedSelect.mayNeedAvgPushdown()) {
         m_parsedSelect.switchOptimalSuiteForAvgPushdown();
       }
-      if (m_parsedSelect.tableList.size() > 1 && m_parsedSelect.mvFixInfo.needed() && subSelectRoot.hasInlinedIndexScanOfTable(m_parsedSelect.mvFixInfo.getMVTableName())) {
+      if (m_parsedSelect.m_tableList.size() > 1 && m_parsedSelect.mvFixInfo.needed() && subSelectRoot.hasInlinedIndexScanOfTable(m_parsedSelect.mvFixInfo.getMVTableName())) {
         return getNextSelectPlan();
       }
     }
@@ -78,5 +76,11 @@
   if (m_parsedSelect.hasLimitOrOffset()) {
     root=handleLimitOperator(root);
   }
-  return root;
+  CompiledPlan retval=new CompiledPlan();
+  retval.rootPlanGraph=root;
+  retval.readOnly=true;
+  boolean orderIsDeterministic=m_parsedSelect.isOrderDeterministic();
+  boolean hasLimitOrOffset=m_parsedSelect.hasLimitOrOffset();
+  retval.statementGuaranteesDeterminism(hasLimitOrOffset,orderIsDeterministic);
+  return retval;
 }

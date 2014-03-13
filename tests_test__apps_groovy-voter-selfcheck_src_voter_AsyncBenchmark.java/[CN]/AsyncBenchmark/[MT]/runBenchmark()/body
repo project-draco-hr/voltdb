@@ -1,0 +1,31 @@
+{
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println(" Setup & Initialization");
+  System.out.println(HORIZONTAL_RULE);
+  connect(config.servers);
+  System.out.println("\nPopulating Static Tables\n");
+  client.callProcedure("Initialize",config.contestants,CONTESTANT_NAMES_CSV);
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println("Starting Benchmark");
+  System.out.println(HORIZONTAL_RULE);
+  System.out.println("Warming up...");
+  final long warmupEndTime=System.currentTimeMillis() + (1000l * config.warmup);
+  while (warmupEndTime > System.currentTimeMillis()) {
+    PhoneCallGenerator.PhoneCall call=switchboard.receive();
+    client.callProcedure(new NullCallback(),"Vote",call.phoneNumber,call.contestantNumber,config.maxvotes);
+  }
+  fullStatsContext.fetchAndResetBaseline();
+  periodicStatsContext.fetchAndResetBaseline();
+  benchmarkStartTS=System.currentTimeMillis();
+  schedulePeriodicStats();
+  System.out.println("\nRunning benchmark...");
+  final long benchmarkEndTime=System.currentTimeMillis() + (1000l * config.duration);
+  while (benchmarkEndTime > System.currentTimeMillis()) {
+    PhoneCallGenerator.PhoneCall call=switchboard.receive();
+    client.callProcedure(new VoterCallback(),"Vote",call.phoneNumber,call.contestantNumber,config.maxvotes);
+  }
+  timer.cancel();
+  client.drain();
+  printResults();
+  client.close();
+}

@@ -1,0 +1,27 @@
+def TableSchemaBuilder(database):
+    '\n    Returns a dictionary loaded with all of the tables available in the database.\n    ``database`` must be an instance of DatabaseSchema.\n\n    .. note::\n      This function is automatically called for you and set to\n      ``schema.databases[name].tables`` when you create an instance of SchemaObject\n    '
+    conn = database.parent.connection
+    t = OrderedDict()
+    sql = "\n            SELECT TABLE_NAME, ENGINE, ROW_FORMAT, AUTO_INCREMENT,\n                    CREATE_OPTIONS, TABLE_COLLATION, TABLE_COMMENT\n            FROM information_schema.`TABLES`\n            WHERE TABLE_SCHEMA='%s'\n            AND not isnull(ENGINE)\n        "
+    tables = conn.execute((sql % database.name))
+    if (not tables):
+        return t
+    for table_info in tables:
+        name = table_info['TABLE_NAME']
+        if ('TABLE_COLLATION' not in table_info):
+            charset = None
+        pos = table_info['TABLE_COLLATION'].find('_')
+        if (not pos):
+            charset = table_info['TABLE_COLLATION']
+        else:
+            charset = table_info['TABLE_COLLATION'][:pos]
+        table = TableSchema(name=name, parent=database)
+        table.options['engine'] = SchemaOption('ENGINE', table_info['ENGINE'])
+        table.options['charset'] = SchemaOption('CHARSET', charset)
+        table.options['collation'] = SchemaOption('COLLATE', table_info['TABLE_COLLATION'])
+        table.options['row_format'] = SchemaOption('ROW_FORMAT', table_info['ROW_FORMAT'])
+        table.options['auto_increment'] = SchemaOption('AUTO_INCREMENT', table_info['AUTO_INCREMENT'])
+        table.options['create_options'] = SchemaOption(None, table_info['CREATE_OPTIONS'])
+        table.options['comment'] = SchemaOption('COMMENT', table_info['TABLE_COMMENT'])
+        t[name] = table
+    return t
