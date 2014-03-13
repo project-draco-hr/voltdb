@@ -1,8 +1,9 @@
 {
+  List<Long> skews=new ArrayList<Long>();
+  Set<String> activeVersions=new TreeSet<String>();
   SocketChannel socket=null;
   try {
-    LOG.debug("Non-Primary Starting");
-    LOG.debug("Non-Primary Connecting to Primary");
+    LOG.debug("Non-Primary Starting & Connecting to Primary");
     while (socket == null) {
       try {
         socket=SocketChannel.open(m_coordIp);
@@ -18,45 +19,33 @@
     }
     socket.socket().setTcpNoDelay(true);
     socket.socket().setPerformancePreferences(0,2,1);
-    ByteBuffer currentTime=ByteBuffer.allocate(8);
-    while (currentTime.hasRemaining()) {
-      socket.read(currentTime);
+    final String remoteAddress=socket.socket().getRemoteSocketAddress().toString();
+    ByteBuffer currentTimeBuf=ByteBuffer.allocate(8);
+    while (currentTimeBuf.hasRemaining()) {
+      socket.read(currentTimeBuf);
     }
-    currentTime.flip();
-    long skew=System.currentTimeMillis() - currentTime.getLong();
-    List<Long> skews=new ArrayList<Long>();
+    currentTimeBuf.flip();
+    long skew=System.currentTimeMillis() - currentTimeBuf.getLong();
     skews.add(skew);
+    String localVersionString=VoltDB.instance().getVersionString();
+    String localBuildString=VoltDB.instance().getBuildString();
+    activeVersions.add(localVersionString);
     JSONObject jsObj=new JSONObject();
     jsObj.put("type","REQUEST_HOSTID");
+    jsObj.put("versionString",localVersionString);
     jsObj.put("port",m_internalPort);
     if (!m_internalInterface.isEmpty()) {
       jsObj.put("address",m_internalInterface);
     }
-    byte jsBytes[]=jsObj.toString(4).getBytes("UTF-8");
+    byte jsBytes[]=jsObj.toString(4).getBytes(Constants.UTF8ENCODING);
     ByteBuffer requestHostIdBuffer=ByteBuffer.allocate(4 + jsBytes.length);
     requestHostIdBuffer.putInt(jsBytes.length);
     requestHostIdBuffer.put(jsBytes).flip();
     while (requestHostIdBuffer.hasRemaining()) {
       socket.write(requestHostIdBuffer);
     }
-    LOG.debug("Non-Primary requesting its Host ID");
-    ByteBuffer lengthBuffer=ByteBuffer.allocate(4);
-    while (lengthBuffer.hasRemaining()) {
-      int read=socket.read(lengthBuffer);
-      if (read == -1) {
-        throw new EOFException();
-      }
-    }
-    lengthBuffer.flip();
-    ByteBuffer responseBuffer=ByteBuffer.allocate(lengthBuffer.getInt());
-    while (responseBuffer.hasRemaining()) {
-      int read=socket.read(responseBuffer);
-      if (read == -1) {
-        throw new EOFException();
-      }
-    }
-    String jsonString=new String(responseBuffer.array(),"UTF-8");
-    JSONObject jsonObj=new JSONObject(jsonString);
+    processVersionJSONResponse(socket,remoteAddress,localVersionString,localBuildString,activeVersions);
+    JSONObject jsonObj=readJSONObjFromWire(socket,remoteAddress);
     m_localHostId=jsonObj.getInt("newHostId");
     m_reportedInternalInterface=jsonObj.getString("reportedAddress");
     JSONArray otherHosts=jsonObj.getJSONArray("hosts");
@@ -68,7 +57,7 @@
       String address=host.getString("address");
       int port=host.getInt("port");
       final int hostId=host.getInt("hostId");
-      hostLog.info("Leader provided address " + address);
+      LOG.info("Leader provided address " + address + ":"+ port);
       InetSocketAddress hostAddr=new InetSocketAddress(address,port);
       if (ii == 0) {
         hostIds[ii]=hostId;
@@ -90,18 +79,20 @@
           }
         }
       }
-      currentTime.clear();
-      while (currentTime.hasRemaining()) {
-        hostSocket.read(currentTime);
+      currentTimeBuf.clear();
+      while (currentTimeBuf.hasRemaining()) {
+        hostSocket.read(currentTimeBuf);
       }
-      currentTime.flip();
-      skew=System.currentTimeMillis() - currentTime.getLong();
+      currentTimeBuf.flip();
+      skew=System.currentTimeMillis() - currentTimeBuf.getLong();
+      assert(currentTimeBuf.remaining() == 0);
       skews.add(skew);
       jsObj=new JSONObject();
       jsObj.put("type","PUBLISH_HOSTID");
       jsObj.put("hostId",m_localHostId);
       jsObj.put("port",m_internalPort);
       jsObj.put("address",m_internalInterface.isEmpty() ? m_reportedInternalInterface : m_internalInterface);
+      jsObj.put("versionString",VoltDB.instance().getVersionString());
       jsBytes=jsObj.toString(4).getBytes("UTF-8");
       ByteBuffer pushHostId=ByteBuffer.allocate(4 + jsBytes.length);
       pushHostId.putInt(jsBytes.length);
@@ -112,6 +103,7 @@
       hostIds[ii]=hostId;
       hostSockets[ii]=hostSocket;
       listeningAddresses[ii]=hostAddr;
+      processVersionJSONResponse(hostSocket,remoteAddress,localVersionString,localBuildString,activeVersions);
     }
     long maxSkew=Collections.max(skews);
     long minSkew=Collections.min(skews);
@@ -132,6 +124,16 @@
     }
  else {
       hostLog.info("Clock skew to across all nodes in the cluster is " + overallSkew);
+    }
+    if (activeVersions.size() > 2) {
+      String versions="";
+      for (      String version : activeVersions) {
+        if (!version.equals(localVersionString)) {
+          versions+=version + ", ";
+        }
+      }
+      versions=versions.substring(0,versions.length() - 2);
+      VoltDB.crashLocalVoltDB("Cluster already is running mixed voltdb versions (" + versions + ").\n"+ "Adding version "+ localVersionString+ " would add a third version.\n"+ "VoltDB hotfix support supports only two unique versions simulaniously.",false,null);
     }
     ByteBuffer joinCompleteBuffer=ByteBuffer.allocate(1);
     while (joinCompleteBuffer.hasRemaining()) {
