@@ -1,0 +1,18 @@
+{
+  if (newestToDiscard == null) {
+    throw new VoltAbortException("newestToDiscard shouldn't be null.");
+  }
+  voltQueueSQL(countRows,EXPECT_SCALAR_LONG);
+  voltQueueSQL(countMatchingRows,EXPECT_SCALAR_LONG,newestToDiscard);
+  VoltTable[] countResults=voltExecuteSQL();
+  long oversizeCount=countResults[0].asScalarLong();
+  long agedOutCount=countResults[0].asScalarLong();
+  long rowsToConsider=Math.max(oversizeCount,agedOutCount);
+  if (rowsToConsider > maxRowsToDeletePerProc) {
+    voltQueueSQL(getNthOldestTimestamp,EXPECT_SCALAR,maxRowsToDeletePerProc);
+    newestToDiscard=voltExecuteSQL()[0].fetchRow(0).getTimestampAsTimestamp(0);
+  }
+  voltQueueSQL(deleteOlderThanDate,EXPECT_SCALAR_LONG,newestToDiscard);
+  voltExecuteSQL(true);
+  return 0;
+}
