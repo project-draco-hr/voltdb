@@ -1,6 +1,6 @@
 {
   PerPartitionTable tmpTable;
-synchronized (m_vblGlobals.m_TableNameToLoader) {
+synchronized (m_vblGlobals) {
     List<VoltBulkLoader> loaderList=m_vblGlobals.m_TableNameToLoader.get(m_tableName);
     if (loaderList.size() == 1) {
       m_vblGlobals.m_TableNameToLoader.remove(m_tableName);
@@ -20,10 +20,8 @@ synchronized (m_vblGlobals.m_TableNameToLoader) {
     closeFailureProcRow.new CloseNotificationCallBack(tmpTable,failureThreadLatch);
     m_failedQueue.add(closeFailureProcRow);
     failureThreadLatch.await();
-  }
-  assert(m_failedBatchQueuedRowCnt.get() == 0 && m_failedBatchSentRowCnt.get() == 0);
-synchronized (m_clientImpl) {
-    if (m_clientImpl.isLastTerminatingVoltBulkLoader()) {
+    assert(m_failedBatchQueuedRowCnt.get() == 0 && m_failedBatchSentRowCnt.get() == 0);
+    if (m_vblGlobals.getTableNameToLoaderCnt() == 0) {
       m_vblGlobals.m_shutdownPartitionProcessors=true;
       for (int i=0; i < m_maxPartitionProcessors; i++) {
         m_vblGlobals.m_partitionProcessors[i].m_PendingTables.add(tmpTable);
@@ -35,6 +33,7 @@ synchronized (m_clientImpl) {
       }
  catch (      InterruptedException e) {
       }
+      m_vblGlobals.cleanupBulkLoaderState();
     }
   }
 }
