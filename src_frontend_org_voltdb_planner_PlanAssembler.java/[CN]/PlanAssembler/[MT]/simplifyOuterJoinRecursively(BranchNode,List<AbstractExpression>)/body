@@ -1,0 +1,55 @@
+{
+  assert(joinNode != null);
+  JoinNode leftNode=joinNode.getLeftNode();
+  JoinNode rightNode=joinNode.getRightNode();
+  if (joinNode.getJoinType() == JoinType.LEFT) {
+    for (    AbstractExpression expr : exprs) {
+      Collection<String> tableAliases=rightNode.generateTableJoinOrder();
+      boolean rejectNull=false;
+      for (      String tableAlias : tableAliases) {
+        if (ExpressionUtil.isNullRejectingExpression(expr,tableAlias)) {
+          joinNode.setJoinType(JoinType.INNER);
+          rejectNull=true;
+          break;
+        }
+      }
+      if (rejectNull) {
+        break;
+      }
+    }
+  }
+ else {
+    assert(joinNode.getJoinType() == JoinType.INNER);
+  }
+  List<AbstractExpression> newExprs=new ArrayList<AbstractExpression>(exprs);
+  if (leftNode.getJoinExpression() != null) {
+    newExprs.add(leftNode.getJoinExpression());
+  }
+  if (rightNode.getJoinExpression() != null) {
+    newExprs.add(rightNode.getJoinExpression());
+  }
+  if (leftNode.getWhereExpression() != null) {
+    exprs.add(leftNode.getWhereExpression());
+  }
+  if (rightNode.getWhereExpression() != null) {
+    exprs.add(rightNode.getWhereExpression());
+  }
+  if (joinNode.getJoinType() == JoinType.INNER) {
+    exprs.addAll(newExprs);
+    if (leftNode instanceof BranchNode) {
+      simplifyOuterJoinRecursively((BranchNode)leftNode,exprs);
+    }
+    if (rightNode instanceof BranchNode) {
+      simplifyOuterJoinRecursively((BranchNode)rightNode,exprs);
+    }
+  }
+ else {
+    if (rightNode instanceof BranchNode) {
+      newExprs.addAll(exprs);
+      simplifyOuterJoinRecursively((BranchNode)rightNode,newExprs);
+    }
+    if (leftNode instanceof BranchNode) {
+      simplifyOuterJoinRecursively((BranchNode)leftNode,exprs);
+    }
+  }
+}
