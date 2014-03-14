@@ -1,5 +1,4 @@
 {
-  String msg;
   Client client=null;
   boolean adminMode=false;
   Continuation continuation=ContinuationSupport.getContinuation(request);
@@ -35,7 +34,9 @@
     String jsonp=request.getParameter("jsonp");
     String admin=request.getParameter("admin");
     if (admin != null) {
-      if (admin.compareToIgnoreCase("true") == 0)       adminMode=true;
+      if (admin.compareToIgnoreCase("true") == 0) {
+        adminMode=true;
+      }
     }
     if (procName == null) {
       response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
@@ -45,9 +46,13 @@
     byte[] hashedPasswordBytes=null;
     if (password != null) {
       try {
-        hashedPasswordBytes=m_md.digest(password.getBytes("UTF-8"));
+        MessageDigest md=MessageDigest.getInstance("SHA-1");
+        hashedPasswordBytes=md.digest(password.getBytes("UTF-8"));
       }
- catch (      UnsupportedEncodingException e) {
+ catch (      NoSuchAlgorithmException e) {
+        throw new RuntimeException("JVM doesn't support SHA-1 hashing. Please use a supported JVM",e);
+      }
+catch (      UnsupportedEncodingException e) {
         throw new RuntimeException("JVM doesn't support UTF-8. Please use a supported JVM",e);
       }
     }
@@ -63,7 +68,7 @@
       }
     }
     assert((hashedPasswordBytes == null) || (hashedPasswordBytes.length == 20));
-    client=m_connections.getClient(username,hashedPasswordBytes,adminMode);
+    client=m_connections.getClient(username,password,hashedPasswordBytes,adminMode);
     JSONProcCallback cb=new JSONProcCallback(request,continuation,jsonp);
     boolean success;
     if (params != null) {
@@ -94,9 +99,10 @@
     }
   }
  catch (  Exception e) {
-    msg=e.getMessage();
+    e.printStackTrace();
+    String msg=e.getMessage();
     VoltLogger log=new VoltLogger("HOST");
-    log.warn("JSON interface: " + msg);
+    log.warn("JSON interface exception: " + msg,e);
     ClientResponseImpl rimpl=new ClientResponseImpl(ClientResponse.UNEXPECTED_FAILURE,new VoltTable[0],msg);
     msg=rimpl.toJSONString();
     response.setStatus(HttpServletResponse.SC_OK);
