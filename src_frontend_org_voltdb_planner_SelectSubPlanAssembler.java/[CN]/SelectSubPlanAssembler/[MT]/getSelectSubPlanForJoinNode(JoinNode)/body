@@ -1,17 +1,24 @@
 {
   assert(joinNode != null);
-  if (joinNode.m_tableAliasIndex == StmtTableScan.NULL_ALIAS_INDEX) {
-    assert(joinNode.m_leftNode != null && joinNode.m_rightNode != null);
-    AbstractPlanNode outerScanPlan=getSelectSubPlanForJoinNode(joinNode.m_leftNode);
+  if (joinNode instanceof BranchNode) {
+    AbstractPlanNode outerScanPlan=getSelectSubPlanForJoinNode(((BranchNode)joinNode).getLeftNode());
     if (outerScanPlan == null) {
       return null;
     }
-    AbstractPlanNode innerScanPlan=getSelectSubPlanForJoinNode(joinNode.m_rightNode);
+    AbstractPlanNode innerScanPlan=getSelectSubPlanForJoinNode(((BranchNode)joinNode).getRightNode());
     if (innerScanPlan == null) {
       return null;
     }
-    return getSelectSubPlanForJoin(joinNode,outerScanPlan,innerScanPlan);
+    return getSelectSubPlanForJoin((BranchNode)joinNode,outerScanPlan,innerScanPlan);
   }
-  AbstractPlanNode scanNode=getAccessPlanForTable(joinNode.m_tableAliasIndex,joinNode.m_currentAccessPath);
+  AbstractPlanNode scanNode=getAccessPlanForTable(joinNode);
+  if (joinNode instanceof SubqueryLeafNode) {
+    StmtSubqueryScan tableScan=((SubqueryLeafNode)joinNode).getSubqueryScan();
+    CompiledPlan subQueryPlan=tableScan.getBestCostPlan();
+    assert(subQueryPlan != null);
+    assert(subQueryPlan.rootPlanGraph != null);
+    subQueryPlan.rootPlanGraph.disconnectParents();
+    scanNode.addAndLinkChild(subQueryPlan.rootPlanGraph);
+  }
   return scanNode;
 }
