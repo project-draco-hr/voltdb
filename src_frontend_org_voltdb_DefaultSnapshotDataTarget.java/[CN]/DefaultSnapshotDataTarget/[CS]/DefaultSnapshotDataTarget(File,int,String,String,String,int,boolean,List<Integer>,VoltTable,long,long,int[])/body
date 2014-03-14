@@ -47,13 +47,14 @@
   fs.writeInt(jsonBytes.length);
   fs.write(jsonBytes);
   final BBContainer container=fs.getBBContainer();
-  container.b.position(4);
-  container.b.putInt(container.b.remaining() - 4);
-  container.b.position(0);
+  container.b().position(4);
+  container.b().putInt(container.b().remaining() - 4);
+  container.b().position(0);
   final byte schemaBytes[]=PrivateVoltTableFactory.getSchemaBytes(schemaTable);
   final PureJavaCrc32 crc=new PureJavaCrc32();
-  ByteBuffer aggregateBuffer=ByteBuffer.allocate(container.b.remaining() + schemaBytes.length);
-  aggregateBuffer.put(container.b);
+  ByteBuffer aggregateBuffer=ByteBuffer.allocate(container.b().remaining() + schemaBytes.length);
+  aggregateBuffer.put(container.b());
+  container.discard();
   aggregateBuffer.put(schemaBytes);
   aggregateBuffer.flip();
   crc.update(aggregateBuffer.array(),4,aggregateBuffer.capacity() - 4);
@@ -67,7 +68,7 @@
     throw m_writeException;
   }
   m_acceptOneWrite=true;
-  ListenableFuture<?> writeFuture=write(Callables.returning((BBContainer)DBBPool.wrapBB(aggregateBuffer)),false);
+  ListenableFuture<?> writeFuture=write(Callables.returning(DBBPool.wrapBB(aggregateBuffer)),false);
   try {
     writeFuture.get();
   }
@@ -85,10 +86,13 @@ catch (  ExecutionException e) {
   }
   ScheduledFuture<?> syncTask=null;
   syncTask=m_syncService.scheduleAtFixedRate(new Runnable(){
+    private long fadvisedBytes=0;
     @Override public void run(){
       while (m_bytesWrittenSinceLastSync.get() > (1024 * 1024 * 4)) {
         final int bytesSinceLastSync=m_bytesWrittenSinceLastSync.getAndSet(0);
+        long positionAtSync=0;
         try {
+          positionAtSync=m_channel.position();
           m_channel.force(false);
         }
  catch (        IOException e) {
@@ -100,6 +104,20 @@ catch (  ExecutionException e) {
           }
         }
         m_bytesAllowedBeforeSync.release(bytesSinceLastSync);
+        try {
+          if (positionAtSync - fadvisedBytes > SNAPSHOT_FADVISE_BYTES) {
+            final long fadviseStart=fadvisedBytes;
+            fadvisedBytes=((positionAtSync / Bits.pageSize()) - 1) * Bits.pageSize();
+            final long retval=PosixAdvise.fadvise(m_fos.getFD(),fadviseStart,fadvisedBytes - fadviseStart,PosixAdvise.POSIX_FADV_DONTNEED);
+            if (retval != 0) {
+              SNAP_LOG.error("Error fadvising snapshot data: " + retval);
+              SNAP_LOG.error("Params offset " + fadviseStart + " length "+ (fadvisedBytes - fadviseStart));
+            }
+          }
+        }
+ catch (        Throwable t) {
+          SNAP_LOG.error("Error fadvising snapshot data",t);
+        }
       }
     }
   }

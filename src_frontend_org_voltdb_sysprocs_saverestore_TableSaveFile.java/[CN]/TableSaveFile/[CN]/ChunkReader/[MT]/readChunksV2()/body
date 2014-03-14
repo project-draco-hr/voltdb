@@ -1,6 +1,33 @@
 {
-  ByteBuffer fileInputBuffer=ByteBuffer.allocateDirect(CompressionService.maxCompressedLength(DEFAULT_CHUNKSIZE));
+  final BBContainer fileInputBufferC=DBBPool.allocateDirect(CompressionService.maxCompressedLength(DEFAULT_CHUNKSIZE));
+  final ByteBuffer fileInputBuffer=fileInputBufferC.b();
+  long sinceLastFAdvise=Long.MAX_VALUE;
+  long positionAtLastFAdvise=0;
   while (m_hasMoreChunks) {
+    if (sinceLastFAdvise > 1024 * 1024 * 48) {
+      sinceLastFAdvise=0;
+      VoltLogger log=new VoltLogger("SNAPSHOT");
+      try {
+        final long position=m_saveFile.position();
+        long retval=PosixAdvise.fadvise(m_fd,position,position + 1024 * 1024 * 64,PosixAdvise.POSIX_FADV_WILLNEED);
+        if (retval != 0) {
+          log.info("Failed to fadvise in TableSaveFile, this is harmless: " + retval);
+        }
+        final long fadviseStart=positionAtLastFAdvise;
+        positionAtLastFAdvise=((position / Bits.pageSize()) - 1) * Bits.pageSize();
+        final long length=positionAtLastFAdvise - fadviseStart;
+        if (length > 0) {
+          retval=PosixAdvise.fadvise(m_fd,fadviseStart,length,PosixAdvise.POSIX_FADV_DONTNEED);
+        }
+        if (retval != 0) {
+          log.info("Failed to fadvise in TableSaveFile, this is harmless: " + retval);
+        }
+        positionAtLastFAdvise=position;
+      }
+ catch (      Throwable t) {
+        log.info("Exception attempting fadvise",t);
+      }
+    }
     try {
       m_chunkReads.acquire();
     }
@@ -8,6 +35,7 @@
       return;
     }
     boolean expectedAnotherChunk=false;
+    Container c=null;
     try {
       ByteBuffer chunkLengthB=ByteBuffer.allocate(16);
       while (chunkLengthB.hasRemaining()) {
@@ -15,6 +43,7 @@
         if (read == -1) {
           throw new EOFException();
         }
+        sinceLastFAdvise+=read;
       }
       int nextChunkLength=chunkLengthB.getInt(0);
       expectedAnotherChunk=true;
@@ -45,6 +74,7 @@
         if (read == -1) {
           throw new EOFException();
         }
+        sinceLastFAdvise+=read;
       }
       fileInputBuffer.flip();
       nextChunkLength=CompressionService.uncompressedLength(fileInputBuffer);
@@ -59,14 +89,15 @@
           throw new IOException("CRC mismatch in saved table chunk");
         }
       }
-      Container c=getOutputBuffer(nextChunkPartitionId);
+      c=getOutputBuffer(nextChunkPartitionId);
       boolean completedRead=false;
       try {
-        c.b.clear();
-        c.b.limit(nextChunkLength + m_tableHeader.capacity());
+        final ByteBuffer buf=c.b();
+        buf.clear();
+        buf.limit(nextChunkLength + m_tableHeader.capacity());
         m_tableHeader.position(0);
-        c.b.put(m_tableHeader);
-        CompressionService.decompressBuffer(fileInputBuffer,c.b);
+        buf.put(m_tableHeader);
+        CompressionService.decompressBuffer(fileInputBuffer,buf);
         completedRead=true;
       }
   finally {
@@ -74,18 +105,25 @@
           for (          int partitionId : m_partitionIds) {
             m_corruptedPartitions.add(partitionId);
           }
+          if (m_continueOnCorruptedChunk) {
+            m_chunkReads.release();
+            continue;
+          }
+ else {
+            throw new IOException("Failed decompression of saved table chunk");
+          }
         }
       }
       if (m_relevantPartitionIds != null) {
         if (!m_relevantPartitionIds.contains(nextChunkPartitionId)) {
-          c.discard();
           m_chunkReads.release();
           continue;
         }
       }
-      c.b.position(0);
+      c.b().position(0);
 synchronized (TableSaveFile.this) {
         m_availableChunks.offer(c);
+        c=null;
         TableSaveFile.this.notifyAll();
       }
     }
@@ -99,6 +137,7 @@ synchronized (TableSaveFile.this) {
       }
     }
 catch (    IOException e) {
+      e.printStackTrace();
 synchronized (TableSaveFile.this) {
         m_hasMoreChunks=false;
         m_chunkReaderException=e;
@@ -126,5 +165,9 @@ synchronized (TableSaveFile.this) {
         TableSaveFile.this.notifyAll();
       }
     }
+ finally {
+      if (c != null)       c.discard();
+    }
   }
+  fileInputBufferC.discard();
 }
