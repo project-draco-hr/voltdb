@@ -1,4 +1,8 @@
 {
+  ParsedResultAccumulator subQueryResult=getBestCostPlanForSubQueries(parsedStmt);
+  if (subQueryResult != null && subQueryResult.m_compiledPlan == null) {
+    return null;
+  }
   setupForNewPlans(parsedStmt);
   CompiledPlan rawplan=null;
   while (true) {
@@ -6,5 +10,11 @@
     if (rawplan == null)     break;
     m_planSelector.considerCandidatePlan(rawplan,parsedStmt);
   }
-  return m_planSelector.m_bestPlan;
+  CompiledPlan retval=m_planSelector.m_bestPlan;
+  if (subQueryResult != null && retval != null) {
+    boolean orderIsDeterministic=subQueryResult.m_orderIsDeterministic && retval.isOrderDeterministic();
+    retval.statementGuaranteesDeterminism(orderIsDeterministic,false);
+    retval.rootPlanGraph=connectChildrenBestPlans(retval.rootPlanGraph);
+  }
+  return retval;
 }

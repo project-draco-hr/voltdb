@@ -1,12 +1,20 @@
 {
   if (m_tableSchema == null) {
-    m_tableSchema=new NodeSchema();
-    CatalogMap<Column> cols=db.getTables().getIgnoreCase(m_targetTableName).getColumns();
-    for (    Column col : CatalogUtil.getSortedCatalogItems(cols,"index")) {
-      TupleValueExpression tve=new TupleValueExpression(m_targetTableName,m_targetTableAlias,col.getTypeName(),col.getTypeName(),col.getIndex());
-      tve.setValueType(VoltType.get((byte)col.getType()));
-      tve.setValueSize(col.getSize());
-      m_tableSchema.addColumn(new SchemaColumn(m_targetTableName,m_targetTableAlias,col.getTypeName(),col.getTypeName(),tve));
+    if (isSubQuery()) {
+      assert(m_children.size() == 1);
+      m_children.get(0).generateOutputSchema(db);
+      m_tableSchema=m_children.get(0).getOutputSchema();
+      m_tableSchema=m_tableSchema.replaceTableClone(getTargetTableAlias());
+    }
+ else {
+      m_tableSchema=new NodeSchema();
+      CatalogMap<Column> cols=db.getTables().getIgnoreCase(m_targetTableName).getColumns();
+      for (      Column col : CatalogUtil.getSortedCatalogItems(cols,"index")) {
+        TupleValueExpression tve=new TupleValueExpression(m_targetTableName,m_targetTableAlias,col.getTypeName(),col.getTypeName(),col.getIndex());
+        tve.setValueType(VoltType.get((byte)col.getType()));
+        tve.setValueSize(col.getSize());
+        m_tableSchema.addColumn(new SchemaColumn(m_targetTableName,m_targetTableAlias,col.getTypeName(),col.getTypeName(),tve));
+      }
     }
   }
   ProjectionPlanNode proj=(ProjectionPlanNode)getInlinePlanNode(PlanNodeType.PROJECTION);
@@ -26,10 +34,10 @@
         tve.setColumnIndex(index);
       }
       m_tableScanSchema.sortByTveIndex();
-      ProjectionPlanNode map=new ProjectionPlanNode();
-      map.setOutputSchema(m_tableScanSchema);
-      addInlinePlanNode(map);
-      m_outputSchema=map.getOutputSchema().copyAndReplaceWithTVE();
+      ProjectionPlanNode projectionNode=new ProjectionPlanNode();
+      projectionNode.setOutputSchema(m_tableScanSchema);
+      addInlinePlanNode(projectionNode);
+      m_outputSchema=projectionNode.getOutputSchema().copyAndReplaceWithTVE();
       m_hasSignificantOutputSchema=false;
     }
  else {

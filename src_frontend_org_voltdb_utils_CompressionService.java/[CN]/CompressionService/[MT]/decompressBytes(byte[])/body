@@ -1,25 +1,31 @@
 {
   IOBuffers buffers=m_buffers.get();
-  ByteBuffer input=buffers.input;
-  ByteBuffer output=buffers.output;
-  if (input.capacity() < bytes.length) {
-    input=ByteBuffer.allocateDirect(Math.max(input.capacity() * 2,bytes.length));
+  BBContainer input=buffers.input;
+  BBContainer output=buffers.output;
+  final int inputCapacity=input.b().capacity();
+  if (inputCapacity < bytes.length) {
+    input.discard();
+    input=DBBPool.allocateDirect(Math.max(inputCapacity * 2,bytes.length));
     buffers=new IOBuffers(input,output);
     m_buffers.set(buffers);
   }
-  input.clear();
-  input.put(bytes);
-  input.flip();
-  final int uncompressedLength=Snappy.uncompressedLength(input);
-  if (output.capacity() < uncompressedLength) {
-    output=ByteBuffer.allocateDirect(Math.max(output.capacity() * 2,uncompressedLength));
+  final ByteBuffer inputBuffer=input.b();
+  inputBuffer.clear();
+  inputBuffer.put(bytes);
+  inputBuffer.flip();
+  final int uncompressedLength=Snappy.uncompressedLength(inputBuffer);
+  final int outputCapacity=output.b().capacity();
+  if (outputCapacity < uncompressedLength) {
+    output.discard();
+    output=DBBPool.allocateDirect(Math.max(outputCapacity * 2,uncompressedLength));
     buffers=new IOBuffers(input,output);
     m_buffers.set(buffers);
   }
-  output.clear();
-  final int actualUncompressedLength=Snappy.uncompress(input,output);
+  final ByteBuffer outputBuffer=output.b();
+  outputBuffer.clear();
+  final int actualUncompressedLength=Snappy.uncompress(inputBuffer,outputBuffer);
   assert(uncompressedLength == actualUncompressedLength);
   byte result[]=new byte[actualUncompressedLength];
-  output.get(result);
+  outputBuffer.get(result);
   return result;
 }
