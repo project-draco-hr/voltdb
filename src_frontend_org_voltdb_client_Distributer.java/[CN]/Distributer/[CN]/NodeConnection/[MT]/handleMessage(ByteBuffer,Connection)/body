@@ -1,5 +1,5 @@
 {
-  long now=System.currentTimeMillis();
+  long nowNanos=System.nanoTime();
   ClientResponseImpl response=new ClientResponseImpl();
   try {
     response.initFromBuffer(buf);
@@ -8,11 +8,12 @@
     e1.printStackTrace();
   }
   ProcedureCallback cb=null;
-  long callTime=0;
-  int delta=0;
+  long callTimeNanos=0;
+  long deltaNanos=0;
   long handle=response.getClientHandle();
+  ScheduledFuture<?> toCancel=null;
 synchronized (this) {
-    m_lastResponseTime=now;
+    m_lastResponseTimeNanos=nowNanos;
     if (response.getClientHandle() == PING_HANDLE) {
       m_outstandingPing=false;
       return;
@@ -36,8 +37,9 @@ synchronized (this) {
       }
     }
  else {
-      callTime=stuff.timestamp;
-      delta=(int)(now - callTime);
+      toCancel=stuff.timeoutFuture;
+      callTimeNanos=stuff.timestampNanos;
+      deltaNanos=Math.max(1,nowNanos - callTimeNanos);
       cb=stuff.callback;
       assert(cb != null);
       final byte status=response.getStatus();
@@ -50,12 +52,13 @@ synchronized (this) {
         error=true;
       }
       int clusterRoundTrip=response.getClusterRoundtrip();
-      m_rateLimiter.transactionResponseReceived(now,clusterRoundTrip);
-      updateStats(stuff.name,delta,clusterRoundTrip,abort,error);
+      m_rateLimiter.transactionResponseReceived(nowNanos,clusterRoundTrip);
+      updateStats(stuff.name,deltaNanos,clusterRoundTrip,abort,error);
     }
   }
+  if (toCancel != null)   toCancel.cancel(false);
   if (cb != null) {
-    response.setClientRoundtrip(delta);
+    response.setClientRoundtrip(deltaNanos);
     assert(response.getHash() == null);
     try {
       cb.clientCallback(response);
