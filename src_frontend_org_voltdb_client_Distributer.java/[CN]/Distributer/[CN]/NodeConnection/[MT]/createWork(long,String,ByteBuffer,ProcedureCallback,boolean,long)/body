@@ -1,10 +1,28 @@
 {
   assert(callback != null);
-  long nowNanos=System.nanoTime();
-  nowNanos=m_rateLimiter.sendTxnWithOptionalBlockAndReturnCurrentTime(nowNanos,ignoreBackpressure);
   timeoutNanos=(timeoutNanos == Distributer.USE_DEFAULT_TIMEOUT) ? m_procedureCallTimeoutNanos : timeoutNanos;
+  long nowNanos=System.nanoTime();
+  if (!ignoreBackpressure) {
+    try {
+      nowNanos=m_rateLimiter.sendTxnWithOptionalBlockAndReturnCurrentTime(nowNanos,timeoutNanos,ignoreBackpressure);
+    }
+ catch (    TimeoutException e) {
+      final long deltaNanos=Math.max(1,System.nanoTime() - nowNanos);
+      ClientResponseImpl r=new ClientResponseImpl(ClientResponse.CONNECTION_TIMEOUT,ClientResponse.UNINITIALIZED_APP_STATUS_CODE,"",new VoltTable[0],String.format("Timed out acquiring outstanding transaction permit (set to %d ms).",TimeUnit.NANOSECONDS.toMillis(timeoutNanos)));
+      r.setClientHandle(handle);
+      r.setClientRoundtrip(deltaNanos);
+      r.setClusterRoundtrip((int)TimeUnit.NANOSECONDS.toMillis(deltaNanos));
+      try {
+        callback.clientCallback(r);
+      }
+ catch (      Exception e3) {
+        uncaughtException(callback,r,e);
+      }
+      return;
+    }
+  }
   assert(m_callbacks.containsKey(handle) == false);
-  m_callbacks.put(handle,new CallbackBookeeping(nowNanos,callback,name,timeoutNanos));
+  m_callbacks.put(handle,new CallbackBookeeping(nowNanos,callback,name,timeoutNanos,ignoreBackpressure));
   if (timeoutNanos < TimeUnit.SECONDS.toNanos(1)) {
     submitTimeoutTask(handle,timeoutNanos);
   }
@@ -17,7 +35,9 @@
  catch (    Exception e) {
       uncaughtException(callback,r,e);
     }
-    m_rateLimiter.transactionResponseReceived(nowNanos,-1);
+    if (!ignoreBackpressure) {
+      m_rateLimiter.transactionResponseReceived(nowNanos,-1);
+    }
     return;
   }
  else {

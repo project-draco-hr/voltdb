@@ -5,16 +5,19 @@
       if (cb == null)       return;
       final long nowNanos=System.nanoTime();
       final long deltaNanos=Math.max(1,nowNanos - cb.timestampNanos);
-      ClientResponseImpl r=new ClientResponseImpl(ClientResponse.CONNECTION_TIMEOUT,ClientResponse.UNINITIALIZED_APP_STATUS_CODE,"",new VoltTable[0],String.format("No response received in the allotted time (set to %d ms).",TimeUnit.NANOSECONDS.toMillis(cb.m_procedureTimeoutNanos)));
+      ClientResponseImpl r=new ClientResponseImpl(ClientResponse.CONNECTION_TIMEOUT,ClientResponse.UNINITIALIZED_APP_STATUS_CODE,"",new VoltTable[0],String.format("No response received in the allotted time (set to %d ms).",TimeUnit.NANOSECONDS.toMillis(cb.procedureTimeoutNanos)));
       r.setClientHandle(handle);
       r.setClientRoundtrip(deltaNanos);
+      r.setClusterRoundtrip((int)TimeUnit.NANOSECONDS.toMillis(deltaNanos));
       try {
         cb.callback.clientCallback(r);
       }
  catch (      Throwable e1) {
         e1.printStackTrace();
       }
-      m_rateLimiter.transactionResponseReceived(nowNanos,-1);
+      if (!cb.ignoreBackpressure) {
+        m_rateLimiter.transactionResponseReceived(nowNanos,-1);
+      }
     }
   }
 ,timeoutNanos,TimeUnit.NANOSECONDS);
