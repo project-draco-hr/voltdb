@@ -7,7 +7,12 @@
  catch (  IOException e1) {
     e1.printStackTrace();
   }
-  if (response.getClientHandle() == ASYNC_TOPO_HANDLE) {
+  final long handle=response.getClientHandle();
+  if (handle == PING_HANDLE) {
+    m_outstandingPing=false;
+    return;
+  }
+ else   if (handle == ASYNC_TOPO_HANDLE) {
     ProcedureCallback cb=new TopoUpdateCallback();
     try {
       cb.clientCallback(response);
@@ -17,16 +22,8 @@
     }
     return;
   }
-  final long handle=response.getClientHandle();
-  CallbackBookeeping stuff=null;
-synchronized (this) {
-    m_lastResponseTimeNanos=nowNanos;
-    if (response.getClientHandle() == PING_HANDLE) {
-      m_outstandingPing=false;
-      return;
-    }
-    stuff=m_callbacks.remove(response.getClientHandle());
-  }
+  m_lastResponseTimeNanos=nowNanos;
+  final CallbackBookeeping stuff=m_callbacks.remove(response.getClientHandle());
   if (stuff == null) {
     if (handle >= 0) {
       for (      ClientStatusListenerExt listener : m_listeners) {
@@ -35,7 +32,6 @@ synchronized (this) {
     }
   }
  else {
-    if (stuff.timeoutFuture != null)     stuff.timeoutFuture.cancel(false);
     final long callTimeNanos=stuff.timestampNanos;
     final long deltaNanos=Math.max(1,nowNanos - callTimeNanos);
     final ProcedureCallback cb=stuff.callback;
@@ -60,7 +56,5 @@ synchronized (this) {
  catch (    Exception e) {
       uncaughtException(cb,response,e);
     }
-    int callbacksToInvoke=m_callbacksToInvoke.decrementAndGet();
-    assert(callbacksToInvoke >= 0);
   }
 }
