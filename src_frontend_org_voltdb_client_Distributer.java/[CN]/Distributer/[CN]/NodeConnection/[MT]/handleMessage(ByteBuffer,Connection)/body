@@ -7,57 +7,51 @@
  catch (  IOException e1) {
     e1.printStackTrace();
   }
-  ProcedureCallback cb=null;
-  long callTimeNanos=0;
-  long deltaNanos=0;
-  long handle=response.getClientHandle();
-  ScheduledFuture<?> toCancel=null;
+  if (response.getClientHandle() == ASYNC_TOPO_HANDLE) {
+    ProcedureCallback cb=new TopoUpdateCallback();
+    try {
+      cb.clientCallback(response);
+    }
+ catch (    Exception e) {
+      uncaughtException(cb,response,e);
+    }
+    return;
+  }
+  final long handle=response.getClientHandle();
+  CallbackBookeeping stuff=null;
 synchronized (this) {
     m_lastResponseTimeNanos=nowNanos;
     if (response.getClientHandle() == PING_HANDLE) {
       m_outstandingPing=false;
       return;
     }
- else     if (response.getClientHandle() == ASYNC_TOPO_HANDLE) {
-      cb=new TopoUpdateCallback();
-      try {
-        cb.clientCallback(response);
+    stuff=m_callbacks.remove(response.getClientHandle());
+  }
+  if (stuff == null) {
+    if (handle >= 0) {
+      for (      ClientStatusListenerExt listener : m_listeners) {
+        listener.lateProcedureResponse(response,m_connection.getHostnameOrIP(),m_connection.getRemotePort());
       }
- catch (      Exception e) {
-        uncaughtException(cb,response,e);
-      }
-      return;
-    }
-    CallbackBookeeping stuff=m_callbacks.remove(response.getClientHandle());
-    if (stuff == null) {
-      if (handle >= 0) {
-        for (        ClientStatusListenerExt listener : m_listeners) {
-          listener.lateProcedureResponse(response,m_connection.getHostnameOrIP(),m_connection.getRemotePort());
-        }
-      }
-    }
- else {
-      toCancel=stuff.timeoutFuture;
-      callTimeNanos=stuff.timestampNanos;
-      deltaNanos=Math.max(1,nowNanos - callTimeNanos);
-      cb=stuff.callback;
-      assert(cb != null);
-      final byte status=response.getStatus();
-      boolean abort=false;
-      boolean error=false;
-      if (status == ClientResponse.USER_ABORT || status == ClientResponse.GRACEFUL_FAILURE) {
-        abort=true;
-      }
- else       if (status != ClientResponse.SUCCESS) {
-        error=true;
-      }
-      int clusterRoundTrip=response.getClusterRoundtrip();
-      m_rateLimiter.transactionResponseReceived(nowNanos,clusterRoundTrip);
-      updateStats(stuff.name,deltaNanos,clusterRoundTrip,abort,error);
     }
   }
-  if (toCancel != null)   toCancel.cancel(false);
-  if (cb != null) {
+ else {
+    if (stuff.timeoutFuture != null)     stuff.timeoutFuture.cancel(false);
+    final long callTimeNanos=stuff.timestampNanos;
+    final long deltaNanos=Math.max(1,nowNanos - callTimeNanos);
+    final ProcedureCallback cb=stuff.callback;
+    assert(cb != null);
+    final byte status=response.getStatus();
+    boolean abort=false;
+    boolean error=false;
+    if (status == ClientResponse.USER_ABORT || status == ClientResponse.GRACEFUL_FAILURE) {
+      abort=true;
+    }
+ else     if (status != ClientResponse.SUCCESS) {
+      error=true;
+    }
+    int clusterRoundTrip=response.getClusterRoundtrip();
+    m_rateLimiter.transactionResponseReceived(nowNanos,clusterRoundTrip);
+    updateStats(stuff.name,deltaNanos,clusterRoundTrip,abort,error);
     response.setClientRoundtrip(deltaNanos);
     assert(response.getHash() == null);
     try {

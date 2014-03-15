@@ -5,8 +5,8 @@
 synchronized (Distributer.this) {
       connections.addAll(m_connections);
     }
-    long nowNanos=System.nanoTime();
-    for (    NodeConnection c : connections) {
+    final long nowNanos=System.nanoTime();
+    for (    final NodeConnection c : connections) {
 synchronized (c) {
         long sinceLastResponse=Math.max(1,nowNanos - c.m_lastResponseTimeNanos);
         if (c.m_outstandingPing && (sinceLastResponse > m_connectionResponseTimeoutNanos)) {
@@ -19,7 +19,7 @@ synchronized (c) {
         Iterator<Entry<Long,CallbackBookeeping>> iter=c.m_callbacks.entrySet().iterator();
         while (iter.hasNext()) {
           Entry<Long,CallbackBookeeping> e=iter.next();
-          long handle=e.getKey();
+          final long handle=e.getKey();
           final CallbackBookeeping cb=e.getValue();
           final long deltaNanos=Math.max(1,nowNanos - cb.timestampNanos);
           if (deltaNanos > cb.m_procedureTimeoutNanos) {
@@ -29,24 +29,24 @@ synchronized (c) {
             if (isLongOp && (deltaNanos < TimeUnit.MILLISECONDS.toNanos(MINIMUM_LONG_RUNNING_SYSTEM_CALL_TIMEOUT_MS))) {
               continue;
             }
-            final ClientResponseImpl r=new ClientResponseImpl(ClientResponse.CONNECTION_TIMEOUT,ClientResponse.UNINITIALIZED_APP_STATUS_CODE,"",new VoltTable[0],String.format("No response received in the allotted time (set to %d ms).",TimeUnit.NANOSECONDS.toMillis(cb.m_procedureTimeoutNanos)));
-            r.setClientHandle(handle);
-            r.setClientRoundtrip(deltaNanos);
             callbacksToDeliver.add(new Runnable(){
               @Override public void run(){
+                final ClientResponseImpl r=new ClientResponseImpl(ClientResponse.CONNECTION_TIMEOUT,ClientResponse.UNINITIALIZED_APP_STATUS_CODE,"",new VoltTable[0],String.format("No response received in the allotted time (set to %d ms).",TimeUnit.NANOSECONDS.toMillis(cb.m_procedureTimeoutNanos)));
+                r.setClientHandle(handle);
+                r.setClientRoundtrip(deltaNanos);
                 try {
                   cb.callback.clientCallback(r);
                 }
  catch (                Exception e1) {
                   e1.printStackTrace();
                 }
+                m_rateLimiter.transactionResponseReceived(nowNanos,-1);
+                int callbacksToInvoke=c.m_callbacksToInvoke.decrementAndGet();
+                assert(callbacksToInvoke >= 0);
               }
             }
 );
             iter.remove();
-            m_rateLimiter.transactionResponseReceived(nowNanos,-1);
-            int callbacksToInvoke=c.m_callbacksToInvoke.decrementAndGet();
-            assert(callbacksToInvoke >= 0);
           }
         }
       }
