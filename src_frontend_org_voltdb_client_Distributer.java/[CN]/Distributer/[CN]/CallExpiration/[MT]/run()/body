@@ -4,44 +4,28 @@
 synchronized (Distributer.this) {
       connections.addAll(m_connections);
     }
-    long now=System.currentTimeMillis();
-    for (    NodeConnection c : connections) {
-synchronized (c) {
-        long sinceLastResponse=now - c.m_lastResponseTime;
-        if (c.m_outstandingPing && (sinceLastResponse > m_connectionResponseTimeoutMS)) {
-          c.m_closeCause=DisconnectCause.TIMEOUT;
-          c.m_connection.unregister();
-        }
-        if ((!c.m_outstandingPing) && (sinceLastResponse > (m_connectionResponseTimeoutMS / 3))) {
-          c.sendPing();
-        }
-        Iterator<Entry<Long,CallbackBookeeping>> iter=c.m_callbacks.entrySet().iterator();
-        while (iter.hasNext()) {
-          Entry<Long,CallbackBookeeping> e=iter.next();
-          long handle=e.getKey();
-          CallbackBookeeping cb=e.getValue();
-          if ((now - cb.timestamp) > cb.m_procedureTimeoutMS) {
-            boolean isLongOp=false;
-            isLongOp|=cb.name.equals("@UpdateApplicationCatalog");
-            isLongOp|=cb.name.equals("@SnapshotSave");
-            if (isLongOp && ((now - cb.timestamp) < MINIMUM_LONG_RUNNING_SYSTEM_CALL_TIMEOUT_MS)) {
-              continue;
-            }
-            ClientResponseImpl r=new ClientResponseImpl(ClientResponse.CONNECTION_TIMEOUT,ClientResponse.UNINITIALIZED_APP_STATUS_CODE,"",new VoltTable[0],String.format("No response received in the allotted time (set to %d ms).",cb.m_procedureTimeoutMS));
-            r.setClientHandle(handle);
-            r.setClientRoundtrip((int)(now - cb.timestamp));
-            r.setClusterRoundtrip((int)(now - cb.timestamp));
-            try {
-              cb.callback.clientCallback(r);
-            }
- catch (            Exception e1) {
-              e1.printStackTrace();
-            }
-            iter.remove();
-            m_rateLimiter.transactionResponseReceived(now,-1);
-            int callbacksToInvoke=c.m_callbacksToInvoke.decrementAndGet();
-            assert(callbacksToInvoke >= 0);
+    final long nowNanos=System.nanoTime();
+    for (    final NodeConnection c : connections) {
+      final long sinceLastResponse=Math.max(1,nowNanos - c.m_lastResponseTimeNanos);
+      if (c.m_outstandingPing && (sinceLastResponse > m_connectionResponseTimeoutNanos)) {
+        c.m_closeCause=DisconnectCause.TIMEOUT;
+        c.m_connection.unregister();
+      }
+      if ((!c.m_outstandingPing) && (sinceLastResponse > (m_connectionResponseTimeoutNanos / 3))) {
+        c.sendPing();
+      }
+      for (      final Map.Entry<Long,CallbackBookeeping> e : c.m_callbacks.entrySet()) {
+        final long handle=e.getKey();
+        final CallbackBookeeping cb=e.getValue();
+        final long deltaNanos=Math.max(1,nowNanos - cb.timestampNanos);
+        if (deltaNanos > cb.procedureTimeoutNanos) {
+          boolean isLongOp=false;
+          isLongOp|=cb.name.equals("@UpdateApplicationCatalog");
+          isLongOp|=cb.name.equals("@SnapshotSave");
+          if (isLongOp && (deltaNanos < TimeUnit.MILLISECONDS.toNanos(MINIMUM_LONG_RUNNING_SYSTEM_CALL_TIMEOUT_MS))) {
+            continue;
           }
+          c.handleTimedoutCallback(handle,nowNanos);
         }
       }
     }
