@@ -1,10 +1,12 @@
 {
   assert(callback != null);
   timeoutNanos=(timeoutNanos == Distributer.USE_DEFAULT_TIMEOUT) ? m_procedureCallTimeoutNanos : timeoutNanos;
-  long nowNanos=System.nanoTime();
+  final long nowNanos=System.nanoTime();
+  final long timeoutTime=nowNanos + timeoutNanos;
+  long afterRateLimitNanos=0;
   if (!ignoreBackpressure) {
     try {
-      nowNanos=m_rateLimiter.sendTxnWithOptionalBlockAndReturnCurrentTime(nowNanos,timeoutNanos,ignoreBackpressure);
+      afterRateLimitNanos=m_rateLimiter.sendTxnWithOptionalBlockAndReturnCurrentTime(nowNanos,timeoutNanos,ignoreBackpressure);
     }
  catch (    TimeoutException e) {
       final long deltaNanos=Math.max(1,System.nanoTime() - nowNanos);
@@ -25,8 +27,9 @@
   final int callbacksToInvoke=m_callbacksToInvoke.incrementAndGet();
   assert(callbacksToInvoke >= 0);
   m_callbacks.put(handle,new CallbackBookeeping(nowNanos,callback,name,timeoutNanos,ignoreBackpressure));
+  final long timeoutRemaining=timeoutTime - afterRateLimitNanos;
   if (timeoutNanos < TimeUnit.SECONDS.toNanos(1)) {
-    submitTimeoutTask(handle,timeoutNanos);
+    submitTimeoutTask(handle,Math.max(0,timeoutRemaining));
   }
   if (!m_isConnected) {
     if (m_callbacks.remove(handle) == null)     return;
