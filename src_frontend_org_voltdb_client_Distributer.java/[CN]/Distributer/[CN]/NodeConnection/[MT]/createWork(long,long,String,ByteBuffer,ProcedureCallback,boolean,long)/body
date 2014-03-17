@@ -9,16 +9,7 @@
     }
  catch (    TimeoutException e) {
       final long deltaNanos=Math.max(1,System.nanoTime() - nowNanos);
-      ClientResponseImpl r=new ClientResponseImpl(ClientResponse.CONNECTION_TIMEOUT,ClientResponse.UNINITIALIZED_APP_STATUS_CODE,"",new VoltTable[0],String.format("Timed out acquiring outstanding transaction permit (set to %d ms).",TimeUnit.NANOSECONDS.toMillis(timeoutNanos)));
-      r.setClientHandle(handle);
-      r.setClientRoundtrip(deltaNanos);
-      r.setClusterRoundtrip((int)TimeUnit.NANOSECONDS.toMillis(deltaNanos));
-      try {
-        callback.clientCallback(r);
-      }
- catch (      Exception e3) {
-        uncaughtException(callback,r,e);
-      }
+      invokeCallbackWithTimeout(callback,deltaNanos,afterRateLimitNanos,timeoutNanos,handle,ignoreBackpressure);
       return;
     }
   }
@@ -28,7 +19,7 @@
   m_callbacks.put(handle,new CallbackBookeeping(nowNanos,callback,name,timeoutNanos,ignoreBackpressure));
   final long timeoutRemaining=timeoutTime - afterRateLimitNanos;
   if (timeoutNanos < TimeUnit.SECONDS.toNanos(1)) {
-    submitTimeoutTask(handle,Math.max(0,timeoutRemaining));
+    submitDiscreteTimeoutTask(handle,Math.max(0,timeoutRemaining));
   }
   if (!m_isConnected) {
     if (m_callbacks.remove(handle) == null)     return;
@@ -41,9 +32,7 @@
     }
     final int remainingToInvoke=m_callbacksToInvoke.decrementAndGet();
     assert(remainingToInvoke >= 0);
-    if (!ignoreBackpressure) {
-      m_rateLimiter.transactionResponseReceived(nowNanos,-1);
-    }
+    m_rateLimiter.transactionResponseReceived(nowNanos,-1,ignoreBackpressure);
     return;
   }
  else {
