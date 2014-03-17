@@ -1,0 +1,40 @@
+{
+  assertions();
+  if (m_closed) {
+    throw new IOException("Closed");
+  }
+  ArrayDeque<ArrayDeque<BBContainer>> segments=new ArrayDeque<ArrayDeque<BBContainer>>();
+  ArrayDeque<BBContainer> currentSegment=new ArrayDeque<BBContainer>();
+  int available=PBDSegment.m_chunkSize - 4;
+  for (  BBContainer object : objects) {
+    int needed=PBDSegment.m_objectHeaderBytes + object.b().remaining();
+    if (available - needed < 0) {
+      if (needed > PBDSegment.m_chunkSize - 4) {
+        throw new IOException("Maximum object size is " + (PBDSegment.m_chunkSize - 4));
+      }
+      segments.offer(currentSegment);
+      currentSegment=new ArrayDeque<BBContainer>();
+      available=PBDSegment.m_chunkSize - 4;
+    }
+    available-=needed;
+    currentSegment.add(object);
+  }
+  segments.add(currentSegment);
+  assert(segments.size() > 0);
+  Long nextIndex=0L;
+  if (m_segments.size() > 0) {
+    nextIndex=m_segments.peek().m_index - 1;
+  }
+  while (segments.peek() != null) {
+    ArrayDeque<BBContainer> currentSegmentContents=segments.poll();
+    PBDSegment writeSegment=new PBDSegment(nextIndex,new VoltFile(m_path,m_nonce + "." + nextIndex+ ".pbd"));
+    writeSegment.open(true);
+    nextIndex--;
+    while (currentSegmentContents.peek() != null) {
+      writeSegment.offer(currentSegmentContents.pollFirst(),false);
+      incrementNumObjects();
+    }
+    m_segments.push(writeSegment);
+  }
+  assertions();
+}

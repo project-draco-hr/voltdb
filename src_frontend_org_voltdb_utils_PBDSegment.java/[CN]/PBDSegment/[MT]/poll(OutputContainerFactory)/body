@@ -1,0 +1,41 @@
+{
+  if (m_closed)   throw new IOException("closed");
+  final long mBufAddr=m_buf.address();
+  if (!m_haveMAdvised) {
+    final ByteBuffer mbuf=m_buf.b();
+    m_haveMAdvised=true;
+    final long retval=PosixAdvise.madvise(m_buf.address(),mbuf.position(),PosixAdvise.POSIX_MADV_WILLNEED);
+    if (retval != 0) {
+      LOG.warn("madvise will need failed: " + retval);
+    }
+  }
+  if (!hasMoreEntries()) {
+    return null;
+  }
+  m_objectReadIndex++;
+  final int nextCompressedLength=m_readBuf.getInt();
+  final int nextFlags=m_readBuf.getInt();
+  final boolean compressed=nextFlags == FLAG_COMPRESSED;
+  final int nextUncompressedLength=compressed ? (int)Snappy.uncompressedLength(mBufAddr + m_readBuf.position(),nextCompressedLength) : nextCompressedLength;
+  m_bytesRead+=nextUncompressedLength;
+  if (compressed) {
+    final BBContainer retcont=factory.getContainer(nextUncompressedLength);
+    final ByteBuffer retbuf=retcont.b();
+    retbuf.limit(nextUncompressedLength);
+    final long sourceAddr=mBufAddr + m_readBuf.position();
+    final long destAddr=retcont.address();
+    Snappy.rawUncompress(sourceAddr,nextCompressedLength,destAddr);
+    m_readBuf.position(m_readBuf.position() + nextCompressedLength);
+    return retcont;
+  }
+ else {
+    final int oldLimit=m_readBuf.limit();
+    m_readBuf.limit(m_readBuf.position() + nextUncompressedLength);
+    ByteBuffer retbuf=m_readBuf.slice();
+    m_readBuf.position(m_readBuf.limit());
+    m_readBuf.limit(oldLimit);
+    final BBContainer dummyCont=DBBPool.dummyWrapBB(retbuf);
+    Bits.readEveryPage(dummyCont);
+    return dummyCont;
+  }
+}
