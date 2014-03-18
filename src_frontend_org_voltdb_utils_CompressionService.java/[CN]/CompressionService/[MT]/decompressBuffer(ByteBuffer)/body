@@ -1,17 +1,19 @@
 {
   assert(compressed.isDirect());
   IOBuffers buffers=m_buffers.get();
-  ByteBuffer output=buffers.output;
+  BBContainer output=buffers.output;
   final int uncompressedLength=Snappy.uncompressedLength(compressed);
-  if (output.capacity() < uncompressedLength) {
-    output=ByteBuffer.allocateDirect(Math.max(output.capacity() * 2,uncompressedLength));
-    buffers=new IOBuffers(compressed,output);
+  final int outputCapacity=buffers.output.b().capacity();
+  if (outputCapacity < uncompressedLength) {
+    buffers.output.discard();
+    output=DBBPool.allocateDirect(Math.max(outputCapacity * 2,uncompressedLength));
+    buffers=new IOBuffers(buffers.input,output);
     m_buffers.set(buffers);
   }
-  output.clear();
-  final int actualUncompressedLength=Snappy.uncompress(compressed,output);
+  output.b().clear();
+  final int actualUncompressedLength=Snappy.uncompress(compressed,output.b());
   assert(uncompressedLength == actualUncompressedLength);
   byte result[]=new byte[actualUncompressedLength];
-  output.get(result);
+  output.b().get(result);
   return result;
 }
