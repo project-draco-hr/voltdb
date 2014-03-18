@@ -1,0 +1,80 @@
+{
+  List<String> lineList;
+  ClientImpl clientImpl=(ClientImpl)m_csvClient;
+  csvFailureCallback errorCB=new csvFailureCallback();
+  try {
+    bulkLoader=clientImpl.getNewBulkLoader(m_config.table,m_config.batch,errorCB);
+  }
+ catch (  Exception e) {
+    m_log.info("CSV Loader failed: " + e.getMessage());
+    return;
+  }
+  m_log.debug("Client Initialization Done.");
+  m_columnTypes=bulkLoader.getColumnTypes();
+  m_columnCount=m_columnTypes.length;
+  while ((m_config.limitrows-- > 0)) {
+    if (m_errored) {
+      break;
+    }
+    try {
+      if (m_listReader.getLineNumber() == 0) {
+        m_totalLineCount.set(m_config.skip);
+      }
+ else {
+        m_totalLineCount.set(m_listReader.getLineNumber());
+      }
+      long st=System.nanoTime();
+      lineList=m_listReader.read();
+      long end=System.nanoTime();
+      m_parsingTime+=(end - st);
+      if (lineList == null) {
+        if (m_totalLineCount.get() > m_listReader.getLineNumber()) {
+          m_totalLineCount.set(m_listReader.getLineNumber());
+        }
+        break;
+      }
+      m_totalRowCount.incrementAndGet();
+      if (lineList.size() == 0) {
+        continue;
+      }
+      Object row_args[]=new Object[lineList.size()];
+      String lineCheckResult;
+      if ((lineCheckResult=checkparams_trimspace(lineList,row_args)) != null) {
+        String[] info={lineList.toString(),lineCheckResult};
+        if (synchronizeErrorInfo(m_totalLineCount.get() + 1,info)) {
+          m_errored=true;
+          break;
+        }
+        continue;
+      }
+      CSVLineWithMetaData lineData=new CSVLineWithMetaData(null,lineList,m_listReader.getLineNumber());
+      bulkLoader.insertRow(lineData,row_args);
+    }
+ catch (    SuperCsvException e) {
+      m_log.error("Failed to process CSV line: " + e);
+      String[] info={e.getMessage(),""};
+      if (synchronizeErrorInfo(m_totalLineCount.get() + 1,info)) {
+        break;
+      }
+    }
+catch (    IOException ex) {
+      m_log.error("Failed to read CSV line from file: " + ex);
+      break;
+    }
+catch (    InterruptedException e) {
+      m_log.error("CSVLoader interrupted: " + e);
+      break;
+    }
+  }
+  if (m_errorInfo.size() >= m_config.maxerrors) {
+    m_log.warn("The number of failed rows exceeds the configured maximum failed rows: " + m_config.maxerrors);
+  }
+  try {
+    m_log.debug("Waiting for VoltBulkLoader to finish.");
+    bulkLoader.close();
+    m_log.debug("VoltBulkLoader Done.");
+  }
+ catch (  InterruptedException ex) {
+    m_log.warn("Stopped processing because of connection error. " + "A report will be generated with what we processed so far. Error: " + ex);
+  }
+}

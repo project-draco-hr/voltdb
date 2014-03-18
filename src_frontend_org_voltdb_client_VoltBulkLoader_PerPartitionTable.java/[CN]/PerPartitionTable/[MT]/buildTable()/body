@@ -1,0 +1,71 @@
+{
+  PartitionProcedureCallback nextCallback;
+  List<VoltBulkLoaderRow> batchList=new ArrayList<VoltBulkLoaderRow>();
+  m_partitionRowQueue.drainTo(batchList,m_minBatchTriggerSize);
+  m_partitionQueuedRowCnt.addAndGet(-1 * batchList.size());
+  ArrayList<LoaderSpecificRowCnt> usedLoaderList=new ArrayList<LoaderSpecificRowCnt>();
+  ArrayList<VoltBulkLoaderRow> notificationList=new ArrayList<VoltBulkLoaderRow>();
+  ListIterator<VoltBulkLoaderRow> it=batchList.listIterator();
+  while (it.hasNext()) {
+    VoltBulkLoaderRow currRow=it.next();
+    VoltBulkLoader loader=currRow.m_loader;
+    if (currRow.isNotificationRow()) {
+      notificationList.add(currRow);
+      it.remove();
+      continue;
+    }
+    Object row_args[];
+    row_args=new Object[currRow.m_rowData.length];
+    try {
+      for (int i=0; i < row_args.length; i++) {
+        final VoltType type=m_columnTypes[i];
+        row_args[i]=ParameterConverter.tryToMakeCompatible(type.classFromType(),currRow.m_rowData[i]);
+      }
+    }
+ catch (    VoltTypeException e) {
+      loader.generateError(currRow.m_rowHandle,currRow.m_rowData,e.getMessage());
+      loader.m_loaderQueuedRowCnt.decrementAndGet();
+      it.remove();
+      continue;
+    }
+    table.addRow(row_args);
+    LoaderSpecificRowCnt currLoaderPair=loader.m_currBatchPair[m_partitionId];
+    if (currLoaderPair == null) {
+      try {
+        currLoaderPair=(LoaderSpecificRowCnt)loader.m_availLoaderPairs.pop();
+      }
+ catch (      EmptyStackException e) {
+        currLoaderPair=new LoaderSpecificRowCnt(loader,0);
+        loader.m_outstandingRowCnts[m_partitionId].add(currLoaderPair);
+      }
+      currLoaderPair.rowCnt=0;
+      usedLoaderList.add(currLoaderPair);
+      loader.m_currBatchPair[m_partitionId]=currLoaderPair;
+    }
+    currLoaderPair.rowCnt++;
+  }
+  for (  LoaderSpecificRowCnt currPair : usedLoaderList) {
+    currPair.loader.m_currBatchPair[m_partitionId]=null;
+    currPair.loader.m_loaderBatchedRowCnt.addAndGet(currPair.rowCnt);
+    currPair.loader.m_loaderQueuedRowCnt.addAndGet(-1 * currPair.rowCnt);
+  }
+synchronized (PerPartitionTable.this) {
+    if (notificationList.size() > 0) {
+      WrappedCallback currWrappedCallback=m_activeCallbacks.getListHead();
+      while (currWrappedCallback != null) {
+        currWrappedCallback.callback.m_notificationRows.addAll(notificationList);
+        currWrappedCallback=m_activeCallbacks.getListNext(currWrappedCallback);
+      }
+    }
+    nextCallback=new PartitionProcedureCallback(batchList,usedLoaderList,notificationList);
+    if (m_activeCallbacks.callbackCnt > 0) {
+      for (      VoltBulkLoaderRow currRow : notificationList) {
+        ((BulkLoaderNotification)currRow.m_rowHandle).setBatchCount(m_activeCallbacks.callbackCnt);
+      }
+    }
+ else {
+      for (      VoltBulkLoaderRow currRow : notificationList)       ((BulkLoaderNotification)currRow.m_rowHandle).notifyOfClientResponse();
+    }
+  }
+  return nextCallback;
+}
