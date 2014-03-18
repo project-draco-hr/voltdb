@@ -3,22 +3,20 @@
   timeoutNanos=(timeoutNanos == Distributer.USE_DEFAULT_TIMEOUT) ? m_procedureCallTimeoutNanos : timeoutNanos;
   final long timeoutTime=nowNanos + timeoutNanos;
   long afterRateLimitNanos=0;
-  if (!ignoreBackpressure) {
-    try {
-      afterRateLimitNanos=m_rateLimiter.sendTxnWithOptionalBlockAndReturnCurrentTime(nowNanos,timeoutNanos,ignoreBackpressure);
-    }
- catch (    TimeoutException e) {
-      final long deltaNanos=Math.max(1,System.nanoTime() - nowNanos);
-      invokeCallbackWithTimeout(callback,deltaNanos,afterRateLimitNanos,timeoutNanos,handle,ignoreBackpressure);
-      return;
-    }
+  try {
+    afterRateLimitNanos=m_rateLimiter.sendTxnWithOptionalBlockAndReturnCurrentTime(nowNanos,timeoutNanos,ignoreBackpressure);
+  }
+ catch (  TimeoutException e) {
+    final long deltaNanos=Math.max(1,System.nanoTime() - nowNanos);
+    invokeCallbackWithTimeout(callback,deltaNanos,afterRateLimitNanos,timeoutNanos,handle,ignoreBackpressure);
+    return;
   }
   assert(m_callbacks.containsKey(handle) == false);
   final int callbacksToInvoke=m_callbacksToInvoke.incrementAndGet();
   assert(callbacksToInvoke >= 0);
   m_callbacks.put(handle,new CallbackBookeeping(nowNanos,callback,name,timeoutNanos,ignoreBackpressure));
   final long timeoutRemaining=timeoutTime - afterRateLimitNanos;
-  if (timeoutNanos < TimeUnit.SECONDS.toNanos(1)) {
+  if (timeoutNanos < TimeUnit.SECONDS.toNanos(1) && !isLongOp(name)) {
     submitDiscreteTimeoutTask(handle,Math.max(0,timeoutRemaining));
   }
   if (!m_isConnected) {
