@@ -1,0 +1,126 @@
+{
+  this.m_clientImpl=vblGlobals.m_clientImpl;
+  this.m_maxBatchSize=maxBatchSize;
+  this.m_notificationCallBack=blfcb;
+  m_vblGlobals=vblGlobals;
+  m_tableName=tableName;
+  VoltTable procInfo=m_clientImpl.callProcedure("@SystemCatalog","COLUMNS").getResults()[0];
+  m_mappedColumnTypes=new TreeMap<Integer,VoltType>();
+  m_colNames=new TreeMap<Integer,String>();
+  m_partitionedColumnIndex=-1;
+  m_partitionColumnType=VoltType.NULL;
+  int sleptTimes=0;
+  while (!m_clientImpl.isHashinatorInitialized() && sleptTimes < 120) {
+    try {
+      Thread.sleep(500);
+      sleptTimes++;
+    }
+ catch (    InterruptedException ex) {
+      ;
+    }
+  }
+  if (sleptTimes >= 120) {
+    throw new IllegalStateException("VoltBulkLoader unable to start due to uninitialized Client.");
+  }
+  while (procInfo.advanceRow()) {
+    String table=procInfo.getString("TABLE_NAME");
+    if (tableName.equalsIgnoreCase(table)) {
+      VoltType vtype=VoltType.typeFromString(procInfo.getString("TYPE_NAME"));
+      int idx=(int)procInfo.getLong("ORDINAL_POSITION") - 1;
+      m_mappedColumnTypes.put(idx,vtype);
+      m_colNames.put(idx,procInfo.getString("COLUMN_NAME"));
+      String remarks=procInfo.getString("REMARKS");
+      if (remarks != null && remarks.equalsIgnoreCase("PARTITION_COLUMN")) {
+        m_partitionColumnType=vtype;
+        m_partitionedColumnIndex=idx;
+      }
+    }
+  }
+  m_columnCnt=m_mappedColumnTypes.size();
+  if (m_columnCnt == 0) {
+    throw new IllegalArgumentException("Table Name parameter does not match any known table.");
+  }
+  m_columnTypes=getColumnTypes();
+  m_colInfo=new VoltTable.ColumnInfo[m_columnCnt];
+  for (int i=0; i < m_columnCnt; i++) {
+    VoltType type=m_columnTypes[i];
+    String cname=m_colNames.get(i);
+    VoltTable.ColumnInfo ci=new VoltTable.ColumnInfo(cname,type);
+    m_colInfo[i]=ci;
+  }
+  int sitesPerHost=1;
+  int kfactor=0;
+  int hostcount=1;
+  procInfo=m_clientImpl.callProcedure("@SystemInformation","deployment").getResults()[0];
+  while (procInfo.advanceRow()) {
+    String prop=procInfo.getString("PROPERTY");
+    if (prop != null && prop.equalsIgnoreCase("sitesperhost")) {
+      sitesPerHost=Integer.parseInt(procInfo.getString("VALUE"));
+    }
+    if (prop != null && prop.equalsIgnoreCase("hostcount")) {
+      hostcount=Integer.parseInt(procInfo.getString("VALUE"));
+    }
+    if (prop != null && prop.equalsIgnoreCase("kfactor")) {
+      kfactor=Integer.parseInt(procInfo.getString("VALUE"));
+    }
+  }
+  m_isMP=(m_partitionedColumnIndex == -1 ? true : false);
+  m_maxPartitionProcessors=((hostcount * sitesPerHost) / (kfactor + 1)) + 1;
+  int queueDepthMultiplier;
+  if (!m_isMP) {
+    m_firstPartitionTable=0;
+    m_lastPartitionTable=m_maxPartitionProcessors - 2;
+    queueDepthMultiplier=Math.max(5,1000 / (m_maxPartitionProcessors - 1));
+    m_procName="@LoadSinglepartitionTable";
+  }
+ else {
+    queueDepthMultiplier=1000;
+    m_firstPartitionTable=m_maxPartitionProcessors - 1;
+    m_lastPartitionTable=m_maxPartitionProcessors - 1;
+    m_procName="@LoadMultipartitionTable";
+  }
+  if (m_vblGlobals.m_TableNameToLoader.size() == 0) {
+    m_vblGlobals.m_spawnedPartitionProcessors=new ArrayList<Thread>(m_maxPartitionProcessors);
+    m_vblGlobals.m_partitionProcessors=new PartitionProcessor[m_maxPartitionProcessors];
+    m_vblGlobals.m_tableQueues=(ConcurrentLinkedQueue<PerPartitionTable>[])new ConcurrentLinkedQueue[m_maxPartitionProcessors];
+    m_vblGlobals.m_processor_cdl=new CountDownLatch(m_maxPartitionProcessors);
+    for (int i=0; i < m_maxPartitionProcessors; i++) {
+      ConcurrentLinkedQueue<PerPartitionTable> tableQueue=new ConcurrentLinkedQueue<PerPartitionTable>();
+      m_vblGlobals.m_tableQueues[i]=tableQueue;
+      PartitionProcessor processor=new PartitionProcessor(i,i == m_maxPartitionProcessors - 1,m_vblGlobals);
+      m_vblGlobals.m_partitionProcessors[i]=processor;
+      Thread th=new Thread(processor);
+      th.setName(processor.m_processorName);
+      m_vblGlobals.m_spawnedPartitionProcessors.add(th);
+      th.start();
+    }
+  }
+  m_outstandingRowCnts=(ArrayList<LoaderSpecificRowCnt>[])Array.newInstance(ArrayList.class,m_maxPartitionProcessors);
+  m_availLoaderPairs=new Stack();
+  m_currBatchPair=new LoaderSpecificRowCnt[m_maxPartitionProcessors];
+  List<VoltBulkLoader> loaderList=m_vblGlobals.m_TableNameToLoader.get(m_tableName);
+  if (loaderList == null) {
+    m_partitionTable=new PerPartitionTable[m_maxPartitionProcessors];
+    for (int i=m_firstPartitionTable; i <= m_lastPartitionTable; i++) {
+      m_partitionTable[i]=new PerPartitionTable(m_clientImpl,m_tableName,m_vblGlobals.m_partitionProcessors[i],this,maxBatchSize,maxBatchSize * queueDepthMultiplier);
+      m_outstandingRowCnts[i]=new ArrayList<LoaderSpecificRowCnt>();
+    }
+    loaderList=new ArrayList<VoltBulkLoader>();
+    loaderList.add(this);
+    m_vblGlobals.m_TableNameToLoader.put(m_tableName,loaderList);
+  }
+ else {
+    VoltBulkLoader primary=loaderList.get(0);
+    m_partitionTable=primary.m_partitionTable;
+    loaderList.add(this);
+    for (int i=m_firstPartitionTable; i <= m_lastPartitionTable; i++) {
+      if (primary.m_maxBatchSize != maxBatchSize) {
+        m_partitionTable[i].updateMinBatchTriggerSize(maxBatchSize);
+      }
+      m_outstandingRowCnts[i]=new ArrayList<LoaderSpecificRowCnt>();
+    }
+  }
+  m_failedQueue=new LinkedBlockingQueue<VoltBulkLoaderRow>();
+  m_failureProcessor=new FailedBatchProcessor();
+  m_failureProcessor.start();
+}
