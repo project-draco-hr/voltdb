@@ -10,8 +10,7 @@
     prepSocketChannel(sockets[ii]);
     ForeignHost fhost=null;
     try {
-      fhost=new ForeignHost(this,hosts[ii],sockets[ii],m_config.deadHostTimeout,listeningAddresses[ii]);
-      fhost.register(this);
+      fhost=new ForeignHost(this,hosts[ii],sockets[ii],m_config.deadHostTimeout,listeningAddresses[ii],new PicoNetwork(sockets[ii]));
       putForeignHost(hosts[ii],fhost);
     }
  catch (    java.io.IOException e) {
@@ -22,14 +21,13 @@
   createMailbox(agreementHSId,sm);
   m_agreementSite=new AgreementSite(agreementHSId,agreementSites,yourHostId,sm,new InetSocketAddress(m_config.zkInterface.split(":")[0],Integer.parseInt(m_config.zkInterface.split(":")[1])),m_config.backwardsTimeForgivenessWindow,m_failedHostsCallback);
   for (  ForeignHost fh : m_foreignHosts.values()) {
-    fh.enableRead();
+    fh.enableRead(VERBOTEN_THREADS);
   }
   m_agreementSite.start();
-  ImmutableSet.Builder<Long> verbotenThreadBuilder=ImmutableSet.<Long>builder();
-  verbotenThreadBuilder.addAll(m_network.getThreadIds());
-  verbotenThreadBuilder.addAll(m_agreementSite.getThreadIds());
+  VERBOTEN_THREADS.addAll(m_network.getThreadIds());
+  VERBOTEN_THREADS.addAll(m_agreementSite.getThreadIds());
   m_agreementSite.waitForRecovery();
-  m_zk=org.voltcore.zk.ZKUtil.getClient(m_config.zkInterface,60 * 1000,verbotenThreadBuilder.build());
+  m_zk=org.voltcore.zk.ZKUtil.getClient(m_config.zkInterface,60 * 1000,VERBOTEN_THREADS);
   if (m_zk == null) {
     throw new Exception("Timed out trying to connect local ZooKeeper instance");
   }
