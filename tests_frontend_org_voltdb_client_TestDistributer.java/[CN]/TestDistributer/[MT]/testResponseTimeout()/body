@@ -13,15 +13,24 @@ class TimeoutMonitorCSL extends ClientStatusListenerExt {
   }
   MockVolt volt=new MockVolt(20000);
   volt.start();
-  Distributer dist=new Distributer(false,ClientConfig.DEFAULT_PROCEDURE_TIMOUT_MS,1000,false);
+  Distributer dist=new Distributer(false,ClientConfig.DEFAULT_PROCEDURE_TIMOUT_NANOS,1000,false);
   dist.addClientStatusListener(new TimeoutMonitorCSL());
   dist.createConnection("localhost","","",20000);
   assertTrue(volt.handler != null);
   Thread.sleep(3000);
   assertTrue(volt.handler.gotPing);
+  SyncCallback sc=new SyncCallback();
+  dist.queue(new ProcedureInvocation(88,"@Ping"),sc,true,0);
+  sc.waitForResponse();
+  assertEquals(ClientResponse.SUCCESS,sc.getResponse().getStatus());
   volt.handler.sendResponses.set(false);
-  ProcedureInvocation invocation=new ProcedureInvocation(44,"@Ping");
-  dist.queue(invocation,new TimeoutMonitorPCB(),true,0);
+  try {
+    ProcedureInvocation invocation=new ProcedureInvocation(44,"@Ping");
+    dist.queue(invocation,new TimeoutMonitorPCB(),true,0);
+  }
+ catch (  NoConnectionsException e) {
+    latch.countDown();
+  }
   latch.await();
   dist.shutdown();
   volt.shutdown();

@@ -1,0 +1,39 @@
+{
+  assert(callback != null);
+  timeoutNanos=(timeoutNanos == Distributer.USE_DEFAULT_TIMEOUT) ? m_procedureCallTimeoutNanos : timeoutNanos;
+  final long timeoutTime=nowNanos + timeoutNanos;
+  long afterRateLimitNanos=0;
+  try {
+    afterRateLimitNanos=m_rateLimiter.sendTxnWithOptionalBlockAndReturnCurrentTime(nowNanos,timeoutNanos,ignoreBackpressure);
+  }
+ catch (  TimeoutException e) {
+    final long deltaNanos=Math.max(1,System.nanoTime() - nowNanos);
+    invokeCallbackWithTimeout(callback,deltaNanos,afterRateLimitNanos,timeoutNanos,handle,ignoreBackpressure);
+    return;
+  }
+  assert(m_callbacks.containsKey(handle) == false);
+  final int callbacksToInvoke=m_callbacksToInvoke.incrementAndGet();
+  assert(callbacksToInvoke >= 0);
+  m_callbacks.put(handle,new CallbackBookeeping(nowNanos,callback,name,timeoutNanos,ignoreBackpressure));
+  final long timeoutRemaining=timeoutTime - afterRateLimitNanos;
+  if (timeoutNanos < TimeUnit.SECONDS.toNanos(1) && !isLongOp(name)) {
+    submitDiscreteTimeoutTask(handle,Math.max(0,timeoutRemaining));
+  }
+  if (!m_isConnected) {
+    if (m_callbacks.remove(handle) == null)     return;
+    final ClientResponse r=new ClientResponseImpl(ClientResponse.CONNECTION_LOST,new VoltTable[0],"Connection to database host (" + m_connection.getHostnameAndIPAndPort() + ") was lost before a response was received");
+    try {
+      callback.clientCallback(r);
+    }
+ catch (    Exception e) {
+      uncaughtException(callback,r,e);
+    }
+    final int remainingToInvoke=m_callbacksToInvoke.decrementAndGet();
+    assert(remainingToInvoke >= 0);
+    m_rateLimiter.transactionResponseReceived(nowNanos,-1,ignoreBackpressure);
+    return;
+  }
+ else {
+    m_connection.writeStream().enqueue(c);
+  }
+}

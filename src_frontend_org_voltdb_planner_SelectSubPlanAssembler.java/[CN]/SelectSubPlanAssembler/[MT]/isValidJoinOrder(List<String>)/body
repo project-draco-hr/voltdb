@@ -1,57 +1,54 @@
 {
-  assert(m_parsedStmt.joinTree != null);
-  List<JoinNode> subTrees=m_parsedStmt.joinTree.extractSubTrees();
+  assert(m_parsedStmt.m_joinTree != null);
+  List<JoinNode> subTrees=m_parsedStmt.m_joinTree.extractSubTrees();
   int tableNameIdx=0;
   List<JoinNode> finalSubTrees=new ArrayList<JoinNode>();
   for (int i=subTrees.size() - 1; i >= 0; --i) {
     JoinNode subTree=subTrees.get(i);
     List<JoinNode> subTableNodes=subTree.generateLeafNodesJoinOrder();
-    if (subTree.m_joinType == JoinType.INNER) {
-      Map<Integer,JoinNode> nodeNameMap=new HashMap<Integer,JoinNode>();
+    JoinNode joinOrderSubTree;
+    if ((subTree instanceof BranchNode) && ((BranchNode)subTree).getJoinType() != JoinType.INNER) {
+      joinOrderSubTree=subTree;
       for (      JoinNode tableNode : subTableNodes) {
-        assert(tableNode.m_tableAliasIndex != StmtTableScan.NULL_ALIAS_INDEX);
-        if (tableNode.m_id >= 0) {
-          nodeNameMap.put(tableNode.m_tableAliasIndex,tableNode);
+        if (tableNode.getId() >= 0) {
+          String tableAlias=tableNode.getTableAlias();
+          if (!tableAliases.get(tableNameIdx++).equals(tableAlias)) {
+            return false;
+          }
+        }
+      }
+    }
+ else {
+      Map<String,JoinNode> nodeNameMap=new HashMap<String,JoinNode>();
+      for (      JoinNode tableNode : subTableNodes) {
+        if (tableNode.getId() >= 0) {
+          nodeNameMap.put(tableNode.getTableAlias(),tableNode);
         }
       }
       List<JoinNode> joinOrderSubNodes=new ArrayList<JoinNode>();
       for (int j=0; j < subTableNodes.size(); ++j) {
-        if (subTableNodes.get(j).m_id >= 0) {
+        if (subTableNodes.get(j).getId() >= 0) {
           assert(tableNameIdx < tableAliases.size());
           String tableAlias=tableAliases.get(tableNameIdx);
-          Integer aliasIdx=m_parsedStmt.tableAliasIndexMap.get(tableAlias);
-          if (aliasIdx == null || !nodeNameMap.containsKey(aliasIdx)) {
+          if (tableAlias == null || !nodeNameMap.containsKey(tableAlias)) {
             return false;
           }
-          joinOrderSubNodes.add(nodeNameMap.get(aliasIdx));
+          joinOrderSubNodes.add(nodeNameMap.get(tableAlias));
           ++tableNameIdx;
         }
  else {
           joinOrderSubNodes.add(subTableNodes.get(j));
         }
       }
-      JoinNode joinOrderSubTree=JoinNode.reconstructJoinTreeFromTableNodes(joinOrderSubNodes);
+      joinOrderSubTree=JoinNode.reconstructJoinTreeFromTableNodes(joinOrderSubNodes);
       AbstractExpression combinedWhereExpr=subTree.getAllInnerJoinFilters();
       if (combinedWhereExpr != null) {
-        joinOrderSubTree.m_whereExpr=(AbstractExpression)combinedWhereExpr.clone();
+        joinOrderSubTree.setWhereExpression((AbstractExpression)combinedWhereExpr.clone());
       }
-      joinOrderSubTree.m_id=subTree.m_id;
-      finalSubTrees.add(0,joinOrderSubTree);
+      joinOrderSubTree.setId(subTree.getId());
     }
- else {
-      for (      JoinNode tableNode : subTableNodes) {
-        assert(tableNode.m_tableAliasIndex != StmtTableScan.NULL_ALIAS_INDEX && tableNameIdx < tableAliases.size());
-        if (tableNode.m_id >= 0) {
-          assert(m_parsedStmt.stmtCache.size() > tableNode.m_tableAliasIndex);
-          StmtTableScan tableCache=m_parsedStmt.stmtCache.get(tableNode.m_tableAliasIndex);
-          if (!tableAliases.get(tableNameIdx++).equals(tableCache.m_tableAlias)) {
-            return false;
-          }
-        }
-      }
-      finalSubTrees.add(0,subTree);
-    }
+    finalSubTrees.add(0,joinOrderSubTree);
   }
-  m_parsedStmt.joinTree=JoinNode.reconstructJoinTreeFromSubTrees(finalSubTrees);
+  m_parsedStmt.m_joinTree=JoinNode.reconstructJoinTreeFromSubTrees(finalSubTrees);
   return true;
 }

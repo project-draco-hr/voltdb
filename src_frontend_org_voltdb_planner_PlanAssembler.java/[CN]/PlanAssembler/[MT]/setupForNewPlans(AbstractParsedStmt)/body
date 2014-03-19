@@ -1,24 +1,28 @@
 {
   m_bestAndOnlyPlanWasGenerated=false;
-  m_partitioning.analyzeTablePartitioning(parsedStmt.tableList);
+  m_partitioning.analyzeTablePartitioning(parsedStmt.m_tableAliasMap.values());
   if (parsedStmt instanceof ParsedUnionStmt) {
     m_parsedUnion=(ParsedUnionStmt)parsedStmt;
     return;
   }
   if (parsedStmt instanceof ParsedSelectStmt) {
-    if (tableListIncludesExportOnly(parsedStmt.tableList)) {
+    if (tableListIncludesExportOnly(parsedStmt.m_tableList)) {
       throw new RuntimeException("Illegal to read an export table.");
     }
     m_parsedSelect=(ParsedSelectStmt)parsedStmt;
+    if (m_parsedSelect.m_joinTree instanceof BranchNode) {
+      ((BranchNode)m_parsedSelect.m_joinTree).toLeftJoin();
+      simplifyOuterJoin((BranchNode)m_parsedSelect.m_joinTree);
+    }
     subAssembler=new SelectSubPlanAssembler(m_catalogDb,parsedStmt,m_partitioning);
     return;
   }
-  if (tableListIncludesView(parsedStmt.tableList)) {
+  if (tableListIncludesView(parsedStmt.m_tableList)) {
     throw new RuntimeException("Illegal to modify a materialized view.");
   }
   m_partitioning.setIsDML();
-  assert(parsedStmt.tableList.size() == 1);
-  Table targetTable=parsedStmt.tableList.get(0);
+  assert(parsedStmt.m_tableList.size() == 1);
+  Table targetTable=parsedStmt.m_tableList.get(0);
   if (targetTable.getIsreplicated()) {
     if (m_partitioning.wasSpecifiedAsSingle()) {
       String msg="Trying to write to replicated table '" + targetTable.getTypeName() + "' in a single-partition procedure.";
@@ -33,13 +37,13 @@
     return;
   }
   if (parsedStmt instanceof ParsedUpdateStmt) {
-    if (tableListIncludesExportOnly(parsedStmt.tableList)) {
+    if (tableListIncludesExportOnly(parsedStmt.m_tableList)) {
       throw new RuntimeException("Illegal to update an export table.");
     }
     m_parsedUpdate=(ParsedUpdateStmt)parsedStmt;
   }
  else   if (parsedStmt instanceof ParsedDeleteStmt) {
-    if (tableListIncludesExportOnly(parsedStmt.tableList)) {
+    if (tableListIncludesExportOnly(parsedStmt.m_tableList)) {
       throw new RuntimeException("Illegal to delete from an export table.");
     }
     m_parsedDelete=(ParsedDeleteStmt)parsedStmt;
@@ -49,7 +53,7 @@
   }
   if (!m_partitioning.wasSpecifiedAsSingle()) {
     HashMap<AbstractExpression,Set<AbstractExpression>> valueEquivalence=parsedStmt.analyzeValueEquivalence();
-    m_partitioning.analyzeForMultiPartitionAccess(parsedStmt.stmtCache,valueEquivalence);
+    m_partitioning.analyzeForMultiPartitionAccess(parsedStmt.m_tableAliasMap.values(),valueEquivalence);
   }
   subAssembler=new WriterSubPlanAssembler(m_catalogDb,parsedStmt,m_partitioning);
 }
