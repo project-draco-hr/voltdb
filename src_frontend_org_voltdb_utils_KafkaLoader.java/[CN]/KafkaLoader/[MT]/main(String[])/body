@@ -1,0 +1,39 @@
+{
+  final KafkaConfig cfg=new KafkaConfig();
+  cfg.parse(KafkaLoader.class.getName(),args);
+  config=cfg;
+  final String[] serverlist=config.servers.split(",");
+  final ClientConfig c_config=new ClientConfig(config.user,config.password);
+  c_config.setProcedureCallTimeout(0);
+  Client csvClient=null;
+  VoltBulkLoader loader=null;
+  try {
+    csvClient=KafkaLoader.getClient(c_config,serverlist);
+    loader=csvClient.getNewBulkLoader(config.table,config.batch,new MyBulkLoaderCallback());
+  }
+ catch (  Exception e) {
+    m_log.error("Error connecting to the servers: " + config.servers);
+    System.exit(-1);
+  }
+  ExecutorService es=null;
+  assert(csvClient != null);
+  assert(loader != null);
+  try {
+    es=getConsumerExecutor(loader);
+    es.awaitTermination(365,TimeUnit.DAYS);
+  }
+ catch (  Exception ex) {
+    Logger.getLogger(KafkaLoader.class.getName()).log(Level.SEVERE,null,ex);
+  }
+  Runtime.getRuntime().addShutdownHook(new Thread(){
+    @Override public void run(){
+      System.out.println("Shuttind Down...");
+      for (      KafkaConsumerConnector consumerConnector : m_consumers) {
+        consumerConnector.stop();
+      }
+    }
+  }
+);
+  loader.drain();
+  loader.close();
+}

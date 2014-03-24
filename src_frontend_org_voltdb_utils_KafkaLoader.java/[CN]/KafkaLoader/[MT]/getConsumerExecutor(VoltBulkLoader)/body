@@ -1,0 +1,29 @@
+{
+  String blist[]=config.brokers.split(",");
+  for (  String hostString : blist) {
+    String split[]=hostString.split(":");
+    KafkaConsumerConnector conn=new KafkaConsumerConnector();
+    String host=split[0];
+    String port=split[1];
+    conn.host=host;
+    conn.port=port;
+    m_consumers.add(conn);
+  }
+  for (  KafkaConsumerConnector rh : m_consumers) {
+    rh.buildConfig(config.zookeeper);
+  }
+  ExecutorService executor=Executors.newFixedThreadPool(m_consumers.size() * 2);
+  KafkaConsumer bconsumer=null;
+  Map<String,Integer> topicCountMap=new HashMap<String,Integer>();
+  topicCountMap.put(config.topic,new Integer(3));
+  for (  KafkaConsumerConnector rh : m_consumers) {
+    Map<String,List<KafkaStream<byte[],byte[]>>> consumerMap=rh.consumer.createMessageStreams(topicCountMap);
+    List<KafkaStream<byte[],byte[]>> streams=consumerMap.get(config.topic);
+    int threadNumber=0;
+    for (    final KafkaStream stream : streams) {
+      bconsumer=new KafkaConsumer(stream,threadNumber++,loader);
+      executor.submit(bconsumer);
+    }
+  }
+  return executor;
+}
