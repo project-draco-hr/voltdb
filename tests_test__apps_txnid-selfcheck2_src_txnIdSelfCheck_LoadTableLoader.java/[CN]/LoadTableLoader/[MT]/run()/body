@@ -5,6 +5,7 @@
     while (m_shouldContinue.get()) {
       byte shouldCopy=(byte)(m_random.nextInt(3) == 0 ? 1 : 0);
       CountDownLatch latch=new CountDownLatch(batchSize);
+      final ArrayList<Long> lcpDelQueue=new ArrayList<Long>();
       for (int i=0; i < batchSize; i++) {
         m_table.clearRowData();
         m_permits.acquire();
@@ -20,7 +21,7 @@
         }
         if (success) {
           if (shouldCopy != 0) {
-            cpDelQueue.add(p);
+            lcpDelQueue.add(p);
           }
  else {
             onlyDelQueue.add(p);
@@ -28,11 +29,12 @@
         }
       }
       latch.await();
+      cpDelQueue.addAll(lcpDelQueue);
       long nextRowCount=getRowCount();
       if (nextRowCount == currentRowCount.get()) {
         Thread.sleep(1000);
       }
-      if (onlyDelQueue.size() > 100) {
+      if (onlyDelQueue.size() > 100 && m_shouldContinue.get()) {
         List<Long> workList=new ArrayList<Long>();
         onlyDelQueue.drainTo(workList,100);
         CountDownLatch odlatch=new CountDownLatch(workList.size());

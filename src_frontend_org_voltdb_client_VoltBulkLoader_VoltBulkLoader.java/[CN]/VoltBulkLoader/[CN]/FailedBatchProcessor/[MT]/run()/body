@@ -1,0 +1,53 @@
+{
+  while (true) {
+    try {
+      VoltBulkLoaderRow currRow;
+      currRow=m_failedQueue.take();
+      if (currRow.isNotificationRow()) {
+        assert(m_failedBatchProcessor_cdl == null);
+        BulkLoaderNotification notifier=((BulkLoaderNotification)currRow.m_rowHandle);
+        m_failedBatchProcessor_cdl=notifier.getLatch();
+        if (m_failedBatchSentRowCnt.get() == 0) {
+          m_failedBatchProcessor_cdl.countDown();
+          m_failedBatchProcessor_cdl=null;
+        }
+        if (notifier instanceof VoltBulkLoaderRow.CloseNotificationCallBack) {
+          break;
+        }
+        continue;
+      }
+      m_failedBatchQueuedRowCnt.decrementAndGet();
+      m_failedBatchSentRowCnt.incrementAndGet();
+      try {
+        VoltTable table=new VoltTable(m_colInfo);
+        try {
+          Object row_args[]=new Object[currRow.m_rowData.length];
+          for (int i=0; i < row_args.length; i++) {
+            final VoltType type=m_columnTypes[i];
+            row_args[i]=ParameterConverter.tryToMakeCompatible(type.classFromType(),currRow.m_rowData[i]);
+          }
+          table.addRow(row_args);
+        }
+ catch (        VoltTypeException ex) {
+          continue;
+        }
+        PartitionFailureExecuteProcedureCallback callback=new PartitionFailureExecuteProcedureCallback(currRow);
+        if (!m_isMP) {
+          Object rpartitionParam=HashinatorLite.valueToBytes(table.fetchRow(0).get(m_partitionedColumnIndex,m_partitionColumnType));
+          m_clientImpl.callProcedure(callback,m_procName,rpartitionParam,m_tableName,table);
+        }
+ else         m_clientImpl.callProcedure(callback,m_procName,m_tableName,table);
+      }
+ catch (      IOException ioex) {
+        m_failedQueue.clear();
+        m_failedQueue=null;
+        break;
+      }
+    }
+ catch (    InterruptedException ex) {
+      m_failedQueue.clear();
+      m_failedQueue=null;
+      break;
+    }
+  }
+}
