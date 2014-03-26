@@ -1,7 +1,14 @@
 {
-  ParsedResultAccumulator subQueryResult=getBestCostPlanForSubQueries(parsedStmt);
-  if (subQueryResult != null && subQueryResult.m_compiledPlan == null) {
-    return null;
+  List<StmtSubqueryScan> subqueryNodes=new ArrayList<StmtSubqueryScan>();
+  ParsedResultAccumulator subQueryResult=null;
+  if (parsedStmt.m_joinTree != null) {
+    parsedStmt.m_joinTree.extractSubQueries(subqueryNodes);
+    if (!subqueryNodes.isEmpty()) {
+      subQueryResult=getBestCostPlanForSubQueries(subqueryNodes);
+      if (subQueryResult == null) {
+        return null;
+      }
+    }
   }
   setupForNewPlans(parsedStmt);
   CompiledPlan rawplan=null;
@@ -12,8 +19,15 @@
   }
   CompiledPlan retval=m_planSelector.m_bestPlan;
   if (subQueryResult != null && retval != null) {
-    boolean orderIsDeterministic=subQueryResult.m_orderIsDeterministic && retval.isOrderDeterministic();
-    retval.statementGuaranteesDeterminism(orderIsDeterministic,false);
+    boolean orderIsDeterministic;
+    if (subQueryResult.m_orderIsDeterministic) {
+      orderIsDeterministic=retval.isOrderDeterministic();
+    }
+ else {
+      orderIsDeterministic=retval.isOrderDeterministic() && parsedStmt.isOrderDeterministicInSpiteOfUnorderedSubqueries();
+    }
+    boolean hasLimitOrOffset=subQueryResult.m_hasLimitOrOffset || retval.hasLimitOrOffset();
+    retval.statementGuaranteesDeterminism(hasLimitOrOffset,orderIsDeterministic);
     retval.rootPlanGraph=connectChildrenBestPlans(retval.rootPlanGraph);
   }
   return retval;
