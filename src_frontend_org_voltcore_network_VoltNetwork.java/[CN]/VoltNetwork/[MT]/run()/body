@@ -1,32 +1,63 @@
 {
   if (m_coreBindId != null) {
   }
+  final ThreadLocalRandom r=ThreadLocalRandom.current();
   try {
     while (m_shouldStop == false) {
       try {
-        while (m_shouldStop == false) {
-          int readyKeys=0;
-          if (m_networkId == 0) {
-            readyKeys=m_selector.select(5);
-          }
+        if (m_selectedKeys != null) {
+          while (m_shouldStop == false) {
+            int readyKeys=0;
+            if (m_networkId == 0) {
+              readyKeys=m_selector.select(5);
+            }
  else {
-            readyKeys=m_selector.select();
+              readyKeys=m_selector.select();
+            }
+            Runnable task=null;
+            while ((task=m_tasks.poll()) != null) {
+              task.run();
+            }
+            if (readyKeys > 0) {
+              optimizedInvokeCallbacks(r);
+            }
+            task=null;
+            while ((task=m_tasks.poll()) != null) {
+              task.run();
+            }
+            if (m_networkId == 0) {
+              Long delta=EstTimeUpdater.update(System.currentTimeMillis());
+              if (delta != null) {
+                m_logger.warn("Network was " + delta + " milliseconds late in updating the estimated time");
+              }
+            }
           }
-          Runnable task=null;
-          while ((task=m_tasks.poll()) != null) {
-            task.run();
-          }
-          if (readyKeys > 0) {
-            invokeCallbacks();
-          }
-          task=null;
-          while ((task=m_tasks.poll()) != null) {
-            task.run();
-          }
-          if (m_networkId == 0) {
-            Long delta=EstTimeUpdater.update(System.currentTimeMillis());
-            if (delta != null) {
-              m_logger.warn("Network was " + delta + " milliseconds late in updating the estimated time");
+        }
+ else {
+          while (m_shouldStop == false) {
+            int readyKeys=0;
+            if (m_networkId == 0) {
+              readyKeys=m_selector.select(5);
+            }
+ else {
+              readyKeys=m_selector.select();
+            }
+            Runnable task=null;
+            while ((task=m_tasks.poll()) != null) {
+              task.run();
+            }
+            if (readyKeys > 0) {
+              invokeCallbacks(r);
+            }
+            task=null;
+            while ((task=m_tasks.poll()) != null) {
+              task.run();
+            }
+            if (m_networkId == 0) {
+              Long delta=EstTimeUpdater.update(System.currentTimeMillis());
+              if (delta != null) {
+                m_logger.warn("Network was " + delta + " milliseconds late in updating the estimated time");
+              }
             }
           }
         }
