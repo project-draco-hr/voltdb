@@ -115,12 +115,12 @@ synchronized (m_startAndStopLock) {
     JSONObject topo=getTopology(config.m_startAction,m_joinCoordinator);
     m_partitionsToSitesAtStartupForExportInit=new ArrayList<Pair<Integer,Long>>();
     try {
-      ClusterConfig clusterConfig=new ClusterConfig(topo);
-      m_configuredReplicationFactor=clusterConfig.getReplicationFactor();
       m_cartographer=new Cartographer(m_messenger);
+      ClusterConfig clusterConfig=new ClusterConfig(topo);
       List<Integer> partitions=null;
       if (isRejoin) {
         m_configuredNumberOfPartitions=m_cartographer.getPartitionCount();
+        m_configuredReplicationFactor=clusterConfig.getReplicationFactor();
         partitions=m_cartographer.getIv2PartitionsToReplace(m_configuredReplicationFactor,clusterConfig.getSitesPerHost());
         if (partitions.size() == 0) {
           VoltDB.crashLocalVoltDB("The VoltDB cluster already has enough nodes to satisfy " + "the requested k-safety factor of " + m_configuredReplicationFactor + ".\n"+ "No more nodes can join.",false,null);
@@ -128,6 +128,7 @@ synchronized (m_startAndStopLock) {
       }
  else {
         m_configuredNumberOfPartitions=clusterConfig.getPartitionCount();
+        m_configuredReplicationFactor=clusterConfig.getReplicationFactor();
         partitions=ClusterConfig.partitionsForHost(topo,m_messenger.getHostId());
       }
       for (int ii=0; ii < partitions.size(); ii++) {
@@ -199,8 +200,8 @@ synchronized (m_startAndStopLock) {
     m_latencyStats=new LatencyStats(m_myHostId);
     BalancePartitionsStatistics rebalanceStats=new BalancePartitionsStatistics();
     getStatsAgent().registerStatsSource(StatsSelector.REBALANCE,0,rebalanceStats);
-    m_kSafetyStats=new KSafetyStats();
-    getStatsAgent().registerStatsSource(StatsSelector.KSAFETY,0,m_kSafetyStats);
+    KSafetyStats kSafetyStats=new KSafetyStats();
+    getStatsAgent().registerStatsSource(StatsSelector.KSAFETY,0,kSafetyStats);
     if ((m_commandLog != null) && (m_commandLog.needsInitialization())) {
       consoleLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_StayTunedForLogging.name(),null);
     }
@@ -216,7 +217,7 @@ synchronized (m_startAndStopLock) {
       for (      Initiator iv2init : m_iv2Initiators) {
         iv2init.configure(getBackendTargetType(),m_serializedCatalog,m_catalogContext,m_deployment.getCluster().getKfactor(),csp,m_configuredNumberOfPartitions,m_config.m_startAction,getStatsAgent(),m_memoryStats,m_commandLog,m_nodeDRGateway,m_config.m_executionCoreBindings.poll());
       }
-      m_leaderAppointer=new LeaderAppointer(m_messenger,m_configuredNumberOfPartitions,m_deployment.getCluster().getKfactor(),m_catalogContext.cluster.getNetworkpartition(),m_catalogContext.cluster.getFaultsnapshots().get("CLUSTER_PARTITION"),usingCommandLog,topo,m_MPI,m_kSafetyStats);
+      m_leaderAppointer=new LeaderAppointer(m_messenger,m_configuredNumberOfPartitions,m_deployment.getCluster().getKfactor(),m_catalogContext.cluster.getNetworkpartition(),m_catalogContext.cluster.getFaultsnapshots().get("CLUSTER_PARTITION"),usingCommandLog,topo,m_MPI,kSafetyStats);
       m_globalServiceElector.registerService(m_leaderAppointer);
     }
  catch (    Exception e) {
