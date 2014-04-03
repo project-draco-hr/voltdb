@@ -11,18 +11,19 @@
     String message=new String(messageBytes,"UTF-8");
     message=String.format("Fatal error from id,hostname(%d,%s): %s",m_hostId,hostnameAndIPAndPort(),message);
     if (in.remaining() > 0) {
-      int targetHostId=in.getInt();
-      if (targetHostId != -1) {
+      int cause=in.getInt();
+      if (cause == ForeignHost.CRASH_ME) {
         int hid=VoltDB.instance().getHostMessenger().getHostId();
-        if (hid == targetHostId) {
-          hostLog.debug("Poision Pill with target Host Id: " + targetHostId);
-          VoltDB.instance().halt();
-        }
- else {
-          hostLog.warn("Poision Pill with wrong target Host Id will be ignored. hostId: " + targetHostId);
-        }
-        return;
+        hostLog.debug("Poison Pill with target me was sent.: " + hid);
+        VoltDB.instance().halt();
       }
+ else       if (cause == ForeignHost.CRASH_ALL || cause == ForeignHost.CRASH_SPECIFIED) {
+        org.voltdb.VoltDB.crashLocalVoltDB(message,false,null);
+      }
+ else {
+        hostLog.error("Invalid Cause in poison pill: " + cause);
+      }
+      return;
     }
     org.voltdb.VoltDB.crashLocalVoltDB(message,false,null);
   }
