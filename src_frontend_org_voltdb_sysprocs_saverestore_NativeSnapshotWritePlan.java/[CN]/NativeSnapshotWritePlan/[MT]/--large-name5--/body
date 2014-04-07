@@ -1,0 +1,27 @@
+{
+  return new Callable<Boolean>(){
+    private final HashMap<Integer,SnapshotDataTarget> m_createdTargets=Maps.newHashMap();
+    @Override public Boolean call() throws Exception {
+      final AtomicInteger numTables=new AtomicInteger(tables.size());
+      NativeSnapshotWritePlan.createFileBasedCompletionTasks(file_path,file_nonce,txnId,partitionTransactionIds,context,exportSequenceNumbers,hashinatorData,timestamp,newPartitionCount);
+      for (      SnapshotTableTask task : replicatedSnapshotTasks) {
+        SnapshotDataTarget target=getSnapshotDataTarget(numTables,task);
+        task.setTarget(target);
+      }
+      for (      SnapshotTableTask task : partitionedSnapshotTasks) {
+        SnapshotDataTarget target=getSnapshotDataTarget(numTables,task);
+        task.setTarget(target);
+      }
+      return true;
+    }
+    private SnapshotDataTarget getSnapshotDataTarget(    AtomicInteger numTables,    SnapshotTableTask task) throws IOException {
+      SnapshotDataTarget target=m_createdTargets.get(task.m_table.getRelativeIndex());
+      if (target == null) {
+        target=createDataTargetForTable(file_path,file_nonce,task.m_table,txnId,context.getHostId(),context.getCluster().getTypeName(),context.getDatabase().getTypeName(),context.getNumberOfPartitions(),tracker,timestamp,numTables,snapshotRecord);
+        m_createdTargets.put(task.m_table.getRelativeIndex(),target);
+      }
+      return target;
+    }
+  }
+;
+}
