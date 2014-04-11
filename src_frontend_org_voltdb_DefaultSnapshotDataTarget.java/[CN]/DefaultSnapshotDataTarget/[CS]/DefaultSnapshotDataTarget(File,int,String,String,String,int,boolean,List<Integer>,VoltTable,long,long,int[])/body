@@ -87,13 +87,15 @@ catch (  ExecutionException e) {
   ScheduledFuture<?> syncTask=null;
   syncTask=m_syncService.scheduleAtFixedRate(new Runnable(){
     private long fadvisedBytes=0;
+    private long syncedBytes=0;
     @Override public void run(){
       while (m_bytesWrittenSinceLastSync.get() > (1024 * 1024 * 4)) {
         final int bytesSinceLastSync=m_bytesWrittenSinceLastSync.getAndSet(0);
         long positionAtSync=0;
         try {
           positionAtSync=m_channel.position();
-          m_channel.force(false);
+          final long syncStart=syncedBytes;
+          syncedBytes=Bits.sync_file_range(SNAP_LOG,m_fos.getFD(),m_channel,syncStart,positionAtSync);
         }
  catch (        IOException e) {
           if (!(e instanceof java.nio.channels.AsynchronousCloseException)) {
