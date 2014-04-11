@@ -1,0 +1,23 @@
+{
+  ExecutionSitesCurrentlySnapshotting.add(this);
+  final long now=System.currentTimeMillis();
+  m_quietUntil=now + 200;
+  m_lastSnapshotSucceded=true;
+  m_lastSnapshotTxnId=txnId;
+  m_snapshotTableTasks=MiscUtils.sortedArrayListMultimap();
+  m_streamers=Maps.newHashMap();
+  m_snapshotTargetTerminators=new ArrayList<Thread>();
+  m_exportSequenceNumbersToLogOnCompletion=exportSequenceNumbers;
+  for (  Map.Entry<Integer,byte[]> tablePredicates : makeTablesAndPredicatesToSnapshot(tasks).entrySet()) {
+    int tableId=tablePredicates.getKey();
+    TableStreamer streamer=new TableStreamer(tableId,format.getStreamType(),m_snapshotTableTasks.get(tableId));
+    if (!streamer.activate(context,tablePredicates.getValue())) {
+      VoltDB.crashLocalVoltDB("Failed to activate snapshot stream on table " + CatalogUtil.getTableNameFromId(context.getDatabase(),tableId),false,null);
+    }
+    m_streamers.put(tableId,streamer);
+  }
+  int maxTableTaskSize=0;
+  for (  Collection<SnapshotTableTask> perTableTasks : m_snapshotTableTasks.asMap().values()) {
+    maxTableTaskSize=Math.max(maxTableTaskSize,perTableTasks.size());
+  }
+}
