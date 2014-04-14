@@ -6,15 +6,26 @@
   column.attributes.put("nullable",String.valueOf(isNullable()));
   column.attributes.put("size",String.valueOf(dataType.precision));
   if (typestring.compareTo("VARCHAR") == 0) {
-    if (dataType.precision > 1048576) {
-      String msg="VARCHAR column size for column ";
-      msg+=getTableNameString() + "." + columnName.name;
-      msg+=" is > 1048576 char maximum.";
-      throw new org.hsqldb_voltpatches.HSQLInterface.HSQLParseException(msg);
-    }
+    int maxLengthInBytes=1048576;
+    int maxLengthInChars=maxLengthInBytes / 4;
     assert(dataType instanceof CharacterType);
     CharacterType ct=(CharacterType)dataType;
-    column.attributes.put("bytes",String.valueOf(ct.inBytes));
+    boolean inBytes=ct.inBytes;
+    if (inBytes) {
+      if (dataType.precision > maxLengthInBytes) {
+        String msg="VARCHAR column size for column ";
+        msg+=getTableNameString() + "." + columnName.name;
+        msg+=" is > " + maxLengthInBytes + " char in bytes maximum.";
+        throw new org.hsqldb_voltpatches.HSQLInterface.HSQLParseException(msg);
+      }
+    }
+ else {
+      if (dataType.precision > maxLengthInChars) {
+        inBytes=true;
+        column.attributes.put("bytes_changed",String.valueOf(true));
+      }
+    }
+    column.attributes.put("bytes",String.valueOf(inBytes));
   }
   Expression exp=getDefaultExpression();
   if (exp != null) {
