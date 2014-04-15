@@ -1,0 +1,38 @@
+{
+  String ret=null;
+  CatalogMap<GroupRef> roleList=proc.getAuthgroups();
+  String spacer="   ";
+  String add;
+  String roleNames=new String();
+  if (roleList.size() > 0) {
+    add="\n" + spacer + "ALLOW ";
+    for (    GroupRef role : roleList) {
+      roleNames+=add + role.getGroup().getTypeName();
+      add=", ";
+    }
+  }
+  if (proc.getDefaultproc()) {
+    return "";
+  }
+  if (!proc.getHasjava()) {
+    ret="CREATE PROCEDURE " + proc.getTypeName() + roleNames+ "\n"+ spacer+ "AS\n";
+    String sqlStmt=proc.getStatements().get("SQL").getSqltext().trim();
+    if (sqlStmt.endsWith(";"))     sqlStmt=sqlStmt.substring(0,sqlStmt.length() - 1);
+    ret+=spacer + sqlStmt + ";\n";
+  }
+ else   if (proc.getLanguage().equals("JAVA")) {
+    ret="CREATE PROCEDURE " + roleNames + "\n"+ spacer+ "FROM CLASS "+ proc.getClassname()+ ";\n";
+  }
+ else {
+    ret="CREATE PROCEDURE " + proc.getTypeName() + roleNames+ "\n"+ spacer+ "AS ###\n";
+    ProcedureAnnotation annot=(ProcedureAnnotation)proc.getAnnotation();
+    ret+=annot.scriptImpl + "\n### LANGUAGE GROOVY;\n";
+  }
+  if (proc.getSinglepartition()) {
+    ret+="PARTITION PROCEDURE " + proc.getTypeName() + " ON TABLE "+ proc.getPartitiontable().getTypeName()+ " COLUMN "+ proc.getPartitioncolumn().getTypeName()+ ";\n\n";
+  }
+ else {
+    ret+="\n";
+  }
+  return ret;
+}
