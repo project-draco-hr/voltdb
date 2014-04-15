@@ -1,0 +1,57 @@
+{
+  int processedWrites=0;
+  final ArrayDeque<DeferredSerialization> oldlist=getQueuedWrites();
+  if (oldlist.isEmpty())   return 0;
+  DeferredSerialization ds=null;
+  int bytesQueued=0;
+  while ((ds=oldlist.poll()) != null) {
+    processedWrites++;
+    final int serializedSize=ds.getSerializedSize();
+    if (serializedSize == DeferredSerialization.EMPTY_MESSAGE_LENGTH)     continue;
+    BBContainer outCont=m_queuedBuffers.peekLast();
+    ByteBuffer outbuf=null;
+    if (outCont == null || !outCont.b().hasRemaining()) {
+      outCont=pool.acquire();
+      outCont.b().clear();
+      m_queuedBuffers.offer(outCont);
+    }
+    outbuf=outCont.b();
+    if (outbuf.remaining() >= serializedSize) {
+      final int oldLimit=outbuf.limit();
+      outbuf.limit(outbuf.position() + serializedSize);
+      final ByteBuffer slice=outbuf.slice();
+      ds.serialize(slice);
+      checkSloppySerialization(slice,ds);
+      slice.position(0);
+      bytesQueued+=slice.remaining();
+      outbuf.position(outbuf.limit());
+      outbuf.limit(oldLimit);
+    }
+ else {
+      ByteBuffer buf=ByteBuffer.allocate(serializedSize);
+      ds.serialize(buf);
+      checkSloppySerialization(buf,ds);
+      buf.position(0);
+      bytesQueued+=buf.remaining();
+      while (buf.hasRemaining()) {
+        if (!outbuf.hasRemaining()) {
+          outCont=pool.acquire();
+          outbuf=outCont.b();
+          outbuf.clear();
+          m_queuedBuffers.offer(outCont);
+        }
+        if (outbuf.remaining() >= buf.remaining()) {
+          outbuf.put(buf);
+        }
+ else {
+          final int oldLimit=buf.limit();
+          buf.limit(buf.position() + outbuf.remaining());
+          outbuf.put(buf);
+          buf.limit(oldLimit);
+        }
+      }
+    }
+  }
+  updateQueued(bytesQueued,true);
+  return processedWrites;
+}

@@ -1,4 +1,5 @@
 {
+  ShutdownHooks.enableServerStopLogging();
 synchronized (m_startAndStopLock) {
     if (System.getProperty("java.vm.name").contains("64") == false) {
       hostLog.fatal("You are running on an unsupported (probably 32 bit) JVM. Exiting.");
@@ -17,6 +18,8 @@ synchronized (m_startAndStopLock) {
     m_mode=OperationMode.INITIALIZING;
     m_config=config;
     m_startMode=null;
+    m_safeMpTxnId=Long.MAX_VALUE;
+    m_lastSeenMpTxnId=Long.MIN_VALUE;
     m_clientInterface=null;
     m_adminListener=null;
     m_commandLog=new DummyCommandLog();
@@ -82,8 +85,20 @@ synchronized (m_startAndStopLock) {
         VoltDB.crashLocalVoltDB("Failed to instantiate snapshot IO agent",true,e);
       }
     }
-    m_licenseApi=MiscUtils.licenseApiFactory(m_config.m_pathToLicense);
+    if (m_config.m_pathToLicense == null) {
+      m_licenseApi=MiscUtils.licenseApiFactory();
+      if (m_licenseApi == null) {
+        hostLog.fatal("Unable to open license file in default directories");
+      }
+    }
+ else {
+      m_licenseApi=MiscUtils.licenseApiFactory(m_config.m_pathToLicense);
+      if (m_licenseApi == null) {
+        hostLog.fatal("Unable to open license file in provided path: " + m_config.m_pathToLicense);
+      }
+    }
     if (m_licenseApi == null) {
+      hostLog.fatal("Please contact sales@voltdb.com to request a license.");
       VoltDB.crashLocalVoltDB("Failed to initialize license verifier. " + "See previous log message for details.",false,null);
     }
     m_globalServiceElector=new GlobalServiceElector(m_messenger.getZK(),m_messenger.getHostId());
@@ -112,12 +127,12 @@ synchronized (m_startAndStopLock) {
     JSONObject topo=getTopology(config.m_startAction,m_joinCoordinator);
     m_partitionsToSitesAtStartupForExportInit=new ArrayList<Pair<Integer,Long>>();
     try {
-      m_cartographer=new Cartographer(m_messenger);
       ClusterConfig clusterConfig=new ClusterConfig(topo);
+      m_configuredReplicationFactor=clusterConfig.getReplicationFactor();
+      m_cartographer=new Cartographer(m_messenger,m_configuredReplicationFactor,m_catalogContext.cluster.getNetworkpartition());
       List<Integer> partitions=null;
       if (isRejoin) {
         m_configuredNumberOfPartitions=m_cartographer.getPartitionCount();
-        m_configuredReplicationFactor=clusterConfig.getReplicationFactor();
         partitions=m_cartographer.getIv2PartitionsToReplace(m_configuredReplicationFactor,clusterConfig.getSitesPerHost());
         if (partitions.size() == 0) {
           VoltDB.crashLocalVoltDB("The VoltDB cluster already has enough nodes to satisfy " + "the requested k-safety factor of " + m_configuredReplicationFactor + ".\n"+ "No more nodes can join.",false,null);
@@ -125,7 +140,6 @@ synchronized (m_startAndStopLock) {
       }
  else {
         m_configuredNumberOfPartitions=clusterConfig.getPartitionCount();
-        m_configuredReplicationFactor=clusterConfig.getReplicationFactor();
         partitions=ClusterConfig.partitionsForHost(topo,m_messenger.getHostId());
       }
       for (int ii=0; ii < partitions.size(); ii++) {
@@ -146,6 +160,7 @@ synchronized (m_startAndStopLock) {
           partsToHSIdsToRejoin.put(init.getPartitionId(),init.getInitiatorHSId());
         }
       }
+      OnDemandBinaryLogger.path=m_catalogContext.cluster.getVoltroot();
       if (isRejoin) {
         SnapshotSaveAPI.recoveringSiteCount.set(partsToHSIdsToRejoin.size());
         hostLog.info("Set recovering site count to " + partsToHSIdsToRejoin.size());
@@ -246,7 +261,7 @@ synchronized (m_startAndStopLock) {
     m_statsManager=null;
     try {
       final Class<?> statsManagerClass=MiscUtils.loadProClass("org.voltdb.management.JMXStatsManager","JMX",true);
-      if (statsManagerClass != null) {
+      if (statsManagerClass != null && !DISABLE_JMX) {
         m_statsManager=(StatsManager)statsManagerClass.newInstance();
         m_statsManager.initialize();
       }
@@ -356,6 +371,7 @@ class DailyLogTask implements Runnable {
           m_myHostId=m_messenger.getHostId();
           hostLog.info(String.format("Host id of this node is: %d",m_myHostId));
           hostLog.info("URL of deployment info: " + m_config.m_pathToDeployment);
+          hostLog.info("Cluster uptime: " + MiscUtils.formatUptime(getClusterUptime()));
           logDebuggingInfo(m_config.m_adminPort,m_config.m_httpPort,m_httpPortExtraLogMessage,m_jsonEnabled);
           long nextCheck=nextCheckField.getLong(dailyRollingFileAppender);
           scheduleWork(new DailyLogTask(),nextCheck - System.currentTimeMillis() + 30 * 1000,0,TimeUnit.MILLISECONDS);

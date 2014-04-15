@@ -1,0 +1,27 @@
+{
+  int abortedRows=0;
+  while (m_partitionProcessorQueue.remove(this))   ;
+  List<VoltBulkLoaderRow> allPartitionRows=new ArrayList<VoltBulkLoaderRow>();
+  m_partitionRowQueue.drainTo(allPartitionRows);
+  ListIterator<VoltBulkLoaderRow> it=allPartitionRows.listIterator();
+  while (it.hasNext()) {
+    VoltBulkLoaderRow currRow=it.next();
+    if (currRow.m_loader == loader && !currRow.isNotificationRow()) {
+      it.remove();
+      abortedRows++;
+    }
+  }
+  try {
+    for (    VoltBulkLoaderRow currRow : allPartitionRows) {
+      m_partitionRowQueue.put(currRow);
+    }
+  }
+ catch (  InterruptedException e) {
+  }
+  m_partitionQueuedRowCnt.addAndGet(-1 * abortedRows);
+  loader.m_loaderQueuedRowCnt.addAndGet(-1 * abortedRows);
+  long batchCnt=m_partitionQueuedRowCnt.get() / m_minBatchTriggerSize;
+  for (long i=0; i < batchCnt; i++) {
+    m_partitionProcessorQueue.add(this);
+  }
+}

@@ -1,0 +1,123 @@
+{
+  try {
+    pathToCatalog=Configuration.getPathToCatalogForTest("vbl.jar");
+    pathToDeployment=Configuration.getPathToCatalogForTest("vbl.xml");
+    builder=new VoltProjectBuilder();
+    builder.addLiteralSchema(my_schema);
+    boolean sameTable=my_tableName1.equals(my_tableName2);
+    assert(!(abort1 && abort2));
+    if (abort1 || abort2)     assert(multipleLoaders);
+    if (!multiPartTable) {
+      builder.addPartitionInfo(my_tableName1,"clm_integer");
+      if (!sameTable)       builder.addPartitionInfo(my_tableName2,"clm_integer");
+    }
+    boolean success=builder.compile(pathToCatalog,2,1,0);
+    assertTrue(success);
+    MiscUtils.copyFile(builder.getPathToDeployment(),pathToDeployment);
+    config=new VoltDB.Configuration();
+    config.m_pathToCatalog=pathToCatalog;
+    config.m_pathToDeployment=pathToDeployment;
+    localServer=new ServerThread(config);
+    client1=null;
+    client2=null;
+    localServer.start();
+    localServer.waitForInitialization();
+    client1=ClientFactory.createClient();
+    client1.createConnection("localhost");
+    if (multipleClients) {
+      client2=ClientFactory.createClient();
+      client2.createConnection("localhost");
+      multipleLoaders=true;
+    }
+ else     client2=client1;
+    prepare();
+    TestFailureCallback testCallback1=new TestFailureCallback();
+    TestFailureCallback testCallback2=new TestFailureCallback();
+    VoltBulkLoader bulkLoader1=client1.getNewBulkLoader(my_tableName1,my_batchSize1,testCallback1);
+    VoltBulkLoader bulkLoader2;
+    if (multipleLoaders) {
+      bulkLoader2=client2.getNewBulkLoader(my_tableName2,my_batchSize2,testCallback2);
+      if (!multipleClients && sameTable) {
+        assert(bulkLoader1.getMaxBatchSize() == Math.min(my_batchSize1,my_batchSize2));
+        assert(bulkLoader1.getMaxBatchSize() == bulkLoader2.getMaxBatchSize());
+      }
+    }
+ else     bulkLoader2=bulkLoader1;
+    VoltTable modCount1;
+    modCount1=client1.callProcedure("@AdHoc","SELECT * FROM " + my_tableName1 + ";").getResults()[0];
+    System.out.println("data inserted to table " + my_tableName1 + ":\n"+ modCount1);
+    VoltTable valTable1;
+    valTable1=client1.callProcedure("@ValidatePartitioning",null,null).getResults()[0];
+    System.out.println("Validate for " + my_tableName1 + ":\n"+ valTable1);
+    while (valTable1.advanceRow()) {
+      long miscnt=valTable1.getLong("MISPARTITIONED_ROWS");
+      assertEquals(miscnt,0);
+    }
+    if (multipleClients) {
+      VoltTable modCount2;
+      modCount2=client2.callProcedure("@AdHoc","SELECT * FROM " + my_tableName2 + ";").getResults()[0];
+      System.out.println("data inserted to table " + my_tableName2 + ":\n"+ modCount2);
+      VoltTable valTable2;
+      valTable2=client2.callProcedure("@ValidatePartitioning",null,null).getResults()[0];
+      System.out.println("Validate for " + my_tableName1 + ":\n"+ valTable2);
+      while (valTable2.advanceRow()) {
+        long miscnt=valTable2.getLong("MISPARTITIONED_ROWS");
+        assertEquals(miscnt,0);
+      }
+    }
+    int rowCnt1=1;
+    int rowCnt2=1;
+    try {
+      while (rowCnt1 <= my_data1.length || rowCnt2 <= my_data2.length) {
+        if (rowCnt1 <= my_data1.length) {
+          Integer rowId=new Integer(rowCnt1);
+          bulkLoader1.insertRow(rowId,my_data1[rowCnt1 - 1]);
+          rowCnt1++;
+        }
+        if (rowCnt2 <= my_data2.length) {
+          Integer rowId=new Integer(rowCnt2);
+          bulkLoader2.insertRow(rowId,my_data2[rowCnt2 - 1]);
+          rowCnt2++;
+        }
+      }
+    }
+ catch (    Exception e) {
+      System.err.print(e.getMessage());
+    }
+    System.out.println(String.format("Attempted inserting %d rows in Table %s and %d rows in Table %s",--rowCnt1,my_tableName1,--rowCnt2,my_tableName2));
+    if (abort1) {
+      bulkLoader1.cancelQueued();
+    }
+ else     if (abort2)     bulkLoader2.cancelQueued();
+    if (!abort1 && rnd.nextInt() % 4 == 0) {
+      bulkLoader1.drain();
+      assert(bulkLoader1.getOutstandingRowCount() == 0);
+      assert(bulkLoader1.getCompletedRowCount() == rowCnt1);
+    }
+    if (multipleLoaders && !abort2 && rnd.nextInt() % 4 == 0) {
+      bulkLoader2.drain();
+      assert(bulkLoader2.getOutstandingRowCount() == 0);
+      assert(bulkLoader2.getCompletedRowCount() == rowCnt2);
+    }
+    bulkLoader1.close();
+    if (multipleLoaders)     bulkLoader2.close();
+    assert(abort1 || testCallback1.failureRowListMatches(expectedFailList1));
+    assert(abort2 || testCallback2.failureRowListMatches(expectedFailList2));
+  }
+  finally {
+    if (client1 != null) {
+      client1.close();
+      if (multipleClients && client2 != null) {
+        client2.close();
+        client2=null;
+      }
+      client1=null;
+    }
+    if (localServer != null) {
+      localServer.shutdown();
+      localServer.join();
+    }
+    localServer=null;
+    System.gc();
+  }
+}
