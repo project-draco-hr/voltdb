@@ -1,90 +1,96 @@
 {
+  verbotenThreads.add(Thread.currentThread().getId());
   long now=System.currentTimeMillis();
   long lastHeard=now;
   long lastSend=now;
-  while (zooKeeper.state.isAlive()) {
-    try {
-      if (sockKey == null) {
-        if (closing) {
-          break;
+  try {
+    while (zooKeeper.state.isAlive()) {
+      try {
+        if (sockKey == null) {
+          if (closing) {
+            break;
+          }
+          startConnect();
+          lastSend=now;
+          lastHeard=now;
         }
-        startConnect();
-        lastSend=now;
-        lastHeard=now;
-      }
-      int idleRecv=(int)(now - lastHeard);
-      int idleSend=(int)(now - lastSend);
-      int to=readTimeout - idleRecv;
-      if (zooKeeper.state != States.CONNECTED) {
-        to=connectTimeout - idleRecv;
-      }
-      selector.select(20);
-      Set<SelectionKey> selected;
+        int idleRecv=(int)(now - lastHeard);
+        int idleSend=(int)(now - lastSend);
+        int to=readTimeout - idleRecv;
+        if (zooKeeper.state != States.CONNECTED) {
+          to=connectTimeout - idleRecv;
+        }
+        selector.select(20);
+        Set<SelectionKey> selected;
 synchronized (this) {
-        selected=selector.selectedKeys();
-      }
-      now=System.currentTimeMillis();
-      for (      SelectionKey k : selected) {
-        SocketChannel sc=((SocketChannel)k.channel());
-        if ((k.readyOps() & SelectionKey.OP_CONNECT) != 0) {
-          if (sc.finishConnect()) {
-            lastHeard=now;
-            lastSend=now;
-            primeConnection(k);
-          }
-        }
- else         if ((k.readyOps() & (SelectionKey.OP_READ | SelectionKey.OP_WRITE)) != 0) {
-          if (outgoingQueue.size() > 0) {
-            lastSend=now;
-          }
-          if (doIO()) {
-            lastHeard=now;
-          }
-        }
-      }
-      if (zooKeeper.state == States.CONNECTED) {
-        if (outgoingQueue.size() > 0) {
-          enableWrite();
-        }
- else {
-          disableWrite();
-        }
-      }
-      selected.clear();
-    }
- catch (    Exception e) {
-      if (closing) {
-        if (LOG.isDebugEnabled()) {
-          LOG.debug("An exception was thrown while closing send thread for session 0x" + Long.toHexString(getSessionId()) + " : "+ e.getMessage());
-        }
-        break;
-      }
- else {
-        if (e instanceof SessionExpiredException) {
-          LOG.info(e.getMessage() + ", closing socket connection");
-        }
- else         if (e instanceof SessionTimeoutException) {
-          LOG.info(e.getMessage() + RETRY_CONN_MSG);
-        }
- else         if (e instanceof EndOfStreamException) {
-          LOG.info(e.getMessage() + RETRY_CONN_MSG);
-        }
- else         if ((e instanceof ConnectException) && (e.getMessage().contentEquals("Connection refused"))) {
-        }
- else {
-          LOG.warn("Session 0x" + Long.toHexString(getSessionId()) + " for server "+ ((SocketChannel)sockKey.channel()).socket().getRemoteSocketAddress()+ ", unexpected error"+ RETRY_CONN_MSG,e);
-        }
-        cleanup();
-        if (zooKeeper.state.isAlive()) {
-          eventThread.queueEvent(new WatchedEvent(Event.EventType.None,Event.KeeperState.Disconnected,null));
+          selected=selector.selectedKeys();
         }
         now=System.currentTimeMillis();
-        lastHeard=now;
-        lastSend=now;
+        for (        SelectionKey k : selected) {
+          SocketChannel sc=((SocketChannel)k.channel());
+          if ((k.readyOps() & SelectionKey.OP_CONNECT) != 0) {
+            if (sc.finishConnect()) {
+              lastHeard=now;
+              lastSend=now;
+              primeConnection(k);
+            }
+          }
+ else           if ((k.readyOps() & (SelectionKey.OP_READ | SelectionKey.OP_WRITE)) != 0) {
+            if (outgoingQueue.size() > 0) {
+              lastSend=now;
+            }
+            if (doIO()) {
+              lastHeard=now;
+            }
+          }
+        }
+        if (zooKeeper.state == States.CONNECTED) {
+          if (outgoingQueue.size() > 0) {
+            enableWrite();
+          }
+ else {
+            disableWrite();
+          }
+        }
+        selected.clear();
+      }
+ catch (      Exception e) {
+        if (closing) {
+          if (LOG.isDebugEnabled()) {
+            LOG.debug("An exception was thrown while closing send thread for session 0x" + Long.toHexString(getSessionId()) + " : "+ e.getMessage());
+          }
+          break;
+        }
+ else {
+          if (e instanceof SessionExpiredException) {
+            LOG.info(e.getMessage() + ", closing socket connection");
+          }
+ else           if (e instanceof SessionTimeoutException) {
+            LOG.info(e.getMessage() + RETRY_CONN_MSG);
+          }
+ else           if (e instanceof EndOfStreamException) {
+            LOG.info(e.getMessage() + RETRY_CONN_MSG);
+          }
+ else           if ((e instanceof ConnectException) && (e.getMessage().contentEquals("Connection refused"))) {
+          }
+ else {
+            LOG.warn("Session 0x" + Long.toHexString(getSessionId()) + " for server "+ ((SocketChannel)sockKey.channel()).socket().getRemoteSocketAddress()+ ", unexpected error"+ RETRY_CONN_MSG,e);
+          }
+          cleanup();
+          if (zooKeeper.state.isAlive()) {
+            eventThread.queueEvent(new WatchedEvent(Event.EventType.None,Event.KeeperState.Disconnected,null));
+          }
+          now=System.currentTimeMillis();
+          lastHeard=now;
+          lastSend=now;
+        }
       }
     }
   }
-  cleanup();
+  finally {
+    verbotenThreads.remove(Thread.currentThread().getId());
+    cleanup();
+  }
   try {
     selector.close();
   }

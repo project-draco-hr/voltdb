@@ -11,9 +11,6 @@
       ;
     }
   }
-  if (sleptTimes >= 120 && CSVPartitionProcessor.m_isMP) {
-    m_log.info("Unable to retrieve partition information from cluster. " + "Falling back to single row insertions; CSV loading performance will be degraded.");
-  }
   m_log.debug("Client Initialization Done.");
   while ((m_config.limitrows-- > 0)) {
     if (m_errored) {
@@ -37,9 +34,10 @@
         break;
       }
       m_totalRowCount.incrementAndGet();
+      int currLineNumber=m_listReader.getLineNumber();
       String[] correctedLine=lineList.toArray(new String[lineList.size()]);
       String lineCheckResult;
-      if ((lineCheckResult=checkparams_trimspace(correctedLine,CSVPartitionProcessor.m_columnCnt)) != null) {
+      if ((lineCheckResult=checkparams_trimspace(correctedLine,m_columnCnt)) != null) {
         String[] info={lineList.toString(),lineCheckResult};
         if (synchronizeErrorInfo(m_totalLineCount.get() + 1,info)) {
           m_errored=true;
@@ -47,24 +45,21 @@
         }
         continue;
       }
-      CSVLineWithMetaData lineData=new CSVLineWithMetaData(correctedLine,lineList,m_listReader.getLineNumber());
-      long partitionId=0;
-      if (!CSVPartitionProcessor.m_isMP && !m_config.useSuppliedProcedure) {
-        partitionId=clientImpl.getPartitionForParameter(CSVPartitionProcessor.m_partitionColumnType.getValue(),lineData.correctedLine[CSVPartitionProcessor.m_partitionedColumnIndex]);
-      }
-      BlockingQueue<CSVLineWithMetaData> q=m_processorQueues.get(partitionId);
-      if (q == null) {
-        m_log.warn("Unknown or New partition detected possibly because of change in topology.");
-        String[] info={lineList.toString(),"Topology changed."};
-        if (synchronizeErrorInfo(m_totalLineCount.get() + 1,info)) {
-          m_errored=true;
-          break;
+      CSVLineWithMetaData lineData=new CSVLineWithMetaData(correctedLine,lineList,currLineNumber);
+      try {
+        PartitionSingleExecuteProcedureCallback cbmt=new PartitionSingleExecuteProcedureCallback(lineData);
+        if (m_csvClient.callProcedure(cbmt,m_insertProcedure,(Object[])correctedLine)) {
+          m_processedCount.incrementAndGet();
         }
-        continue;
+ else {
+          m_log.fatal("Failed to send CSV insert to VoltDB cluster.");
+          System.exit(1);
+        }
       }
-      if (!q.offer(lineData)) {
-        m_log.debug("Failed to insert linedata in processor, waiting and doing put.");
-        q.put(lineData);
+ catch (      IOException ex) {
+        String[] info={lineList.toString(),ex.toString()};
+        m_errored=synchronizeErrorInfo(currLineNumber,info);
+        return;
       }
     }
  catch (    SuperCsvException e) {
@@ -78,41 +73,8 @@ catch (    IOException ex) {
       m_log.error("Failed to read CSV line from file: " + ex);
       break;
     }
-catch (    InterruptedException ex) {
-      m_log.error("Failed to read CSV line from file: " + ex);
-      break;
-    }
   }
   if (m_errorInfo.size() >= m_config.maxerrors) {
     m_log.warn("The number of failed rows exceeds the configured maximum failed rows: " + m_config.maxerrors);
-  }
-  try {
-    m_listReader.close();
-  }
- catch (  Exception ex) {
-    m_log.error("Error closing reader: " + ex);
-  }
- finally {
-    for (    BlockingQueue<CSVLineWithMetaData> q : m_processorQueues.values()) {
-      try {
-        q.put(m_endOfData);
-      }
- catch (      InterruptedException ex) {
-        m_log.error("Failed to add endOfData for Partition Processor. " + ex);
-      }
-    }
-    m_log.debug("Rows Queued by Reader: " + m_totalRowCount.get());
-  }
-  try {
-    m_log.debug("Waiting for partition processors to finish.");
-    CSVPartitionProcessor.m_processor_cdl.await();
-    m_csvClient.drain();
-    m_log.debug("Partition Processors Done.");
-  }
- catch (  InterruptedException ex) {
-    m_log.warn("Stopped processing because of connection error. " + "A report will be generated with what we processed so far. Error: " + ex);
-  }
-catch (  NoConnectionsException ex) {
-    m_log.warn("Stopped processing because of connection error. " + "A report will be generated with what we processed so far. Error: " + ex);
   }
 }
