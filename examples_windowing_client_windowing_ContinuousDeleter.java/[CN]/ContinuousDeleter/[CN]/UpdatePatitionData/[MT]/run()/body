@@ -1,0 +1,50 @@
+{
+  try {
+    Map<Long,PartitionInfo> partitionDataTemp=new HashMap<Long,PartitionInfo>();
+    VoltTable partitionKeys=null, tableStats=null;
+    try {
+      tableStats=client.callProcedure("@Statistics","TABLE").getResults()[0];
+      partitionKeys=client.callProcedure("@GetPartitionKeys","STRING").getResults()[0];
+    }
+ catch (    IOException|ProcCallException e) {
+      e.printStackTrace();
+      return;
+    }
+    while (tableStats.advanceRow()) {
+      if (!tableStats.getString("TABLE_NAME").equalsIgnoreCase("timedata")) {
+        continue;
+      }
+      PartitionInfo pinfo=new PartitionInfo();
+      long partitionId=tableStats.getLong("PARTITION_ID");
+      pinfo.tupleCount=tableStats.getLong("TUPLE_COUNT");
+      pinfo.partitionKey=null;
+      partitionDataTemp.put(partitionId,pinfo);
+    }
+    while (partitionKeys.advanceRow()) {
+      long partitionId=partitionKeys.getLong("PARTITION_ID");
+      PartitionInfo pinfo=partitionDataTemp.get(partitionId);
+      if (pinfo == null) {
+        return;
+      }
+      pinfo.partitionKey=partitionKeys.getString("PARTITION_KEY");
+    }
+    long globalTupleCountTemp=0;
+    boolean allMatched=true;
+    for (    PartitionInfo pinfo : partitionDataTemp.values()) {
+      globalTupleCountTemp+=pinfo.tupleCount;
+      if (pinfo.partitionKey == null) {
+        allMatched=false;
+      }
+    }
+    globalTupleCount.set(globalTupleCountTemp);
+    redundancy.set(tableStats.getRowCount() / globalTupleCountTemp);
+    if (!allMatched) {
+      return;
+    }
+    partitionData.set(partitionDataTemp);
+  }
+ catch (  Throwable t) {
+    t.printStackTrace();
+    throw t;
+  }
+}

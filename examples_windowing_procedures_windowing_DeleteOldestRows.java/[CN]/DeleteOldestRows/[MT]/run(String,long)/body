@@ -1,0 +1,19 @@
+{
+  if (maxRowsToDeletePerProc <= 0) {
+    throw new VoltAbortException("maxRowsToDeletePerProc must be > 0.");
+  }
+  voltQueueSQL(countRows,EXPECT_SCALAR_LONG);
+  long count=voltExecuteSQL()[0].asScalarLong();
+  if (count <= maxRowsToDeletePerProc) {
+    voltQueueSQL(deleteAll,EXPECT_SCALAR_MATCH(count));
+    voltExecuteSQL(true);
+    return count;
+  }
+ else {
+    voltQueueSQL(getNthOldestTimestamp,EXPECT_SCALAR,maxRowsToDeletePerProc);
+    TimestampType newestToDiscard=voltExecuteSQL()[0].fetchRow(0).getTimestampAsTimestamp(0);
+    voltQueueSQL(deleteOlderThanDate,EXPECT_SCALAR_LONG,newestToDiscard);
+    long deletedCount=voltExecuteSQL(true)[0].asScalarLong();
+    return deletedCount;
+  }
+}
