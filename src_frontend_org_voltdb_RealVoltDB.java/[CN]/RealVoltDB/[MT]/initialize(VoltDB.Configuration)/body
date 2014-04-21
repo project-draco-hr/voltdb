@@ -85,8 +85,20 @@ synchronized (m_startAndStopLock) {
         VoltDB.crashLocalVoltDB("Failed to instantiate snapshot IO agent",true,e);
       }
     }
-    m_licenseApi=MiscUtils.licenseApiFactory(m_config.m_pathToLicense);
+    if (m_config.m_pathToLicense == null) {
+      m_licenseApi=MiscUtils.licenseApiFactory();
+      if (m_licenseApi == null) {
+        hostLog.fatal("Unable to open license file in default directories");
+      }
+    }
+ else {
+      m_licenseApi=MiscUtils.licenseApiFactory(m_config.m_pathToLicense);
+      if (m_licenseApi == null) {
+        hostLog.fatal("Unable to open license file in provided path: " + m_config.m_pathToLicense);
+      }
+    }
     if (m_licenseApi == null) {
+      hostLog.fatal("Please contact sales@voltdb.com to request a license.");
       VoltDB.crashLocalVoltDB("Failed to initialize license verifier. " + "See previous log message for details.",false,null);
     }
     m_globalServiceElector=new GlobalServiceElector(m_messenger.getZK(),m_messenger.getHostId());
@@ -103,8 +115,8 @@ synchronized (m_startAndStopLock) {
     if (m_joining) {
       Class<?> elasticJoinCoordClass=MiscUtils.loadProClass("org.voltdb.join.ElasticJoinNodeCoordinator","Elastic",false);
       try {
-        Constructor<?> constructor=elasticJoinCoordClass.getConstructor(HostMessenger.class);
-        m_joinCoordinator=(JoinCoordinator)constructor.newInstance(m_messenger);
+        Constructor<?> constructor=elasticJoinCoordClass.getConstructor(HostMessenger.class,String.class);
+        m_joinCoordinator=(JoinCoordinator)constructor.newInstance(m_messenger,m_catalogContext.cluster.getVoltroot());
         m_messenger.registerMailbox(m_joinCoordinator);
         m_joinCoordinator.initialize(m_deployment.getCluster().getKfactor());
       }
@@ -115,12 +127,12 @@ synchronized (m_startAndStopLock) {
     JSONObject topo=getTopology(config.m_startAction,m_joinCoordinator);
     m_partitionsToSitesAtStartupForExportInit=new ArrayList<Pair<Integer,Long>>();
     try {
-      m_cartographer=new Cartographer(m_messenger);
       ClusterConfig clusterConfig=new ClusterConfig(topo);
+      m_configuredReplicationFactor=clusterConfig.getReplicationFactor();
+      m_cartographer=new Cartographer(m_messenger,m_configuredReplicationFactor,m_catalogContext.cluster.getNetworkpartition());
       List<Integer> partitions=null;
       if (isRejoin) {
         m_configuredNumberOfPartitions=m_cartographer.getPartitionCount();
-        m_configuredReplicationFactor=clusterConfig.getReplicationFactor();
         partitions=m_cartographer.getIv2PartitionsToReplace(m_configuredReplicationFactor,clusterConfig.getSitesPerHost());
         if (partitions.size() == 0) {
           VoltDB.crashLocalVoltDB("The VoltDB cluster already has enough nodes to satisfy " + "the requested k-safety factor of " + m_configuredReplicationFactor + ".\n"+ "No more nodes can join.",false,null);
@@ -128,7 +140,6 @@ synchronized (m_startAndStopLock) {
       }
  else {
         m_configuredNumberOfPartitions=clusterConfig.getPartitionCount();
-        m_configuredReplicationFactor=clusterConfig.getReplicationFactor();
         partitions=ClusterConfig.partitionsForHost(topo,m_messenger.getHostId());
       }
       for (int ii=0; ii < partitions.size(); ii++) {
@@ -149,6 +160,7 @@ synchronized (m_startAndStopLock) {
           partsToHSIdsToRejoin.put(init.getPartitionId(),init.getInitiatorHSId());
         }
       }
+      OnDemandBinaryLogger.path=m_catalogContext.cluster.getVoltroot();
       if (isRejoin) {
         SnapshotSaveAPI.recoveringSiteCount.set(partsToHSIdsToRejoin.size());
         hostLog.info("Set recovering site count to " + partsToHSIdsToRejoin.size());

@@ -1,0 +1,100 @@
+{
+  if (!m_enabled) {
+    m_authenticatedUser="_^_pinco_pallo_^_";
+    return true;
+  }
+ else   if (m_authProvider != AuthProvider.KERBEROS) {
+    return false;
+  }
+  int msgSize=4 + 1 + 1+ 4+ m_principalName.length;
+  final ByteBuffer bb=ByteBuffer.allocate(4096);
+  bb.putInt(msgSize - 4).put(AUTH_HANDSHAKE_VERSION).put(AUTH_SERVICE_NAME);
+  bb.putInt(m_principalName.length);
+  bb.put(m_principalName);
+  bb.flip();
+  while (bb.hasRemaining()) {
+    m_socket.write(bb);
+  }
+  String authenticatedUser=Subject.doAs(m_loginCtx.getSubject(),new PrivilegedAction<String>(){
+    /** 
+ * Establish an authenticated GSS security context
+ * For further information on GSS please refer to
+ * <a href="http://en.wikipedia.org/wiki/Generic_Security_Services_Application_Program_Interface">this</a>
+ * article on Generic Security Services Application Program Interface
+ */
+    @Override public String run(){
+      GSSContext context=null;
+      try {
+        context=m_gssManager.createContext((GSSCredential)null);
+        byte[] token;
+        while (!context.isEstablished()) {
+          bb.clear().limit(4);
+          while (bb.hasRemaining()) {
+            if (m_socket.read(bb) == -1)             throw new EOFException();
+          }
+          bb.flip();
+          int msgSize=bb.getInt();
+          if (msgSize > bb.capacity()) {
+            authLogger.warn("Authentication packet exceeded alloted size");
+            return null;
+          }
+          bb.clear().limit(msgSize);
+          while (bb.hasRemaining()) {
+            if (m_socket.read(bb) == -1)             throw new EOFException();
+          }
+          bb.flip();
+          byte version=bb.get();
+          if (version != AUTH_HANDSHAKE_VERSION) {
+            authLogger.warn("Encountered unexpected authentication protocol version " + version);
+            return null;
+          }
+          byte tag=bb.get();
+          if (tag != AUTH_HANDSHAKE) {
+            authLogger.warn("Encountered unexpected authentication protocol tag " + tag);
+            return null;
+          }
+          token=context.acceptSecContext(bb.array(),bb.arrayOffset() + bb.position(),bb.remaining());
+          if (token != null) {
+            msgSize=4 + 1 + 1+ token.length;
+            bb.clear().limit(msgSize);
+            bb.putInt(msgSize - 4).put(AUTH_HANDSHAKE_VERSION).put(AUTH_HANDSHAKE);
+            bb.put(token);
+            bb.flip();
+            while (bb.hasRemaining()) {
+              m_socket.write(bb);
+            }
+          }
+        }
+        String authenticateUserName=context.getSrcName().toString();
+        if (!context.getMutualAuthState()) {
+          return null;
+        }
+        context.dispose();
+        context=null;
+        return authenticateUserName;
+      }
+ catch (      IOException|GSSException ex) {
+        Throwables.propagate(ex);
+      }
+ finally {
+        if (context != null)         try {
+          context.dispose();
+        }
+ catch (        Exception ignoreIt) {
+        }
+      }
+      return null;
+    }
+  }
+);
+  if (authenticatedUser != null) {
+    final AuthUser user=m_users.get(authenticatedUser);
+    if (user == null) {
+      authLogger.l7dlog(Level.INFO,LogKeys.auth_AuthSystem_NoSuchUser.name(),new String[]{authenticatedUser},null);
+      return false;
+    }
+    m_authenticatedUser=authenticatedUser;
+    authLogger.l7dlog(Level.INFO,LogKeys.auth_AuthSystem_AuthenticatedUser.name(),new Object[]{authenticatedUser},null);
+  }
+  return true;
+}

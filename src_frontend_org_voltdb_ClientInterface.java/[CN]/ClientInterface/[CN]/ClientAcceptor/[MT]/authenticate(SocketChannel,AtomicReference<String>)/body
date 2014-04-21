@@ -100,12 +100,45 @@
   }
   message.get(password);
   CatalogContext context=m_catalogContext.get();
+  AuthProvider ap=null;
+  try {
+    ap=AuthProvider.fromService(service);
+  }
+ catch (  IllegalArgumentException unkownProvider) {
+  }
+  if (ap == null) {
+    responseBuffer.put(EXPORT_DISABLED_REJECTION).flip();
+    socket.write(responseBuffer);
+    socket.close();
+    authLog.warn("Rejected user " + username + " attempting to use disabled or unconfigured service "+ service+ ".");
+    authLog.warn("VoltDB Export services are no longer available through clients.");
+    return null;
+  }
   if (!VoltDB.instance().rejoining()) {
-    boolean authenticated=context.authSystem.authenticate(username,password);
+    AuthenticationRequest arq;
+    if (ap == AuthProvider.KERBEROS) {
+      arq=context.authSystem.new KerberosAuthenticationRequest(socket);
+    }
+ else {
+      arq=context.authSystem.new HashAuthenticationRequest(username,password);
+    }
+    boolean authenticated=arq.authenticate();
     if (!authenticated) {
-      authLog.warn("Failure to authenticate connection(" + socket.socket().getRemoteSocketAddress() + "): user "+ username+ " failed authentication.");
-      responseBuffer.put(AUTHENTICATION_FAILURE).flip();
-      socket.write(responseBuffer);
+      Exception faex=arq.getAuthenticationFailureException();
+      boolean isItIo=false;
+      for (Throwable cause=faex; faex != null && !isItIo; cause=cause.getCause()) {
+        isItIo=cause instanceof IOException;
+      }
+      if (faex != null) {
+        authLog.warn("Failure to authenticate connection(" + socket.socket().getRemoteSocketAddress() + "):",faex);
+      }
+ else {
+        authLog.warn("Failure to authenticate connection(" + socket.socket().getRemoteSocketAddress() + "): user "+ username+ " failed authentication.");
+      }
+      if (!isItIo) {
+        responseBuffer.put(AUTHENTICATION_FAILURE).flip();
+        socket.write(responseBuffer);
+      }
       socket.close();
       return null;
     }
@@ -117,19 +150,8 @@
     socket.close();
     return null;
   }
-  InputHandler handler=null;
-  if (service.equalsIgnoreCase("database")) {
-    handler=new ClientInputHandler(username,m_isAdmin);
-  }
- else {
-    responseBuffer.put(EXPORT_DISABLED_REJECTION).flip();
-    socket.write(responseBuffer);
-    socket.close();
-    authLog.warn("Rejected user " + username + " attempting to use disabled or unconfigured service "+ service+ ".");
-    authLog.warn("VoltDB Export services are no longer available through clients.");
-    return null;
-  }
-  byte buildString[]=VoltDB.instance().getBuildString().getBytes("UTF-8");
+  InputHandler handler=new ClientInputHandler(username,m_isAdmin);
+  byte buildString[]=VoltDB.instance().getBuildString().getBytes(Charsets.UTF_8);
   responseBuffer=ByteBuffer.allocate(34 + buildString.length);
   responseBuffer.putInt(30 + buildString.length);
   responseBuffer.put((byte)0);
