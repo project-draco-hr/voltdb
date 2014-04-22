@@ -1,0 +1,40 @@
+{
+  try {
+    byte[] ks=keyspace.getBytes(UTF8);
+    ClientResponse response=m_client.callProcedure("Scan",ks,lowerBound,lowerBound.getBytes(UTF8),recordCount);
+    if (response.getStatus() != ClientResponse.SUCCESS) {
+      return 1;
+    }
+    int nFound=0;
+    String partKey=lowerBound;
+    CyclicBarrier barrier=new CyclicBarrier(2);
+    result.ensureCapacity(recordCount);
+    ScanCallback callback=null;
+    boolean proceed=true;
+    while (proceed) {
+      if (response.getStatus() != ClientResponse.SUCCESS) {
+        return 1;
+      }
+      VoltTable table=response.getResults()[0];
+      nFound+=table.getRowCount();
+      proceed=nFound < recordCount && (partKey=nextPartitionKey(partKey)) != null;
+      if (proceed) {
+        barrier.reset();
+        callback=new ScanCallback(barrier);
+        m_client.callProcedure(callback,"Scan",ks,partKey,null,recordCount - nFound);
+      }
+      while (table.advanceRow()) {
+        result.add(unpackRowData(table,columns));
+      }
+      if (proceed) {
+        barrier.await();
+        response=callback.response;
+      }
+    }
+    return 0;
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+    return 1;
+  }
+}
