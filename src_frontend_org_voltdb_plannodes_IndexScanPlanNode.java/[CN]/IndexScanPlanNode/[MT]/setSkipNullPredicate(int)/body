@@ -1,0 +1,39 @@
+{
+  String exprsjson=m_catalogIndex.getExpressionsjson();
+  List<AbstractExpression> indexedExprs=null;
+  if (exprsjson.isEmpty()) {
+    indexedExprs=new ArrayList<AbstractExpression>();
+    List<ColumnRef> indexedColRefs=CatalogUtil.getSortedCatalogItems(m_catalogIndex.getColumns(),"index");
+    assert(nextKeyIndex < indexedColRefs.size());
+    for (int i=0; i <= nextKeyIndex; i++) {
+      ColumnRef colRef=indexedColRefs.get(i);
+      Column col=colRef.getColumn();
+      TupleValueExpression tve=new TupleValueExpression(m_targetTableName,m_targetTableAlias,col.getTypeName(),col.getTypeName());
+      tve.setValueType(VoltType.get((byte)col.getType()));
+      tve.setValueSize(col.getSize());
+      tve.setInBytes(col.getInbytes());
+      indexedExprs.add(tve);
+    }
+  }
+ else {
+    try {
+      indexedExprs=AbstractExpression.fromJSONArrayString(exprsjson,m_tableScan);
+      assert(nextKeyIndex < indexedExprs.size());
+    }
+ catch (    JSONException e) {
+      e.printStackTrace();
+      assert(false);
+    }
+  }
+  List<AbstractExpression> exprs=new ArrayList<AbstractExpression>();
+  for (int i=0; i < nextKeyIndex; i++) {
+    AbstractExpression idxExpr=indexedExprs.get(i);
+    AbstractExpression expr=new ComparisonExpression(ExpressionType.COMPARE_EQUAL,idxExpr,(AbstractExpression)m_searchkeyExpressions.get(i).clone());
+    exprs.add(expr);
+  }
+  AbstractExpression nullExpr=indexedExprs.get(nextKeyIndex);
+  AbstractExpression expr=new OperatorExpression(ExpressionType.OPERATOR_IS_NULL,nullExpr,null);
+  exprs.add(expr);
+  m_skip_null_predicate=ExpressionUtil.combine(exprs);
+  m_skip_null_predicate.finalizeValueTypes();
+}
