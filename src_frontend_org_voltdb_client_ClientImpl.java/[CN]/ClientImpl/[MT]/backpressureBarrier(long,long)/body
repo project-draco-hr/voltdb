@@ -1,0 +1,30 @@
+{
+  if (m_isShutdown) {
+    return false;
+  }
+  if (m_blessedThreadIds.contains(Thread.currentThread().getId())) {
+    throw new RuntimeException("Can't invoke backpressureBarrier from within the client callback thread " + " without deadlocking the client library");
+  }
+  if (m_backpressure) {
+synchronized (m_backpressureLock) {
+      if (m_backpressure) {
+        while (m_backpressure && !m_isShutdown) {
+          if (start != 0) {
+            m_backpressureLock.wait(timeoutNanos / TimeUnit.MILLISECONDS.toNanos(1),(int)(timeoutNanos % TimeUnit.MILLISECONDS.toNanos(1)));
+            if (!m_backpressure)             break;
+            final long nowNanos=System.nanoTime();
+            final long deltaNanos=Math.max(1,nowNanos - start);
+            if (deltaNanos >= timeoutNanos) {
+              return true;
+            }
+            timeoutNanos-=deltaNanos;
+          }
+ else {
+            m_backpressureLock.wait();
+          }
+        }
+      }
+    }
+  }
+  return false;
+}
