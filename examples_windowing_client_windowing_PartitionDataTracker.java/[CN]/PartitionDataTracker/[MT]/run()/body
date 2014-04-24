@@ -1,0 +1,46 @@
+{
+  try {
+    Map<Long,GlobalState.PartitionInfo> partitionData=new HashMap<Long,GlobalState.PartitionInfo>();
+    VoltTable partitionKeys=null, tableStats=null;
+    try {
+      tableStats=state.client.callProcedure("@Statistics","TABLE").getResults()[0];
+      partitionKeys=state.client.callProcedure("@GetPartitionKeys","STRING").getResults()[0];
+    }
+ catch (    IOException|ProcCallException e) {
+      e.printStackTrace();
+      return;
+    }
+    while (tableStats.advanceRow()) {
+      if (!tableStats.getString("TABLE_NAME").equalsIgnoreCase("timedata")) {
+        continue;
+      }
+      GlobalState.PartitionInfo pinfo=new GlobalState.PartitionInfo();
+      long partitionId=tableStats.getLong("PARTITION_ID");
+      pinfo.tupleCount=tableStats.getLong("TUPLE_COUNT");
+      pinfo.partitionKey=null;
+      partitionData.put(partitionId,pinfo);
+    }
+    while (partitionKeys.advanceRow()) {
+      long partitionId=partitionKeys.getLong("PARTITION_ID");
+      GlobalState.PartitionInfo pinfo=partitionData.get(partitionId);
+      if (pinfo == null) {
+        return;
+      }
+      pinfo.partitionKey=partitionKeys.getString("PARTITION_KEY");
+    }
+    boolean allMatched=true;
+    for (    GlobalState.PartitionInfo pinfo : partitionData.values()) {
+      if (pinfo.partitionKey == null) {
+        allMatched=false;
+      }
+    }
+    if (!allMatched) {
+      return;
+    }
+    state.updatePartitionInfoAndRedundancy(partitionData,tableStats.getRowCount() / partitionData.size());
+  }
+ catch (  Throwable t) {
+    t.printStackTrace();
+    throw t;
+  }
+}

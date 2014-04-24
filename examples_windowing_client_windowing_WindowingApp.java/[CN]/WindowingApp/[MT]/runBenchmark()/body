@@ -1,43 +1,11 @@
 {
   System.out.print(HORIZONTAL_RULE);
-  System.out.println(" Setup & Initialization");
-  System.out.println(HORIZONTAL_RULE);
-  connect(insertsClient,config.servers);
-  connect(nonInsertsClient,config.servers);
-  System.out.print(HORIZONTAL_RULE);
   System.out.println(" Starting Benchmark");
   System.out.println(HORIZONTAL_RULE);
-  fullStatsContext.fetchAndResetBaseline();
-  periodicStatsContext.fetchAndResetBaseline();
-  benchmarkStartTS=System.currentTimeMillis();
-  scheduler.scheduleAtFixedRate(new Runnable(){
-    @Override public void run(){
-      printStatistics();
-    }
-  }
-,config.displayinterval,config.displayinterval,TimeUnit.SECONDS);
-  scheduler.scheduleAtFixedRate(new Runnable(){
-    @Override public void run(){
-      partitionData.update();
-    }
-  }
-,1,1,TimeUnit.SECONDS);
-  scheduler.execute(getDeleterRunnable());
-  System.out.println("\nRunning benchmark...");
-  final long benchmarkEndTime=System.currentTimeMillis() + (1000l * config.duration);
-  while (benchmarkEndTime > System.currentTimeMillis()) {
-    insertRandomRow();
-  }
-  scheduler.shutdown();
-  try {
-    scheduler.awaitTermination(60,TimeUnit.SECONDS);
-  }
- catch (  InterruptedException e) {
-    e.printStackTrace();
-  }
-  insertsClient.drain();
-  nonInsertsClient.drain();
-  printResults();
-  insertsClient.close();
-  nonInsertsClient.drain();
+  state.scheduler.scheduleWithFixedDelay(reporter,state.config.displayinterval,state.config.displayinterval,TimeUnit.SECONDS);
+  state.scheduler.scheduleWithFixedDelay(partitionTracker,1,1,TimeUnit.SECONDS);
+  state.scheduler.execute(deleter);
+  state.scheduler.scheduleWithFixedDelay(maxTracker,5000,10,TimeUnit.MILLISECONDS);
+  inserter.run();
+  state.shutdown();
 }

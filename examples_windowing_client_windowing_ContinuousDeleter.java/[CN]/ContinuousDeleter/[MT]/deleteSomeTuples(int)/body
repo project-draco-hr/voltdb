@@ -1,0 +1,36 @@
+{
+  final Map<Long,GlobalState.PartitionInfo> currentPartitionInfo=state.getPartitionData();
+  final long partitionCount=currentPartitionInfo.size();
+  final CountDownLatch latch=new CountDownLatch((int)partitionCount * rounds);
+  AtomicLong tuplesNotDeleted=null;
+  for (int round=0; round < rounds; round++) {
+    final AtomicLong tuplesNotDeletedForRound=new AtomicLong(0);
+    TimestampType dateTarget=new TimestampType((System.currentTimeMillis() - 30 * 1000) * 1000);
+    for (    GlobalState.PartitionInfo pinfo : currentPartitionInfo.values()) {
+      try {
+        state.client.callProcedure(new Callback(latch,tuplesNotDeletedForRound),"DeleteAfterDate",pinfo.partitionKey,dateTarget,CHUNK_SIZE);
+      }
+ catch (      Exception e) {
+        e.printStackTrace();
+        latch.countDown();
+      }
+    }
+    tuplesNotDeleted=tuplesNotDeletedForRound;
+  }
+  try {
+    latch.await();
+  }
+ catch (  InterruptedException e) {
+    e.printStackTrace();
+  }
+  long finalTuplesNotDeleted=tuplesNotDeleted.get();
+  if (tuplesNotDeleted.get() > 0) {
+    double avgOutstandingPerPartition=finalTuplesNotDeleted / (double)state.getPartitionCount();
+    int desiredRounds=(int)Math.ceil(avgOutstandingPerPartition / ContinuousDeleter.CHUNK_SIZE);
+    assert(desiredRounds > 0);
+    state.scheduler.execute(getRunnableForMulitpleRounds(desiredRounds));
+  }
+ else {
+    state.scheduler.schedule(this,DELETE_YIELD_MS,TimeUnit.MILLISECONDS);
+  }
+}
