@@ -1,56 +1,49 @@
 {
-  if (m_currentFeasibilityCheck != null) {
-    if (m_currentFeasibilityCheck.isDone()) {
-      m_currentFeasibilityCheck=null;
+  boolean success=true;
+  VoltTable checkResult=SnapshotUtil.constructNodeResultsTable();
+  final String jsString=String.class.cast(params[0]);
+  try {
+    final JSONObject jsObj=new JSONObject(jsString);
+    boolean initiateSnapshot;
+    VoltMessage msg=new SnapshotCheckRequestMessage(jsString);
+    List<Integer> liveHosts=VoltDB.instance().getHostMessenger().getLiveHostIds();
+    for (    int hostId : liveHosts) {
+      m_mb.send(CoreUtils.getHSIdFromHostAndSite(hostId,HostMessenger.SNAPSHOT_IO_AGENT_ID),msg);
     }
- else {
-      final VoltTable result=SnapshotUtil.constructNodeResultsTable();
-      result.addRow(CoreUtils.getHostIdFromHSId(m_mb.getHSId()),CoreUtils.getHostnameOrAddress(),"","FAILURE","SNAPSHOT IN PROGRESS");
-      final ClientResponseImpl response=new ClientResponseImpl(ClientResponseImpl.SUCCESS,new VoltTable[]{result},null);
-      response.setClientHandle(handle);
-      processClientResponse(Callables.returning(response));
-      return;
+    Map<Integer,VoltTable> responses=Maps.newHashMap();
+    final long timeoutMs=10 * 1000;
+    final long endTime=System.currentTimeMillis() + timeoutMs;
+    SnapshotCheckResponseMessage response;
+    while ((response=(SnapshotCheckResponseMessage)m_mb.recvBlocking(timeoutMs)) != null) {
+      if (jsObj.getString("path").equals(response.getPath()) && jsObj.getString("nonce").equals(response.getNonce())) {
+        responses.put(CoreUtils.getHostIdFromHSId(response.m_sourceHSId),response.getResponse());
+      }
+      if (responses.size() == liveHosts.size() || System.currentTimeMillis() > endTime) {
+        if (responses.size() != liveHosts.size()) {
+          checkResult.addRow(CoreUtils.getHostIdFromHSId(m_mb.getHSId()),CoreUtils.getHostnameOrAddress(),null,"FAILURE","TIMED OUT CHECKING SNAPSHOT FEASIBILITY");
+          success=false;
+        }
+        break;
+      }
     }
-  }
-  Callable<Object> work=new Callable<Object>(){
-    @Override public Object call() throws Exception {
-      final String jsString=String.class.cast(params[0]);
-      final JSONObject jsObj=new JSONObject(jsString);
-      boolean initiateSnapshot;
-      VoltTable checkResult;
-      VoltMessage msg=new SnapshotCheckRequestMessage(jsString);
-      List<Integer> liveHosts=VoltDB.instance().getHostMessenger().getLiveHostIds();
-      for (      int hostId : liveHosts) {
-        m_mb.send(CoreUtils.getHSIdFromHostAndSite(hostId,HostMessenger.SNAPSHOT_IO_AGENT_ID),msg);
-      }
-      Map<Integer,VoltTable> responses=Maps.newHashMap();
-      final long timeoutMs=10 * 1000;
-      final long endTime=System.currentTimeMillis() + timeoutMs;
-      SnapshotCheckResponseMessage response;
-      while ((response=(SnapshotCheckResponseMessage)m_mb.recvBlocking(timeoutMs)) != null) {
-        if (jsObj.getString("path").equals(response.getPath()) && jsObj.getString("nonce").equals(response.getNonce())) {
-          responses.put(CoreUtils.getHostIdFromHSId(response.m_sourceHSId),response.getResponse());
-        }
-        if (responses.size() == liveHosts.size() || System.currentTimeMillis() > endTime) {
-          break;
-        }
-      }
-      if (responses.size() != liveHosts.size()) {
-        throw new CoreUtils.RetryException();
-      }
+    if (success) {
       checkResult=VoltTableUtil.unionTables(responses.values());
       initiateSnapshot=SnapshotUtil.didSnapshotRequestSucceed(new VoltTable[]{checkResult});
       if (initiateSnapshot) {
         m_initiator.initiateSnapshotDaemonWork("@SnapshotSave",handle,params);
       }
- else       if (requestId != null) {
-        final ClientResponseImpl failureResponse=new ClientResponseImpl(ClientResponseImpl.SUCCESS,new VoltTable[]{checkResult},null);
-        failureResponse.setClientHandle(handle);
-        processClientResponse(Callables.returning(failureResponse));
+ else {
+        success=false;
       }
-      return null;
     }
   }
-;
-  m_currentFeasibilityCheck=CoreUtils.retryHelper(m_es,m_es,work,3,10,TimeUnit.SECONDS,1,TimeUnit.HOURS);
+ catch (  JSONException e) {
+    checkResult.addRow(CoreUtils.getHostIdFromHSId(m_mb.getHSId()),CoreUtils.getHostnameOrAddress(),null,"FAILURE","ERROR PARSING JSON");
+    SNAP_LOG.warn("Error parsing JSON string: " + jsString,e);
+  }
+  if (!success) {
+    final ClientResponseImpl failureResponse=new ClientResponseImpl(ClientResponseImpl.SUCCESS,new VoltTable[]{checkResult},null);
+    failureResponse.setClientHandle(handle);
+    processClientResponse(Callables.returning(failureResponse));
+  }
 }
