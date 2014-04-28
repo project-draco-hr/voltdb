@@ -1,0 +1,49 @@
+{
+  try {
+    ConsumerIterator<byte[],byte[]> it=m_stream.iterator();
+    int ttlVerified=0;
+    while (it.hasNext()) {
+      byte msg[]=it.next().message();
+      String smsg=new String(msg);
+      String row[]=ExportOnServerVerifier.RoughCSVTokenizer.tokenize(smsg);
+      try {
+        if (m_doneStream) {
+          System.out.println("EOS Consumed: " + smsg + " Expected Rows: "+ row[6]);
+          expectedRows=Long.parseLong(row[6]);
+          try {
+            m_consumer.commitOffsets();
+            Thread.sleep(2000);
+          }
+ catch (          InterruptedException ex) {
+          }
+          break;
+        }
+ else {
+          long rowTxnId=Long.parseLong(row[6]);
+          seenTxnIds.add(rowTxnId);
+        }
+        ExportOnServerVerifier.ValidationErr err=ExportOnServerVerifier.verifyRow(row);
+        if (err != null) {
+          System.out.println("ERROR in validation: " + err.toString());
+        }
+        if (++ttlVerified % VALIDATION_REPORT_INTERVAL == 0) {
+          System.out.println("Verified " + ttlVerified + " rows.");
+        }
+        Integer partition=Integer.parseInt(row[3].trim());
+        Long rowTxnId=Long.parseLong(row[6].trim());
+        if (TxnEgo.getPartitionId(rowTxnId) != partition) {
+          System.err.println("ERROR: mismatched exported partition for txid " + rowTxnId + ", tx says it belongs to "+ TxnEgo.getPartitionId(rowTxnId)+ ", while export record says "+ partition);
+        }
+      }
+ catch (      ExportOnServerVerifier.ValidationErr ex) {
+        Logger.getLogger(ExportKafkaOnServerVerifier.class.getName()).log(Level.SEVERE,null,ex);
+      }
+    }
+    System.out.println("Shutting down Thread: " + m_threadNumber);
+  }
+ catch (  Exception ex) {
+    m_consumer.commitOffsets();
+    m_consumer.shutdown();
+    ex.printStackTrace();
+  }
+}
