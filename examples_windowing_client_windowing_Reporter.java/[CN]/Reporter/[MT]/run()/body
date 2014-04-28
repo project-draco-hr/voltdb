@@ -1,4 +1,5 @@
 {
+  boolean success=true;
   Map<Integer,Long> averagesForWindows=new TreeMap<Integer,Long>();
   for (  int seconds : new int[]{1,5,10,30}) {
     try {
@@ -7,18 +8,35 @@
       averagesForWindows.put(seconds,average);
     }
  catch (    IOException|ProcCallException e) {
-      e.printStackTrace();
+      success=false;
     }
   }
 synchronized (app) {
     long now=System.currentTimeMillis();
-    long time=Math.round((now - app.benchmarkStartTS) / 1000.0);
+    long time=Math.round((now - app.startTS) / 1000.0);
     System.out.printf("%02d:%02d:%02d Report:\n",time / 3600,(time / 60) % 60,time % 60);
-    System.out.println("  Average values over time windows:");
-    for (    Entry<Integer,Long> e : averagesForWindows.entrySet()) {
-      System.out.printf("    Average for past %2ds: %d\n",e.getKey(),e.getValue());
+    if (success) {
+      System.out.println("  Average values over time windows:");
+      for (      Entry<Integer,Long> e : averagesForWindows.entrySet()) {
+        System.out.printf("    Average for past %2ds: %d\n",e.getKey(),e.getValue());
+      }
+    }
+ else {
+      System.out.println("  Unable to retrieve average values at this time.");
     }
     app.inserter.printReport();
+    long partitionTrackerFailures=app.partitionTracker.failureCount.getAndSet(0);
+    if (partitionTrackerFailures > 0) {
+      System.out.printf("  Partition Tracker failed %d times since last report.\n",partitionTrackerFailures);
+    }
+    long continuousDeleterFailures=app.deleter.failureCount.getAndSet(0);
+    if (continuousDeleterFailures > 0) {
+      System.out.printf("  Continuous Deleter failed %d times since last report.\n",continuousDeleterFailures);
+    }
+    long maxTrackerFailures=app.maxTracker.failureCount.getAndSet(0);
+    if (maxTrackerFailures > 0) {
+      System.out.printf("  Max Tracker failed %d times since last report.\n",maxTrackerFailures);
+    }
     System.out.println();
     System.out.flush();
   }
