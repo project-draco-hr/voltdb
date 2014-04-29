@@ -3,14 +3,25 @@
   m_pendingTasks=new TransactionTaskQueue(m_tasks);
   m_snapMonitor=snapMonitor;
   m_durabilityListener=new DurabilityListener(){
-    @Override public void onDurability(    ArrayList<Object> durableThings){
+    @Override public void onDurability(    final ArrayList<Object> durableThings){
+      final SiteTaskerRunnable r=new SiteTasker.SiteTaskerRunnable(){
+        @Override void run(){
 synchronized (m_lock) {
-        for (        Object o : durableThings) {
-          m_pendingTasks.offer((TransactionTask)o);
-          if (!((TransactionTask)o).getTransactionState().isSinglePartition()) {
-            offerPendingMPTasks(((TransactionTask)o).getTxnId());
+            for (            Object o : durableThings) {
+              m_pendingTasks.offer((TransactionTask)o);
+              if (!((TransactionTask)o).getTransactionState().isSinglePartition()) {
+                offerPendingMPTasks(((TransactionTask)o).getTxnId());
+              }
+            }
           }
         }
+      }
+;
+      if (InitiatorMailbox.SCHEDULE_IN_SITE_THREAD) {
+        m_tasks.offer(r);
+      }
+ else {
+        r.run();
       }
     }
   }
