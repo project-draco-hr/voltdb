@@ -10,12 +10,6 @@
         if (m_doneStream) {
           System.out.println("EOS Consumed: " + smsg + " Expected Rows: "+ row[6]);
           expectedRows=Long.parseLong(row[6]);
-          try {
-            m_consumer.commitOffsets();
-            Thread.sleep(2000);
-          }
- catch (          InterruptedException ex) {
-          }
           break;
         }
  else {
@@ -34,16 +28,22 @@
         if (TxnEgo.getPartitionId(rowTxnId) != partition) {
           System.err.println("ERROR: mismatched exported partition for txid " + rowTxnId + ", tx says it belongs to "+ TxnEgo.getPartitionId(rowTxnId)+ ", while export record says "+ partition);
         }
+        consumedRows.incrementAndGet();
+        if (expectedRows != 0 && consumedRows.get() >= expectedRows) {
+          break;
+        }
       }
  catch (      ExportOnServerVerifier.ValidationErr ex) {
-        Logger.getLogger(ExportKafkaOnServerVerifier.class.getName()).log(Level.SEVERE,null,ex);
+        System.out.println("Validation ERROR: " + ex);
       }
     }
-    System.out.println("Shutting down Thread: " + m_threadNumber);
   }
  catch (  Exception ex) {
-    m_consumer.commitOffsets();
-    m_consumer.shutdown();
     ex.printStackTrace();
+  }
+ finally {
+    if (m_cdl != null) {
+      m_cdl.countDown();
+    }
   }
 }
