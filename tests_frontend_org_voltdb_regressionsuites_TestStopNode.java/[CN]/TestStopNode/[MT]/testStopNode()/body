@@ -1,0 +1,45 @@
+{
+  Client client=ClientFactory.createClient();
+  client.createConnection("localhost",m_config.port(0));
+  try {
+    CountDownLatch cdl=new CountDownLatch(1);
+    byte expectedResponse=(kfactor > 0) ? ClientResponse.SUCCESS : ClientResponse.GRACEFUL_FAILURE;
+    client.callProcedure(new StopCallBack(cdl,expectedResponse,4),"@StopNode",4);
+    cdl.await();
+    if (expectedResponse == ClientResponse.SUCCESS) {
+      waitForHostToBeGone(4);
+    }
+    cdl=new CountDownLatch(1);
+    client.callProcedure(new StopCallBack(cdl,expectedResponse,3),"@StopNode",3);
+    cdl.await();
+    if (expectedResponse == ClientResponse.SUCCESS) {
+      waitForHostToBeGone(3);
+    }
+    cdl=new CountDownLatch(1);
+    client.callProcedure(new StopCallBack(cdl,expectedResponse,2),"@StopNode",2);
+    cdl.await();
+    if (expectedResponse == ClientResponse.SUCCESS) {
+      waitForHostToBeGone(2);
+    }
+    client.callProcedure("@SystemInformation","overview");
+  }
+ catch (  Exception ex) {
+    fail();
+    ex.printStackTrace();
+  }
+  boolean lostConnect=false;
+  try {
+    CountDownLatch cdl=new CountDownLatch(3);
+    client.callProcedure(new StopCallBack(cdl,ClientResponse.GRACEFUL_FAILURE,1),"@StopNode",1);
+    client.callProcedure(new StopCallBack(cdl,ClientResponse.GRACEFUL_FAILURE,4),"@StopNode",4);
+    client.callProcedure(new StopCallBack(cdl,ClientResponse.GRACEFUL_FAILURE,0),"@StopNode",0);
+    client.callProcedure("@SystemInformation","overview");
+    client.drain();
+    cdl.await();
+  }
+ catch (  Exception pce) {
+    pce.printStackTrace();
+    lostConnect=pce.getMessage().contains("was lost before a response was received");
+  }
+  assertFalse(lostConnect);
+}
