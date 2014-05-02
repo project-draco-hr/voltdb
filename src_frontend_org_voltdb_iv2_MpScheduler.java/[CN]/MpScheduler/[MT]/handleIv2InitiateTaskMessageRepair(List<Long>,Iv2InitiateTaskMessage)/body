@@ -2,7 +2,18 @@
   final String procedureName=message.getStoredProcedureName();
   Iv2InitiateTaskMessage mp=new Iv2InitiateTaskMessage(message.getInitiatorHSId(),message.getCoordinatorHSId(),message.getTruncationHandle(),message.getTxnId(),message.getUniqueId(),message.isReadOnly(),message.isSinglePartition(),message.getStoredProcedureInvocation(),message.getClientInterfaceHandle(),message.getConnectionId(),message.isForReplay());
   m_uniqueIdGenerator.updateMostRecentlyGeneratedUniqueId(message.getUniqueId());
-  final MpProcedureTask task=new MpProcedureTask(m_mailbox,procedureName,m_pendingTasks,mp,m_iv2Masters,m_partitionMasters,m_buddyHSIds.get(m_nextBuddy),true);
+  MpProcedureTask task=null;
+  if (isNpTxn(message) && NpProcedureTaskConstructor != null) {
+    Set<Integer> involvedPartitions=getBalancePartitions(message);
+    if (involvedPartitions != null) {
+      HashMap<Integer,Long> involvedPartitionMasters=Maps.newHashMap(m_partitionMasters);
+      involvedPartitionMasters.keySet().retainAll(involvedPartitions);
+      task=instantiateNpProcedureTask(m_mailbox,procedureName,m_pendingTasks,mp,involvedPartitionMasters,m_buddyHSIds.get(m_nextBuddy),true);
+    }
+  }
+  if (task == null) {
+    task=new MpProcedureTask(m_mailbox,procedureName,m_pendingTasks,mp,m_iv2Masters,m_partitionMasters,m_buddyHSIds.get(m_nextBuddy),true);
+  }
   m_nextBuddy=(m_nextBuddy++) % m_buddyHSIds.size();
   m_outstandingTxns.put(task.m_txnState.txnId,task.m_txnState);
   m_pendingTasks.offer(task);

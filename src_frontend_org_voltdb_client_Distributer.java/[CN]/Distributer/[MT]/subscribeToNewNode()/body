@@ -1,0 +1,28 @@
+{
+  NodeConnection cxn=null;
+synchronized (Distributer.this) {
+    m_subscribedConnection=null;
+    if (!m_connections.isEmpty()) {
+      cxn=m_connections.get(new Random().nextInt(m_connections.size()));
+      m_subscriptionRequestPending=true;
+      m_subscribedConnection=cxn;
+    }
+ else {
+      return;
+    }
+  }
+  try {
+    ProcedureInvocation spi=new ProcedureInvocation(m_sysHandle.getAndDecrement(),"@Subscribe","TOPOLOGY");
+    final ByteBuffer buf=serializeSPI(spi);
+    cxn.createWork(System.nanoTime(),spi.getHandle(),spi.getProcName(),serializeSPI(spi),new SubscribeCallback(),true,USE_DEFAULT_TIMEOUT);
+    spi=new ProcedureInvocation(m_sysHandle.getAndDecrement(),"@Statistics","TOPO",0);
+    cxn.createWork(System.nanoTime(),spi.getHandle(),spi.getProcName(),serializeSPI(spi),new TopoUpdateCallback(),true,USE_DEFAULT_TIMEOUT);
+    if (!m_fetchedCatalog) {
+      spi=new ProcedureInvocation(m_sysHandle.getAndDecrement(),"@SystemCatalog","PROCEDURES");
+      cxn.createWork(System.nanoTime(),spi.getHandle(),spi.getProcName(),serializeSPI(spi),new ProcUpdateCallback(),true,USE_DEFAULT_TIMEOUT);
+    }
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+  }
+}

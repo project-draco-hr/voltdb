@@ -1,0 +1,25 @@
+{
+  RateLimitedClientNotifier.WARMUP_MS=0;
+  ClientInterface.TOPOLOGY_CHANGE_CHECK_MS=1;
+  try {
+    m_ci.startAcceptingConnections();
+    ByteBuffer msg=createMsg("@Subscribe","TOPOLOGY");
+    ClientResponseImpl resp=m_ci.handleRead(msg,m_handler,m_cxn);
+    assertNotNull(resp);
+    assertEquals(ClientResponse.SUCCESS,resp.getStatus());
+    statsAnswers.offer(dsOf(getClientResponse("foo")));
+    m_ci.schedulePeriodicWorks();
+    assertNull(responsesDS.poll(50,TimeUnit.MILLISECONDS));
+    ByteBuffer expectedBuf=getClientResponse("bar");
+    statsAnswers.offer(dsOf(expectedBuf));
+    DeferredSerialization ds=responsesDS.take();
+    ByteBuffer actualBuf=ByteBuffer.allocate(ds.getSerializedSize());
+    ds.serialize(actualBuf);
+    assertEquals(expectedBuf,actualBuf);
+  }
+  finally {
+    RateLimitedClientNotifier.WARMUP_MS=1000;
+    ClientInterface.TOPOLOGY_CHANGE_CHECK_MS=5000;
+    m_ci.shutdown();
+  }
+}

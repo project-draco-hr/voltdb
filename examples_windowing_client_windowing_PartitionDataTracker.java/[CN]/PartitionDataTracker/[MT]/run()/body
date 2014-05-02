@@ -1,0 +1,40 @@
+{
+  Map<Long,PartitionInfo> partitionData=new HashMap<Long,PartitionInfo>();
+  VoltTable partitionKeys=null, tableStats=null;
+  try {
+    tableStats=app.client.callProcedure("@Statistics","TABLE").getResults()[0];
+    partitionKeys=app.client.callProcedure("@GetPartitionKeys","STRING").getResults()[0];
+  }
+ catch (  IOException|ProcCallException e) {
+    failureCount.incrementAndGet();
+    return;
+  }
+  while (tableStats.advanceRow()) {
+    if (!tableStats.getString("TABLE_NAME").equalsIgnoreCase("timedata")) {
+      continue;
+    }
+    PartitionInfo pinfo=new PartitionInfo();
+    long partitionId=tableStats.getLong("PARTITION_ID");
+    pinfo.tupleCount=tableStats.getLong("TUPLE_COUNT");
+    pinfo.partitionKey=null;
+    partitionData.put(partitionId,pinfo);
+  }
+  while (partitionKeys.advanceRow()) {
+    long partitionId=partitionKeys.getLong("PARTITION_ID");
+    PartitionInfo pinfo=partitionData.get(partitionId);
+    if (pinfo == null) {
+      return;
+    }
+    pinfo.partitionKey=partitionKeys.getString("PARTITION_KEY");
+  }
+  boolean allMatched=true;
+  for (  PartitionInfo pinfo : partitionData.values()) {
+    if (pinfo.partitionKey == null) {
+      allMatched=false;
+    }
+  }
+  if (!allMatched) {
+    return;
+  }
+  app.updatePartitionInfo(partitionData);
+}

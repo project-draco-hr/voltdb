@@ -1,0 +1,40 @@
+def _build_virtual_environment(venv_dir, version, packages):
+    if os.path.exists(venv_dir):
+        try:
+            shutil.rmtree(venv_dir)
+        except (IOError, OSError) as e:
+            abort('Failed to remove existing virtual environment.', (venv_dir, e))
+    if (not os.path.isdir(venv_dir)):
+        os.makedirs(venv_dir)
+    try:
+        version_path = os.path.join(venv_dir, 'version.txt')
+        f = open(version_path, 'w')
+        try:
+            try:
+                f.write(version)
+            except (IOError, OSError) as e:
+                abort('Failed to write version file.', (version_path, e))
+        finally:
+            f.close()
+    except (IOError, OSError) as e:
+        abort('Failed to open version file for writing.', (version_path, e))
+    save_dir = os.getcwd()
+    save_lc_all = os.environ.get('LC_ALL', None)
+    os.environ['LC_ALL'] = 'C'
+    try:
+        os.chdir(os.path.dirname(venv_dir))
+        args = get_virtualenv()
+        pip = os.path.join(venv_dir, 'bin', 'pip')
+        info(('Preparing the %s Python virtual environment:' % G.script_name), ['(an Internet connection is required)', ('Folder: %s' % venv_dir)])
+        args += ['--clear', '--system-site-packages', sys.platform]
+        run_cmd(*args)
+        if packages:
+            for package in packages:
+                info(('Installing virtual environment package: %s' % package))
+                run_cmd(pip, 'install', package)
+    finally:
+        os.chdir(save_dir)
+        if (save_lc_all is None):
+            del os.environ['LC_ALL']
+        else:
+            os.environ['LC_ALL'] = save_lc_all

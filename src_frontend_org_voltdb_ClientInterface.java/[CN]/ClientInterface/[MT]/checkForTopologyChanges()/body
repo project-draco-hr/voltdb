@@ -1,0 +1,50 @@
+{
+  final Pair<SimpleClientResponseAdapter,ListenableFuture<ClientResponseImpl>> p=SimpleClientResponseAdapter.getAsListenableFuture();
+  final ListenableFuture<ClientResponseImpl> fut=p.getSecond();
+  fut.addListener(new Runnable(){
+    @Override public void run(){
+      try {
+        final ClientResponseImpl r=fut.get();
+        if (r.getStatus() != ClientResponse.SUCCESS) {
+          hostLog.warn("Received error response retrieving topology: " + r.getStatusString());
+          return;
+        }
+        final int size=r.getSerializedSize();
+        final ByteBuffer buf=ByteBuffer.allocate(size + 4);
+        buf.putInt(size);
+        r.flattenToBuffer(buf);
+        buf.flip();
+        ByteBuffer oldValue=null;
+        DeferredSerialization ds=m_currentTopologyValues.get();
+        if (ds != null) {
+          oldValue=ByteBuffer.allocate(ds.getSerializedSize());
+          ds.serialize(oldValue);
+        }
+        if (buf.equals(oldValue))         return;
+        m_currentTopologyValues.set(new DeferredSerialization(){
+          @Override public void serialize(          ByteBuffer outbuf) throws IOException {
+            outbuf.put(buf.duplicate());
+          }
+          @Override public void cancel(){
+          }
+          @Override public int getSerializedSize(){
+            return buf.remaining();
+          }
+        }
+);
+        if (oldValue != null) {
+          m_notifier.queueNotification(m_cihm.values(),m_currentTopologySupplier,m_wantsTopologyUpdatesPredicate);
+        }
+      }
+ catch (      Throwable t) {
+        hostLog.error("Error checking for topology updates",Throwables.getRootCause(t));
+      }
+    }
+  }
+,MoreExecutors.sameThreadExecutor());
+  final StoredProcedureInvocation spi=new StoredProcedureInvocation();
+  spi.setProcName("@Statistics");
+  spi.setParams("TOPO",0);
+  spi.setClientHandle(ASYNC_TOPO_HANDLE);
+  dispatchStatistics(OpsSelector.STATISTICS,spi,p.getFirst());
+}

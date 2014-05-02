@@ -5,7 +5,7 @@
     AggregatePlanNode topAggNode=null;
     if (root.getPlanNodeType() == PlanNodeType.RECEIVE) {
       AbstractPlanNode candidate=root.getChild(0).getChild(0);
-      if (candidate.getPlanNodeType() == PlanNodeType.SEQSCAN) {
+      if (candidate.getPlanNodeType() == PlanNodeType.SEQSCAN && m_parsedSelect.isGrouped()) {
         candidate=indexAccessForGroupByExprs(candidate);
         if (candidate.getPlanNodeType() == PlanNodeType.INDEXSCAN) {
           candidate.clearParents();
@@ -14,10 +14,34 @@
         }
       }
     }
- else {
+ else     if (root.getPlanNodeType() == PlanNodeType.SEQSCAN && m_parsedSelect.isGrouped()) {
       root=indexAccessForGroupByExprs(root);
     }
-    if (m_parsedSelect.isGrouped() && (root.getPlanNodeType() != PlanNodeType.INDEXSCAN || ((IndexScanPlanNode)root).getSortDirection() == SortDirectionType.INVALID)) {
+    boolean needHashAgg=m_parsedSelect.isGrouped();
+    if (needHashAgg) {
+      boolean predeterminedOrdering=false;
+      if (root instanceof IndexScanPlanNode) {
+        if (((IndexScanPlanNode)root).getSortDirection() == SortDirectionType.INVALID) {
+          if (((IndexScanPlanNode)root).isForGroupingOnly()) {
+            needHashAgg=false;
+          }
+        }
+ else {
+          predeterminedOrdering=true;
+        }
+      }
+ else       if (root instanceof AbstractJoinPlanNode) {
+        if (((AbstractJoinPlanNode)root).getSortDirection() != SortDirectionType.INVALID) {
+          predeterminedOrdering=true;
+        }
+      }
+      if (predeterminedOrdering) {
+        if (m_parsedSelect.groupByIsAnOrderByPermutation()) {
+          needHashAgg=false;
+        }
+      }
+    }
+    if (needHashAgg) {
       aggNode=new HashAggregatePlanNode();
       if (!m_parsedSelect.mvFixInfo.needed()) {
         topAggNode=new HashAggregatePlanNode();
@@ -43,6 +67,7 @@
         TupleValueExpression tve=new TupleValueExpression("VOLT_TEMP_TABLE","VOLT_TEMP_TABLE","",col.alias,outputColumnIndex);
         tve.setValueType(rootExpr.getValueType());
         tve.setValueSize(rootExpr.getValueSize());
+        tve.setInBytes(rootExpr.getInBytes());
         boolean is_distinct=((AggregateExpression)rootExpr).isDistinct();
         aggNode.addAggregate(agg_expression_type,is_distinct,outputColumnIndex,agg_input_expr);
         schema_col=new SchemaColumn("VOLT_TEMP_TABLE","VOLT_TEMP_TABLE","",col.alias,tve);

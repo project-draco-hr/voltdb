@@ -1,0 +1,34 @@
+{
+  if (response.getStatusString() != null && response.getStatusString().contains("@Subscribe was not found")) {
+synchronized (Distributer.this) {
+      m_subscriptionRequestPending=false;
+    }
+    return;
+  }
+  if (response.getStatus() == ClientResponse.CONNECTION_LOST && !m_connections.isEmpty()) {
+    subscribeToNewNode();
+    return;
+  }
+ else   if (response.getStatus() == ClientResponse.CONNECTION_LOST) {
+    return;
+  }
+  if (response.getStatus() != ClientResponse.SUCCESS && !m_ex.isShutdown()) {
+    System.err.println("Error response received subscribing to topology updates.\n " + "Performance may be reduced on topology updates. Error was \"" + response.getStatusString() + "\"");
+    m_ex.schedule(new Runnable(){
+      @Override public void run(){
+        try {
+          subscribeToNewNode();
+        }
+ catch (        Throwable t) {
+          t.printStackTrace();
+          Throwables.propagate(t);
+        }
+      }
+    }
+,2,TimeUnit.MINUTES);
+    return;
+  }
+synchronized (Distributer.this) {
+    m_subscriptionRequestPending=false;
+  }
+}
