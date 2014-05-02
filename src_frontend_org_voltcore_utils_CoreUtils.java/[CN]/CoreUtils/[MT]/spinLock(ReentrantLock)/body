@@ -1,20 +1,18 @@
 {
-  int spins=CORE_UTIL_LOCK_SPINS;
-  ThreadLocalRandom randomYields=null;
-  for (; ; ) {
-    if (lock.tryLock()) {
-      return;
+  if (LOCK_SPIN_MICROSECONDS > 0) {
+    long nanos=-1;
+    for (; ; ) {
+      if (lock.tryLock())       return;
+      if (nanos == -1) {
+        nanos=System.nanoTime();
+      }
+ else       if (System.nanoTime() - nanos > LOCK_SPIN_MICROSECONDS) {
+        lock.lock();
+        return;
+      }
     }
-    if (randomYields == null) {
-      randomYields=ThreadLocalRandom.current();
-    }
- else     if (spins > 0) {
-      --spins;
-      if (randomYields.nextInt(64) == 0)       Thread.yield();
-    }
+  }
  else {
-      lock.lock();
-      return;
-    }
+    lock.lock();
   }
 }
