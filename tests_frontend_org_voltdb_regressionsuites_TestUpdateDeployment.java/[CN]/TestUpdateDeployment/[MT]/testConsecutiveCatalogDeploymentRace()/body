@@ -1,0 +1,29 @@
+{
+  System.out.println("\n\n-----\n testConsecutiveCatalogDeploymentRace \n-----\n\n");
+  Client client=getClient();
+  loadSomeData(client,0,10);
+  client.drain();
+  assertTrue(callbackSuccess);
+  String newCatalogURL=Configuration.getPathToCatalogForTest("catalogupdate-cluster-addtable.jar");
+  String deploymentURL=Configuration.getPathToCatalogForTest("catalogupdate-cluster-addtable.xml");
+  client.updateApplicationCatalog(new CatTestCallback(ClientResponse.SUCCESS),new File(newCatalogURL),null);
+  SyncCallback cb2=new SyncCallback();
+  client.updateApplicationCatalog(cb2,null,new File(deploymentURL));
+  cb2.waitForResponse();
+  assertEquals(ClientResponse.USER_ABORT,cb2.getResponse().getStatus());
+  assertTrue(cb2.getResponse().getStatusString().contains("Invalid catalog update"));
+  Client client3=getClient();
+  boolean found=false;
+  int timeout=-1;
+  VoltTable result=client3.callProcedure("@SystemInformation","DEPLOYMENT").getResults()[0];
+  while (result.advanceRow()) {
+    if (result.getString("PROPERTY").equalsIgnoreCase("heartbeattimeout")) {
+      found=true;
+      timeout=Integer.valueOf(result.getString("VALUE"));
+    }
+  }
+  assertTrue(found);
+  assertEquals(10,timeout);
+  ClientResponse response=client3.callProcedure("@AdHoc","insert into NEWTABLE values (100);");
+  assertEquals(ClientResponse.SUCCESS,response.getStatus());
+}

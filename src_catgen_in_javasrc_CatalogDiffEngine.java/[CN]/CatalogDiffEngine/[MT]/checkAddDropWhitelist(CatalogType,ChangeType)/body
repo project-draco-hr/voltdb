@@ -1,0 +1,62 @@
+{
+  m_canOccurWithElasticRebalance=false;
+  if (suspect instanceof User || suspect instanceof Group || suspect instanceof Procedure|| suspect instanceof Connector|| suspect instanceof SnapshotSchedule|| suspect instanceof ConstraintRef|| suspect instanceof GroupRef|| suspect instanceof UserRef|| suspect instanceof Constraint|| suspect instanceof Table) {
+    return true;
+  }
+ else   if (suspect instanceof ColumnRef) {
+    if (suspect.getParent() instanceof Index) {
+      Index parent=(Index)suspect.getParent();
+      if (parent.getUnique() && (changeType == ChangeType.DELETION)) {
+        CatalogMap<Index> newIndexes=m_newIndexesByTable.get(parent.getParent().getTypeName());
+        Index newIndex=newIndexes.get(parent.getTypeName());
+        if (!checkNewUniqueIndex(newIndex)) {
+          m_errors.append("May not dynamically remove columns from unique index: " + parent.getTypeName() + "\n");
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+ else   if (suspect instanceof Column) {
+    if (m_inStrictMatViewDiffMode) {
+      m_errors.append("May not dynamically add, drop, or rename materialized view columns.\n");
+      return false;
+    }
+    if (changeType == ChangeType.ADDITION) {
+      Column col=(Column)suspect;
+      if ((!col.getNullable()) && (col.getDefaultvalue() == null)) {
+        m_errors.append("May not dynamically add non-nullable column without default value.\n");
+        return false;
+      }
+    }
+    m_requiresSnapshotIsolation=true;
+    return true;
+  }
+ else   if (suspect instanceof Index) {
+    Index index=(Index)suspect;
+    if (!index.m_unique) {
+      return true;
+    }
+    if (changeType == ChangeType.DELETION) {
+      return true;
+    }
+    if (checkNewUniqueIndex(index)) {
+      return true;
+    }
+    m_errors.append("May not dynamically add unique indexes that don't cover existing unique indexes.\n");
+    return false;
+  }
+ else   if (suspect instanceof MaterializedViewInfo && !m_inStrictMatViewDiffMode) {
+    return true;
+  }
+  for (CatalogType parent=suspect.m_parent; parent != null; parent=parent.m_parent) {
+    if (parent instanceof Procedure || parent instanceof Connector || parent instanceof ConstraintRef|| parent instanceof Column) {
+      if (m_triggeredVerbosity) {
+        System.out.println("DEBUG VERBOSE diffRecursively " + ((changeType == ChangeType.ADDITION) ? "addition" : "deletion") + " of schema object '"+ suspect+ "'"+ " rescued by context '"+ parent+ "'");
+      }
+      return true;
+    }
+  }
+  m_errors.append("May not dynamically add/drop schema object: '" + suspect + "'\n");
+  return false;
+}
