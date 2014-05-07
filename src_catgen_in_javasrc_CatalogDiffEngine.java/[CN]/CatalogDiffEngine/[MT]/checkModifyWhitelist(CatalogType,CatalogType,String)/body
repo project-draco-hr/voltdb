@@ -1,0 +1,89 @@
+{
+  if (suspect instanceof Systemsettings && (field.equals("elasticPauseTime") || field.equals("elasticThroughput"))) {
+    return true;
+  }
+ else {
+    m_canOccurWithElasticRebalance=false;
+  }
+  if (suspect instanceof User || suspect instanceof Group || suspect instanceof Procedure|| suspect instanceof SnapshotSchedule|| suspect instanceof UserRef|| suspect instanceof GroupRef|| suspect instanceof ColumnRef) {
+    return true;
+  }
+  if (suspect instanceof Database && field.equals("schema"))   return true;
+  if (suspect instanceof Database && "securityprovider".equals(field))   return true;
+  if (suspect instanceof Cluster && field.equals("securityEnabled"))   return true;
+  if (suspect instanceof Cluster && field.equals("adminstartup"))   return true;
+  if (suspect instanceof Cluster && field.equals("heartbeatTimeout"))   return true;
+  if (suspect instanceof Constraint && field.equals("index"))   return true;
+  if (suspect instanceof Table) {
+    if (field.equals("signature") || field.equals("tuplelimit"))     return true;
+  }
+  String restrictionQualifier="";
+  if (suspect instanceof Column) {
+    CatalogType parent=suspect.getParent();
+    if (parent instanceof Statement) {
+      return true;
+    }
+    m_requiresSnapshotIsolation=true;
+    Table parentTable=(Table)parent;
+    if (!areTableColumnsMutable(parentTable)) {
+      return false;
+    }
+    if (field.equals("index"))     return true;
+    if (field.equals("defaultvalue"))     return true;
+    if (field.equals("defaulttype"))     return true;
+    if (field.equals("nullable")) {
+      Boolean nullable=(Boolean)suspect.getField(field);
+      assert(nullable != null);
+      if (nullable)       return true;
+      restrictionQualifier=" from nullable to non-nullable";
+    }
+ else     if (field.equals("type") || field.equals("size") || field.equals("inbytes")) {
+      int oldTypeInt=(Integer)prevType.getField("type");
+      int newTypeInt=(Integer)suspect.getField("type");
+      int oldSize=(Integer)prevType.getField("size");
+      int newSize=(Integer)suspect.getField("size");
+      VoltType oldType=VoltType.get((byte)oldTypeInt);
+      VoltType newType=VoltType.get((byte)newTypeInt);
+      boolean oldInBytes=false, newInBytes=false;
+      if (oldType == VoltType.STRING) {
+        oldInBytes=(Boolean)prevType.getField("inbytes");
+      }
+      if (newType == VoltType.STRING) {
+        newInBytes=(Boolean)suspect.getField("inbytes");
+      }
+      if (checkIfColumnTypeChangeIsSupported(oldType,oldSize,newType,newSize,oldInBytes,newInBytes)) {
+        return true;
+      }
+      if (oldTypeInt == newTypeInt) {
+        if (oldType == VoltType.STRING && oldInBytes == false && newInBytes == true) {
+          restrictionQualifier="narrowing from " + oldSize + "CHARACTERS to "+ newSize * CatalogSizing.MAX_BYTES_PER_UTF8_CHARACTER + " BYTES";
+        }
+ else {
+          restrictionQualifier="narrowing from " + oldSize + " to "+ newSize;
+        }
+      }
+ else {
+        restrictionQualifier="from " + oldType.toSQLString() + " to "+ newType.toSQLString();
+      }
+    }
+  }
+ else   if (suspect instanceof MaterializedViewInfo) {
+    if (!m_inStrictMatViewDiffMode) {
+      if (field.equals("groupbyExpressionsJson") || field.equals("aggregationExpressionsJson")) {
+        if (AbstractExpression.areOverloadedJSONExpressionLists((String)prevType.getField(field),(String)suspect.getField(field))) {
+          return true;
+        }
+      }
+    }
+  }
+  for (CatalogType parent=suspect.m_parent; parent != null; parent=parent.m_parent) {
+    if (parent instanceof Procedure || parent instanceof ColumnRef) {
+      if (m_triggeredVerbosity) {
+        System.out.println("DEBUG VERBOSE diffRecursively field change to " + "'" + field + "' of schema object '"+ suspect+ "'"+ restrictionQualifier+ " rescued by context '"+ parent+ "'");
+      }
+      return true;
+    }
+  }
+  m_errors.append("May not dynamically modify field '" + field + "' of schema object '"+ suspect+ "'"+ restrictionQualifier+ "\n");
+  return false;
+}
