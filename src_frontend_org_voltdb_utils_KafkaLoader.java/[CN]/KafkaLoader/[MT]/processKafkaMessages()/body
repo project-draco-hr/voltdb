@@ -2,29 +2,18 @@
   final String[] serverlist=m_config.servers.split(",");
   final ClientConfig c_config=new ClientConfig(m_config.user,m_config.password);
   c_config.setProcedureCallTimeout(0);
-  Client client=getClient(c_config,serverlist);
-  m_loader=client.getNewBulkLoader(m_config.table,m_config.batch,new KafkaBulkLoaderCallback());
-  m_loader.setFlushInterval(m_config.flush,m_config.flush);
-  final KafkaConsumerConnector consumer=new KafkaConsumerConnector(m_config.zookeeper,m_config.table);
+  m_client=getClient(c_config,serverlist);
+  m_loader=m_client.getNewBulkLoader(m_config.table,m_config.batch,new KafkaBulkLoaderCallback());
+  m_loader.setFlushInterval(m_config.flush,m_config.flush,new Flusher());
+  m_consumer=new KafkaConsumerConnector(m_config.zookeeper,m_config.table);
   try {
-    ExecutorService es=getConsumerExecutor(consumer,m_loader);
-    Runtime.getRuntime().addShutdownHook(new Thread(){
-      @Override public void run(){
-        try {
-          consumer.stop();
-          m_loader.flush();
-          m_loader.drain();
-          m_loader.close();
-        }
- catch (        InterruptedException ex) {
-        }
-      }
-    }
-);
-    es.awaitTermination(365,TimeUnit.DAYS);
+    m_es=getConsumerExecutor(m_consumer,m_loader);
+    m_log.info("Kafka Consumer from topic: " + m_config.topic + " Started for table: "+ m_config.table);
+    m_es.awaitTermination(365,TimeUnit.DAYS);
   }
  catch (  Exception ex) {
-    m_log.error("Error in getting Kafka Consumer",ex);
+    m_log.error("Error in Kafka Consumer",ex);
     System.exit(-1);
   }
+  close();
 }
