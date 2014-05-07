@@ -1,0 +1,29 @@
+{
+  ZooKeeper zk=VoltDB.instance().getHostMessenger().getZK();
+  if (worksWithElastic == 0 && !zk.getChildren(VoltZK.elasticJoinActiveBlockers,false).isEmpty()) {
+    throw new VoltAbortException("Can't do a catalog update while an elastic join is active");
+  }
+  CatalogAndIds catalogStuff=CatalogUtil.getCatalogFromZK(zk);
+  if (catalogStuff.version == expectedCatalogVersion) {
+    log.debug("New catalog update from: " + catalogStuff.toString());
+    log.debug("To: catalog hash: " + Encoder.hexEncode(catalogHash).substring(0,10) + ", deployment hash: "+ Encoder.hexEncode(deploymentHash).substring(0,10));
+  }
+ else {
+    if (catalogStuff.version == (expectedCatalogVersion + 1) && (Arrays.equals(catalogStuff.catalogHash,catalogHash) && Arrays.equals(catalogStuff.deploymentHash,deploymentHash))) {
+      log.debug("Restarting catalog update: " + catalogStuff.toString());
+    }
+ else {
+      String errmsg="Invalid catalog update.  Catalog or deployment change was planned " + "against one version of the cluster configuration but that version was " + "no longer live when attempting to apply the change.  This is likely "+ "the result of multiple concurrent attempts to change the cluster "+ "configuration.  Please make such changes synchronously from a single "+ "connection to the cluster.";
+      log.warn(errmsg);
+      throw new VoltAbortException(errmsg);
+    }
+  }
+  CatalogUtil.setCatalogToZK(zk,expectedCatalogVersion + 1,getVoltPrivateRealTransactionIdDontUseMe(),getUniqueId(),catalogHash,deploymentHash,catalogBytes);
+  if (deploymentString != null) {
+    zk.setData(VoltZK.deploymentBytes,deploymentString.getBytes("UTF-8"),-1,new ZKUtil.StatCallback(),null);
+  }
+  performCatalogUpdateWork(catalogDiffCommands,expectedCatalogVersion,requiresSnapshotIsolation);
+  VoltTable result=new VoltTable(VoltSystemProcedure.STATUS_SCHEMA);
+  result.addRow(VoltSystemProcedure.STATUS_OK);
+  return (new VoltTable[]{result});
+}
