@@ -1,0 +1,33 @@
+{
+  String pathToCatalog=Configuration.getPathToCatalogForTest("adhoc_like.jar");
+  String pathToDeployment=Configuration.getPathToCatalogForTest("adhoc_like.xml");
+  VoltProjectBuilder builder=new VoltProjectBuilder();
+  builder.addLiteralSchema("create table BLAH (" + "ID int default 0 not null, " + "VAL varchar(32) default null,"+ "PRIMARY KEY(ID));\n"+ "create table DROPME ("+ "ID int default 0 not null, "+ "VAL varchar(32) default null,"+ "PRIMARY KEY(ID));");
+  builder.addPartitionInfo("BLAH","ID");
+  builder.addPartitionInfo("DROPME","ID");
+  boolean success=builder.compile(pathToCatalog,2,1,0);
+  assertTrue("Schema compilation failed",success);
+  MiscUtils.copyFile(builder.getPathToDeployment(),pathToDeployment);
+  VoltDB.Configuration config=new VoltDB.Configuration();
+  config.m_pathToCatalog=pathToCatalog;
+  config.m_pathToDeployment=pathToDeployment;
+  ServerThread localServer=new ServerThread(config);
+  Client client=null;
+  try {
+    localServer.start();
+    localServer.waitForInitialization();
+    client=ClientFactory.createClient();
+    client.createConnection("localhost");
+    client.callProcedure("@AdHoc","drop table DROPME;");
+  }
+  finally {
+    if (client != null)     client.close();
+    client=null;
+    if (localServer != null) {
+      localServer.shutdown();
+      localServer.join();
+    }
+    localServer=null;
+    System.gc();
+  }
+}
