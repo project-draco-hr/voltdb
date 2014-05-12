@@ -1,0 +1,121 @@
+{
+  StringBuilder query=new StringBuilder();
+  boolean isRecall=false;
+  while (true) {
+    String line;
+    if (isRecall) {
+      isRecall=false;
+      line=lineInputReader.readLine("");
+    }
+ else {
+      line=lineInputReader.readLine((LineIndex++) + "> ");
+    }
+    if (line == null) {
+      if (query == null) {
+        return null;
+      }
+      return parseQuery(query.toString());
+    }
+    if (RecallToken.matcher(line).matches()) {
+      Matcher m=RecallToken.matcher(line);
+      if (m.find()) {
+        int recall=-1;
+        try {
+          recall=Integer.parseInt(m.group(1)) - 1;
+        }
+ catch (        Exception x) {
+        }
+        if (recall > -1 && recall < Lines.size()) {
+          line=Lines.get(recall);
+          lineInputReader.putString(line);
+          lineInputReader.flush();
+          isRecall=true;
+          continue;
+        }
+ else {
+          System.out.printf("%s> Invalid RECALL reference: '" + m.group(1) + "'.\n",LineIndex - 1);
+        }
+      }
+ else {
+        System.out.printf("%s> Invalid RECALL command: '" + line + "'.\n",LineIndex - 1);
+      }
+    }
+    if (RecallToken.matcher(line).matches()) {
+      line="";
+    }
+    Lines.add(line);
+    if (ExitToken.matcher(line).matches()) {
+      return null;
+    }
+ else     if (ListProceduresToken.matcher(line).matches()) {
+      List<String> list=new LinkedList<String>(Procedures.keySet());
+      Collections.sort(list);
+      int padding=0;
+      for (      String procedure : list) {
+        if (padding < procedure.length()) {
+          padding=procedure.length();
+        }
+      }
+      padding++;
+      String format="%1$-" + padding + "s";
+      for (int i=0; i < 2; i++) {
+        int j=0;
+        for (        String procedure : list) {
+          if (i == 0 && procedure.startsWith("@")) {
+            continue;
+          }
+          if (i == 1 && !procedure.startsWith("@")) {
+            continue;
+          }
+          if (j == 0) {
+            if (i == 0) {
+              System.out.println("\n--- User Procedures ----------------------------------------");
+            }
+ else {
+              System.out.println("\n--- System Procedures --------------------------------------");
+            }
+          }
+          for (          List<String> parameterSet : Procedures.get(procedure).values()) {
+            System.out.printf(format,procedure);
+            System.out.print("\t");
+            int pidx=0;
+            for (            String paramType : parameterSet) {
+              if (pidx > 0) {
+                System.out.print(", ");
+              }
+              System.out.print(paramType);
+              pidx++;
+            }
+            System.out.print("\n");
+          }
+          j++;
+        }
+      }
+      System.out.print("\n");
+    }
+ else     if (ListTablesToken.matcher(line).matches()) {
+      Tables tables=getTables();
+      printTables("User Tables",tables.tables);
+      printTables("User Views",tables.views);
+      printTables("User Export Streams",tables.exports);
+      System.out.print("\n");
+    }
+ else     if (GoToken.matcher(line).matches()) {
+      return parseQuery(query.toString().trim());
+    }
+ else {
+      boolean executeImmediate=SemicolonToken.matcher(line).matches();
+      Matcher m=FileToken.matcher(line);
+      if (m.find()) {
+        line=readScriptFile(m.group(1));
+      }
+      if (line != null) {
+        query.append(line);
+        if (executeImmediate) {
+          return parseQuery(query.toString().trim());
+        }
+        query.append("\n");
+      }
+    }
+  }
+}
