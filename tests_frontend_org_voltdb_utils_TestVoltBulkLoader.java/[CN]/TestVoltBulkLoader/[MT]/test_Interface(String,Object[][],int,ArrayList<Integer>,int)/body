@@ -20,6 +20,9 @@
     prepare();
     TestFailureCallback testCallback=new TestFailureCallback();
     VoltBulkLoader bulkLoader=client1.getNewBulkLoader("BLAH",my_batchSize,testCallback);
+    if (flushInterval > 0) {
+      bulkLoader.setFlushInterval(0,flushInterval);
+    }
     VoltTable modCount;
     modCount=client1.callProcedure("@AdHoc","SELECT * FROM BLAH;").getResults()[0];
     System.out.println("data inserted to table BLAH:\n" + modCount);
@@ -36,14 +39,22 @@
         Integer rowId=new Integer(rowCnt);
         bulkLoader.insertRow(rowId,nextRow);
         rowCnt++;
-        if (rnd.nextInt() % 30 == 0)         bulkLoader.flush();
+        if (flushInterval <= 0 && (rnd.nextInt() % 30 == 0)) {
+          bulkLoader.flush();
+        }
       }
     }
  catch (    Exception e) {
       System.err.print(e.getMessage());
     }
     System.out.println(String.format("Attempted inserting %d rows",--rowCnt));
-    if (rnd.nextBoolean()) {
+    if (flushInterval <= 0 && rnd.nextBoolean()) {
+      bulkLoader.drain();
+      assert(bulkLoader.getOutstandingRowCount() == 0);
+      assert(bulkLoader.getCompletedRowCount() == rowCnt);
+    }
+    if (flushInterval > 0) {
+      Thread.sleep(flushInterval + 500);
       bulkLoader.drain();
       assert(bulkLoader.getOutstandingRowCount() == 0);
       assert(bulkLoader.getCompletedRowCount() == rowCnt);
