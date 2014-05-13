@@ -1,15 +1,35 @@
 {
   if (m_rvdb.m_myHostId == m_rvdb.m_hostIdWithStartupCatalog) {
     try {
-      byte[] catalogBytes;
       if (m_rvdb.m_pathToStartupCatalog == null) {
+        File emptyDDLFile=null;
+        File emptyJarFile=null;
+        try {
+          emptyDDLFile=File.createTempFile("ddl-empty",".sql");
+          emptyDDLFile.deleteOnExit();
+          emptyJarFile=File.createTempFile("catalog-empty",".jar");
+          emptyJarFile.deleteOnExit();
+          FileWriter fw=new FileWriter(emptyDDLFile);
+          try {
+            fw.write("-- This DDL file is a placeholder for starting without a user-supplied catalog.\n");
+          }
+  finally {
+            fw.close();
+          }
+        }
+ catch (        IOException e) {
+          VoltDB.crashLocalVoltDB("Failed to create temporary file(s) for generated empty catalog.",false,e);
+        }
+        m_rvdb.m_pathToStartupCatalog=emptyJarFile.getAbsolutePath();
         VoltCompiler compiler=new VoltCompiler();
-        InMemoryJarfile catalogJar=compiler.compileEmptyJar();
-        catalogBytes=catalogJar.getFullJarBytes();
+        try {
+          compiler.compileFromDDL(emptyJarFile.getAbsolutePath(),emptyDDLFile.getAbsolutePath());
+        }
+ catch (        VoltCompiler.VoltCompilerException e) {
+          VoltDB.crashLocalVoltDB("Failed to compile generated empty catalog.",false,e);
+        }
       }
- else {
-        catalogBytes=readCatalog(m_rvdb.m_pathToStartupCatalog);
-      }
+      byte[] catalogBytes=readCatalog(m_rvdb.m_pathToStartupCatalog);
       long catalogUniqueId=UniqueIdGenerator.makeIdFromComponents(System.currentTimeMillis(),0,MpInitiator.MP_INIT_PID);
       hostLog.debug(String.format("Sending %d catalog bytes",catalogBytes.length));
       long catalogTxnId;
