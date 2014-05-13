@@ -1,25 +1,23 @@
 {
   assert(!catalog_tbl.getColumns().isEmpty());
-  final String spacer="   ";
   boolean tableIsView=(viewQuery != null);
   Set<Index> skip_indexes=new HashSet<Index>();
   Set<Constraint> skip_constraints=new HashSet<Constraint>();
-  String ret=new String();
   if (tableIsView) {
-    ret="CREATE VIEW " + catalog_tbl.getTypeName() + " (";
+    sb.append("CREATE VIEW " + catalog_tbl.getTypeName() + " (");
   }
  else {
-    ret="CREATE TABLE " + catalog_tbl.getTypeName() + " (";
+    sb.append("CREATE TABLE " + catalog_tbl.getTypeName() + " (");
   }
   String add="\n";
   for (  Column catalog_col : CatalogUtil.getSortedCatalogItems(catalog_tbl.getColumns(),"index")) {
     VoltType col_type=VoltType.get((byte)catalog_col.getType());
     if (tableIsView) {
-      ret+=add + spacer + catalog_col.getTypeName();
+      sb.append(add + spacer + catalog_col.getTypeName());
       add=",\n";
       continue;
     }
-    ret+=add + spacer + catalog_col.getTypeName()+ " "+ col_type.toSQLString()+ ((col_type == VoltType.STRING || col_type == VoltType.VARBINARY) && catalog_col.getSize() > 0 ? "(" + catalog_col.getSize() + (catalog_col.getInbytes() ? " BYTES" : "")+ ")" : "");
+    sb.append(add + spacer + catalog_col.getTypeName()+ " "+ col_type.toSQLString()+ ((col_type == VoltType.STRING || col_type == VoltType.VARBINARY) && catalog_col.getSize() > 0 ? "(" + catalog_col.getSize() + (catalog_col.getInbytes() ? " BYTES" : "")+ ")" : ""));
     String defaultvalue=catalog_col.getDefaultvalue();
     boolean nullable=catalog_col.getNullable();
     if (defaultvalue == null) {
@@ -46,10 +44,10 @@
       }
     }
     if (defaultvalue == null) {
-      ret+=(!nullable ? " NOT NULL" : "");
+      sb.append((!nullable ? " NOT NULL" : ""));
     }
  else {
-      ret+=" DEFAULT " + (defaultvalue != null ? defaultvalue : "NULL") + (!nullable ? " NOT NULL" : "");
+      sb.append(" DEFAULT " + (defaultvalue != null ? defaultvalue : "NULL") + (!nullable ? " NOT NULL" : ""));
     }
     for (    ConstraintRef catalog_const_ref : catalog_col.getConstraints()) {
       Constraint catalog_const=catalog_const_ref.getConstraint();
@@ -73,7 +71,7 @@ case FOREIGN_KEY:
               break;
             }
             assert(catalog_fkey_col != null);
-            ret+=" REFERENCES " + catalog_fkey_tbl.getTypeName() + " ("+ catalog_fkey_col.getTypeName()+ ")";
+            sb.append(" REFERENCES " + catalog_fkey_tbl.getTypeName() + " ("+ catalog_fkey_col.getTypeName()+ ")");
             skip_constraints.add(catalog_const);
             break;
           }
@@ -89,20 +87,20 @@ for (Constraint catalog_const : catalog_tbl.getConstraints()) {
   if (const_type == ConstraintType.PRIMARY_KEY || const_type == ConstraintType.UNIQUE) {
     Index catalog_idx=catalog_const.getIndex();
     if (!tableIsView) {
-      ret+=add + spacer;
+      sb.append(add + spacer);
       if (!catalog_const.getTypeName().startsWith(HSQLInterface.AUTO_GEN_PREFIX)) {
-        ret+="CONSTRAINT " + catalog_const.getTypeName() + " ";
+        sb.append("CONSTRAINT " + catalog_const.getTypeName() + " ");
       }
       if (const_type == ConstraintType.PRIMARY_KEY || const_type == ConstraintType.UNIQUE) {
         if (const_type == ConstraintType.PRIMARY_KEY) {
-          ret+="PRIMARY KEY (";
+          sb.append("PRIMARY KEY (");
         }
  else {
           if (catalog_idx.getAssumeunique()) {
-            ret+="ASSUMEUNIQUE (";
+            sb.append("ASSUMEUNIQUE (");
           }
  else {
-            ret+="UNIQUE (";
+            sb.append("UNIQUE (");
           }
         }
         String col_add="";
@@ -119,21 +117,21 @@ for (Constraint catalog_const : catalog_tbl.getConstraints()) {
           }
  catch (          JSONException e) {
           }
-          ret+=col_add + exprStrings;
+          sb.append(col_add + exprStrings);
         }
  else {
           for (          ColumnRef catalog_colref : CatalogUtil.getSortedCatalogItems(catalog_idx.getColumns(),"index")) {
-            ret+=col_add + catalog_colref.getColumn().getTypeName();
+            sb.append(col_add + catalog_colref.getColumn().getTypeName());
             col_add=", ";
           }
         }
-        ret+=")";
+        sb.append(")");
       }
  else       if (const_type == ConstraintType.LIMIT) {
-        ret+="LIMIT PARTITION ROWS " + String.valueOf(catalog_tbl.getTuplelimit());
+        sb.append("LIMIT PARTITION ROWS " + String.valueOf(catalog_tbl.getTuplelimit()));
       }
     }
-    if (catalog_idx.getTypeName().startsWith(HSQLInterface.AUTO_GEN_PREFIX) || catalog_idx.getTypeName().startsWith("MATVIEW_PK_")) {
+    if (catalog_idx.getTypeName().startsWith(HSQLInterface.AUTO_GEN_PREFIX) || catalog_idx.getTypeName().startsWith(HSQLInterface.AUTO_GEN_MATVIEW)) {
       skip_indexes.add(catalog_idx);
     }
   }
@@ -151,42 +149,42 @@ for (Constraint catalog_const : catalog_tbl.getConstraints()) {
       fkey_columns+=col_add + fkey_column.getTypeName();
       col_add=", ";
     }
-    ret+=add + spacer + "CONSTRAINT "+ catalog_const.getTypeName()+ " "+ "FOREIGN KEY ("+ our_columns+ ") "+ "REFERENCES "+ catalog_fkey_tbl.getTypeName()+ " ("+ fkey_columns+ ")";
+    sb.append(add + spacer + "CONSTRAINT "+ catalog_const.getTypeName()+ " "+ "FOREIGN KEY ("+ our_columns+ ") "+ "REFERENCES "+ catalog_fkey_tbl.getTypeName()+ " ("+ fkey_columns+ ")");
   }
   skip_constraints.add(catalog_const);
 }
 if (catalog_tbl.getTuplelimit() != Integer.MAX_VALUE) {
-  ret+=add + spacer + "LIMIT PARTITION ROWS "+ String.valueOf(catalog_tbl.getTuplelimit());
+  sb.append(add + spacer + "LIMIT PARTITION ROWS "+ String.valueOf(catalog_tbl.getTuplelimit()));
 }
 if (viewQuery != null) {
-  ret+="\n) AS \n";
-  ret+=spacer + viewQuery + ";\n";
+  sb.append("\n) AS \n");
+  sb.append(spacer + viewQuery + ";\n");
 }
  else {
-  ret+="\n);\n";
+  sb.append("\n);\n");
 }
 if (catalog_tbl.getPartitioncolumn() != null && viewQuery == null) {
-  ret+="PARTITION TABLE " + catalog_tbl.getTypeName() + " ON COLUMN "+ catalog_tbl.getPartitioncolumn().getTypeName()+ ";\n";
+  sb.append("PARTITION TABLE " + catalog_tbl.getTypeName() + " ON COLUMN "+ catalog_tbl.getPartitioncolumn().getTypeName()+ ";\n");
 }
 for (Index catalog_idx : catalog_tbl.getIndexes()) {
   if (skip_indexes.contains(catalog_idx))   continue;
   if (catalog_idx.getUnique()) {
     if (catalog_idx.getAssumeunique()) {
-      ret+="CREATE ASSUMEUNIQUE INDEX ";
+      sb.append("CREATE ASSUMEUNIQUE INDEX ");
     }
  else {
-      ret+="CREATE UNIQUE INDEX ";
+      sb.append("CREATE UNIQUE INDEX ");
     }
   }
  else {
-    ret+="CREATE INDEX ";
+    sb.append("CREATE INDEX ");
   }
-  ret+=catalog_idx.getTypeName() + " ON " + catalog_tbl.getTypeName()+ " (";
+  sb.append(catalog_idx.getTypeName() + " ON " + catalog_tbl.getTypeName()+ " (");
   add="";
   String jsonstring=catalog_idx.getExpressionsjson();
   if (jsonstring.isEmpty()) {
     for (    ColumnRef catalog_colref : CatalogUtil.getSortedCatalogItems(catalog_idx.getColumns(),"index")) {
-      ret+=add + catalog_colref.getColumn().getTypeName();
+      sb.append(add + catalog_colref.getColumn().getTypeName());
       add=", ";
     }
   }
@@ -199,15 +197,14 @@ for (Index catalog_idx : catalog_tbl.getIndexes()) {
       e.printStackTrace();
     }
     for (    AbstractExpression expr : indexedExprs) {
-      ret+=add + expr.explain(catalog_tbl.getTypeName());
+      sb.append(add + expr.explain(catalog_tbl.getTypeName()));
       add=", ";
     }
   }
-  ret+=");\n";
+  sb.append(");\n");
 }
 if (isExportTable) {
-  ret+="EXPORT TABLE " + catalog_tbl.getTypeName() + ";\n";
+  sb.append("EXPORT TABLE " + catalog_tbl.getTypeName() + ";\n");
 }
-ret+="\n";
-return ret;
+sb.append("\n");
 }

@@ -1,0 +1,44 @@
+{
+  CatalogMap<GroupRef> roleList=proc.getAuthgroups();
+  String add;
+  String roleNames=new String();
+  if (roleList.size() > 0) {
+    add="\n" + spacer + "ALLOW ";
+    for (    GroupRef role : roleList) {
+      roleNames+=add + role.getGroup().getTypeName();
+      add=", ";
+    }
+  }
+  if (proc.getDefaultproc()) {
+    return;
+  }
+  ProcedureAnnotation annot=(ProcedureAnnotation)proc.getAnnotation();
+  if (!proc.getHasjava()) {
+    sb.append("CREATE PROCEDURE " + proc.getClassname() + roleNames+ "\n"+ spacer+ "AS\n");
+    String sqlStmt=proc.getStatements().get("SQL").getSqltext();
+    if (sqlStmt.endsWith(";")) {
+      sb.append(spacer + sqlStmt + "\n");
+    }
+ else {
+      sb.append(spacer + sqlStmt + ";\n");
+    }
+  }
+ else   if (proc.getLanguage().equals("JAVA")) {
+    sb.append("CREATE PROCEDURE " + roleNames + "\n"+ spacer+ "FROM CLASS "+ proc.getClassname()+ ";\n");
+  }
+ else {
+    sb.append("CREATE PROCEDURE " + proc.getClassname() + roleNames+ "\n"+ spacer+ "AS ###");
+    sb.append(annot.scriptImpl + "### LANGUAGE GROOVY;\n");
+  }
+  if (proc.getSinglepartition()) {
+    if (annot != null && annot.classAnnotated) {
+      sb.append("--Annotated Partitioning Takes Precedence Over DDL Procedure Partitioning Statement\n--");
+    }
+    sb.append("PARTITION PROCEDURE " + proc.getTypeName() + " ON TABLE "+ proc.getPartitiontable().getTypeName()+ " COLUMN "+ proc.getPartitioncolumn().getTypeName());
+    if (proc.getPartitionparameter() != 0)     sb.append(" PARAMETER " + String.valueOf(proc.getPartitionparameter()));
+    sb.append(";\n\n");
+  }
+ else {
+    sb.append("\n");
+  }
+}
