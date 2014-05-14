@@ -1,18 +1,27 @@
 {
   Index index;
   Index primaryIndex;
-  int[] primaryKey;
   index=rangeIndex;
   primaryIndex=rangeTable.getPrimaryIndex();
-  primaryKey=rangeTable.getPrimaryKey();
-  if (rangeTable.tableType == TableBase.SYSTEM_SUBQUERY) {
-    throw new org.hsqldb_voltpatches.HSQLInterface.HSQLParseException("VoltDB does not support subqueries, consider using views instead");
-  }
   if (index == null)   index=primaryIndex;
   VoltXMLElement scan=new VoltXMLElement("tablescan");
-  scan.attributes.put("table",rangeTable.getName().name);
+  if (rangeTable.tableType == TableBase.SYSTEM_SUBQUERY && tableAlias == null) {
+    scan.attributes.put("table",rangeTable.getName().name + rangeTable.getName().hashCode());
+  }
+ else {
+    scan.attributes.put("table",rangeTable.getName().name.toUpperCase());
+  }
   if (tableAlias != null && !rangeTable.getName().name.equals(tableAlias)) {
-    scan.attributes.put("tablealias",tableAlias.name);
+    scan.attributes.put("tablealias",tableAlias.name.toUpperCase());
+  }
+  if (rangeTable.tableType == TableBase.SYSTEM_SUBQUERY) {
+    if (rangeTable instanceof TableDerived) {
+      if (tableAlias == null || tableAlias.name == null) {
+        throw new org.hsqldb_voltpatches.HSQLInterface.HSQLParseException("SQL Syntax error: Every derived table must have its own alias.");
+      }
+      VoltXMLElement subQuery=((TableDerived)rangeTable).dataExpression.voltGetXML(session);
+      scan.children.add(subQuery);
+    }
   }
   if (isLeftJoin && isRightJoin) {
     scan.attributes.put("jointype","full");

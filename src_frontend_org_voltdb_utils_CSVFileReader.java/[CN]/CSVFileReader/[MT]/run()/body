@@ -1,22 +1,7 @@
 {
   List<String> lineList;
-  ClientImpl clientImpl=(ClientImpl)m_csvClient;
-  int sleptTimes=0;
-  while (!clientImpl.isHashinatorInitialized() && sleptTimes < 120) {
-    try {
-      Thread.sleep(500);
-      sleptTimes++;
-    }
- catch (    InterruptedException ex) {
-      ;
-    }
-  }
-  if (sleptTimes >= 120 && CSVPartitionProcessor.m_isMP) {
-    m_log.info("Unable to retrieve partition information from cluster. " + "Falling back to single row insertions; CSV loading performance will be degraded.");
-  }
-  m_log.debug("Client Initialization Done.");
   while ((m_config.limitrows-- > 0)) {
-    if (m_errored) {
+    if (m_errHandler.hasReachedErrorLimit()) {
       break;
     }
     try {
@@ -37,40 +22,24 @@
         break;
       }
       m_totalRowCount.incrementAndGet();
-      String[] correctedLine=lineList.toArray(new String[lineList.size()]);
+      if (lineList.size() == 0) {
+        continue;
+      }
+      String[] lineValues=lineList.toArray(new String[0]);
       String lineCheckResult;
-      if ((lineCheckResult=checkparams_trimspace(correctedLine,CSVPartitionProcessor.m_columnCnt)) != null) {
-        String[] info={lineList.toString(),lineCheckResult};
-        if (synchronizeErrorInfo(m_totalLineCount.get() + 1,info)) {
-          m_errored=true;
+      if ((lineCheckResult=checkparams_trimspace(lineValues)) != null) {
+        final CSVLineWithMetaData metaData=new CSVLineWithMetaData(m_listReader.getUntokenizedRow(),m_totalLineCount.get() + 1);
+        if (m_errHandler.handleError(metaData,null,lineCheckResult)) {
           break;
         }
         continue;
       }
-      CSVLineWithMetaData lineData=new CSVLineWithMetaData(correctedLine,lineList,m_listReader.getLineNumber());
-      long partitionId=0;
-      if (!CSVPartitionProcessor.m_isMP && !m_config.useSuppliedProcedure) {
-        partitionId=clientImpl.getPartitionForParameter(CSVPartitionProcessor.m_partitionColumnType.getValue(),lineData.correctedLine[CSVPartitionProcessor.m_partitionedColumnIndex]);
-      }
-      BlockingQueue<CSVLineWithMetaData> q=m_processorQueues.get(partitionId);
-      if (q == null) {
-        m_log.warn("Unknown or New partition detected possibly because of change in topology.");
-        String[] info={lineList.toString(),"Topology changed."};
-        if (synchronizeErrorInfo(m_totalLineCount.get() + 1,info)) {
-          m_errored=true;
-          break;
-        }
-        continue;
-      }
-      if (!q.offer(lineData)) {
-        m_log.debug("Failed to insert linedata in processor, waiting and doing put.");
-        q.put(lineData);
-      }
+      CSVLineWithMetaData lineData=new CSVLineWithMetaData(m_listReader.getUntokenizedRow(),m_listReader.getLineNumber());
+      m_loader.insertRow(lineData,lineValues);
     }
  catch (    SuperCsvException e) {
-      m_log.error("Failed to process CSV line: " + e);
-      String[] info={e.getMessage(),""};
-      if (synchronizeErrorInfo(m_totalLineCount.get() + 1,info)) {
+      final CSVLineWithMetaData metaData=new CSVLineWithMetaData(m_listReader.getUntokenizedRow(),m_totalLineCount.get() + 1);
+      if (m_errHandler.handleError(metaData,null,e.getMessage())) {
         break;
       }
     }
@@ -78,41 +47,17 @@ catch (    IOException ex) {
       m_log.error("Failed to read CSV line from file: " + ex);
       break;
     }
-catch (    InterruptedException ex) {
-      m_log.error("Failed to read CSV line from file: " + ex);
+catch (    InterruptedException e) {
+      m_log.error("CSVLoader interrupted: " + e);
       break;
     }
   }
-  if (m_errorInfo.size() >= m_config.maxerrors) {
-    m_log.warn("The number of failed rows exceeds the configured maximum failed rows: " + m_config.maxerrors);
-  }
   try {
-    m_listReader.close();
+    m_log.debug("Waiting for CSVDataLoader to finish.");
+    m_loader.close();
+    m_log.debug("CSVDataLoader Done.");
   }
  catch (  Exception ex) {
-    m_log.error("Error closing reader: " + ex);
-  }
- finally {
-    for (    BlockingQueue<CSVLineWithMetaData> q : m_processorQueues.values()) {
-      try {
-        q.put(m_endOfData);
-      }
- catch (      InterruptedException ex) {
-        m_log.error("Failed to add endOfData for Partition Processor. " + ex);
-      }
-    }
-    m_log.debug("Rows Queued by Reader: " + m_totalRowCount.get());
-  }
-  try {
-    m_log.debug("Waiting for partition processors to finish.");
-    CSVPartitionProcessor.m_processor_cdl.await();
-    m_csvClient.drain();
-    m_log.debug("Partition Processors Done.");
-  }
- catch (  InterruptedException ex) {
-    m_log.warn("Stopped processing because of connection error. " + "A report will be generated with what we processed so far. Error: " + ex);
-  }
-catch (  NoConnectionsException ex) {
     m_log.warn("Stopped processing because of connection error. " + "A report will be generated with what we processed so far. Error: " + ex);
   }
 }

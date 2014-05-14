@@ -1,30 +1,49 @@
 def is_different(x, cntonly):
-    'Marks the attributes that are different. Since the whole table will be\n    printed out as a single string.\n    the first line is column count,\n    the second line is row count,\n    the third line is column names and types,\n    and then followed by rows.\n    '
-    if (x['jni']['Status'] != x['hsqldb']['Status']):
-        if ((int(x['jni']['Status']) > 0) or (int(x['hsqldb']['Status']) > 0)):
-            x['highlight'] = ['Status']
+    'Notes the attributes that are different. Since the whole table will be\n    printed out as a single string.\n    the first line is column count,\n    the second line is row count,\n    the third line is column names and types,\n    followed by rows.\n    '
+    jni = x['jni']
+    hsql = x['hsqldb']
+    if (jni['Status'] != hsql['Status']):
+        if ((int(jni['Status']) > 0) or (int(hsql['Status']) > 0)):
+            x['highlight'] = 'Status'
             return True
-    if (('Result' in x['jni']) and ('Result' in x['hsqldb'])):
-        x['highlight'] = []
-        jniResult = x['jni']['Result']
-        hsqldbResult = x['hsqldb']['Result']
-        if ((jniResult == None) or (hsqldbResult == None)):
-            return True
-        if (len(jniResult) != len(hsqldbResult)):
-            return True
-        for i in xrange(len(jniResult)):
-            x['highlight'].append([])
-            if (len(jniResult[i].tuples) != len(hsqldbResult[i].tuples)):
-                x['highlight'][i].append(1)
-                return True
-            if (cntonly != True):
-                return False
-                for j in xrange(len(jniResult[i].tuples)):
-                    if (jniResult[i].tuples[j] != hsqldbResult[i].tuples[j]):
-                        if ((jniResult[i].columns[j].type == FastSerializer.VOLTTYPE_FLOAT) and (hsqldbResult[i].columns[j].type == FastSerializer.VOLTTYPE_DECIMAL) and (decimal.Decimal(str(jniResult[i].tuples[j])) == hsqldbResult[i].tuples[j])):
-                            continue
-                        x['highlight'][i].append((j + 4))
-        if (cntonly != True):
-            for i in x['highlight']:
-                return True
+        return False
+    if (int(jni['Status']) <= 0):
+        return False
+    jniResult = jni['Result']
+    hsqlResult = hsql['Result']
+    if ((not jniResult) or (not hsqlResult)):
+        x['highlight'] = 'Result'
+        return True
+    jniColumns = jniResult.columns
+    hsqlColumns = hsqlResult.columns
+    nColumns = len(jniColumns)
+    if (nColumns != len(hsqlColumns)):
+        x['highlight'] = 'Columns'
+        return True
+    jniTuples = jniResult.tuples
+    hsqlTuples = hsqlResult.tuples
+    if (len(jniTuples) != len(hsqlTuples)):
+        x['highlight'] = 'Tuples'
+        return True
+    if cntonly:
+        return False
+    for ii in xrange(len(jniTuples)):
+        if (jniTuples[ii] == hsqlTuples[ii]):
+            continue
+        column_problem = False
+        for jj in xrange(nColumns):
+            if (jniTuples[ii][jj] == hsqlTuples[ii][jj]):
+                continue
+            if ((jniColumns[jj].type == FastSerializer.VOLTTYPE_FLOAT) and (hsqlColumns[jj].type == FastSerializer.VOLTTYPE_DECIMAL)):
+                if (decimal.Decimal(str(jniTuples[ii][jj])) == hsqlTuples[ii][jj]):
+                    continue
+                print 'INFO is_different -- float-to-decimal conversion did not help convert between values:', 'jni:(', jniTuples[ii][jj], ') and hsql:(', hsqlTuples[ii][jj], ').'
+                print 'INFO is_different -- float-to-decimal conversion stages:', ' from jniTuples[ii][jj] of type:', type(jniTuples[ii][jj]), ' to hsqlTuples[ii][jj] of type:', type(hsqlTuples[ii][jj]), ' via str(jniTuples[ii][jj]):', str(jniTuples[ii][jj]), ' of type: ', type(str(jniTuples[ii][jj])), ' via decimal.Decimal(str(jniTuples[ii][jj])):', decimal.Decimal(str(jniTuples[ii][jj])), ' of type: ', type(decimal.Decimal(str(jniTuples[ii][jj])))
+            column_problem = True
+        if column_problem:
+            if (not x.get('highlight')):
+                x['highlight'] = []
+            x['highlight'].append(ii)
+    if x.get('highlight'):
+        return True
     return False

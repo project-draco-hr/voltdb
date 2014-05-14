@@ -4,9 +4,20 @@ synchronized (m_startAndStopLock) {
     if (m_mode != OperationMode.SHUTTINGDOWN) {
       did_it=true;
       m_mode=OperationMode.SHUTTINGDOWN;
+      for (      ScheduledFuture<?> sc : m_periodicWorks) {
+        sc.cancel(false);
+        try {
+          sc.get();
+        }
+ catch (        Throwable t) {
+        }
+      }
+      m_periodicWorks.clear();
       m_snapshotCompletionMonitor.shutdown();
       m_periodicWorkThread.shutdown();
+      m_periodicWorkThread.awaitTermination(356,TimeUnit.DAYS);
       m_periodicPriorityWorkThread.shutdown();
+      m_periodicPriorityWorkThread.awaitTermination(356,TimeUnit.DAYS);
       if (m_elasticJoinService != null) {
         m_elasticJoinService.shutdown();
       }
@@ -40,6 +51,9 @@ synchronized (m_startAndStopLock) {
  catch (        InterruptedException e) {
           hostLog.warn("Interrupted shutting down invocation buffer server",e);
         }
+      }
+      if (m_snapshotIOAgent != null) {
+        m_snapshotIOAgent.shutdown();
       }
       if (m_messenger != null) {
         m_messenger.shutdown();

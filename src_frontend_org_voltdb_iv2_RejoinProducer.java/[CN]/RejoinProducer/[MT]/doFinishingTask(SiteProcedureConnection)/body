@@ -4,15 +4,19 @@
       throw new RuntimeException("Unexpected execution of run method in rejoin producer.");
     }
     @Override public void runForRejoin(    SiteProcedureConnection siteConnection,    TaskLog rejoinTaskLog) throws IOException {
-      if (!m_completionMonitorAwait.isDone()) {
+      if (!m_schemaHasNoTables && !m_snapshotCompletionMonitor.isDone()) {
         m_taskQueue.offer(this);
         return;
       }
       SnapshotCompletionEvent event=null;
+      Map<String,Map<Integer,Pair<Long,Long>>> exportSequenceNumbers=null;
       try {
-        REJOINLOG.debug(m_whoami + "waiting on snapshot completion monitor.");
-        event=m_completionMonitorAwait.get();
-        m_completionAction.setSnapshotTxnId(event.multipartTxnId);
+        if (!m_schemaHasNoTables) {
+          REJOINLOG.debug(m_whoami + "waiting on snapshot completion monitor.");
+          event=m_snapshotCompletionMonitor.get();
+          exportSequenceNumbers=event.exportSequenceNumbers;
+          m_completionAction.setSnapshotTxnId(event.multipartTxnId);
+        }
         REJOINLOG.debug(m_whoami + " monitor completed. Sending SNAPSHOT_FINISHED " + "and handing off to site.");
         RejoinMessage snap_complete=new RejoinMessage(m_mailbox.getHSId(),Type.SNAPSHOT_FINISHED);
         m_mailbox.send(m_coordinatorHsId,snap_complete);
@@ -23,7 +27,10 @@
 catch (      ExecutionException e) {
         VoltDB.crashLocalVoltDB("Unexpected exception awaiting snapshot completion.",true,e);
       }
-      setJoinComplete(siteConnection,event.exportSequenceNumbers,true);
+      if (exportSequenceNumbers == null) {
+        exportSequenceNumbers=new HashMap<String,Map<Integer,Pair<Long,Long>>>();
+      }
+      setJoinComplete(siteConnection,exportSequenceNumbers,true);
     }
   }
 ;

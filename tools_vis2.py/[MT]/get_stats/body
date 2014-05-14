@@ -1,18 +1,22 @@
 def get_stats(hostname, port, days):
     "Get most recent run statistics of all apps within the last 'days'\n    "
     conn = FastSerializer(hostname, port)
-    proc = VoltProcedure(conn, 'BestOfPeriod_ab', [FastSerializer.VOLTTYPE_SMALLINT])
+    proc = VoltProcedure(conn, 'CenterAverageOfPeriod', [FastSerializer.VOLTTYPE_SMALLINT])
     resp = proc.call([days])
     conn.close()
+    maxdate = datetime.datetime(1970, 1, 1, 0, 0, 0)
+    mindate = datetime.datetime(2038, 1, 19, 0, 0, 0)
     stats = dict()
     run_stat_keys = ['app', 'nodes', 'branch', 'date', 'tps', 'lat95', 'lat99']
     for row in resp.tables[0].tuples:
         group = (row[0], row[1])
         app_stats = []
+        maxdate = max(maxdate, row[3])
+        mindate = min(mindate, row[3])
         if (group not in stats):
             stats[group] = app_stats
         else:
             app_stats = stats[group]
         run_stats = dict(zip(run_stat_keys, row))
         app_stats.append(run_stats)
-    return stats
+    return (stats, mindate, maxdate)

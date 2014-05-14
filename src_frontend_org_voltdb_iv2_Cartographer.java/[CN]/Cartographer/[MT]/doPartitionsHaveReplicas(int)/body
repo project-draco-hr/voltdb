@@ -1,0 +1,60 @@
+{
+  hostLog.debug("Cartographer: Reloading partition information.");
+  List<String> partitionDirs=null;
+  try {
+    partitionDirs=m_zk.getChildren(VoltZK.leaders_initiators,null);
+  }
+ catch (  KeeperException|InterruptedException e) {
+    return false;
+  }
+  Queue<ZKUtil.ByteArrayCallback> dataCallbacks=new ArrayDeque<>();
+  Queue<ZKUtil.ChildrenCallback> childrenCallbacks=new ArrayDeque<>();
+  for (  String partitionDir : partitionDirs) {
+    String dir=ZKUtil.joinZKPath(VoltZK.leaders_initiators,partitionDir);
+    try {
+      ZKUtil.ByteArrayCallback callback=new ZKUtil.ByteArrayCallback();
+      m_zk.getData(dir,false,callback,null);
+      dataCallbacks.offer(callback);
+      ZKUtil.ChildrenCallback childrenCallback=new ZKUtil.ChildrenCallback();
+      m_zk.getChildren(dir,false,childrenCallback,null);
+      childrenCallbacks.offer(childrenCallback);
+    }
+ catch (    Exception e) {
+      return false;
+    }
+  }
+  for (  String partitionDir : partitionDirs) {
+    int pid=LeaderElector.getPartitionFromElectionDir(partitionDir);
+    try {
+      byte[] partitionState=dataCallbacks.poll().getData();
+      if (partitionState != null && partitionState.length == 1) {
+        if (partitionState[0] == LeaderElector.INITIALIZING) {
+          return false;
+        }
+      }
+      List<String> replicas=childrenCallbacks.poll().getChildren();
+      if (pid == MpInitiator.MP_INIT_PID) {
+        continue;
+      }
+      final List<Integer> replicaHost=new ArrayList<>();
+      boolean hostHasReplicas=false;
+      for (      String replica : replicas) {
+        final String split[]=replica.split("/");
+        final long hsId=Long.valueOf(split[split.length - 1].split("_")[0]);
+        final int hostId=CoreUtils.getHostIdFromHSId(hsId);
+        if (hostId == hid) {
+          hostHasReplicas=true;
+        }
+        replicaHost.add(hostId);
+      }
+      hostLog.debug("Replica Host for Partition " + pid + " "+ replicaHost);
+      if (hostHasReplicas && replicaHost.size() <= 1) {
+        return false;
+      }
+    }
+ catch (    InterruptedException|KeeperException|NumberFormatException e) {
+      return false;
+    }
+  }
+  return true;
+}

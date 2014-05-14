@@ -4,17 +4,17 @@
     String jsonString=new String(data,"UTF-8");
     final JSONObject jsObj=new JSONObject(jsonString);
     final String requestId=jsObj.getString("requestId");
+    final boolean blocking=jsObj.getBoolean("block");
     jsObj.remove("requestId");
     jsObj.put("perPartitionTxnIds",retrievePerPartitionTransactionIds());
     final long handle=m_nextCallbackHandle++;
     m_procedureCallbacks.put(handle,new ProcedureCallback(){
       @Override public void clientCallback(      ClientResponse clientResponse){
+        m_lastInitiationTs=null;
         try {
           if (clientResponse.getStatus() != ClientResponse.SUCCESS) {
             ClientResponseImpl rimpl=(ClientResponseImpl)clientResponse;
-            ByteBuffer buf=ByteBuffer.allocate(rimpl.getSerializedSize());
-            m_zk.create(VoltZK.user_snapshot_response + requestId,rimpl.flattenToBuffer(buf).array(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
-            userSnapshotRequestExistenceCheck(true);
+            saveResponseToZKAndReset(requestId,rimpl);
             return;
           }
           if (isSnapshotInProgressResponse(clientResponse)) {
@@ -22,9 +22,7 @@
           }
  else {
             ClientResponseImpl rimpl=(ClientResponseImpl)clientResponse;
-            ByteBuffer buf=ByteBuffer.allocate(rimpl.getSerializedSize());
-            m_zk.create(VoltZK.user_snapshot_response + requestId,rimpl.flattenToBuffer(buf).array(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
-            userSnapshotRequestExistenceCheck(true);
+            saveResponseToZKAndReset(requestId,rimpl);
             return;
           }
         }
@@ -40,7 +38,7 @@
       }
     }
 );
-    m_initiator.initiateSnapshotDaemonWork("@SnapshotSave",handle,new Object[]{jsObj.toString(4)});
+    initiateSnapshotSave(handle,new Object[]{jsObj.toString(4)},blocking);
     return;
   }
 }

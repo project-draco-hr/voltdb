@@ -1,0 +1,26 @@
+{
+  Map<Integer,SnapshotDataTarget> targets=Maps.newHashMap();
+  final AtomicInteger numTargets=new AtomicInteger();
+  for (  Deque<SnapshotTableTask> tasksForSite : m_taskListsForHSIds.values()) {
+    for (    SnapshotTableTask task : tasksForSite) {
+      if (task.getTarget() != null) {
+        try {
+          task.getTarget().close();
+        }
+ catch (        Exception e) {
+          SNAP_LOG.error("Failed closing data target after error",e);
+        }
+      }
+      SnapshotDataTarget target=targets.get(task.m_table.getRelativeIndex());
+      if (target == null) {
+        target=new DevNullSnapshotTarget();
+        final Runnable onClose=new TargetStatsClosure(target,task.m_table.getTypeName(),numTargets,m_snapshotRecord);
+        target.setOnCloseHandler(onClose);
+        targets.put(task.m_table.getRelativeIndex(),target);
+        m_targets.add(target);
+        numTargets.incrementAndGet();
+      }
+      task.setTarget(target);
+    }
+  }
+}
