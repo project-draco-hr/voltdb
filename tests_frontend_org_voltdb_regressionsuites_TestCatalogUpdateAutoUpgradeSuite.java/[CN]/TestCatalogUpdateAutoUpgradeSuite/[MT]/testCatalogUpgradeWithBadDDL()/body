@@ -1,0 +1,25 @@
+{
+  Client client=getClient();
+  loadSomeData(client,0,10);
+  client.drain();
+  assertTrue(callbackSuccess);
+  String tweakedJarPath=upgradeCatalogBasePath + "-tweaked.jar";
+  OutputWatcher watcher=new OutputWatcher("Failed to generate upgraded catalog",20,TimeUnit.MILLISECONDS);
+  ((LocalCluster)m_config).setOutputWatcher(watcher);
+  CatalogUpgradeTools.dorkJar(upgradeCatalogJarPath,tweakedJarPath,"CREATE SQUIZZLE");
+  File tweakedJarFile=new File(tweakedJarPath);
+  try {
+    try {
+      client.updateApplicationCatalog(tweakedJarFile,new File(upgradeCatalogXMLPath)).getResults();
+      fail("Expect ProcCallException");
+    }
+ catch (    ProcCallException e) {
+      assertTrue(e.getLocalizedMessage().contains("Catalog upgrade failed"));
+      boolean found=watcher.waitForString();
+      assertTrue(found);
+    }
+  }
+  finally {
+    tweakedJarFile.delete();
+  }
+}

@@ -17,6 +17,14 @@
   procedure.setDefaultproc(procedureDescriptor.m_builtInStmt);
   procedure.setHasjava(true);
   procedure.setLanguage(lang.name());
+  ProcedureAnnotation pa=(ProcedureAnnotation)procedure.getAnnotation();
+  if (pa == null) {
+    pa=new ProcedureAnnotation();
+    procedure.setAnnotation(pa);
+  }
+  if (procedureDescriptor.m_scriptImpl != null) {
+    pa.scriptImpl=procedureDescriptor.m_scriptImpl;
+  }
   ProcInfoData info=compiler.getProcInfoOverride(shortName);
   ProcInfoData ddlInfo=null;
   if (procedureDescriptor.m_partitionString != null && !procedureDescriptor.m_partitionString.trim().isEmpty()) {
@@ -27,18 +35,22 @@
   if (info == null) {
     info=new ProcInfoData();
     ProcInfo annotationInfo=procClass.getAnnotation(ProcInfo.class);
-    if (annotationInfo != null && ddlInfo != null) {
-      String msg="Procedure: " + shortName + " has partition properties defined both in ";
-      msg+="class \"" + className + "\" and in the schema defintion file(s)";
-      throw compiler.new VoltCompilerException(msg);
-    }
     if (annotationInfo != null) {
+      if (ddlInfo != null) {
+        String msg="Procedure: " + shortName + " has partition properties defined both in ";
+        msg+="class \"" + className + "\" and in the schema defintion file(s)";
+        throw compiler.new VoltCompilerException(msg);
+      }
+      pa.classAnnotated=true;
       info.partitionInfo=annotationInfo.partitionInfo();
       info.singlePartition=annotationInfo.singlePartition();
     }
  else     if (ddlInfo != null) {
       info=ddlInfo;
     }
+  }
+ else {
+    pa.classAnnotated=true;
   }
   assert(info != null);
   if (info.singlePartition == false) {
@@ -71,10 +83,6 @@
     String stmtName=entry.getKey();
     SQLStmt stmt=(SQLStmt)entry.getValue();
     Statement catalogStmt=procedure.getStatements().add(stmtName);
-    Object partitionParameter=null;
-    if (info.singlePartition) {
-      partitionParameter="StatementCompiler dummied up single partitioning for QueryPlanner";
-    }
     PartitioningForStatement partitioning=info.singlePartition ? PartitioningForStatement.forceSP() : PartitioningForStatement.forceMP();
     StatementCompiler.compile(compiler,hsql,catalog,db,estimates,catalogStmt,stmt.getText(),stmt.getJoinOrder(),detMode,partitioning);
     if (partitioning.wasSpecifiedAsSingle()) {

@@ -18,6 +18,7 @@
       }
       m_failedBatchQueuedRowCnt.decrementAndGet();
       m_failedBatchSentRowCnt.incrementAndGet();
+      PartitionFailureExecuteProcedureCallback callback=null;
       try {
         VoltTable table=new VoltTable(m_colInfo);
         try {
@@ -31,7 +32,7 @@
  catch (        VoltTypeException ex) {
           continue;
         }
-        PartitionFailureExecuteProcedureCallback callback=new PartitionFailureExecuteProcedureCallback(currRow);
+        callback=new PartitionFailureExecuteProcedureCallback(currRow);
         if (!m_isMP) {
           Object rpartitionParam=HashinatorLite.valueToBytes(table.fetchRow(0).get(m_partitionedColumnIndex,m_partitionColumnType));
           m_clientImpl.callProcedure(callback,m_procName,rpartitionParam,m_tableName,table);
@@ -39,14 +40,14 @@
  else         m_clientImpl.callProcedure(callback,m_procName,m_tableName,table);
       }
  catch (      IOException ioex) {
-        m_failedQueue.clear();
-        m_failedQueue=null;
+        m_failureProcessor=null;
+        final ClientResponse r=new ClientResponseImpl(ClientResponse.CONNECTION_LOST,new VoltTable[0],"Connection to database was lost");
+        callback.clientCallback(r);
         break;
       }
     }
  catch (    InterruptedException ex) {
-      m_failedQueue.clear();
-      m_failedQueue=null;
+      m_failureProcessor=null;
       break;
     }
   }

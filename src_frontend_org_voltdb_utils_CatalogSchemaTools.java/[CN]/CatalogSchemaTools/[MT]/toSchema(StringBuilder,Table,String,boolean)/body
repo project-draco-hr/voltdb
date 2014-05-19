@@ -1,0 +1,210 @@
+{
+  assert(!catalog_tbl.getColumns().isEmpty());
+  boolean tableIsView=(viewQuery != null);
+  Set<Index> skip_indexes=new HashSet<Index>();
+  Set<Constraint> skip_constraints=new HashSet<Constraint>();
+  if (tableIsView) {
+    sb.append("CREATE VIEW " + catalog_tbl.getTypeName() + " (");
+  }
+ else {
+    sb.append("CREATE TABLE " + catalog_tbl.getTypeName() + " (");
+  }
+  String add="\n";
+  for (  Column catalog_col : CatalogUtil.getSortedCatalogItems(catalog_tbl.getColumns(),"index")) {
+    VoltType col_type=VoltType.get((byte)catalog_col.getType());
+    if (tableIsView) {
+      sb.append(add + spacer + catalog_col.getTypeName());
+      add=",\n";
+      continue;
+    }
+    sb.append(add + spacer + catalog_col.getTypeName()+ " "+ col_type.toSQLString()+ ((col_type == VoltType.STRING || col_type == VoltType.VARBINARY) && catalog_col.getSize() > 0 ? "(" + catalog_col.getSize() + (catalog_col.getInbytes() ? " BYTES" : "")+ ")" : ""));
+    String defaultvalue=catalog_col.getDefaultvalue();
+    boolean nullable=catalog_col.getNullable();
+    if (defaultvalue == null) {
+    }
+ else     if (defaultvalue.toLowerCase().equals("null") && nullable) {
+      defaultvalue=null;
+    }
+ else {
+      if (col_type == VoltType.TIMESTAMP) {
+        if (defaultvalue.startsWith("CURRENT_TIMESTAMP")) {
+          defaultvalue="CURRENT_TIMESTAMP";
+        }
+ else {
+          assert(defaultvalue.matches("[0-9]+"));
+          long epoch=Long.parseLong(defaultvalue);
+          Date d=new Date(epoch / 1000);
+          SimpleDateFormat sdf=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+          defaultvalue="\'" + sdf.format(d) + "."+ StringUtils.leftPad(String.valueOf(epoch % 1000000),6,"0")+ "\'";
+        }
+      }
+ else {
+        defaultvalue=defaultvalue.replace("\'","\'\'");
+        defaultvalue="'" + defaultvalue + "'";
+      }
+    }
+    if (defaultvalue == null) {
+      sb.append((!nullable ? " NOT NULL" : ""));
+    }
+ else {
+      sb.append(" DEFAULT " + (defaultvalue != null ? defaultvalue : "NULL") + (!nullable ? " NOT NULL" : ""));
+    }
+    for (    ConstraintRef catalog_const_ref : catalog_col.getConstraints()) {
+      Constraint catalog_const=catalog_const_ref.getConstraint();
+      ConstraintType const_type=ConstraintType.get(catalog_const.getType());
+      boolean found=false;
+      for (      Column catalog_other_col : catalog_tbl.getColumns()) {
+        if (catalog_other_col.equals(catalog_col))         continue;
+        if (catalog_other_col.getConstraints().getIgnoreCase(catalog_const.getTypeName()) != null) {
+          found=true;
+          break;
+        }
+      }
+      if (!found) {
+switch (const_type) {
+case FOREIGN_KEY:
+{
+            Table catalog_fkey_tbl=catalog_const.getForeignkeytable();
+            Column catalog_fkey_col=null;
+            for (            ColumnRef ref : catalog_const.getForeignkeycols()) {
+              catalog_fkey_col=ref.getColumn();
+              break;
+            }
+            assert(catalog_fkey_col != null);
+            sb.append(" REFERENCES " + catalog_fkey_tbl.getTypeName() + " ("+ catalog_fkey_col.getTypeName()+ ")");
+            skip_constraints.add(catalog_const);
+            break;
+          }
+default :
+      }
+    }
+  }
+  add=",\n";
+}
+for (Constraint catalog_const : catalog_tbl.getConstraints()) {
+  if (skip_constraints.contains(catalog_const))   continue;
+  ConstraintType const_type=ConstraintType.get(catalog_const.getType());
+  if (const_type == ConstraintType.PRIMARY_KEY || const_type == ConstraintType.UNIQUE) {
+    Index catalog_idx=catalog_const.getIndex();
+    if (!tableIsView) {
+      sb.append(add + spacer);
+      if (!catalog_const.getTypeName().startsWith(HSQLInterface.AUTO_GEN_PREFIX)) {
+        sb.append("CONSTRAINT " + catalog_const.getTypeName() + " ");
+      }
+      if (const_type == ConstraintType.PRIMARY_KEY || const_type == ConstraintType.UNIQUE) {
+        if (const_type == ConstraintType.PRIMARY_KEY) {
+          sb.append("PRIMARY KEY (");
+        }
+ else {
+          if (catalog_idx.getAssumeunique()) {
+            sb.append("ASSUMEUNIQUE (");
+          }
+ else {
+            sb.append("UNIQUE (");
+          }
+        }
+        String col_add="";
+        String exprStrings=new String();
+        if (catalog_idx.getExpressionsjson() != null && !catalog_idx.getExpressionsjson().equals("")) {
+          StmtTargetTableScan tableScan=new StmtTargetTableScan(catalog_tbl,catalog_tbl.getTypeName());
+          try {
+            List<AbstractExpression> expressions=AbstractExpression.fromJSONArrayString(catalog_idx.getExpressionsjson(),tableScan);
+            String sep="";
+            for (            AbstractExpression expr : expressions) {
+              exprStrings+=sep + expr.explain(catalog_tbl.getTypeName());
+              sep=",";
+            }
+          }
+ catch (          JSONException e) {
+          }
+          sb.append(col_add + exprStrings);
+        }
+ else {
+          for (          ColumnRef catalog_colref : CatalogUtil.getSortedCatalogItems(catalog_idx.getColumns(),"index")) {
+            sb.append(col_add + catalog_colref.getColumn().getTypeName());
+            col_add=", ";
+          }
+        }
+        sb.append(")");
+      }
+ else       if (const_type == ConstraintType.LIMIT) {
+        sb.append("LIMIT PARTITION ROWS " + String.valueOf(catalog_tbl.getTuplelimit()));
+      }
+    }
+    if (catalog_idx.getTypeName().startsWith(HSQLInterface.AUTO_GEN_PREFIX) || catalog_idx.getTypeName().startsWith(HSQLInterface.AUTO_GEN_MATVIEW)) {
+      skip_indexes.add(catalog_idx);
+    }
+  }
+ else   if (const_type == ConstraintType.FOREIGN_KEY) {
+    Table catalog_fkey_tbl=catalog_const.getForeignkeytable();
+    String col_add="";
+    String our_columns="";
+    String fkey_columns="";
+    for (    ColumnRef catalog_colref : catalog_const.getForeignkeycols()) {
+      Column our_column=catalog_tbl.getColumns().getIgnoreCase(catalog_colref.getTypeName());
+      assert(our_column != null);
+      our_columns+=col_add + our_column.getTypeName();
+      Column fkey_column=catalog_colref.getColumn();
+      assert(fkey_column != null);
+      fkey_columns+=col_add + fkey_column.getTypeName();
+      col_add=", ";
+    }
+    sb.append(add + spacer + "CONSTRAINT "+ catalog_const.getTypeName()+ " "+ "FOREIGN KEY ("+ our_columns+ ") "+ "REFERENCES "+ catalog_fkey_tbl.getTypeName()+ " ("+ fkey_columns+ ")");
+  }
+  skip_constraints.add(catalog_const);
+}
+if (catalog_tbl.getTuplelimit() != Integer.MAX_VALUE) {
+  sb.append(add + spacer + "LIMIT PARTITION ROWS "+ String.valueOf(catalog_tbl.getTuplelimit()));
+}
+if (viewQuery != null) {
+  sb.append("\n) AS \n");
+  sb.append(spacer + viewQuery + ";\n");
+}
+ else {
+  sb.append("\n);\n");
+}
+if (catalog_tbl.getPartitioncolumn() != null && viewQuery == null) {
+  sb.append("PARTITION TABLE " + catalog_tbl.getTypeName() + " ON COLUMN "+ catalog_tbl.getPartitioncolumn().getTypeName()+ ";\n");
+}
+for (Index catalog_idx : catalog_tbl.getIndexes()) {
+  if (skip_indexes.contains(catalog_idx))   continue;
+  if (catalog_idx.getUnique()) {
+    if (catalog_idx.getAssumeunique()) {
+      sb.append("CREATE ASSUMEUNIQUE INDEX ");
+    }
+ else {
+      sb.append("CREATE UNIQUE INDEX ");
+    }
+  }
+ else {
+    sb.append("CREATE INDEX ");
+  }
+  sb.append(catalog_idx.getTypeName() + " ON " + catalog_tbl.getTypeName()+ " (");
+  add="";
+  String jsonstring=catalog_idx.getExpressionsjson();
+  if (jsonstring.isEmpty()) {
+    for (    ColumnRef catalog_colref : CatalogUtil.getSortedCatalogItems(catalog_idx.getColumns(),"index")) {
+      sb.append(add + catalog_colref.getColumn().getTypeName());
+      add=", ";
+    }
+  }
+ else {
+    List<AbstractExpression> indexedExprs=null;
+    try {
+      indexedExprs=AbstractExpression.fromJSONArrayString(jsonstring,new StmtTargetTableScan(catalog_tbl,catalog_tbl.getTypeName()));
+    }
+ catch (    JSONException e) {
+      e.printStackTrace();
+    }
+    for (    AbstractExpression expr : indexedExprs) {
+      sb.append(add + expr.explain(catalog_tbl.getTypeName()));
+      add=", ";
+    }
+  }
+  sb.append(");\n");
+}
+if (isExportTable) {
+  sb.append("EXPORT TABLE " + catalog_tbl.getTypeName() + ";\n");
+}
+sb.append("\n");
+}
