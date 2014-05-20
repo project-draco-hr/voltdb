@@ -1,11 +1,24 @@
 {
   if (!m_enable)   return;
-  Thread t=Thread.currentThread();
+  final Thread t=Thread.currentThread();
   if (m_latencyMap.containsKey(t)) {
     m_latencyMap.put(t,System.currentTimeMillis());
   }
  else {
     m_latencyMap.put(t,System.currentTimeMillis());
-    executor.scheduleWithFixedDelay(new WatchdogCallback(t),WATCHDOG_DELAY,WATCHDOG_DELAY,TimeUnit.MILLISECONDS);
+    executor.scheduleWithFixedDelay(new Runnable(){
+      @Override public synchronized void run(){
+        long timestamp=m_latencyMap.get(t);
+        long now=System.currentTimeMillis();
+        if ((now - timestamp > WATCHDOG_DELAY) && (now - m_lastLogTime > MIN_LOG_INTERVAL) && t.getState() != Thread.State.TERMINATED) {
+          LOG.info(t.getName() + " has been delay for " + (now - timestamp)+ " milliseconds");
+          m_lastLogTime=now;
+          for (          StackTraceElement ste : t.getStackTrace()) {
+            LOG.info(ste);
+          }
+        }
+      }
+    }
+,WATCHDOG_DELAY,WATCHDOG_DELAY,TimeUnit.MILLISECONDS);
   }
 }
