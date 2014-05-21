@@ -1,24 +1,30 @@
 {
   if (!m_enable)   return;
-  final Thread t=Thread.currentThread();
-  if (m_latencyMap.containsKey(t)) {
-    m_latencyMap.put(t,System.currentTimeMillis());
-  }
- else {
-    m_latencyMap.put(t,System.currentTimeMillis());
+  Thread thread=Thread.currentThread();
+  sLatencyMap.put(thread,new Pair<Thread,Long>(thread,System.currentTimeMillis()));
+  if (!sOnlyExecuteOnce) {
+    sOnlyExecuteOnce=true;
     executor.scheduleWithFixedDelay(new Runnable(){
-      @Override public synchronized void run(){
-        long timestamp=m_latencyMap.get(t);
-        long now=System.currentTimeMillis();
-        if ((now - timestamp > WATCHDOG_THRESHOLD) && (now - m_lastLogTime.get(t) > MIN_LOG_INTERVAL) && t.getState() != Thread.State.TERMINATED) {
-          LOG.info(t.getName() + " has been delay for " + (now - timestamp)+ " milliseconds");
-          m_lastLogTime.put(t,now);
-          for (          StackTraceElement ste : t.getStackTrace()) {
-            LOG.info(ste);
+      @Override public void run(){
+        for (Iterator<Pair<Thread,Long>> iter=sLatencyMap.values().iterator(); iter.hasNext(); ) {
+          Pair<Thread,Long> pair=iter.next();
+          Thread t=pair.getFirst();
+          Long timestamp=pair.getSecond();
+          long now=System.currentTimeMillis();
+          if ((now - timestamp > WATCHDOG_THRESHOLD) && (now - sLastLogTime.get(t) > MIN_LOG_INTERVAL) && t.getState() != Thread.State.TERMINATED) {
+            LOG.info(t.getName() + " has been delay for " + (now - timestamp)+ " milliseconds");
+            for (            StackTraceElement ste : t.getStackTrace()) {
+              LOG.info(ste);
+            }
+            sLastLogTime.put(t,now);
+            sLatencyMap.put(t,new Pair<Thread,Long>(t,now));
+          }
+          if (t.getState() == Thread.State.TERMINATED) {
+            iter.remove();
           }
         }
       }
     }
-,WATCHDOG_THRESHOLD,WATCHDOG_THRESHOLD,TimeUnit.MILLISECONDS);
+,WAKEUP_INTERVAL,WAKEUP_INTERVAL,TimeUnit.MILLISECONDS);
   }
 }
