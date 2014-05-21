@@ -6,16 +6,31 @@
     r.nextBytes(data);
     try {
       currentRowCount=getRowCount();
-      int tc=batchSize * r.nextInt(99);
-      while ((currentRowCount < tc) && (m_shouldContinue.get())) {
+      while ((currentRowCount < targetCount) && (m_shouldContinue.get())) {
         CountDownLatch latch=new CountDownLatch(batchSize);
         for (int i=0; i < batchSize; i++) {
-          long p=Math.abs(r.nextLong());
-          m_permits.acquire();
+          long p=Math.abs((long)(r.nextGaussian() * this.partitionCount));
+          try {
+            m_permits.acquire();
+          }
+ catch (          InterruptedException e) {
+            if (!m_shouldContinue.get()) {
+              return;
+            }
+            log.error("BigTableLoader thread interrupted while waiting for permit.",e);
+          }
           insertsTried++;
           client.callProcedure(new InsertCallback(latch),tableName.toUpperCase() + "TableInsert",p,data);
         }
-        latch.await(10,TimeUnit.SECONDS);
+        try {
+          latch.await(10,TimeUnit.SECONDS);
+        }
+ catch (        InterruptedException e) {
+          if (!m_shouldContinue.get()) {
+            return;
+          }
+          log.error("BigTableLoader thread interrupted while waiting.",e);
+        }
         long nextRowCount=getRowCount();
         if (nextRowCount == currentRowCount) {
           try {
@@ -26,8 +41,12 @@
         }
         currentRowCount=nextRowCount;
       }
+      break;
     }
  catch (    Exception e) {
+      if (e instanceof InterruptedIOException && !m_shouldContinue.get()) {
+        continue;
+      }
       log.error("BigTableLoader failed a TableInsert procedure call for table " + tableName,e);
       try {
         Thread.sleep(3000);
