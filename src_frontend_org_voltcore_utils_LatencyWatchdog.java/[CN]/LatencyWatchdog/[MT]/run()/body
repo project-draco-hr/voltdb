@@ -1,11 +1,10 @@
 {
   Thread.currentThread().setName("Latency Watchdog");
-  System.out.println("Latency Watchdog thread has been started.");
+  System.out.printf("Latency Watchdog enabled -- threshold:%d(ms) wakeup_interval:%d(ms) min_log_interval:%d(ms)\n",WATCHDOG_THRESHOLD,WAKEUP_INTERVAL,MIN_LOG_INTERVAL);
   while (true) {
-    for (Iterator<WatchdogTimestamp> iter=sLatencyMap.values().iterator(); iter.hasNext(); ) {
-      WatchdogTimestamp wt=iter.next();
-      Thread t=wt.getThread();
-      Long timestamp=wt.getTimestamp();
+    for (    Entry<Thread,AtomicLong> entry : sLatencyMap.entrySet()) {
+      Thread t=entry.getKey();
+      long timestamp=entry.getValue().get();
       long now=System.currentTimeMillis();
       if ((now - timestamp > WATCHDOG_THRESHOLD) && t.getState() != Thread.State.TERMINATED) {
         StringBuilder sb=new StringBuilder();
@@ -14,10 +13,7 @@
           sb.append(ste);
           sb.append("\n");
         }
-        RateLimitedLogger.tryLogForMessage(sb.toString(),now,MIN_LOG_INTERVAL,TimeUnit.SECONDS,LOG,Level.DEBUG);
-      }
-      if (t.getState() == Thread.State.TERMINATED) {
-        iter.remove();
+        RateLimitedLogger.tryLogForMessage(sb.toString(),now,MIN_LOG_INTERVAL,TimeUnit.MILLISECONDS,LOG,Level.ERROR);
       }
     }
     try {
