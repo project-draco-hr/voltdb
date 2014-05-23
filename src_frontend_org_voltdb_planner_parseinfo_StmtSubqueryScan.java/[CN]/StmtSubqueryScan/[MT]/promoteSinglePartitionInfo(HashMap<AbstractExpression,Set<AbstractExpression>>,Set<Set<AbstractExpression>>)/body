@@ -1,45 +1,30 @@
 {
-  PartitioningForStatement pStmt=getPartitioningForStatement();
+  StatementPartitioning pStmt=getPartitioningForStatement();
   if (pStmt.getCountOfPartitionedTables() > 0 && !pStmt.requiresTwoFragments()) {
     AbstractExpression spExpr=pStmt.singlePartitioningExpression();
-    TupleValueExpression tveKey=pStmt.getPartitionColumn();
-    assert(tveKey != null);
-    tveKey.setTableName(m_tableAlias);
-    tveKey.setTableAlias(m_tableAlias);
-    if (valueEquivalence.containsKey(tveKey)) {
-      Set<AbstractExpression> values=valueEquivalence.get(tveKey);
-      boolean hasLegacyValues=false;
-      if (eqSets.contains(values)) {
-        eqSets.remove(values);
-        hasLegacyValues=true;
+    for (    SchemaColumn col : m_partitioningColumns) {
+      AbstractExpression tveKey=col.getExpression();
+      assert(tveKey instanceof TupleValueExpression);
+      Set<AbstractExpression> values=null;
+      if (valueEquivalence.containsKey(tveKey)) {
+        values=valueEquivalence.get(tveKey);
       }
-      values.add(spExpr);
-      if (hasLegacyValues) {
-        eqSets.add(values);
+ else       if (valueEquivalence.containsKey(spExpr)) {
+        values=valueEquivalence.get(spExpr);
       }
-      if (!valueEquivalence.containsKey(spExpr)) {
-        valueEquivalence.put(spExpr,values);
-      }
-    }
- else     if (valueEquivalence.containsKey(spExpr)) {
-      Set<AbstractExpression> values=valueEquivalence.get(spExpr);
-      boolean hasLegacyValues=false;
-      if (eqSets.contains(values)) {
-        eqSets.remove(values);
-        hasLegacyValues=true;
-      }
-      values.add(tveKey);
-      if (hasLegacyValues) {
-        eqSets.add(values);
-      }
-      valueEquivalence.put(tveKey,values);
-    }
  else {
-      Set<AbstractExpression> values=new HashSet<AbstractExpression>();
-      values.add(spExpr);
-      values.add(tveKey);
-      valueEquivalence.put(spExpr,values);
-      valueEquivalence.put(tveKey,values);
+        for (        SchemaColumn otherCol : m_partitioningColumns) {
+          if (col == otherCol)           continue;
+          if (valueEquivalence.containsKey(otherCol.getExpression())) {
+            values=valueEquivalence.get(otherCol.getExpression());
+            break;
+          }
+        }
+        if (values == null) {
+          values=new HashSet<AbstractExpression>();
+        }
+      }
+      updateEqualSets(values,valueEquivalence,eqSets,tveKey,spExpr);
     }
   }
 }
