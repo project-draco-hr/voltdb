@@ -1,0 +1,30 @@
+{
+  assert(tablesThatMustBeEmpty != null);
+  if (tablesThatMustBeEmpty.length == 0) {
+    return;
+  }
+  CatalogMap<Table> tables=context.getDatabase().getTables();
+  int[] tableIds=new int[tablesThatMustBeEmpty.length];
+  int i=0;
+  for (  String tableName : tablesThatMustBeEmpty) {
+    Table table=tables.get(tableName);
+    assert(table != null);
+    tableIds[i++]=table.getRelativeIndex();
+  }
+  final VoltTable[] s1=context.getSiteProcedureConnection().getStats(StatsSelector.TABLE,tableIds,false,getTransactionTime().getTime());
+  if ((s1 == null) || (s1.length == 0)) {
+    throw new VoltAbortException("(s1 == null) || (s1.length == 0)");
+  }
+  VoltTable stats=s1[0];
+  Set<String> nonEmptyTables=new HashSet<String>();
+  while (stats.advanceRow()) {
+    long tupleCount=stats.getLong("TUPLE_COUNT");
+    String tableName=stats.getString("TABLE_NAME");
+    if (tupleCount > 0) {
+      nonEmptyTables.add(tableName);
+    }
+  }
+  if (!nonEmptyTables.isEmpty()) {
+    throw new VoltAbortException("!nonEmptyTables.isEmpty()");
+  }
+}
