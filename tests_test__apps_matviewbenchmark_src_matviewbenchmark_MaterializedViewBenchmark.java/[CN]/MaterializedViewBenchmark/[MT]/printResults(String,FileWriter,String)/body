@@ -1,0 +1,40 @@
+{
+  ClientStats stats=fullStatsContext.fetchAndResetBaseline().getStats();
+  double execTimeInMicroSec=0.0;
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println(" Results");
+  System.out.println(HORIZONTAL_RULE);
+  System.out.printf("Average throughput: %,9d txns/sec\n",stats.getTxnThroughput());
+  VoltTable procStats=client.callProcedure("@Statistics","procedureprofile",0).getResults()[0];
+  while (procStats.advanceRow()) {
+    String procName=procStats.getString("PROCEDURE");
+    if (procName.equals(procedure)) {
+      execTimeInMicroSec=(procStats.getLong("AVG") / 1000.0);
+      System.out.printf("Average execution time: %,9f usec\n",execTimeInMicroSec);
+      break;
+    }
+  }
+  fw.append(String.format("%s,%d,-1,%d,0,0,0,%.2f,0,0,0,0,0,0\n",suffix,stats.getStartTimestamp(),stats.getTxnThroughput(),execTimeInMicroSec));
+  if (procedure.split("_")[1].equals("insert")) {
+    if (insert_throughput > 0) {
+      insert_throughput=(((stats.getTxnThroughput() - insert_throughput) / stats.getTxnThroughput()) * 100);
+      insert_execute=(((insert_execute - execTimeInMicroSec) / execTimeInMicroSec) * 100);
+      fw.append(String.format("%s,%d,-1,%.2f,0,0,0,%.2f,0,0,0,0,0,0\n","Insert Diff",stats.getStartTimestamp(),insert_throughput,insert_execute));
+    }
+ else {
+      insert_throughput=(double)stats.getTxnThroughput();
+      insert_execute=execTimeInMicroSec;
+    }
+  }
+ else {
+    if (delete_throughput > 0) {
+      delete_throughput=(((stats.getTxnThroughput() - delete_throughput) / stats.getTxnThroughput()) * 100.0);
+      delete_execute=(((delete_execute - execTimeInMicroSec) / execTimeInMicroSec) * 100);
+      fw.append(String.format("%s,%d,-1,%.2f,0,0,0,%.2f,0,0,0,0,0,0\n","Delete Diff",stats.getStartTimestamp(),delete_throughput,delete_execute));
+    }
+ else {
+      delete_throughput=(double)stats.getTxnThroughput();
+      delete_execute=execTimeInMicroSec;
+    }
+  }
+}
