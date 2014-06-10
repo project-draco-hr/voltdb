@@ -1,5 +1,8 @@
 {
   assert(subAssembler != null);
+  if (m_microOptimizedQuery) {
+    return null;
+  }
   AbstractPlanNode subSelectRoot=subAssembler.nextPlan();
   if (subSelectRoot == null) {
     m_recentErrorMsg=subAssembler.m_recentErrorMsg;
@@ -70,11 +73,13 @@
   if (m_parsedSelect.hasLimitOrOffset()) {
     root=handleLimitOperator(root);
   }
-  CompiledPlan retval=new CompiledPlan();
-  retval.rootPlanGraph=root;
-  retval.readOnly=true;
+  CompiledPlan plan=new CompiledPlan();
+  plan.rootPlanGraph=root;
+  plan.readOnly=true;
   boolean orderIsDeterministic=m_parsedSelect.isOrderDeterministic();
   boolean hasLimitOrOffset=m_parsedSelect.hasLimitOrOffset();
-  retval.statementGuaranteesDeterminism(hasLimitOrOffset,orderIsDeterministic);
-  return retval;
+  plan.statementGuaranteesDeterminism(hasLimitOrOffset,orderIsDeterministic);
+  MicroOptimizationRunner.applyAll(plan,m_parsedSelect);
+  plan=applyInlineAggregation(plan);
+  return plan;
 }
