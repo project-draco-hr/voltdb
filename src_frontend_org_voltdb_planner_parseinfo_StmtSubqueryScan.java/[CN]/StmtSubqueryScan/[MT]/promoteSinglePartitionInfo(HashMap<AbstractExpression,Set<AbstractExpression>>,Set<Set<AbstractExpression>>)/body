@@ -1,0 +1,31 @@
+{
+  StatementPartitioning stmtPartitioning=getPartitioningForStatement();
+  if (stmtPartitioning.getCountOfPartitionedTables() == 0 || stmtPartitioning.requiresTwoFragments()) {
+    return;
+  }
+  AbstractExpression spExpr=stmtPartitioning.singlePartitioningExpression();
+  for (  SchemaColumn col : m_partitioningColumns) {
+    AbstractExpression tveKey=col.getExpression();
+    assert(tveKey instanceof TupleValueExpression);
+    Set<AbstractExpression> values=null;
+    if (valueEquivalence.containsKey(tveKey)) {
+      values=valueEquivalence.get(tveKey);
+    }
+ else     if (valueEquivalence.containsKey(spExpr)) {
+      values=valueEquivalence.get(spExpr);
+    }
+ else {
+      for (      SchemaColumn otherCol : m_partitioningColumns) {
+        if (col == otherCol)         continue;
+        if (valueEquivalence.containsKey(otherCol.getExpression())) {
+          values=valueEquivalence.get(otherCol.getExpression());
+          break;
+        }
+      }
+      if (values == null) {
+        values=new HashSet<AbstractExpression>();
+      }
+    }
+    updateEqualSets(values,valueEquivalence,eqSets,tveKey,spExpr);
+  }
+}
