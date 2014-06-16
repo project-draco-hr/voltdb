@@ -1,0 +1,36 @@
+{
+  boolean needCoordNode=!selectStmt.hasPartitionColumnInGroupby();
+  if (coordNode != null) {
+    coordNode.m_isCoordinatingAggregator=true;
+  }
+  if (coordNode != null && root instanceof ReceivePlanNode) {
+    AbstractPlanNode accessPlanTemp=root;
+    root=root.getChild(0).getChild(0);
+    root.clearParents();
+    distNode.addAndLinkChild(root);
+    root=distNode;
+    accessPlanTemp.getChild(0).clearChildren();
+    accessPlanTemp.getChild(0).addAndLinkChild(root);
+    root=accessPlanTemp;
+    if (needCoordNode) {
+      coordNode.addAndLinkChild(root);
+      root=coordNode;
+      coordNode.setPostPredicate(m_parsedSelect.m_having);
+    }
+ else {
+      distNode.setPostPredicate(m_parsedSelect.m_having);
+    }
+  }
+ else {
+    distNode.addAndLinkChild(root);
+    root=distNode;
+    distNode.setPostPredicate(m_parsedSelect.m_having);
+  }
+  if (selectStmt.hasComplexAgg()) {
+    ProjectionPlanNode proj=new ProjectionPlanNode();
+    proj.addAndLinkChild(root);
+    proj.setOutputSchema(selectStmt.getFinalProjectionSchema());
+    root=proj;
+  }
+  return root;
+}
