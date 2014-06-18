@@ -26,4 +26,26 @@
   checkPrimaryKeySubSelect(pn,"SP4");
   planNodes=compileToFragments("SELECT * FROM (SELECT A, C FROM P1 GROUP BY A, C) T1 " + "where T1.A = 1 ");
   assertEquals(2,planNodes.size());
+  planNodes=compileToFragments("SELECT * FROM (SELECT A, C FROM R1 GROUP BY A, C) T1, P1 " + "where T1.A = P1.A ");
+  assertEquals(2,planNodes.size());
+  pn=planNodes.get(0);
+  assertTrue(pn instanceof SendPlanNode);
+  pn=pn.getChild(0);
+  assertTrue(pn instanceof ProjectionPlanNode);
+  pn=pn.getChild(0);
+  assertTrue(pn instanceof ReceivePlanNode);
+  pn=planNodes.get(1);
+  assertTrue(pn instanceof SendPlanNode);
+  nlpn=pn.getChild(0);
+  assertTrue(nlpn instanceof NestLoopIndexPlanNode);
+  assertEquals(JoinType.INNER,((NestLoopIndexPlanNode)nlpn).getJoinType());
+  pn=nlpn.getInlinePlanNode(PlanNodeType.INDEXSCAN);
+  checkPrimaryKeySubSelect(pn,"P1");
+  pn=nlpn.getChild(0);
+  checkSeqScanSubSelects(pn,"T1");
+  assertNotNull(pn.getInlinePlanNode(PlanNodeType.PROJECTION));
+  pn=pn.getChild(0);
+  checkSeqScanSubSelects(pn,"R1");
+  assertNotNull(pn.getInlinePlanNode(PlanNodeType.PROJECTION));
+  assertNotNull(pn.getInlinePlanNode(PlanNodeType.HASHAGGREGATE));
 }
