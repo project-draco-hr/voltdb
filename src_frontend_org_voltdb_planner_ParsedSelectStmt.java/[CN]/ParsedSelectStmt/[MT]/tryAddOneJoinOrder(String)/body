@@ -1,37 +1,22 @@
 {
-  if (m_joinOrder == null) {
-    if (m_tableList.size() > StatementCompiler.DEFAULT_MAX_JOIN_TABLES) {
-      m_largeJoins=true;
-      StringBuilder sb=new StringBuilder();
-      for (int ii=0; ii < m_tableList.size(); ii++) {
-        Table table=m_tableList.get(ii);
-        sb.append(table.getTypeName());
-        if (ii != m_tableList.size() - 1) {
-          sb.append(",");
-        }
-      }
-      m_joinOrder=sb.toString();
-    }
- else {
-      return;
-    }
-  }
   ArrayList<String> tableAliases=new ArrayList<String>();
   HashSet<String> dupCheck=new HashSet<String>();
-  for (  String element : m_joinOrder.trim().split(",")) {
+  for (  String element : joinOrder.trim().split(",")) {
     String alias=element.trim().toUpperCase();
     tableAliases.add(alias);
     if (!dupCheck.add(alias)) {
+      if (m_largeJoins)       return false;
       StringBuilder sb=new StringBuilder();
-      sb.append("The specified join order \"").append(m_joinOrder);
+      sb.append("The specified join order \"").append(joinOrder);
       sb.append("\" contains a duplicate element \"").append(alias).append("\".");
       throw new PlanningErrorException(sb.toString());
     }
   }
   if (m_tableAliasMap.size() != tableAliases.size()) {
+    if (m_largeJoins)     return false;
     StringBuilder sb=new StringBuilder();
     sb.append("The specified join order \"");
-    sb.append(m_joinOrder).append("\" does not contain the correct number of elements\n");
+    sb.append(joinOrder).append("\" does not contain the correct number of elements\n");
     sb.append("Expected ").append(m_tableList.size());
     sb.append(" but found ").append(tableAliases.size()).append(" elements.");
     throw new PlanningErrorException(sb.toString());
@@ -40,9 +25,10 @@
   Set<String> specifiedNames=new HashSet<String>(tableAliases);
   specifiedNames.removeAll(aliasSet);
   if (specifiedNames.isEmpty() == false) {
+    if (m_largeJoins)     return false;
     StringBuilder sb=new StringBuilder();
     sb.append("The specified join order \"");
-    sb.append(m_joinOrder).append("\" contains ");
+    sb.append(joinOrder).append("\" contains ");
     int i=0;
     for (    String name : specifiedNames) {
       sb.append(name);
@@ -61,6 +47,10 @@
     throw new PlanningErrorException(sb.toString());
   }
   if (!isValidJoinOrder(tableAliases)) {
+    if (m_largeJoins)     return false;
     throw new PlanningErrorException("The specified join order is invalid for the given query");
   }
+  assert(m_joinOrderList.size() > 0);
+  m_joinTree=m_joinOrderList.get(0);
+  return true;
 }
