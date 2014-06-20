@@ -12,7 +12,16 @@
     if (tableScan instanceof StmtSubqueryScan) {
       StmtSubqueryScan subScan=(StmtSubqueryScan)tableScan;
       subScan.promoteSinglePartitionInfo(valueEquivalence,eqSets);
-      subqueryHasRecieveNode=subScan.getNeedsReciveNode();
+      if (subScan.getHasReciveNode()) {
+        if (subqueryHasRecieveNode) {
+          m_JoinValid=false;
+          break;
+        }
+        subqueryHasRecieveNode=true;
+      }
+ else {
+        hasPartitionTableJoined=true;
+      }
     }
  else {
       hasPartitionTableJoined=true;
@@ -36,11 +45,13 @@
       ++unfilteredPartitionKeyCount;
     }
   }
-  if (subqueryHasRecieveNode && hasPartitionTableJoined) {
-    m_invalidSubqueryJoin=true;
-    return;
-  }
   m_countOfIndependentlyPartitionedTables=eqSets.size() + unfilteredPartitionKeyCount;
+  if (m_countOfIndependentlyPartitionedTables > 1) {
+    m_JoinValid=false;
+  }
+  if (subqueryHasRecieveNode && hasPartitionTableJoined) {
+    m_JoinValid=false;
+  }
   if ((unfilteredPartitionKeyCount == 0) && (eqSets.size() == 1)) {
     for (    Set<AbstractExpression> partitioningValues : eqSets) {
       for (      AbstractExpression constExpr : partitioningValues) {

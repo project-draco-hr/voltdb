@@ -1,5 +1,5 @@
 {
-  AbstractParsedStmt subQuery=subqueryScan.getSubquery();
+  AbstractParsedStmt subQuery=subqueryScan.getSubqueryStmt();
   assert(subQuery != null);
   PlanSelector selector=(PlanSelector)m_planSelector.clone();
   selector.m_planId=planId;
@@ -12,17 +12,8 @@
     }
     return null;
   }
-  AbstractPlanNode root=compiledPlan.rootPlanGraph;
-  List<AbstractPlanNode> receives=root.findAllNodesOfType(PlanNodeType.RECEIVE);
-  if (receives.size() > 0) {
-    assert(receives.size() == 1);
-    boolean subScanCanPushdown=!root.hasAnyNodeOfType(PlanNodeType.AGGREGATE) && !root.hasAnyNodeOfType(PlanNodeType.HASHAGGREGATE) && !root.hasAnyNodeOfType(PlanNodeType.LIMIT)&& !root.hasAnyNodeOfType(PlanNodeType.DISTINCT);
-    if (subScanCanPushdown) {
-      compiledPlan.rootPlanGraph=removeCoordinatorSendReceivePair(compiledPlan.rootPlanGraph);
-    }
-    subqueryScan.setNeedsReceiveNode(!subScanCanPushdown);
-  }
   subqueryScan.setSubqueriesPartitioning(currentPartitioning);
+  compiledPlan.rootPlanGraph=subqueryScan.processRevieveNode(compiledPlan.rootPlanGraph);
   subqueryScan.setBestCostPlan(compiledPlan);
   ParsedResultAccumulator parsedResult=new ParsedResultAccumulator(compiledPlan.isOrderDeterministic(),compiledPlan.hasLimitOrOffset(),selector.m_planId);
   return parsedResult;
