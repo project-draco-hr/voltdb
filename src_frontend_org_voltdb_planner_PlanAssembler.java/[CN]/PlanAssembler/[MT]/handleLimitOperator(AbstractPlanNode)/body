@@ -1,48 +1,21 @@
 {
-  int limitParamIndex=m_parsedSelect.getLimitParameterIndex();
-  int offsetParamIndex=m_parsedSelect.getOffsetParameterIndex();
-  LimitPlanNode topLimit=new LimitPlanNode();
-  topLimit.setLimit((int)m_parsedSelect.limit);
-  topLimit.setOffset((int)m_parsedSelect.offset);
-  topLimit.setLimitParameterIndex(limitParamIndex);
-  topLimit.setOffsetParameterIndex(offsetParamIndex);
+  LimitPlanNode topLimit=m_parsedSelect.getLimitNodeTop();
   AbstractPlanNode sendNode=null;
-  boolean canPushDown=!m_parsedSelect.distinct;
+  boolean canPushDown=!m_parsedSelect.hasDistinct();
   if (canPushDown) {
     sendNode=checkPushDownViability(root);
     if (sendNode == null) {
       canPushDown=false;
     }
  else {
-      for (      ParsedSelectStmt.ParsedColInfo col : m_parsedSelect.displayColumns) {
-        AbstractExpression rootExpr=col.expression;
-        if (rootExpr instanceof AggregateExpression) {
-          if (((AggregateExpression)rootExpr).isDistinct()) {
-            canPushDown=false;
-            break;
-          }
-        }
-      }
+      canPushDown=m_parsedSelect.m_limitCanPushdown;
     }
   }
-  if (m_parsedSelect.mvFixInfo.needed()) {
+  if (m_parsedSelect.m_mvFixInfo.needed()) {
     canPushDown=false;
   }
   if (canPushDown) {
-    LimitPlanNode distLimit=new LimitPlanNode();
-    if (m_parsedSelect.limit != -1) {
-      distLimit.setLimit((int)(m_parsedSelect.limit + m_parsedSelect.offset));
-    }
-    if (m_parsedSelect.hasLimitOrOffsetParameters()) {
-      AbstractExpression left=m_parsedSelect.getOffsetExpression();
-      assert(left != null);
-      AbstractExpression right=m_parsedSelect.getLimitExpression();
-      assert(right != null);
-      OperatorExpression expr=new OperatorExpression(ExpressionType.OPERATOR_PLUS,left,right);
-      expr.setValueType(VoltType.INTEGER);
-      expr.setValueSize(VoltType.INTEGER.getLengthInBytesForFixedTypes());
-      distLimit.setLimitExpression(expr);
-    }
+    LimitPlanNode distLimit=m_parsedSelect.getLimitNodeDist();
     AbstractPlanNode distributedPlan=sendNode.getChild(0);
     distributedPlan.clearParents();
     sendNode.clearChildren();

@@ -7,23 +7,16 @@
   }
   AbstractPlanNode root=subSelectRoot;
   boolean mvFixNeedsProjection=false;
-  JoinNode jroot=m_parsedSelect.m_joinTree;
   if (m_partitioning.requiresTwoFragments()) {
-    if (!jroot.isReplicatedInSubselects() && !jroot.isReplicatedOutsideSubselects()) {
-      throw new PlanningErrorException("Subqueries from multiple partitioned table or join with partitioned table are not supported.");
-    }
     boolean mvFixInfoCoordinatorNeeded=true;
     boolean mvFixInfoEdgeCaseOuterJoin=false;
     ArrayList<AbstractPlanNode> receivers=root.findAllNodesOfType(PlanNodeType.RECEIVE);
     if (receivers.size() == 1) {
-      if (!root.hasReplicatedResult()) {
-        throw new PlanningErrorException("This special case join between an outer replicated table and " + "an inner partitioned table is too complex and is not supported.");
-      }
-      if (m_parsedSelect.mvFixInfo.needed()) {
+      if (m_parsedSelect.m_mvFixInfo.needed()) {
         mvFixInfoCoordinatorNeeded=false;
         AbstractPlanNode receiveNode=receivers.get(0);
         if (receiveNode.getParent(0) instanceof NestLoopPlanNode) {
-          if (subSelectRoot.hasInlinedIndexScanOfTable(m_parsedSelect.mvFixInfo.getMVTableName())) {
+          if (subSelectRoot.hasInlinedIndexScanOfTable(m_parsedSelect.m_mvFixInfo.getMVTableName())) {
             return getNextSelectPlan();
           }
           List<AbstractPlanNode> nljs=receiveNode.findAllNodesOfType(PlanNodeType.NESTLOOP);
@@ -44,12 +37,12 @@
       if (m_parsedSelect.mayNeedAvgPushdown()) {
         m_parsedSelect.switchOptimalSuiteForAvgPushdown();
       }
-      if (m_parsedSelect.m_tableList.size() > 1 && m_parsedSelect.mvFixInfo.needed() && subSelectRoot.hasInlinedIndexScanOfTable(m_parsedSelect.mvFixInfo.getMVTableName())) {
+      if (m_parsedSelect.m_tableList.size() > 1 && m_parsedSelect.m_mvFixInfo.needed() && subSelectRoot.hasInlinedIndexScanOfTable(m_parsedSelect.m_mvFixInfo.getMVTableName())) {
         return getNextSelectPlan();
       }
     }
     root=handleAggregationOperators(root);
-    if (m_parsedSelect.mvFixInfo.needed() && mvFixInfoCoordinatorNeeded) {
+    if (m_parsedSelect.m_mvFixInfo.needed() && mvFixInfoCoordinatorNeeded) {
       AbstractPlanNode tmpRoot=root;
       root=handleMVBasedMultiPartQuery(root,mvFixInfoEdgeCaseOuterJoin);
       if (root != tmpRoot) {
@@ -58,7 +51,7 @@
     }
   }
  else {
-    m_parsedSelect.mvFixInfo.setNeeded(false);
+    m_parsedSelect.m_mvFixInfo.setNeeded(false);
     root=handleAggregationOperators(root);
   }
   if (m_parsedSelect.hasComplexAgg()) {
@@ -77,11 +70,12 @@
   if (m_parsedSelect.hasLimitOrOffset()) {
     root=handleLimitOperator(root);
   }
-  CompiledPlan retval=new CompiledPlan();
-  retval.rootPlanGraph=root;
-  retval.readOnly=true;
+  CompiledPlan plan=new CompiledPlan();
+  plan.rootPlanGraph=root;
+  plan.readOnly=true;
   boolean orderIsDeterministic=m_parsedSelect.isOrderDeterministic();
   boolean hasLimitOrOffset=m_parsedSelect.hasLimitOrOffset();
-  retval.statementGuaranteesDeterminism(hasLimitOrOffset,orderIsDeterministic);
-  return retval;
+  plan.statementGuaranteesDeterminism(hasLimitOrOffset,orderIsDeterministic);
+  MicroOptimizationRunner.applyAll(plan,m_parsedSelect);
+  return plan;
 }

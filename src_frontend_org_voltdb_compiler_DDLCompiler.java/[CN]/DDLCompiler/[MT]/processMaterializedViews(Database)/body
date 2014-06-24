@@ -51,7 +51,7 @@
     List<AbstractExpression> groupbyExprs=null;
     if (stmt.hasComplexGroupby()) {
       groupbyExprs=new ArrayList<AbstractExpression>();
-      for (      ParsedColInfo col : stmt.groupByColumns) {
+      for (      ParsedColInfo col : stmt.m_groupByColumns) {
         groupbyExprs.add(col.expression);
       }
       String groupbyExprsJson=null;
@@ -64,40 +64,40 @@
       matviewinfo.setGroupbyexpressionsjson(groupbyExprsJson);
     }
  else {
-      for (int i=0; i < stmt.groupByColumns.size(); i++) {
-        ParsedSelectStmt.ParsedColInfo gbcol=stmt.groupByColumns.get(i);
+      for (int i=0; i < stmt.m_groupByColumns.size(); i++) {
+        ParsedSelectStmt.ParsedColInfo gbcol=stmt.m_groupByColumns.get(i);
         Column srcCol=srcColumnArray.get(gbcol.index);
         ColumnRef cref=matviewinfo.getGroupbycols().add(srcCol.getTypeName());
         cref.setIndex(i);
         cref.setColumn(srcCol);
       }
-      for (int i=0; i < stmt.groupByColumns.size(); i++) {
-        ParsedSelectStmt.ParsedColInfo col=stmt.displayColumns.get(i);
+      for (int i=0; i < stmt.m_groupByColumns.size(); i++) {
+        ParsedSelectStmt.ParsedColInfo col=stmt.m_displayColumns.get(i);
         Column destColumn=destColumnArray.get(i);
         processMaterializedViewColumn(matviewinfo,srcTable,destColumn,ExpressionType.VALUE_TUPLE,(TupleValueExpression)col.expression);
       }
     }
-    ParsedSelectStmt.ParsedColInfo countCol=stmt.displayColumns.get(stmt.groupByColumns.size());
+    ParsedSelectStmt.ParsedColInfo countCol=stmt.m_displayColumns.get(stmt.m_groupByColumns.size());
     assert(countCol.expression.getExpressionType() == ExpressionType.AGGREGATE_COUNT_STAR);
     assert(countCol.expression.getLeft() == null);
-    processMaterializedViewColumn(matviewinfo,srcTable,destColumnArray.get(stmt.groupByColumns.size()),ExpressionType.AGGREGATE_COUNT_STAR,null);
-    Index pkIndex=destTable.getIndexes().add("MATVIEW_PK_INDEX");
+    processMaterializedViewColumn(matviewinfo,srcTable,destColumnArray.get(stmt.m_groupByColumns.size()),ExpressionType.AGGREGATE_COUNT_STAR,null);
+    Index pkIndex=destTable.getIndexes().add(HSQLInterface.AUTO_GEN_MATVIEW_IDX);
     pkIndex.setType(IndexType.BALANCED_TREE.getValue());
     pkIndex.setUnique(true);
-    for (int i=0; i < stmt.groupByColumns.size(); i++) {
+    for (int i=0; i < stmt.m_groupByColumns.size(); i++) {
       ColumnRef c=pkIndex.getColumns().add(String.valueOf(i));
       c.setColumn(destColumnArray.get(i));
       c.setIndex(i);
     }
-    Constraint pkConstraint=destTable.getConstraints().add("MATVIEW_PK_CONSTRAINT");
+    Constraint pkConstraint=destTable.getConstraints().add(HSQLInterface.AUTO_GEN_MATVIEW_CONST);
     pkConstraint.setType(ConstraintType.PRIMARY_KEY.getValue());
     pkConstraint.setIndex(pkIndex);
     List<AbstractExpression> aggregationExprs=new ArrayList<AbstractExpression>();
     boolean hasAggregationExprs=false;
     boolean hasMinOrMaxAgg=false;
     ArrayList<AbstractExpression> minMaxAggs=new ArrayList<AbstractExpression>();
-    for (int i=stmt.groupByColumns.size() + 1; i < stmt.displayColumns.size(); i++) {
-      ParsedSelectStmt.ParsedColInfo col=stmt.displayColumns.get(i);
+    for (int i=stmt.m_groupByColumns.size() + 1; i < stmt.m_displayColumns.size(); i++) {
+      ParsedSelectStmt.ParsedColInfo col=stmt.m_displayColumns.get(i);
       AbstractExpression aggExpr=col.expression.getLeft();
       if (aggExpr.getExpressionType() != ExpressionType.VALUE_TUPLE) {
         hasAggregationExprs=true;
@@ -131,8 +131,8 @@
  else {
       matviewinfo.setIndexforminmax("");
     }
-    for (int i=stmt.groupByColumns.size() + 1; i < stmt.displayColumns.size(); i++) {
-      ParsedSelectStmt.ParsedColInfo col=stmt.displayColumns.get(i);
+    for (int i=stmt.m_groupByColumns.size() + 1; i < stmt.m_displayColumns.size(); i++) {
+      ParsedSelectStmt.ParsedColInfo col=stmt.m_displayColumns.get(i);
       Column destColumn=destColumnArray.get(i);
       AbstractExpression colExpr=col.expression.getLeft();
       TupleValueExpression tve=null;
