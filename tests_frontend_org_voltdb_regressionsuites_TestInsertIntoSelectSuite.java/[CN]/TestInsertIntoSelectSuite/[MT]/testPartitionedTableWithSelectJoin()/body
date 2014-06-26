@@ -1,0 +1,35 @@
+{
+  final Client client=getClient();
+  for (int i=0; i < 10; i++) {
+    int j=i + 5;
+    ClientResponse resp=client.callProcedure("SOURCE_P1.insert",i,Integer.toHexString(i),i,i);
+    assertEquals(ClientResponse.SUCCESS,resp.getStatus());
+    assertEquals(1,resp.getResults()[0].asScalarLong());
+    resp=client.callProcedure("SOURCE_P2.insert",j,Integer.toHexString(j),j * 5,j * 5);
+    assertEquals(ClientResponse.SUCCESS,resp.getStatus());
+    assertEquals(1,resp.getResults()[0].asScalarLong());
+  }
+  ClientResponse resp=client.callProcedure("InsertIntoSelectWithJoin",3,6);
+  assertEquals(ClientResponse.SUCCESS,resp.getStatus());
+  assertEquals(2,resp.getResults()[0].asScalarLong());
+  String selectSp1="select * from source_p1 where bi between 5 and 6";
+  String selectSp2="select * from source_p2 where bi between 5 and 6";
+  String selectTarget="select * from target_p where bi between 5 and 6";
+  resp=client.callProcedure("@AdHoc",selectTarget);
+  assertEquals(ClientResponse.SUCCESS,resp.getStatus());
+  VoltTable targetRows=resp.getResults()[0];
+  resp=client.callProcedure("@AdHoc",selectSp1);
+  assertEquals(ClientResponse.SUCCESS,resp.getStatus());
+  VoltTable sp1Rows=resp.getResults()[0];
+  resp=client.callProcedure("@AdHoc",selectSp2);
+  assertEquals(ClientResponse.SUCCESS,resp.getStatus());
+  VoltTable sp2Rows=resp.getResults()[0];
+  while (targetRows.advanceRow()) {
+    assertTrue(sp1Rows.advanceRow());
+    assertTrue(sp2Rows.advanceRow());
+    assertEquals(sp1Rows.getLong(0),targetRows.getLong(0));
+    assertEquals(sp1Rows.getString(1),targetRows.getString(1));
+    assertEquals(sp2Rows.getLong(2),targetRows.getLong(2));
+    assertEquals(sp2Rows.getLong(3),targetRows.getLong(3));
+  }
+}
