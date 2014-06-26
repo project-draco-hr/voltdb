@@ -1,0 +1,22 @@
+{
+  VoltProjectBuilder builder=new VoltProjectBuilder();
+  String schema="CREATE TABLE T24 (C1 INTEGER, C2 INTEGER);" + "CREATE VIEW VT (C1, C2, TOTAL) AS SELECT C1, C2, COUNT(*) FROM T24 GROUP BY C1, C2;";
+  builder.addLiteralSchema(schema);
+  boolean success=builder.compile(pathToCatalog);
+  assertTrue(success);
+  MiscUtils.copyFile(builder.getPathToDeployment(),pathToDeployment);
+  VoltDB.Configuration config=new VoltDB.Configuration();
+  config.m_pathToCatalog=pathToCatalog;
+  config.m_pathToDeployment=pathToDeployment;
+  startSystem(config);
+  assertTrue(findTableInSystemCatalogResults("T24"));
+  assertTrue(findTableInSystemCatalogResults("VT"));
+  assertEquals(getTableType("VT"),"VIEW");
+  m_client.callProcedure("T24.insert",1,2);
+  m_client.callProcedure("T24.insert",1,2);
+  ClientResponse resp=m_client.callProcedure("@AdHoc","select * from VT");
+  VoltTable vt=resp.getResults()[0];
+  vt.advanceToRow(0);
+  assertEquals(vt.get(2,VoltType.INTEGER),2);
+  teardownSystem();
+}

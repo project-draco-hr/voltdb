@@ -1,0 +1,30 @@
+{
+  VoltProjectBuilder builder=new VoltProjectBuilder();
+  String schema="CREATE TABLE T25 (id INTEGER NOT NULL); " + "IMPORT CLASS org.voltdb_testprocs.fullddlfeatures.NoMeaningClass;" + "CREATE PROCEDURE FROM CLASS org.voltdb_testprocs.fullddlfeatures.testImportProc;";
+  builder.addLiteralSchema(schema);
+  LocalCluster cluster=new LocalCluster(catalogJar,2,1,1,BackendTarget.NATIVE_EE_JNI);
+  cluster.setHasLocalServer(false);
+  boolean success=cluster.compile(builder);
+  assertTrue(success);
+  MiscUtils.copyFile(builder.getPathToDeployment(),pathToDeployment);
+  VoltDB.Configuration config=new VoltDB.Configuration();
+  config.m_pathToCatalog=pathToCatalog;
+  config.m_pathToDeployment=pathToDeployment;
+  cluster.startUp();
+  Client client=ClientFactory.createClient();
+  client.createConnection("localhost",cluster.port(0));
+  String classpath="org/voltdb_testprocs/fullddlfeatures/NoMeaningClass.class";
+  Process p=Runtime.getRuntime().exec("jar tf " + pathToCatalog);
+  BufferedReader in=new BufferedReader(new InputStreamReader(p.getInputStream()));
+  String file=null;
+  boolean exist=false;
+  while ((file=in.readLine()) != null) {
+    if (file.equals(classpath)) {
+      exist=true;
+      break;
+    }
+  }
+  assertTrue(exist);
+  client.close();
+  cluster.shutDown();
+}
