@@ -1,0 +1,64 @@
+{
+  if (!MiscUtils.isPro()) {
+    return;
+  }
+  StringBuilder sb=new StringBuilder();
+  sb.append("jdbc:voltdb://");
+  final List<String> listeners=m_config.getListenerAddresses();
+  for (  String listener : listeners) {
+    sb.append(listener).append(",");
+  }
+  String JDBCURL=sb.toString();
+  System.out.println("Connecting to JDBC URL: " + JDBCURL);
+  m_config.killSingleHost(4);
+  Thread.sleep(500);
+  Connection conn=null;
+  try {
+    conn=connectClients(JDBCURL);
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+    fail("Connection creation shouldn't fail: " + e.getMessage());
+  }
+  try {
+    Client client=ClientFactory.createClient();
+    client.createConnection("localhost",m_config.port(0));
+    client.callProcedure("Insert",13);
+    client.close();
+    String sql="select count(*) from T WHERE A1 = ?;";
+    PreparedStatement ps=conn.prepareStatement(sql);
+    ps.setInt(1,13);
+    ResultSet rs=ps.executeQuery();
+    rs.next();
+    int cnt=rs.getInt(1);
+    assertEquals(cnt,1);
+    cnt=0;
+    m_config.killSingleHost(3);
+    Thread.sleep(500);
+    ps=conn.prepareStatement(sql);
+    ps.setInt(1,13);
+    rs=ps.executeQuery();
+    rs.next();
+    cnt=rs.getInt(1);
+    assertEquals(cnt,1);
+    cnt=0;
+    m_config.killSingleHost(2);
+    Thread.sleep(500);
+    ps=conn.prepareStatement(sql);
+    ps.setInt(1,13);
+    rs=ps.executeQuery();
+    rs.next();
+    cnt=rs.getInt(1);
+    assertEquals(cnt,1);
+    cnt=0;
+  }
+ catch (  Exception ex) {
+    if (ex.getMessage().contains("change in mastership")) {
+      System.out.println("Test quit early due to transaction during node failure.  Bail out.");
+    }
+ else {
+      ex.printStackTrace();
+      fail();
+    }
+  }
+}

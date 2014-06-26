@@ -1,20 +1,19 @@
 {
-  Map<Long,String[]> errorInfo=CSVFileReader.m_errorInfo;
-  latency=System.currentTimeMillis() - start;
+  long latency=System.currentTimeMillis() - start;
   m_log.info("Elapsed time: " + latency / 1000F + " seconds");
   int bulkflush=300;
   try {
     long linect=0;
-    for (    Long irow : errorInfo.keySet()) {
-      String info[]=errorInfo.get(irow);
+    for (    Map.Entry<Long,String[]> irow : m_errorInfo.entrySet()) {
+      String info[]=irow.getValue();
       if (info.length != 2) {
         System.out.println("internal error, information is not enough");
       }
       linect++;
       out_invaliderowfile.write(info[0] + "\n");
-      String message="Invalid input on line " + irow + ".\n  Contents:"+ info[0];
+      String message="Invalid input on line " + irow.getKey() + ". "+ info[1];
       m_log.error(message);
-      out_logfile.write(message + "\n  " + info[1]+ "\n");
+      out_logfile.write(message + "\n  Content: " + info[0]+ "\n");
       if (linect % bulkflush == 0) {
         out_invaliderowfile.flush();
         out_logfile.flush();
@@ -23,20 +22,30 @@
     float elapsedTimeSec=latency / 1000F;
     out_reportfile.write("CSVLoader elaspsed: " + elapsedTimeSec + " seconds\n");
     long trueSkip;
-    if (config.skip < CSVFileReader.m_totalLineCount.get()) {
+    long totolLineCnt;
+    long totalRowCnt;
+    if (config.useSuppliedProcedure) {
+      totolLineCnt=CSVFileReader.m_totalLineCount.get();
+      totalRowCnt=CSVFileReader.m_totalRowCount.get();
+    }
+ else {
+      totolLineCnt=CSVFileReader.m_totalLineCount.get();
+      totalRowCnt=CSVFileReader.m_totalRowCount.get();
+    }
+    if (config.skip < totolLineCnt) {
       trueSkip=config.skip;
     }
  else {
-      trueSkip=CSVFileReader.m_totalLineCount.get();
+      trueSkip=totolLineCnt;
     }
     out_reportfile.write("Number of input lines skipped: " + trueSkip + "\n");
-    out_reportfile.write("Number of lines read from input: " + (CSVFileReader.m_totalLineCount.get() - trueSkip) + "\n");
+    out_reportfile.write("Number of lines read from input: " + (totolLineCnt - trueSkip) + "\n");
     if (config.limitrows == -1) {
-      out_reportfile.write("Input stopped after " + CSVFileReader.m_totalRowCount.get() + " rows read"+ "\n");
+      out_reportfile.write("Input stopped after " + totalRowCnt + " rows read"+ "\n");
     }
-    out_reportfile.write("Number of rows discovered: " + CSVFileReader.m_totalLineCount.get() + "\n");
+    out_reportfile.write("Number of rows discovered: " + totolLineCnt + "\n");
     out_reportfile.write("Number of rows successfully inserted: " + ackCount + "\n");
-    out_reportfile.write("Number of rows that could not be inserted: " + errorInfo.size() + "\n");
+    out_reportfile.write("Number of rows that could not be inserted: " + m_errorInfo.size() + "\n");
     out_reportfile.write("CSVLoader rate: " + insertCount / elapsedTimeSec + " row/s\n");
     m_log.info("Invalid row file: " + pathInvalidrowfile);
     m_log.info("Log file: " + pathLogfile);

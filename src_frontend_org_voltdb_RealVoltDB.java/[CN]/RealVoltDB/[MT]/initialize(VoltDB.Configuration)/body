@@ -1,4 +1,5 @@
 {
+  ShutdownHooks.enableServerStopLogging();
 synchronized (m_startAndStopLock) {
     if (System.getProperty("java.vm.name").contains("64") == false) {
       hostLog.fatal("You are running on an unsupported (probably 32 bit) JVM. Exiting.");
@@ -17,6 +18,8 @@ synchronized (m_startAndStopLock) {
     m_mode=OperationMode.INITIALIZING;
     m_config=config;
     m_startMode=null;
+    m_safeMpTxnId=Long.MAX_VALUE;
+    m_lastSeenMpTxnId=Long.MIN_VALUE;
     m_clientInterface=null;
     m_adminListener=null;
     m_commandLog=new DummyCommandLog();
@@ -57,6 +60,23 @@ synchronized (m_startAndStopLock) {
     }
     m_snapshotCompletionMonitor=new SnapshotCompletionMonitor();
     readBuildInfo(config.m_isEnterprise ? "Enterprise Edition" : "Community Edition");
+    StringBuilder sb=new StringBuilder(2048).append("Command line arguments: ");
+    sb.append(System.getProperty("sun.java.command","[not available]"));
+    hostLog.info(sb.toString());
+    List<String> iargs=ManagementFactory.getRuntimeMXBean().getInputArguments();
+    sb.delete(0,sb.length()).append("Command line JVM arguments:");
+    for (    String iarg : iargs)     sb.append(" ").append(iarg);
+    if (iargs.size() > 0)     hostLog.info(sb.toString());
+ else     hostLog.info("No JVM command line args known.");
+    sb.delete(0,sb.length()).append("Command line JVM classpath: ");
+    sb.append(System.getProperty("java.class.path","[not available]"));
+    hostLog.info(sb.toString());
+    if (m_config.m_versionStringOverrideForTest != null) {
+      m_versionString=m_config.m_versionStringOverrideForTest;
+    }
+    if (m_config.m_versionCompatibilityRegexOverrideForTest != null) {
+      m_hotfixableRegexPattern=m_config.m_versionCompatibilityRegexOverrideForTest;
+    }
     buildClusterMesh(isRejoin || m_joining);
     m_opsRegistrar.registerMailboxes(m_messenger);
     final Future<?> buildStringValidation=validateBuildString(getBuildString(),m_messenger.getZK());
@@ -66,8 +86,30 @@ synchronized (m_startAndStopLock) {
     }
     m_periodicWorkThread=CoreUtils.getScheduledThreadPoolExecutor("Periodic Work",1,CoreUtils.SMALL_STACK_SIZE);
     m_periodicPriorityWorkThread=CoreUtils.getScheduledThreadPoolExecutor("Periodic Priority Work",1,CoreUtils.SMALL_STACK_SIZE);
-    m_licenseApi=MiscUtils.licenseApiFactory(m_config.m_pathToLicense);
+    Class<?> snapshotIOAgentClass=MiscUtils.loadProClass("org.voltdb.SnapshotIOAgentImpl","Snapshot",true);
+    if (snapshotIOAgentClass != null) {
+      try {
+        m_snapshotIOAgent=(SnapshotIOAgent)snapshotIOAgentClass.getConstructor(HostMessenger.class,long.class).newInstance(m_messenger,m_messenger.getHSIdForLocalSite(HostMessenger.SNAPSHOT_IO_AGENT_ID));
+        m_messenger.createMailbox(m_snapshotIOAgent.getHSId(),m_snapshotIOAgent);
+      }
+ catch (      Exception e) {
+        VoltDB.crashLocalVoltDB("Failed to instantiate snapshot IO agent",true,e);
+      }
+    }
+    if (m_config.m_pathToLicense == null) {
+      m_licenseApi=MiscUtils.licenseApiFactory();
+      if (m_licenseApi == null) {
+        hostLog.fatal("Unable to open license file in default directories");
+      }
+    }
+ else {
+      m_licenseApi=MiscUtils.licenseApiFactory(m_config.m_pathToLicense);
+      if (m_licenseApi == null) {
+        hostLog.fatal("Unable to open license file in provided path: " + m_config.m_pathToLicense);
+      }
+    }
     if (m_licenseApi == null) {
+      hostLog.fatal("Please contact sales@voltdb.com to request a license.");
       VoltDB.crashLocalVoltDB("Failed to initialize license verifier. " + "See previous log message for details.",false,null);
     }
     m_globalServiceElector=new GlobalServiceElector(m_messenger.getZK(),m_messenger.getHostId());
@@ -84,8 +126,8 @@ synchronized (m_startAndStopLock) {
     if (m_joining) {
       Class<?> elasticJoinCoordClass=MiscUtils.loadProClass("org.voltdb.join.ElasticJoinNodeCoordinator","Elastic",false);
       try {
-        Constructor<?> constructor=elasticJoinCoordClass.getConstructor(HostMessenger.class);
-        m_joinCoordinator=(JoinCoordinator)constructor.newInstance(m_messenger);
+        Constructor<?> constructor=elasticJoinCoordClass.getConstructor(HostMessenger.class,String.class);
+        m_joinCoordinator=(JoinCoordinator)constructor.newInstance(m_messenger,m_catalogContext.cluster.getVoltroot());
         m_messenger.registerMailbox(m_joinCoordinator);
         m_joinCoordinator.initialize(m_deployment.getCluster().getKfactor());
       }
@@ -96,12 +138,12 @@ synchronized (m_startAndStopLock) {
     JSONObject topo=getTopology(config.m_startAction,m_joinCoordinator);
     m_partitionsToSitesAtStartupForExportInit=new ArrayList<Pair<Integer,Long>>();
     try {
-      m_cartographer=new Cartographer(m_messenger);
       ClusterConfig clusterConfig=new ClusterConfig(topo);
+      m_configuredReplicationFactor=clusterConfig.getReplicationFactor();
+      m_cartographer=new Cartographer(m_messenger,m_configuredReplicationFactor,m_catalogContext.cluster.getNetworkpartition());
       List<Integer> partitions=null;
       if (isRejoin) {
         m_configuredNumberOfPartitions=m_cartographer.getPartitionCount();
-        m_configuredReplicationFactor=clusterConfig.getReplicationFactor();
         partitions=m_cartographer.getIv2PartitionsToReplace(m_configuredReplicationFactor,clusterConfig.getSitesPerHost());
         if (partitions.size() == 0) {
           VoltDB.crashLocalVoltDB("The VoltDB cluster already has enough nodes to satisfy " + "the requested k-safety factor of " + m_configuredReplicationFactor + ".\n"+ "No more nodes can join.",false,null);
@@ -109,7 +151,6 @@ synchronized (m_startAndStopLock) {
       }
  else {
         m_configuredNumberOfPartitions=clusterConfig.getPartitionCount();
-        m_configuredReplicationFactor=clusterConfig.getReplicationFactor();
         partitions=ClusterConfig.partitionsForHost(topo,m_messenger.getHostId());
       }
       for (int ii=0; ii < partitions.size(); ii++) {
@@ -130,6 +171,7 @@ synchronized (m_startAndStopLock) {
           partsToHSIdsToRejoin.put(init.getPartitionId(),init.getInitiatorHSId());
         }
       }
+      OnDemandBinaryLogger.path=m_catalogContext.cluster.getVoltroot();
       if (isRejoin) {
         SnapshotSaveAPI.recoveringSiteCount.set(partsToHSIdsToRejoin.size());
         hostLog.info("Set recovering site count to " + partsToHSIdsToRejoin.size());
@@ -230,7 +272,7 @@ synchronized (m_startAndStopLock) {
     m_statsManager=null;
     try {
       final Class<?> statsManagerClass=MiscUtils.loadProClass("org.voltdb.management.JMXStatsManager","JMX",true);
-      if (statsManagerClass != null) {
+      if (statsManagerClass != null && !DISABLE_JMX) {
         m_statsManager=(StatsManager)statsManagerClass.newInstance();
         m_statsManager.initialize();
       }
@@ -289,7 +331,7 @@ synchronized (m_startAndStopLock) {
       hostLog.warn("Running a redundant (k-safe) cluster with network " + "partition detection disabled is not recommended for production use.");
     }
     assert(m_clientInterface != null);
-    m_clientInterface.initializeSnapshotDaemon(m_messenger.getZK(),m_globalServiceElector);
+    m_clientInterface.initializeSnapshotDaemon(m_messenger,m_globalServiceElector);
     try {
       String clSnapshotPath=null;
       if (m_catalogContext.cluster.getLogconfig().get("log").getEnabled()) {
@@ -315,7 +357,7 @@ synchronized (m_startAndStopLock) {
     m_configLogger=new Thread(new ConfigLogging());
     m_configLogger.start();
     DailyRollingFileAppender dailyAppender=null;
-    Enumeration appenders=Logger.getRootLogger().getAllAppenders();
+    Enumeration<?> appenders=Logger.getRootLogger().getAllAppenders();
     while (appenders.hasMoreElements()) {
       Appender appender=(Appender)appenders.nextElement();
       if (appender instanceof DailyRollingFileAppender) {
@@ -340,6 +382,7 @@ class DailyLogTask implements Runnable {
           m_myHostId=m_messenger.getHostId();
           hostLog.info(String.format("Host id of this node is: %d",m_myHostId));
           hostLog.info("URL of deployment info: " + m_config.m_pathToDeployment);
+          hostLog.info("Cluster uptime: " + MiscUtils.formatUptime(getClusterUptime()));
           logDebuggingInfo(m_config.m_adminPort,m_config.m_httpPort,m_httpPortExtraLogMessage,m_jsonEnabled);
           long nextCheck=nextCheckField.getLong(dailyRollingFileAppender);
           scheduleWork(new DailyLogTask(),nextCheck - System.currentTimeMillis() + 30 * 1000,0,TimeUnit.MILLISECONDS);

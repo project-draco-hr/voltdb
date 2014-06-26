@@ -1,0 +1,50 @@
+{
+  ExportDataProcessor newProcessor=null;
+  ExportDataProcessor oldProcessor=null;
+synchronized (ExportManager.this) {
+    boolean installNewProcessor=false;
+    if (m_generations.containsValue(drainedGeneration)) {
+      m_generations.remove(drainedGeneration.m_timestamp);
+      m_generationGhosts.add(drainedGeneration.m_timestamp);
+      installNewProcessor=(m_processor.get().getExportGeneration() == drainedGeneration);
+      exportLog.info("Finished draining generation " + drainedGeneration.m_timestamp);
+    }
+ else {
+      exportLog.warn("Finished draining a generation that is not known to export generations.");
+    }
+    try {
+      if (m_loaderClass != null && !m_generations.isEmpty() && installNewProcessor) {
+        exportLog.info("Creating connector " + m_loaderClass);
+        final Class<?> loaderClass=Class.forName(m_loaderClass);
+        ExportGeneration nextGeneration=m_generations.firstEntry().getValue();
+        newProcessor=(ExportDataProcessor)loaderClass.newInstance();
+        newProcessor.addLogger(exportLog);
+        newProcessor.setExportGeneration(nextGeneration);
+        newProcessor.setProcessorConfig(m_processorConfig);
+        newProcessor.readyForData();
+        if (nextGeneration.isDiskBased()) {
+          nextGeneration.kickOffLeaderElection();
+        }
+ else {
+          for (          Integer partitionId : m_masterOfPartitions) {
+            nextGeneration.acceptMastershipTask(partitionId);
+          }
+        }
+        oldProcessor=m_processor.getAndSet(newProcessor);
+      }
+    }
+ catch (    Exception e) {
+      VoltDB.crashLocalVoltDB("Error creating next export processor",true,e);
+    }
+  }
+  if (oldProcessor != null) {
+    oldProcessor.shutdown();
+  }
+  try {
+    drainedGeneration.closeAndDelete();
+  }
+ catch (  IOException e) {
+    e.printStackTrace();
+    exportLog.error(e);
+  }
+}

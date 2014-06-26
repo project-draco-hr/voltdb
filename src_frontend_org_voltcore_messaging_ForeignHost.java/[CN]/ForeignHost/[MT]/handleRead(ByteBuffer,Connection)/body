@@ -2,13 +2,27 @@
   long recvDests[]=null;
   final long sourceHSId=in.getLong();
   final int destCount=in.getInt();
-  if (destCount == -1) {
-    if (VoltDB.instance().getMode() == OperationMode.SHUTTINGDOWN)     return;
+  if (destCount == POISON_PILL) {
+    if (VoltDB.instance().getMode() == OperationMode.SHUTTINGDOWN) {
+      return;
+    }
     byte messageBytes[]=new byte[in.getInt()];
     in.get(messageBytes);
     String message=new String(messageBytes,"UTF-8");
     message=String.format("Fatal error from id,hostname(%d,%s): %s",m_hostId,hostnameAndIPAndPort(),message);
-    org.voltdb.VoltDB.crashLocalVoltDB(message,false,null);
+    int cause=in.getInt();
+    if (cause == ForeignHost.CRASH_ME) {
+      int hid=VoltDB.instance().getHostMessenger().getHostId();
+      hostLog.debug("Poison Pill with target me was sent.: " + hid);
+      VoltDB.instance().halt();
+    }
+ else     if (cause == ForeignHost.CRASH_ALL || cause == ForeignHost.CRASH_SPECIFIED) {
+      org.voltdb.VoltDB.crashLocalVoltDB(message,false,null);
+    }
+ else {
+      hostLog.error("Invalid Cause in poison pill: " + cause);
+    }
+    return;
   }
   recvDests=new long[destCount];
   for (int i=0; i < destCount; i++) {

@@ -1,0 +1,24 @@
+{
+  AbstractParsedStmt subQuery=subqueryScan.getSubquery();
+  assert(subQuery != null);
+  PlanSelector selector=(PlanSelector)m_planSelector.clone();
+  selector.m_planId=planId;
+  StatementPartitioning currentPartitioning=(StatementPartitioning)m_partitioning.clone();
+  PlanAssembler assembler=new PlanAssembler(m_catalogCluster,m_catalogDb,currentPartitioning,selector);
+  CompiledPlan compiledPlan=assembler.getBestCostPlan(subQuery,true);
+  if (compiledPlan == null) {
+    if (m_recentErrorMsg == null) {
+      m_recentErrorMsg="Unable to plan for subquery statement. Error unknown.";
+    }
+    return null;
+  }
+  AbstractPlanNode root=compiledPlan.rootPlanGraph;
+  boolean subScanCanPushdown=!root.hasAnyNodeOfType(PlanNodeType.AGGREGATE) && !root.hasAnyNodeOfType(PlanNodeType.HASHAGGREGATE) && !root.hasAnyNodeOfType(PlanNodeType.LIMIT)&& !root.hasAnyNodeOfType(PlanNodeType.DISTINCT);
+  if (subScanCanPushdown) {
+    compiledPlan.rootPlanGraph=removeCoordinatorSendReceivePair(compiledPlan.rootPlanGraph);
+  }
+  subqueryScan.setSubqueriesPartitioning(currentPartitioning);
+  subqueryScan.setBestCostPlan(compiledPlan);
+  ParsedResultAccumulator parsedResult=new ParsedResultAccumulator(compiledPlan.isOrderDeterministic(),compiledPlan.hasLimitOrOffset(),selector.m_planId);
+  return parsedResult;
+}

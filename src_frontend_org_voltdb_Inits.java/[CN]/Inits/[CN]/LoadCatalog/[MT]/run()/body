@@ -12,27 +12,31 @@ catch (    Exception e) {
   }
  while (catalogStuff == null);
   try {
-    m_rvdb.m_serializedCatalog=CatalogUtil.loadAndUpgradeCatalogFromJar(catalogStuff.bytes,hostLog);
+    Pair<String,String> loadResults=CatalogUtil.loadAndUpgradeCatalogFromJar(catalogStuff.bytes,hostLog);
+    m_rvdb.m_serializedCatalog=loadResults.getFirst();
   }
  catch (  IOException e) {
-    VoltDB.crashLocalVoltDB("Unable to load catalog",true,e);
+    VoltDB.crashLocalVoltDB("Unable to load catalog",false,e);
   }
   if ((m_rvdb.m_serializedCatalog == null) || (m_rvdb.m_serializedCatalog.length() == 0))   VoltDB.crashLocalVoltDB("Catalog loading failure",false,null);
   Catalog catalog=new Catalog();
   catalog.execute(m_rvdb.m_serializedCatalog);
   try {
-    m_rvdb.m_depCRC=CatalogUtil.compileDeploymentAndGetCRC(catalog,m_deployment,true,false);
-    if (m_rvdb.m_depCRC < 0)     System.exit(-1);
+    long result=CatalogUtil.compileDeployment(catalog,m_deployment,true,false);
+    if (result < 0) {
+      hostLog.fatal("Error parsing deployment file");
+      VoltDB.crashLocalVoltDB("Error parsing deployment file");
+    }
   }
  catch (  Exception e) {
     hostLog.fatal("Error parsing deployment file",e);
-    System.exit(-1);
+    VoltDB.crashLocalVoltDB("Error parsing deployment file",true,e);
   }
   try {
     m_rvdb.m_serializedCatalog=catalog.serialize();
-    m_rvdb.m_catalogContext=new CatalogContext(catalogStuff.txnId,catalogStuff.uniqueId,catalog,catalogStuff.bytes,m_rvdb.m_depCRC,catalogStuff.version,-1);
+    m_rvdb.m_catalogContext=new CatalogContext(catalogStuff.txnId,catalogStuff.uniqueId,catalog,catalogStuff.bytes,m_rvdb.m_catalogContext.deploymentHash,catalogStuff.version,-1);
   }
  catch (  Exception e) {
-    VoltDB.crashLocalVoltDB("Error agreeing on starting catalog version",false,e);
+    VoltDB.crashLocalVoltDB("Error agreeing on starting catalog version",true,e);
   }
 }

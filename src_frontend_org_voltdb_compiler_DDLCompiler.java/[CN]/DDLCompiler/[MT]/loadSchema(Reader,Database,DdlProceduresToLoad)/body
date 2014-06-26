@@ -4,7 +4,7 @@
   while (stmt != null) {
     boolean processed=false;
     try {
-      processed=processVoltDBStatement(stmt.statement,db,whichProcs);
+      processed=processVoltDBStatement(stmt,db,whichProcs);
     }
  catch (    VoltCompilerException e) {
       String msg="VoltDB DDL Error: \"" + e.getMessage() + "\" in statement starting on lineno: "+ stmt.lineNo;
@@ -17,6 +17,22 @@
         if (tableMatcher.find()) {
           String tableName=tableMatcher.group(2);
           m_tableNameToDDL.put(tableName.toUpperCase(),stmt.statement);
+        }
+ else {
+          Matcher atableMatcher=alterOrDropTablePattern.matcher(oneLinerStmt);
+          if (atableMatcher.find()) {
+            String op=atableMatcher.group(1);
+            String tableName=atableMatcher.group(3);
+            if (op.equalsIgnoreCase("DROP")) {
+              m_tableNameToDDL.remove(tableName.toUpperCase());
+            }
+ else {
+              String prevStmt=m_tableNameToDDL.get(tableName.toUpperCase());
+              if (prevStmt != null) {
+                m_tableNameToDDL.put(tableName.toUpperCase(),prevStmt + "\n" + stmt.statement);
+              }
+            }
+          }
         }
         m_fullDDL+=Encoder.hexEncode(stmt.statement) + "\n";
         m_hsql.runDDLCommand(stmt.statement);

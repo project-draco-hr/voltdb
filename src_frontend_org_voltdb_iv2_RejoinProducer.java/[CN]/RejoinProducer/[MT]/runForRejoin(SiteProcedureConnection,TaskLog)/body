@@ -1,16 +1,25 @@
 {
-  RestoreWork rejoinWork=m_rejoinSiteProcessor.poll(m_snapshotBufferAllocator);
-  if (rejoinWork != null) {
-    restoreBlock(rejoinWork,siteConnection);
-  }
-  if (m_rejoinSiteProcessor.isEOF() == false) {
-    m_taskQueue.offer(this);
+  if (!m_schemaHasNoTables) {
+    boolean sourcesReady=false;
+    RestoreWork rejoinWork=m_rejoinSiteProcessor.poll(m_snapshotBufferAllocator);
+    if (rejoinWork != null) {
+      restoreBlock(rejoinWork,siteConnection);
+      sourcesReady=true;
+    }
+    if (m_rejoinSiteProcessor.isEOF() == false) {
+      returnToTaskQueue(sourcesReady);
+    }
+ else {
+      REJOINLOG.debug(m_whoami + "Rejoin snapshot transfer is finished");
+      m_rejoinSiteProcessor.close();
+      if (m_streamSnapshotMb != null) {
+        VoltDB.instance().getHostMessenger().removeMailbox(m_streamSnapshotMb.getHSId());
+      }
+      doFinishingTask(siteConnection);
+    }
   }
  else {
-    REJOINLOG.debug(m_whoami + "Rejoin snapshot transfer is finished");
-    m_rejoinSiteProcessor.close();
-    Preconditions.checkNotNull(m_streamSnapshotMb);
-    VoltDB.instance().getHostMessenger().removeMailbox(m_streamSnapshotMb.getHSId());
     doFinishingTask(siteConnection);
+    m_snapshotCompletionMonitor.set(null);
   }
 }

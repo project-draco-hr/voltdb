@@ -1,0 +1,30 @@
+{
+  AbstractPlanNode pn;
+  List<AbstractPlanNode> planNodes;
+  AbstractPlanNode nlpn;
+  planNodes=compileToFragments("SELECT -8, T1.NUM FROM SR4 T0, " + "(select max(RATIO) RATIO, sum(NUM) NUM, DESC from SP4 group by DESC) T1 " + "WHERE (T1.NUM + 5 ) > 44");
+  assertEquals(2,planNodes.size());
+  pn=planNodes.get(0);
+  assertTrue(pn instanceof SendPlanNode);
+  pn=pn.getChild(0);
+  assertTrue(pn instanceof ProjectionPlanNode);
+  nlpn=pn.getChild(0);
+  assertTrue(nlpn instanceof NestLoopPlanNode);
+  assertEquals(JoinType.INNER,((NestLoopPlanNode)nlpn).getJoinType());
+  pn=nlpn.getChild(0);
+  checkPrimaryKeySubSelect(pn,"SR4");
+  pn=nlpn.getChild(1);
+  checkSeqScanSubSelects(pn,"T1","NUM");
+  pn=pn.getChild(0);
+  assertTrue(pn instanceof AggregatePlanNode);
+  pn=pn.getChild(0);
+  assertTrue(pn instanceof ReceivePlanNode);
+  pn=planNodes.get(1);
+  assertTrue(pn instanceof SendPlanNode);
+  pn=pn.getChild(0);
+  assertTrue(pn instanceof AggregatePlanNode);
+  pn=pn.getChild(0);
+  checkPrimaryKeySubSelect(pn,"SP4");
+  planNodes=compileToFragments("SELECT * FROM (SELECT A, C FROM P1 GROUP BY A, C) T1 " + "where T1.A = 1 ");
+  assertEquals(2,planNodes.size());
+}

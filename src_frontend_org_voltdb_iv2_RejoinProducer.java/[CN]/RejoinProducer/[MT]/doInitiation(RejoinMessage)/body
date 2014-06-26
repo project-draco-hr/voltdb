@@ -1,13 +1,18 @@
 {
   m_coordinatorHsId=message.m_sourceHSId;
-  m_streamSnapshotMb=VoltDB.instance().getHostMessenger().createMailbox();
-  m_rejoinSiteProcessor=new StreamSnapshotSink(m_streamSnapshotMb);
-  m_snapshotNonce=message.getSnapshotNonce();
+  m_schemaHasNoTables=message.schemaHasNoTables();
+  if (!m_schemaHasNoTables) {
+    m_streamSnapshotMb=VoltDB.instance().getHostMessenger().createMailbox();
+    m_rejoinSiteProcessor=new StreamSnapshotSink(m_streamSnapshotMb);
+  }
+ else {
+    m_streamSnapshotMb=null;
+    m_rejoinSiteProcessor=null;
+  }
   long sourceSite=m_mailbox.getMasterHsId(m_partitionId);
-  long hsId=m_rejoinSiteProcessor.initialize(message.getSnapshotSourceCount(),message.getSnapshotBufferPool());
-  REJOINLOG.debug(m_whoami + "received INITIATION message. Doing rejoin" + ". Source site is: "+ CoreUtils.hsIdToString(sourceSite)+ " and destination rejoin processor is: "+ CoreUtils.hsIdToString(hsId)+ " and snapshot nonce is: "+ m_snapshotNonce);
-  SnapshotCompletionAction interest=new SnapshotCompletionAction(m_snapshotNonce,m_completionMonitorAwait);
-  interest.register();
+  long hsId=(m_rejoinSiteProcessor != null ? m_rejoinSiteProcessor.initialize(message.getSnapshotSourceCount(),message.getSnapshotBufferPool()) : Long.MIN_VALUE);
+  REJOINLOG.debug(m_whoami + "received INITIATION message. Doing rejoin" + ". Source site is: "+ CoreUtils.hsIdToString(sourceSite)+ " and destination rejoin processor is: "+ CoreUtils.hsIdToString(hsId)+ " and snapshot nonce is: "+ message.getSnapshotNonce());
+  registerSnapshotMonitor(message.getSnapshotNonce());
   RejoinMessage initResp=new RejoinMessage(m_mailbox.getHSId(),sourceSite,hsId);
   m_mailbox.send(m_coordinatorHsId,initResp);
   m_taskQueue.offer(this);

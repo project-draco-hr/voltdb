@@ -24,9 +24,9 @@
     fs.writeInt(numPartitions);
   }
   final BBContainer container=fs.getBBContainer();
-  container.b.position(4);
-  container.b.putInt(container.b.remaining() - 4);
-  container.b.position(0);
+  container.b().position(4);
+  container.b().putInt(container.b().remaining() - 4);
+  container.b().position(0);
   FastSerializer schemaSerializer=new FastSerializer();
   int schemaTableLen=schemaTable.getSerializedSize();
   ByteBuffer serializedSchemaTable=ByteBuffer.allocate(schemaTableLen);
@@ -34,12 +34,14 @@
   serializedSchemaTable.flip();
   schemaSerializer.write(serializedSchemaTable);
   final BBContainer schemaContainer=schemaSerializer.getBBContainer();
-  schemaContainer.b.limit(schemaContainer.b.limit() - 4);
-  schemaContainer.b.position(schemaContainer.b.position() + 4);
+  schemaContainer.b().limit(schemaContainer.b().limit() - 4);
+  schemaContainer.b().position(schemaContainer.b().position() + 4);
   final PureJavaCrc32 crc=new PureJavaCrc32();
-  ByteBuffer aggregateBuffer=ByteBuffer.allocate(container.b.remaining() + schemaContainer.b.remaining());
-  aggregateBuffer.put(container.b);
-  aggregateBuffer.put(schemaContainer.b);
+  ByteBuffer aggregateBuffer=ByteBuffer.allocate(container.b().remaining() + schemaContainer.b().remaining());
+  aggregateBuffer.put(container.b());
+  container.discard();
+  aggregateBuffer.put(schemaContainer.b());
+  schemaContainer.discard();
   aggregateBuffer.flip();
   crc.update(aggregateBuffer.array(),4,aggregateBuffer.capacity() - 4);
   final int crcValue=(int)crc.getValue();
@@ -52,7 +54,7 @@
     throw m_writeException;
   }
   m_acceptOneWrite=true;
-  ListenableFuture<?> writeFuture=write(Callables.returning((BBContainer)DBBPool.wrapBB(aggregateBuffer)),false);
+  ListenableFuture<?> writeFuture=write(Callables.returning(DBBPool.wrapBB(aggregateBuffer)),false);
   try {
     writeFuture.get();
   }

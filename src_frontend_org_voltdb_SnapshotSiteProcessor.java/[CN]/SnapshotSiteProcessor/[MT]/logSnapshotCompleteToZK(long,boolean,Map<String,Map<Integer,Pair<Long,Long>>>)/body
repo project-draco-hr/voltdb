@@ -1,14 +1,21 @@
 {
   ZooKeeper zk=VoltDB.instance().getHostMessenger().getZK();
+  final long endTime=System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(10);
   final String snapshotPath=VoltZK.completed_snapshots + "/" + txnId;
   boolean success=false;
   while (!success) {
+    if (System.currentTimeMillis() > endTime) {
+      VoltDB.crashLocalVoltDB("Timed out logging snapshot completion to ZK");
+    }
     Stat stat=new Stat();
     byte data[]=null;
     try {
       data=zk.getData(snapshotPath,false,stat);
     }
- catch (    Exception e) {
+ catch (    NoNodeException e) {
+      continue;
+    }
+catch (    Exception e) {
       VoltDB.crashLocalVoltDB("This ZK get should never fail",true,e);
     }
     if (data == null) {
@@ -21,8 +28,8 @@
       }
       int remainingHosts=jsonObj.getInt("hostCount") - 1;
       jsonObj.put("hostCount",remainingHosts);
+      jsonObj.put("didSucceed",snapshotSuccess);
       if (!snapshotSuccess) {
-        SNAP_LOG.error("Snapshot failed at this node, snapshot will not be viable for log truncation");
         jsonObj.put("isTruncation",false);
       }
       mergeExportSequenceNumbers(jsonObj,exportSequenceNumbers);
@@ -52,14 +59,5 @@ catch (      Exception e) {
   }
  catch (  Exception e) {
     VoltDB.crashLocalVoltDB("Retrieving list of completed snapshots from ZK should never fail",true,e);
-  }
-  try {
-    VoltDB.instance().getHostMessenger().getZK().delete(VoltZK.nodes_currently_snapshotting + "/" + VoltDB.instance().getHostMessenger().getHostId(),-1);
-  }
- catch (  NoNodeException e) {
-    SNAP_LOG.warn("Expect the snapshot node to already exist during deletion",e);
-  }
-catch (  Exception e) {
-    VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
   }
 }

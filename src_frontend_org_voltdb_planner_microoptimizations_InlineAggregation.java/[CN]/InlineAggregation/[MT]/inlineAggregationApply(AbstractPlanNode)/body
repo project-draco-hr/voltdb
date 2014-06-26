@@ -1,0 +1,32 @@
+{
+  if ((plan instanceof AggregatePlanNode) == false)   return plan;
+  assert(plan.getChildCount() == 1);
+  AggregatePlanNode aggplan=(AggregatePlanNode)plan;
+  if (aggplan.getPlanNodeType() != PlanNodeType.AGGREGATE) {
+    return plan;
+  }
+  assert(aggplan.getChildCount() == 1);
+  AbstractPlanNode child=aggplan.getChild(0);
+  if (child.getPlanNodeType() != PlanNodeType.SEQSCAN && child.getPlanNodeType() != PlanNodeType.INDEXSCAN) {
+    return plan;
+  }
+  if (child.getPlanNodeType() == PlanNodeType.INDEXSCAN) {
+    IndexScanPlanNode isp=(IndexScanPlanNode)child;
+    LimitPlanNode limit=(LimitPlanNode)isp.getInlinePlanNode(PlanNodeType.LIMIT);
+    if (limit != null && (aggplan.isTableMin() || aggplan.isTableMax())) {
+      if (limit.getLimit() == 1 && limit.getOffset() == 0) {
+        return plan;
+      }
+    }
+  }
+  AbstractPlanNode parent=null;
+  if (aggplan.getParentCount() == 1) {
+    parent=aggplan.getParent(0);
+  }
+  child.addInlinePlanNode(aggplan);
+  child.clearParents();
+  if (parent != null) {
+    parent.replaceChild(aggplan,child);
+  }
+  return child;
+}
