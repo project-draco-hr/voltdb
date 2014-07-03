@@ -3,10 +3,19 @@
   m_bestAndOnlyPlanWasGenerated=true;
   assert(m_parsedInsert.m_tableList.size() == 1);
   Table targetTable=m_parsedInsert.m_tableList.get(0);
-  for (  Column col : targetTable.getColumns()) {
+  CatalogMap<Column> targetTableColumns=targetTable.getColumns();
+  for (  Column col : targetTableColumns) {
     boolean needsValue=col.getNullable() == false && col.getDefaulttype() == 0;
     if (needsValue && !m_parsedInsert.columns.containsKey(col)) {
       throw new PlanningErrorException("Column " + col.getName() + " has no default and is not nullable.");
+    }
+    if (col.equals(m_partitioning.getPartitionColForDML())) {
+      AbstractExpression expr=m_parsedInsert.columns.get(col);
+      if (expr == null) {
+        expr=defaultValueToExpr(col);
+      }
+      String fullColumnName=targetTable.getTypeName() + "." + col.getTypeName();
+      m_partitioning.addPartitioningExpression(fullColumnName,expr,expr.getValueType());
     }
   }
   InsertPlanNode insertNode=new InsertPlanNode();
@@ -19,6 +28,7 @@
     Column col=e.getKey();
     AbstractExpression valExpr=e.getValue();
     fieldMap[i]=col.getIndex();
+    valExpr.setInBytes(col.getInbytes());
     valExpr=castExprIfNeeded(valExpr,col);
     matSchema.addColumn(new SchemaColumn("VOLT_TEMP_TABLE","VOLT_TEMP_TABLE",col.getTypeName(),col.getTypeName(),valExpr));
     i++;
