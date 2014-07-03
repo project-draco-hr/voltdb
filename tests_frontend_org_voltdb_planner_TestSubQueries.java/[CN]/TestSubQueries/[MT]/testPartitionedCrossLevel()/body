@@ -14,13 +14,13 @@
   assertTrue(nlpn instanceof NestLoopIndexPlanNode);
   assertEquals(JoinType.INNER,((NestLoopIndexPlanNode)nlpn).getJoinType());
   pn=nlpn.getChild(0);
-  checkSeqScanSubSelects(pn,"T1","A","C");
+  checkSeqScan(pn,"T1","A","C");
   pn=pn.getChild(0);
   assertTrue(pn instanceof ProjectionPlanNode);
   pn=pn.getChild(0);
-  checkPrimaryKeySubSelect(pn,"P1","A","C");
+  checkPrimaryKeyIndexScan(pn,"P1","A","C");
   pn=((NestLoopIndexPlanNode)nlpn).getInlinePlanNode(PlanNodeType.INDEXSCAN);
-  checkPrimaryKeySubSelect(pn,"P2","A","D");
+  checkPrimaryKeyIndexScan(pn,"P2","A","D");
   planNodes=compileToFragments("SELECT A, C FROM P2, (SELECT A, C FROM P1) T1 " + "where T1.A = P2.A and P2.A = 1");
   assertEquals(1,planNodes.size());
   planNodes=compileToFragments("SELECT A, C FROM P2, (SELECT A, C FROM P1) T1 " + "where T1.A = P2.A and T1.A = 1");
@@ -31,7 +31,6 @@
   assertEquals(2,planNodes.size());
   planNodes=compileToFragments("select D1, P2.D " + "FROM (SELECT A, D D1 FROM P1 WHERE A=1) T1, P2 " + "WHERE T1.A = P2.A AND P2.A = 1");
   assertEquals(1,planNodes.size());
-  planNodes=compileToFragments("select T1.A, T1.C, T1.SD FROM " + "(SELECT A, C, SUM(D) as SD FROM P1 WHERE A > 3 GROUP BY A, C) T1, P2 WHERE T1.A = P2.A");
   planNodes=compileToFragments("select * from p2, " + "(select * from (SELECT A, D D1 FROM P1) T1) T2 where p2.A = T2.A");
   assertEquals(2,planNodes.size());
   planNodes=compileToFragments("select * from p2, " + "(select * from (SELECT A, D D1 FROM P1 WHERE A=2) T1) T2 " + "where p2.A = T2.A ");
@@ -54,6 +53,5 @@
   assertEquals(1,planNodes.size());
   planNodes=compileToFragments("select A1, A2, D1, D2 " + "FROM (SELECT A A1, D D1 FROM P1 WHERE A=2) T1, " + "(SELECT A A2, D D2 FROM P2) T2 where T2.A2=2");
   assertEquals(1,planNodes.size());
-  planNodes=compileToFragments("select A1, A2, D1, D2 " + "FROM (SELECT A A1, D D1 FROM P1 WHERE A=2) T1, " + "(SELECT A A2, D D2 FROM P2 ORDER BY D LIMIT 3) T2 where T2.A2=2");
-  assertEquals(2,planNodes.size());
+  failToCompile("select A1, A2, D1, D2 " + "FROM (SELECT A A1, D D1 FROM P1 WHERE A=2) T1, " + "(SELECT A A2, D D2 FROM P2 ORDER BY D LIMIT 3) T2 where T2.A2=2",joinErrorMsg);
 }
