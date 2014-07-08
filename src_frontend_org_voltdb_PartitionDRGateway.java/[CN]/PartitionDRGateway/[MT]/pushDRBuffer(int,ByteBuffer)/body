@@ -1,0 +1,77 @@
+{
+  if (logDebug) {
+    System.out.println("Received DR buffer size " + buf.remaining());
+    AtomicLong haveOpenTransaction=haveOpenTransactionLocal.get();
+    buf.order(ByteOrder.LITTLE_ENDIAN);
+    buf.position(8);
+    while (buf.hasRemaining()) {
+      int startPosition=buf.position();
+      byte version=buf.get();
+      int type=buf.get();
+      int checksum=0;
+      if (version != 0)       System.out.println("Remaining is " + buf.remaining());
+switch (DRRecordType.valueOf(type)) {
+case INSERT:
+{
+          if (haveOpenTransaction.get() == -1) {
+            System.out.println("Have insert but no open transaction");
+            System.exit(-1);
+          }
+          final long tableHandle=buf.getLong();
+          final int lengthPrefix=buf.getInt();
+          buf.position(buf.position() + lengthPrefix);
+          checksum=buf.getInt();
+          System.out.println("Version " + version + " type INSERT table handle "+ tableHandle+ " length "+ lengthPrefix+ " checksum "+ checksum);
+          break;
+        }
+case DELETE:
+{
+        if (haveOpenTransaction.get() == -1) {
+          System.out.println("Have insert but no open transaction");
+          System.exit(-1);
+        }
+        final long tableHandle=buf.getLong();
+        final int lengthPrefix=buf.getInt();
+        buf.position(buf.position() + lengthPrefix);
+        checksum=buf.getInt();
+        System.out.println("Version " + version + " type DELETE table handle "+ tableHandle+ " length "+ lengthPrefix+ " checksum "+ checksum);
+        break;
+      }
+case UPDATE:
+    break;
+case BEGIN_TXN:
+{
+    final long txnId=buf.getLong();
+    final long spHandle=buf.getLong();
+    if (haveOpenTransaction.get() != -1) {
+      System.out.println("Have open transaction txnid " + txnId + " spHandle "+ spHandle+ " but already open transaction");
+      System.exit(-1);
+    }
+    haveOpenTransaction.set(spHandle);
+    checksum=buf.getInt();
+    System.out.println("Version " + version + " type BEGIN_TXN "+ " txnid "+ txnId+ " spHandle "+ spHandle+ " checksum "+ checksum);
+    break;
+  }
+case END_TXN:
+{
+  final long spHandle=buf.getLong();
+  if (haveOpenTransaction.get() == -1) {
+    System.out.println("Have end transaction spHandle " + spHandle + " but no open transaction and its less then last committed "+ lastCommittedSpHandle.get().get());
+    System.exit(-1);
+  }
+  haveOpenTransaction.set(-1);
+  lastCommittedSpHandle.get().set(spHandle);
+  checksum=buf.getInt();
+  System.out.println("Version " + version + " type END_TXN "+ " spHandle "+ spHandle+ " checksum "+ checksum);
+  break;
+}
+}
+int calculatedChecksum=DBBPool.getBufferCRC32C(buf,startPosition,buf.position() - startPosition - 4);
+if (calculatedChecksum != checksum) {
+System.out.println("Checksum " + calculatedChecksum + " didn't match "+ checksum);
+System.exit(-1);
+}
+}
+}
+DBBPool.wrapBB(buf).discard();
+}
