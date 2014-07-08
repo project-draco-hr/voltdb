@@ -1,0 +1,50 @@
+{
+  generateCatalogsAndDeployments(true);
+  VoltDB.Configuration config=new VoltDB.Configuration();
+  config.m_pathToCatalog=m_pathToOtherCatalog;
+  config.m_pathToDeployment=m_pathToDeployment;
+  config.m_replicationRole=ReplicationRole.REPLICA;
+  try {
+    startSystem(config);
+    assertFalse(findTableInSystemCatalogResults("FOO"));
+    boolean threw=false;
+    try {
+      m_client.updateApplicationCatalog(new File(m_pathToCatalog),null);
+    }
+ catch (    ProcCallException pce) {
+      threw=true;
+      assertTrue(pce.getMessage().contains("Write procedure @UpdateApplicationCatalog is not allowed"));
+    }
+    assertTrue("@UAC should have failed",threw);
+    assertFalse(findTableInSystemCatalogResults("FOO"));
+    threw=false;
+    try {
+      m_client.updateApplicationCatalog(null,new File(m_pathToOtherDeployment));
+    }
+ catch (    ProcCallException pce) {
+      threw=true;
+      assertTrue(pce.getMessage().contains("Write procedure @UpdateApplicationCatalog is not allowed"));
+    }
+    assertTrue("@UAC should have failed",threw);
+    assertFalse(findTableInSystemCatalogResults("BAR"));
+    threw=false;
+    try {
+      m_client.callProcedure("@AdHoc","create table BAR (ID integer, VAL varchar(50));");
+    }
+ catch (    ProcCallException pce) {
+      threw=true;
+      System.out.println(pce.getMessage());
+      assertTrue(pce.getMessage().contains("Write procedure @AdHoc is not allowed"));
+    }
+    assertTrue("Adhoc DDL should have failed",threw);
+    assertFalse(findTableInSystemCatalogResults("BAR"));
+    verifyUACfromMasterToReplica();
+    ClientResponse result=m_client.callProcedure("@AdHoc","select * from baz;");
+    assertEquals(ClientResponse.SUCCESS,result.getStatus());
+    m_client.callProcedure("@Promote");
+    verifyMasterWithAdhocDDL();
+  }
+  finally {
+    teardownSystem();
+  }
+}
