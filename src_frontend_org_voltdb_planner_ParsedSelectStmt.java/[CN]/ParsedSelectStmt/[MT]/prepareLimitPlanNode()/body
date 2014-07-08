@@ -1,0 +1,41 @@
+{
+  if (!hasLimitOrOffset()) {
+    return;
+  }
+  int limitParamIndex=parameterCountIndexById(m_limitParameterId);
+  int offsetParamIndex=parameterCountIndexById(m_offsetParameterId);
+  ;
+  m_limitNodeTop=new LimitPlanNode();
+  m_limitNodeTop.setLimit((int)m_limit);
+  m_limitNodeTop.setOffset((int)m_offset);
+  m_limitNodeTop.setLimitParameterIndex(limitParamIndex);
+  m_limitNodeTop.setOffsetParameterIndex(offsetParamIndex);
+  m_limitCanPushdown=!m_distinct;
+  if (m_limitCanPushdown) {
+    for (    ParsedColInfo col : m_displayColumns) {
+      AbstractExpression rootExpr=col.expression;
+      if (rootExpr instanceof AggregateExpression) {
+        if (((AggregateExpression)rootExpr).isDistinct()) {
+          m_limitCanPushdown=false;
+          break;
+        }
+      }
+    }
+  }
+  if (m_limitCanPushdown) {
+    m_limitNodeDist=new LimitPlanNode();
+    if (m_limit != -1) {
+      m_limitNodeDist.setLimit((int)(m_limit + m_offset));
+    }
+    if (hasLimitOrOffsetParameters()) {
+      AbstractExpression left=getParameterOrConstantAsExpression(m_offsetParameterId,m_offset);
+      assert(left != null);
+      AbstractExpression right=getParameterOrConstantAsExpression(m_limitParameterId,m_limit);
+      assert(right != null);
+      OperatorExpression expr=new OperatorExpression(ExpressionType.OPERATOR_PLUS,left,right);
+      expr.setValueType(VoltType.INTEGER);
+      expr.setValueSize(VoltType.INTEGER.getLengthInBytesForFixedTypes());
+      m_limitNodeDist.setLimitExpression(expr);
+    }
+  }
+}

@@ -1,11 +1,5 @@
 {
-  int limitParamIndex=m_parsedSelect.getLimitParameterIndex();
-  int offsetParamIndex=m_parsedSelect.getOffsetParameterIndex();
-  LimitPlanNode topLimit=new LimitPlanNode();
-  topLimit.setLimit((int)m_parsedSelect.m_limit);
-  topLimit.setOffset((int)m_parsedSelect.m_offset);
-  topLimit.setLimitParameterIndex(limitParamIndex);
-  topLimit.setOffsetParameterIndex(offsetParamIndex);
+  LimitPlanNode topLimit=m_parsedSelect.getLimitNodeTop();
   AbstractPlanNode sendNode=null;
   boolean canPushDown=!m_parsedSelect.hasDistinct();
   if (canPushDown) {
@@ -14,53 +8,50 @@
       canPushDown=false;
     }
  else {
-      for (      ParsedSelectStmt.ParsedColInfo col : m_parsedSelect.m_displayColumns) {
-        AbstractExpression rootExpr=col.expression;
-        if (rootExpr instanceof AggregateExpression) {
-          if (((AggregateExpression)rootExpr).isDistinct()) {
-            canPushDown=false;
-            break;
-          }
-        }
-      }
+      canPushDown=m_parsedSelect.m_limitCanPushdown;
     }
   }
   if (m_parsedSelect.m_mvFixInfo.needed()) {
     canPushDown=false;
   }
   if (canPushDown) {
-    LimitPlanNode distLimit=new LimitPlanNode();
-    if (m_parsedSelect.m_limit != -1) {
-      distLimit.setLimit((int)(m_parsedSelect.m_limit + m_parsedSelect.m_offset));
-    }
-    if (m_parsedSelect.hasLimitOrOffsetParameters()) {
-      AbstractExpression left=m_parsedSelect.getOffsetExpression();
-      assert(left != null);
-      AbstractExpression right=m_parsedSelect.getLimitExpression();
-      assert(right != null);
-      OperatorExpression expr=new OperatorExpression(ExpressionType.OPERATOR_PLUS,left,right);
-      expr.setValueType(VoltType.INTEGER);
-      expr.setValueSize(VoltType.INTEGER.getLengthInBytesForFixedTypes());
-      distLimit.setLimitExpression(expr);
-    }
+    LimitPlanNode distLimit=m_parsedSelect.getLimitNodeDist();
     AbstractPlanNode distributedPlan=sendNode.getChild(0);
     distributedPlan.clearParents();
     sendNode.clearChildren();
     distributedPlan=handleOrderBy(distributedPlan);
-    distLimit.addAndLinkChild(distributedPlan);
-    sendNode.addAndLinkChild(distLimit);
+    if (distributedPlan instanceof OrderByPlanNode) {
+      distributedPlan.addInlinePlanNode(distLimit);
+      sendNode.addAndLinkChild(distributedPlan);
+    }
+ else {
+      distLimit.addAndLinkChild(distributedPlan);
+      sendNode.addAndLinkChild(distLimit);
+    }
   }
-  AbstractPlanNode projectionNode=root;
   if (m_parsedSelect.hasComplexAgg()) {
     AbstractPlanNode child=root.getChild(0);
-    projectionNode.clearChildren();
-    child.clearParents();
-    topLimit.addAndLinkChild(child);
-    projectionNode.addAndLinkChild(topLimit);
-    return projectionNode;
+    if (child instanceof OrderByPlanNode) {
+      child.addInlinePlanNode(topLimit);
+    }
+ else {
+      root.clearChildren();
+      child.clearParents();
+      topLimit.addAndLinkChild(child);
+      root.addAndLinkChild(topLimit);
+    }
   }
  else {
-    topLimit.addAndLinkChild(root);
-    return topLimit;
+    if (root instanceof OrderByPlanNode) {
+      root.addInlinePlanNode(topLimit);
+    }
+ else     if (root instanceof ProjectionPlanNode && root.getChild(0) instanceof OrderByPlanNode) {
+      root.getChild(0).addInlinePlanNode(topLimit);
+    }
+ else {
+      topLimit.addAndLinkChild(root);
+      root=topLimit;
+    }
   }
+  return root;
 }

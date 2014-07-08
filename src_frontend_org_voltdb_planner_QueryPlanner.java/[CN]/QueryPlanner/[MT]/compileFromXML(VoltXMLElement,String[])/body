@@ -4,10 +4,6 @@
     m_recentErrorMsg="Failed to parse SQL statement: " + m_sql;
     return null;
   }
-  if ((parsedStmt.m_tableList.size() > m_maxTablesPerJoin) && (parsedStmt.m_joinOrder == null)) {
-    m_recentErrorMsg="Failed to parse SQL statement: " + m_sql + " because a join of > 5 tables was requested"+ " without specifying a join order. See documentation for instructions on manually"+ " specifying a join order";
-    return null;
-  }
   m_planSelector.outputParsedStatement(parsedStmt);
   PlanAssembler assembler=new PlanAssembler(m_cluster,m_db,m_partitioning,(PlanSelector)m_planSelector.clone());
   CompiledPlan bestPlan=assembler.getBestCostPlan(parsedStmt);
@@ -34,6 +30,14 @@
   }
   assembler.finalizeBestCostPlan();
   bestPlan.resetPlanNodeIds();
-  fragmentize(bestPlan);
+  List<AbstractPlanNode> receives=bestPlan.rootPlanGraph.findAllNodesOfType(PlanNodeType.RECEIVE);
+  if (receives.size() > 1) {
+    m_recentErrorMsg="This join of multiple partitioned tables is too complex. Consider simplifying its subqueries: " + m_sql;
+    return null;
+  }
+  if (receives.size() == 1) {
+    ReceivePlanNode recvNode=(ReceivePlanNode)receives.get(0);
+    fragmentize(bestPlan,recvNode);
+  }
   return bestPlan;
 }

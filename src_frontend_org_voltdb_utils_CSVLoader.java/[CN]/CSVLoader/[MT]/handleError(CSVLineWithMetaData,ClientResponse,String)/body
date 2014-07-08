@@ -1,25 +1,30 @@
 {
 synchronized (m_errorInfo) {
-    if (m_errorInfo.size() >= config.maxerrors) {
+    if (m_errorCount + m_errorInfo.size() >= config.maxerrors) {
       return true;
     }
-    if (!m_errorInfo.containsKey(metaData.lineNumber)) {
-      String rawLine;
-      if (metaData.rawLine == null) {
-        rawLine="Unknown line content";
-      }
+    String rawLine;
+    if (metaData.rawLine == null) {
+      rawLine="Unknown line content";
+    }
  else {
-        rawLine=metaData.rawLine.toString();
+      rawLine=metaData.rawLine.toString();
+    }
+    String infoStr=(response != null) ? response.getStatusString() : error;
+    String[] info={rawLine,infoStr};
+    ErrorInfoItem newErrorInfo=new ErrorInfoItem(metaData.lineNumber,info);
+    try {
+      if (!m_errorInfo.offer(newErrorInfo)) {
+        m_errorInfo.put(newErrorInfo);
       }
-      String infoStr=(response != null) ? response.getStatusString() : error;
-      String[] info={rawLine,infoStr};
-      m_errorInfo.put(metaData.lineNumber,info);
-      if (response != null) {
-        byte status=response.getStatus();
-        if (status != ClientResponse.USER_ABORT && status != ClientResponse.GRACEFUL_FAILURE) {
-          System.out.println("Fatal Response from server for: " + response.getStatusString() + " for: "+ rawLine);
-          System.exit(1);
-        }
+    }
+ catch (    InterruptedException e) {
+    }
+    if (response != null) {
+      byte status=response.getStatus();
+      if (status != ClientResponse.USER_ABORT && status != ClientResponse.GRACEFUL_FAILURE) {
+        System.out.println("Fatal Response from server for: " + response.getStatusString() + " for: "+ rawLine);
+        System.exit(1);
       }
     }
     return false;
