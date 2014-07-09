@@ -1,0 +1,38 @@
+{
+  List<VoltCompilerReader> ddlReaderList=new ArrayList<VoltCompilerReader>();
+  Entry<String,byte[]> entry=jarfile.firstEntry();
+  while (entry != null) {
+    String path=entry.getKey();
+    if (path.toLowerCase().endsWith(".sql")) {
+      ddlReaderList.add(new VoltCompilerJarFileReader(jarfile,path));
+    }
+    entry=jarfile.higherEntry(entry.getKey());
+  }
+  ClassLoader originalClassLoader=m_classLoader;
+  try {
+    m_classLoader=jarfile.getLoader();
+    InMemoryJarfile jarOut=compileInternal(null,ddlReaderList,jarfile);
+    if (jarOut != null) {
+      compilerLog.debug("Successfully recompiled InMemoryJarfile");
+    }
+ else {
+      String errString="Adhoc DDL failed";
+      if (m_errors.size() > 0) {
+        errString=m_errors.get(m_errors.size() - 1).getLogString();
+      }
+      int fronttrim=errString.indexOf("DDL Error");
+      if (fronttrim < 0) {
+        fronttrim=0;
+      }
+      int endtrim=errString.indexOf(" in statement starting");
+      if (endtrim < 0) {
+        endtrim=errString.length();
+      }
+      String trimmed=errString.substring(fronttrim,endtrim);
+      throw new IOException(trimmed);
+    }
+  }
+  finally {
+    m_classLoader=originalClassLoader;
+  }
+}

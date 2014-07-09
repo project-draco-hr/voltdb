@@ -1,0 +1,45 @@
+{
+  AbstractPlanNode pn;
+  List<AbstractPlanNode> planNodes;
+  AbstractPlanNode nlpn;
+  planNodes=compileToFragments("SELECT * FROM (SELECT sum(C) AS SC FROM P1) T1");
+  assertEquals(2,planNodes.size());
+  pn=planNodes.get(0).getChild(0);
+  checkSeqScan(pn,"T1","SC");
+  assertNotNull(pn.getInlinePlanNode(PlanNodeType.PROJECTION));
+  pn=pn.getChild(0);
+  assertTrue(pn instanceof AggregatePlanNode);
+  pn=pn.getChild(0);
+  assertTrue(pn instanceof ReceivePlanNode);
+  pn=planNodes.get(1);
+  assertTrue(pn instanceof SendPlanNode);
+  pn=pn.getChild(0);
+  checkSeqScan(pn,"P1");
+  assertNotNull(pn.getInlinePlanNode(PlanNodeType.PROJECTION));
+  assertNotNull(pn.getInlinePlanNode(PlanNodeType.AGGREGATE));
+  failToCompile("SELECT * FROM (SELECT sum(C) AS SC FROM P1) T1, P2 " + "where P2.A = T1.SC",joinErrorMsg);
+  failToCompile("SELECT * FROM (SELECT count(A) as A FROM P1) T1, P2 " + "where P2.A = T1.A",joinErrorMsg);
+  planNodes=compileToFragments("SELECT * FROM (SELECT sum(C) AS SC FROM P1) T1, R1 " + "where R1.A = T1.SC");
+  for (  AbstractPlanNode apn : planNodes) {
+    System.out.println(apn.toExplainPlanString());
+  }
+  assertEquals(2,planNodes.size());
+  pn=planNodes.get(0).getChild(0);
+  assertTrue(pn instanceof ProjectionPlanNode);
+  nlpn=pn.getChild(0);
+  assertTrue(nlpn instanceof NestLoopPlanNode);
+  assertEquals(JoinType.INNER,((NestLoopPlanNode)nlpn).getJoinType());
+  pn=nlpn.getChild(1);
+  checkSeqScan(pn,"R1");
+  pn=nlpn.getChild(0);
+  checkSeqScan(pn,"T1");
+  assertNotNull(pn.getInlinePlanNode(PlanNodeType.PROJECTION));
+  pn=pn.getChild(0);
+  assertTrue(pn instanceof AggregatePlanNode);
+  pn=pn.getChild(0);
+  assertTrue(pn instanceof ReceivePlanNode);
+  pn=planNodes.get(1).getChild(0);
+  checkPrimaryKeyIndexScan(pn,"P1");
+  assertNotNull(pn.getInlinePlanNode(PlanNodeType.PROJECTION));
+  assertNotNull(pn.getInlinePlanNode(PlanNodeType.AGGREGATE));
+}
