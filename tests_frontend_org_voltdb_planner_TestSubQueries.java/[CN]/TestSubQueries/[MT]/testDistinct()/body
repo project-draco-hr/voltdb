@@ -1,0 +1,16 @@
+{
+  AbstractPlanNode pn;
+  List<AbstractPlanNode> planNodes;
+  planNodes=compileToFragments("SELECT * FROM (SELECT A, C, SUM(distinct D) FROM P2 GROUP BY A, C) T1, R1 " + "where T1.A = R1.A ");
+  assertEquals(2,planNodes.size());
+  assertTrue(planNodes.get(0).toExplainPlanString().contains("DISTINCT"));
+  assertTrue(planNodes.get(0).toExplainPlanString().contains("LOOP INNER JOIN"));
+  pn=planNodes.get(1).getChild(0);
+  checkPrimaryKeyIndexScan(pn,"P2");
+  assertNotNull(pn.getInlinePlanNode(PlanNodeType.PROJECTION));
+  failToCompile("SELECT * FROM (SELECT DISTINCT A, C FROM P1) T1, P2 where T1.A = P2.A",joinErrorMsg);
+  failToCompile("SELECT * FROM (SELECT DISTINCT A, C FROM P1 GROUP BY A, C) T1, P2 " + "where T1.A = P2.A");
+  failToCompile("SELECT * FROM (SELECT T0.A, R1.C FROM R1, " + "                (SELECT Distinct P1.A, C FROM P1,R2 where P1.A = R2.A) T0 where R1.A = T0.A ) T1, " + "              P2 "+ "where T1.A = P2.A");
+  failToCompile("SELECT * FROM (SELECT DISTINCT T0.A, R1.C FROM R1, " + "                (SELECT P1.A, C FROM P1,R2 where P1.A = R2.A) T0 where R1.A = T0.A ) T1, " + "              P2 "+ "where T1.A = P2.A");
+  failToCompile("SELECT * FROM (SELECT DISTINCT A, C FROM P1 GROUP BY A, C) T1, P2 " + "where T1.A = P2.A");
+}

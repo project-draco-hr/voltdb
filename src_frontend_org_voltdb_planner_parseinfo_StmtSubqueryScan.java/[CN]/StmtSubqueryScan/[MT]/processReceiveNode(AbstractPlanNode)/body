@@ -1,0 +1,39 @@
+{
+  assert(m_subqueriesPartitioning != null);
+  if (!m_subqueriesPartitioning.requiresTwoFragments()) {
+    return root;
+  }
+  assert(root.findAllNodesOfType(PlanNodeType.RECEIVE).size() == 1);
+  assert(m_subqueryStmt != null);
+  if (hasReceiveNode()) {
+    m_hasReceiveNode=true;
+    return root;
+  }
+  m_hasReceiveNode=true;
+  ParsedSelectStmt selectStmt=(ParsedSelectStmt)m_subqueryStmt;
+  if (selectStmt == null) {
+    assert(m_subqueryStmt instanceof ParsedUnionStmt);
+    return root;
+  }
+  if (selectStmt.hasLimitOrOffset() || selectStmt.hasDistinct()) {
+    return root;
+  }
+  if (selectStmt.m_mvFixInfo.needed()) {
+    return root;
+  }
+  if (selectStmt.hasAggregateOrGroupby()) {
+    if (!selectStmt.isGrouped()) {
+      m_tableAggregateSubquery=true;
+      return root;
+    }
+    if (!selectStmt.hasPartitionColumnInGroupby()) {
+      return root;
+    }
+    if (selectStmt.hasAggregateDistinct()) {
+      return root;
+    }
+  }
+  root=removeCoordinatorSendReceivePair(root);
+  m_hasReceiveNode=false;
+  return root;
+}
