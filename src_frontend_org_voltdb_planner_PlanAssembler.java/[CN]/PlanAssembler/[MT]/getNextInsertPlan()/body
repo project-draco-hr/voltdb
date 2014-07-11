@@ -3,74 +3,39 @@
   m_bestAndOnlyPlanWasGenerated=true;
   assert(m_parsedInsert.m_tableList.size() == 1);
   Table targetTable=m_parsedInsert.m_tableList.get(0);
-  InsertPlanNode insertNode=new InsertPlanNode();
-  insertNode.setTargetTableName(targetTable.getTypeName());
-  MaterializePlanNode materializeNode=new MaterializePlanNode();
-  NodeSchema mat_schema=new NodeSchema();
-  List<Column> columns=CatalogUtil.getSortedCatalogItems(targetTable.getColumns(),"index");
-  for (  Column column : columns) {
-    AbstractExpression expr=m_parsedInsert.columns.get(column);
-    if (expr == null) {
-      if (column.getNullable() == false && column.getDefaulttype() == 0) {
-        throw new PlanningErrorException("Column " + column.getName() + " has no default and is not nullable.");
-      }
-      boolean isConstantValue=true;
-      if (column.getDefaulttype() == VoltType.TIMESTAMP.getValue()) {
-        boolean isFunctionFormat=true;
-        String timeValue=column.getDefaultvalue();
-        try {
-          Long.parseLong(timeValue);
-          isFunctionFormat=false;
-        }
- catch (        NumberFormatException e) {
-        }
-        if (isFunctionFormat) {
-          try {
-            java.sql.Timestamp.valueOf(timeValue);
-            isFunctionFormat=false;
-          }
- catch (          IllegalArgumentException e) {
-          }
-        }
-        if (isFunctionFormat) {
-          String name=timeValue.split(":")[0];
-          int id=Integer.parseInt(timeValue.split(":")[1]);
-          FunctionExpression funcExpr=new FunctionExpression();
-          funcExpr.setAttributes(name,name,id);
-          funcExpr.setValueType(VoltType.TIMESTAMP);
-          funcExpr.setValueSize(VoltType.TIMESTAMP.getMaxLengthInBytes());
-          expr=funcExpr;
-          isConstantValue=false;
-        }
-      }
-      if (isConstantValue) {
-        ConstantValueExpression const_expr=new ConstantValueExpression();
-        expr=const_expr;
-        if (column.getDefaulttype() != 0) {
-          const_expr.setValue(column.getDefaultvalue());
-          const_expr.refineValueType(VoltType.get((byte)column.getDefaulttype()),column.getSize());
-        }
- else {
-          const_expr.setValue(null);
-          const_expr.refineValueType(VoltType.get((byte)column.getType()),column.getSize());
-        }
-      }
-      assert(expr != null);
+  CatalogMap<Column> targetTableColumns=targetTable.getColumns();
+  for (  Column col : targetTableColumns) {
+    boolean needsValue=col.getNullable() == false && col.getDefaulttype() == 0;
+    if (needsValue && !m_parsedInsert.columns.containsKey(col)) {
+      throw new PlanningErrorException("Column " + col.getName() + " has no default and is not nullable.");
     }
-    if (column.equals(m_partitioning.getPartitionColForDML())) {
-      String fullColumnName=targetTable.getTypeName() + "." + column.getTypeName();
+    if (col.equals(m_partitioning.getPartitionColForDML())) {
+      AbstractExpression expr=m_parsedInsert.columns.get(col);
+      if (expr == null) {
+        expr=defaultValueToExpr(col);
+      }
+      String fullColumnName=targetTable.getTypeName() + "." + col.getTypeName();
       m_partitioning.addPartitioningExpression(fullColumnName,expr,expr.getValueType());
     }
-    expr.setInBytes(column.getInbytes());
-    if (expr.getValueType().getValue() != column.getType() || expr.getValueSize() != column.getSize()) {
-      expr=new OperatorExpression(ExpressionType.OPERATOR_CAST,expr,null);
-      expr.setValueType(VoltType.get((byte)column.getType()));
-      expr.setValueSize(column.getSize());
-    }
-    mat_schema.addColumn(new SchemaColumn("VOLT_TEMP_TABLE","VOLT_TEMP_TABLE",column.getTypeName(),column.getTypeName(),expr));
   }
-  materializeNode.setOutputSchema(mat_schema);
-  insertNode.addAndLinkChild(materializeNode);
+  InsertPlanNode insertNode=new InsertPlanNode();
+  insertNode.setTargetTableName(targetTable.getTypeName());
+  MaterializePlanNode matNode=new MaterializePlanNode();
+  NodeSchema matSchema=new NodeSchema();
+  int[] fieldMap=new int[m_parsedInsert.columns.size()];
+  int i=0;
+  for (  Map.Entry<Column,AbstractExpression> e : m_parsedInsert.columns.entrySet()) {
+    Column col=e.getKey();
+    AbstractExpression valExpr=e.getValue();
+    fieldMap[i]=col.getIndex();
+    valExpr.setInBytes(col.getInbytes());
+    valExpr=castExprIfNeeded(valExpr,col);
+    matSchema.addColumn(new SchemaColumn("VOLT_TEMP_TABLE","VOLT_TEMP_TABLE",col.getTypeName(),col.getTypeName(),valExpr));
+    i++;
+  }
+  insertNode.setFieldMap(fieldMap);
+  matNode.setOutputSchema(matSchema);
+  insertNode.addAndLinkChild(matNode);
   if (m_partitioning.wasSpecifiedAsSingle() || m_partitioning.isInferredSingle()) {
     insertNode.setMultiPartition(false);
     return insertNode;
