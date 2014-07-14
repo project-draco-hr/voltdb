@@ -3,44 +3,64 @@
   m_bestAndOnlyPlanWasGenerated=true;
   assert(m_parsedInsert.m_tableList.size() == 1);
   Table targetTable=m_parsedInsert.m_tableList.get(0);
+  AbstractParsedStmt subselect=m_parsedInsert.getSubselect();
+  if (subselect != null) {
+    if (!m_partitioning.wasSpecifiedAsSingle()) {
+      throw new PlanningErrorException("INSERT INTO ... SELECT is only supported for single-partition stored procedures.");
+    }
+    assert(!targetTable.getIsreplicated());
+  }
+  CompiledPlan retval=new CompiledPlan();
+  retval.readOnly=false;
   CatalogMap<Column> targetTableColumns=targetTable.getColumns();
   for (  Column col : targetTableColumns) {
     boolean needsValue=col.getNullable() == false && col.getDefaulttype() == 0;
-    if (needsValue && !m_parsedInsert.columns.containsKey(col)) {
+    if (needsValue && !m_parsedInsert.m_columns.containsKey(col)) {
       throw new PlanningErrorException("Column " + col.getName() + " has no default and is not nullable.");
     }
-    if (col.equals(m_partitioning.getPartitionColForDML())) {
-      AbstractExpression expr=m_parsedInsert.columns.get(col);
-      if (expr == null) {
-        expr=defaultValueToExpr(col);
-      }
+    if (col.equals(m_partitioning.getPartitionColForDML()) && subselect == null) {
+      AbstractExpression expr=m_parsedInsert.getExpressionForPartitioning(col);
       String fullColumnName=targetTable.getTypeName() + "." + col.getTypeName();
       m_partitioning.addPartitioningExpression(fullColumnName,expr,expr.getValueType());
     }
   }
   InsertPlanNode insertNode=new InsertPlanNode();
   insertNode.setTargetTableName(targetTable.getTypeName());
-  MaterializePlanNode matNode=new MaterializePlanNode();
-  NodeSchema matSchema=new NodeSchema();
-  int[] fieldMap=new int[m_parsedInsert.columns.size()];
+  NodeSchema matSchema=null;
+  if (subselect == null) {
+    matSchema=new NodeSchema();
+  }
+  int[] fieldMap=new int[m_parsedInsert.m_columns.size()];
   int i=0;
-  for (  Map.Entry<Column,AbstractExpression> e : m_parsedInsert.columns.entrySet()) {
+  for (  Map.Entry<Column,AbstractExpression> e : m_parsedInsert.m_columns.entrySet()) {
     Column col=e.getKey();
-    AbstractExpression valExpr=e.getValue();
     fieldMap[i]=col.getIndex();
-    valExpr.setInBytes(col.getInbytes());
-    valExpr=castExprIfNeeded(valExpr,col);
-    matSchema.addColumn(new SchemaColumn("VOLT_TEMP_TABLE","VOLT_TEMP_TABLE",col.getTypeName(),col.getTypeName(),valExpr));
+    if (matSchema != null) {
+      AbstractExpression valExpr=e.getValue();
+      valExpr.setInBytes(col.getInbytes());
+      valExpr=castExprIfNeeded(valExpr,col);
+      matSchema.addColumn(new SchemaColumn("VOLT_TEMP_TABLE","VOLT_TEMP_TABLE",col.getTypeName(),col.getTypeName(),valExpr));
+    }
     i++;
   }
   insertNode.setFieldMap(fieldMap);
-  matNode.setOutputSchema(matSchema);
-  insertNode.addAndLinkChild(matNode);
+  if (matSchema != null) {
+    MaterializePlanNode matNode=new MaterializePlanNode();
+    matNode.setOutputSchema(matSchema);
+    insertNode.addAndLinkChild(matNode);
+  }
+ else {
+    retval=getBestCostPlan(subselect,false);
+    retval.readOnly=false;
+    insertNode.addAndLinkChild(retval.rootPlanGraph);
+  }
   if (m_partitioning.wasSpecifiedAsSingle() || m_partitioning.isInferredSingle()) {
     insertNode.setMultiPartition(false);
-    return insertNode;
+    retval.rootPlanGraph=insertNode;
+    return retval;
   }
   insertNode.setMultiPartition(true);
   AbstractPlanNode recvNode=SubPlanAssembler.addSendReceivePair(insertNode);
-  return addSumOrLimitAndSendToDMLNode(recvNode,targetTable.getIsreplicated());
+  retval.rootPlanGraph=addSumOrLimitAndSendToDMLNode(recvNode,targetTable.getIsreplicated());
+  return retval;
 }
