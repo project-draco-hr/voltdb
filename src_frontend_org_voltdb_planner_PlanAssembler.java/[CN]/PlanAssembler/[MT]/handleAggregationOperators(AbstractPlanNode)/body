@@ -1,22 +1,14 @@
 {
   AggregatePlanNode aggNode=null;
-  boolean indexScanForGroupingOnly=false;
   if (m_parsedSelect.hasAggregateOrGroupby()) {
     AggregatePlanNode topAggNode=null;
+    IndexGroupByInfo gbInfo=new IndexGroupByInfo();
     if (root.getPlanNodeType() == PlanNodeType.RECEIVE) {
       AbstractPlanNode candidate=root.getChild(0).getChild(0);
-      if (candidate.getPlanNodeType() == PlanNodeType.SEQSCAN && m_parsedSelect.isGrouped()) {
-        candidate=indexAccessForGroupByExprs(candidate);
-        if (candidate.getPlanNodeType() == PlanNodeType.INDEXSCAN) {
-          candidate.clearParents();
-          root.getChild(0).clearChildren();
-          root.getChild(0).addAndLinkChild(candidate);
-          indexScanForGroupingOnly=true;
-        }
-      }
+      processIndexScanForGroupBy(candidate,gbInfo);
     }
- else     if (root.getPlanNodeType() == PlanNodeType.SEQSCAN && m_parsedSelect.isGrouped()) {
-      root=indexAccessForGroupByExprs(root);
+ else     if (processIndexScanForGroupBy(root,gbInfo) && gbInfo.m_isIndexScanPlanRoot) {
+      root=gbInfo.m_indexAccess;
     }
     boolean needHashAgg=m_parsedSelect.isGrouped();
     if (needHashAgg) {
@@ -47,7 +39,7 @@
         aggNode=new HashAggregatePlanNode();
       }
  else {
-        if (indexScanForGroupingOnly) {
+        if (gbInfo.m_distributedChanged) {
           assert(root instanceof ReceivePlanNode);
           aggNode=new AggregatePlanNode();
         }
