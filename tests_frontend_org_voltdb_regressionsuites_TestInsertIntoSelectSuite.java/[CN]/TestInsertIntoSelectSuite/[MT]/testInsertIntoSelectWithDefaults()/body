@@ -1,0 +1,27 @@
+{
+  final Client client=getClient();
+  ClientResponse resp;
+  long partitioningValue=8;
+  String[] procs=new String[]{"insert_p_use_defaults","insert_p_use_defaults_reorder"};
+  for (  String proc : procs) {
+    initializeTables(client);
+    resp=client.callProcedure(proc,partitioningValue);
+    validateTableOfScalarLongs(resp.getResults()[0],new long[]{4});
+    resp=client.callProcedure("@AdHoc","select * from target_p");
+    String selectSp1="select * from source_p1 where bi = " + partitioningValue;
+    String selectTarget="select * from target_p";
+    resp=client.callProcedure("@AdHoc",selectTarget);
+    assertEquals(ClientResponse.SUCCESS,resp.getStatus());
+    VoltTable targetRows=resp.getResults()[0];
+    resp=client.callProcedure("@AdHoc",selectSp1);
+    assertEquals(ClientResponse.SUCCESS,resp.getStatus());
+    VoltTable sp1Rows=resp.getResults()[0];
+    while (targetRows.advanceRow()) {
+      assertTrue(sp1Rows.advanceRow());
+      assertEquals(sp1Rows.getLong(0),targetRows.getLong(0));
+      assertEquals(vcDefault,targetRows.getString(1));
+      assertEquals(intDefault,targetRows.getLong(2));
+      assertEquals(sp1Rows.getLong(3),targetRows.getLong(3));
+    }
+  }
+}
