@@ -1,0 +1,29 @@
+def self_test():
+    ddl = "\nCREATE TABLE P1 ( \n    ID INTEGER DEFAULT '0' NOT NULL, \n    BIG BIGINT,\n    RATIO FLOAT,\n    TM TIMESTAMP DEFAULT '2014-12-31',\n    VAR VARCHAR(300),\n    DEC DECIMAL,\n    PRIMARY KEY (ID)\n);\nPARTITION TABLE P1 ON COLUMN ID;\nCREATE PROCEDURE Test AS SELECT ID, TM, VAR FROM P1 WHERE TM < ? AND ID > ?; \n"
+    subprocess.check_call('rm -rf /tmp/tempGenJavaSPTool'.split())
+    subprocess.check_call('mkdir -p /tmp/tempGenJavaSPTool'.split())
+    os.chdir('/tmp/tempGenJavaSPTool')
+    f = open('/tmp/tempGenJavaSPTool/ddl.sql', 'w')
+    f.write(ddl)
+    f.close()
+    subprocess.check_call('voltdb compile ddl.sql'.split())
+    if (not os.path.exists('catalog.jar')):
+        print 'cannot generate catalog.jar'
+        sys.exit((-1))
+    subprocess.check_call('unzip catalog.jar catalog.txt -d /tmp/tempGenJavaSPTool'.split())
+    process_spec_func('Test', 'package', 'catalog.txt', './')
+    if (not os.path.exists('Test.java')):
+        print 'cannot generate java file'
+        sys.exit((-1))
+    golden = '\npackage package;\n\nimport org.voltdb.*;\n\npublic class Test extends VoltProcedure {\n    public final SQLStmt stmt = new SQLStmt("SELECT ID, TM, VAR FROM P1 WHERE TM < ? AND ID > ?;");\n\n    public VoltTable[] run(org.voltdb.types.TimestampType param0, int param1) {\n        voltQueueSQL(stmt, param0, param1);\n        return voltExecuteSQL();\n    }\n}\n'
+    f = open('/tmp/tempGenJavaSPTool/golden.java', 'w')
+    f.write(golden)
+    f.close()
+    if filecmp.cmp('golden.java', 'Test.java'):
+        print 'generated our expected java file'
+        rv = 0
+    else:
+        print 'generated file is different from our expectation'
+        rv = (-1)
+    subprocess.check_call('rm -rf /tmp/tempGenJavaSPTool'.split())
+    sys.exit(rv)

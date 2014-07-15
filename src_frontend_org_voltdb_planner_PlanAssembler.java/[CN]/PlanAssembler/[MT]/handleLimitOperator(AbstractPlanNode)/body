@@ -3,7 +3,7 @@
   AbstractPlanNode sendNode=null;
   boolean canPushDown=!m_parsedSelect.hasDistinct();
   if (canPushDown) {
-    sendNode=checkPushDownViability(root);
+    sendNode=checkLimitPushDownViability(root);
     if (sendNode == null) {
       canPushDown=false;
     }
@@ -20,20 +20,38 @@
     distributedPlan.clearParents();
     sendNode.clearChildren();
     distributedPlan=handleOrderBy(distributedPlan);
-    distLimit.addAndLinkChild(distributedPlan);
-    sendNode.addAndLinkChild(distLimit);
+    if (distributedPlan instanceof OrderByPlanNode) {
+      distributedPlan.addInlinePlanNode(distLimit);
+      sendNode.addAndLinkChild(distributedPlan);
+    }
+ else {
+      distLimit.addAndLinkChild(distributedPlan);
+      sendNode.addAndLinkChild(distLimit);
+    }
   }
-  AbstractPlanNode projectionNode=root;
   if (m_parsedSelect.hasComplexAgg()) {
     AbstractPlanNode child=root.getChild(0);
-    projectionNode.clearChildren();
-    child.clearParents();
-    topLimit.addAndLinkChild(child);
-    projectionNode.addAndLinkChild(topLimit);
-    return projectionNode;
+    if (child instanceof OrderByPlanNode) {
+      child.addInlinePlanNode(topLimit);
+    }
+ else {
+      root.clearChildren();
+      child.clearParents();
+      topLimit.addAndLinkChild(child);
+      root.addAndLinkChild(topLimit);
+    }
   }
  else {
-    topLimit.addAndLinkChild(root);
-    return topLimit;
+    if (root instanceof OrderByPlanNode) {
+      root.addInlinePlanNode(topLimit);
+    }
+ else     if (root instanceof ProjectionPlanNode && root.getChild(0) instanceof OrderByPlanNode) {
+      root.getChild(0).addInlinePlanNode(topLimit);
+    }
+ else {
+      topLimit.addAndLinkChild(root);
+      root=topLimit;
+    }
   }
+  return root;
 }

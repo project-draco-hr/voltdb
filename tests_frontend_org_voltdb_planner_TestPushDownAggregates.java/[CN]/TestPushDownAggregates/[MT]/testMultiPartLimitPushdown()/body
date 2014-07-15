@@ -1,7 +1,28 @@
 {
-  List<AbstractPlanNode> pn=compileToFragments("select A1, count(*) as tag from T1 group by A1 order by A1 limit 1");
-  for (  AbstractPlanNode nd : pn) {
-    System.out.println("PlanNode Explain string:\n" + nd.toExplainPlanString());
-    assertTrue(nd.toExplainPlanString().contains("LIMIT"));
-  }
+  List<AbstractPlanNode> pns;
+  pns=compileToFragments("select A1, count(*) as tag from T1 group by A1 order by A1 limit 1");
+  checkLimitPushedDown(pns,false);
+  pns=compileToFragments("select A1, count(*) as tag from T1 group by A1 order by tag limit 1");
+  checkLimitPushedDown(pns,false);
+  pns=compileToFragments("select A1, count(*) as tag from T1 group by A1 order by tag+1 limit 1");
+  checkLimitPushedDown(pns,false);
+  pns=compileToFragments("select A1, count(*) as tag from T1 group by A1 order by count(*)+1 limit 1");
+  checkLimitPushedDown(pns,false);
+  pns=compileToFragments("select A1, count(*) as tag from T1 group by A1 order by A1, count(*)+1 limit 1");
+  checkLimitPushedDown(pns,false);
+  pns=compileToFragments("select A1, count(*) as tag from T1 group by A1 order by A1, ABS(count(*)+1) limit 1");
+  checkLimitPushedDown(pns,false);
+  pns=compileToFragments("select A3, count(*) as tag from T3 group by A3 order by tag limit 1");
+  checkLimitPushedDown(pns,true);
+  pns=compileToFragments("select ABS(A3), count(*) as tag from T3 group by ABS(A3) order by tag limit 1");
+  checkLimitPushedDown(pns,false);
+  pns=compileToFragments("select A1, count(*) as tag from R1 group by A1 order by tag limit 1");
+  assertEquals(1,pns.size());
+  assertTrue(pns.get(0).toExplainPlanString().contains("LIMIT"));
+  pns=compileToFragments("select A3, B4, count(A3) as tag from T3, T4 WHERE A3 = A4 " + "group by A3, B4 order by tag desc limit 10");
+  checkLimitPushedDown(pns,true);
+  pns=compileToFragments("select A3, B4, count(A3) as tag from T3, T4 WHERE A3 = A4 " + "group by A3, B4 order by tag+1 desc limit 10");
+  checkLimitPushedDown(pns,true);
+  pns=compileToFragments("select A3, B4, count(CT) as tag " + " from (select A3, count(*) CT from T3 GROUP BY A3) TEMP, T4 WHERE A3 = A4 " + "group by A3, B4 order by tag desc limit 10");
+  checkLimitPushedDown(pns,true);
 }
