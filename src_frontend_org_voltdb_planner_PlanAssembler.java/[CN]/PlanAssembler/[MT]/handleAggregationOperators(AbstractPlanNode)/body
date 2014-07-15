@@ -5,43 +5,25 @@
     IndexGroupByInfo gbInfo=new IndexGroupByInfo();
     if (root.getPlanNodeType() == PlanNodeType.RECEIVE) {
       AbstractPlanNode candidate=root.getChild(0).getChild(0);
+      gbInfo.m_multPartition=true;
       processIndexScanForGroupBy(candidate,gbInfo);
     }
  else     if (processIndexScanForGroupBy(root,gbInfo) && gbInfo.m_isIndexScanPlanRoot) {
       root=gbInfo.m_indexAccess;
     }
-    boolean needHashAgg=m_parsedSelect.isGrouped();
-    if (needHashAgg) {
-      boolean predeterminedOrdering=false;
-      if (root instanceof IndexScanPlanNode) {
-        if (((IndexScanPlanNode)root).getSortDirection() == SortDirectionType.INVALID) {
-          if (((IndexScanPlanNode)root).isForGroupingOnly()) {
-            needHashAgg=false;
-          }
-        }
- else {
-          predeterminedOrdering=true;
-        }
-      }
- else       if (root instanceof AbstractJoinPlanNode) {
-        if (((AbstractJoinPlanNode)root).getSortDirection() != SortDirectionType.INVALID) {
-          predeterminedOrdering=true;
-        }
-      }
-      if (predeterminedOrdering) {
-        if (m_parsedSelect.groupByIsAnOrderByPermutation()) {
-          needHashAgg=false;
-        }
-      }
-    }
+    gbInfo.proccessGroupByInfo(root);
+    boolean needHashAgg=gbInfo.needHashAgg();
     if (needHashAgg) {
       if (m_parsedSelect.m_mvFixInfo.needed()) {
         aggNode=new HashAggregatePlanNode();
       }
  else {
-        if (gbInfo.m_distributedChanged) {
+        if (gbInfo.isChangedToSerialAggregate()) {
           assert(root instanceof ReceivePlanNode);
           aggNode=new AggregatePlanNode();
+        }
+ else         if (gbInfo.isChangedToPartialAggregate()) {
+          aggNode=new PartialAggregatePlanNode(gbInfo.m_coveredGroupByColumns);
         }
  else {
           aggNode=new HashAggregatePlanNode();

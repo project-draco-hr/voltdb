@@ -1,0 +1,51 @@
+{
+  Integer ithCovered=0;
+  ArrayList<ParsedColInfo> groupBys=m_parsedSelect.m_groupByColumns;
+  String exprsjson=index.getExpressionsjson();
+  if (exprsjson.isEmpty()) {
+    List<ColumnRef> indexedColRefs=CatalogUtil.getSortedCatalogItems(index.getColumns(),"index");
+    for (    ParsedColInfo gbCol : groupBys) {
+      AbstractExpression expr=gbCol.expression;
+      if (!(expr instanceof TupleValueExpression)) {
+        return false;
+      }
+      TupleValueExpression grouptve=(TupleValueExpression)expr;
+      if (!fromTableAlias.equals(grouptve.getTableAlias())) {
+        return false;
+      }
+      String gbColName=grouptve.getColumnName();
+      for (int j=0; j < indexedColRefs.size(); j++) {
+        if (indexedColRefs.get(j).getColumn().getName().equals(gbColName)) {
+          coveredGroupByColumns.add(ithCovered);
+          break;
+        }
+      }
+      ithCovered++;
+    }
+  }
+ else {
+    StmtTableScan fromTableScan=m_parsedSelect.m_tableAliasMap.get(fromTableAlias);
+    List<AbstractExpression> indexedExprs=null;
+    try {
+      indexedExprs=AbstractExpression.fromJSONArrayString(exprsjson,fromTableScan);
+    }
+ catch (    JSONException e) {
+      e.printStackTrace();
+      return false;
+    }
+    for (    ParsedColInfo gbCol : groupBys) {
+      AbstractExpression expr=gbCol.expression;
+      for (int j=0; j < indexedExprs.size(); j++) {
+        AbstractExpression indexExpr=indexedExprs.get(j);
+        List<AbstractExpression> binding=expr.bindingToIndexedExpression(indexExpr);
+        if (binding != null) {
+          allBindings.addAll(binding);
+          coveredGroupByColumns.add(ithCovered);
+          break;
+        }
+      }
+      ithCovered++;
+    }
+  }
+  return true;
+}
