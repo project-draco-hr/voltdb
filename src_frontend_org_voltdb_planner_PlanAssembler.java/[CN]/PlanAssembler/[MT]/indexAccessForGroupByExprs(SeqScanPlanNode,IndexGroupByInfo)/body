@@ -1,22 +1,9 @@
 {
   assert(root.getPlanNodeType() == PlanNodeType.SEQSCAN);
-  String fromTableAlias=null;
-  ArrayList<ParsedColInfo> groupBys=m_parsedSelect.m_groupByColumns;
-  for (  ParsedColInfo col : groupBys) {
-    List<AbstractExpression> baseTVEs=col.expression.findBaseTVEs();
-    for (    AbstractExpression baseTVE : baseTVEs) {
-      String nextTableAlias=((TupleValueExpression)baseTVE).getTableAlias();
-      assert(nextTableAlias != null);
-      if (fromTableAlias == null) {
-        fromTableAlias=nextTableAlias;
-      }
- else       if (!fromTableAlias.equals(nextTableAlias)) {
-        return root;
-      }
-    }
-  }
+  String fromTableAlias=root.getTargetTableAlias();
   assert(fromTableAlias != null);
-  Table targetTable=m_catalogDb.getTables().get(((SeqScanPlanNode)root).getTargetTableName());
+  ArrayList<ParsedColInfo> groupBys=m_parsedSelect.m_groupByColumns;
+  Table targetTable=m_catalogDb.getTables().get(root.getTargetTableName());
   if (targetTable == null) {
     return root;
   }
@@ -31,7 +18,7 @@
       continue;
     }
     List<Integer> coveredGroupByColumns=new ArrayList<>();
-    processGroupbyColumnsCovered(index,fromTableAlias,coveredGroupByColumns,allBindings);
+    calculateGroupbyColumnsCovered(index,fromTableAlias,coveredGroupByColumns,allBindings);
     if (coveredGroupByColumns.size() > maxCoveredGroupByColumns.size()) {
       maxCoveredGroupByColumns=coveredGroupByColumns;
       pickedupInde=index;
@@ -44,7 +31,7 @@
   if (pickedupInde == null) {
     return root;
   }
-  IndexScanPlanNode indexScanNode=new IndexScanPlanNode((SeqScanPlanNode)root,null,pickedupInde,SortDirectionType.INVALID);
+  IndexScanPlanNode indexScanNode=new IndexScanPlanNode(root,null,pickedupInde,SortDirectionType.INVALID);
   indexScanNode.setForGroupingOnly();
   indexScanNode.setBindings(allBindings);
   gbInfo.m_coveredGroupByColumns=maxCoveredGroupByColumns;
