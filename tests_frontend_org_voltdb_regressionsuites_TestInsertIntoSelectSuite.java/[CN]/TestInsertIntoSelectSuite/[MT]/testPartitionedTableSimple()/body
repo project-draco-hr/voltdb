@@ -1,0 +1,32 @@
+{
+  final Client client=getClient();
+  ClientResponse resp;
+  long[] params=new long[]{100,5};
+  String[] procs=new String[]{"insert_p_source_p","insert_p_source_p_cast"};
+  for (  long param : params) {
+    for (    String proc : procs) {
+      initializeTables(client);
+      resp=client.callProcedure(proc,param);
+      assertEquals(ClientResponse.SUCCESS,resp.getStatus());
+      long numRowsInserted=resp.getResults()[0].asScalarLong();
+      String selectAllSource="select * from source_p1 where bi = " + param + " order by bi, ii";
+      String selectAllTarget="select * from target_p order by bi, ii";
+      resp=client.callProcedure("@AdHoc",selectAllSource);
+      assertEquals(ClientResponse.SUCCESS,resp.getStatus());
+      VoltTable sourceRows=resp.getResults()[0];
+      resp=client.callProcedure("@AdHoc",selectAllTarget);
+      assertEquals(ClientResponse.SUCCESS,resp.getStatus());
+      VoltTable targetRows=resp.getResults()[0];
+      int i=0;
+      while (targetRows.advanceRow()) {
+        assertEquals(true,sourceRows.advanceRow());
+        assertEquals(sourceRows.getLong(0),targetRows.getLong(0));
+        assertEquals(sourceRows.getString(1),targetRows.getString(1));
+        assertEquals(sourceRows.getLong(2),targetRows.getLong(2));
+        assertEquals(sourceRows.getLong(3),targetRows.getLong(3));
+        i++;
+      }
+      assertEquals(numRowsInserted,i);
+    }
+  }
+}
