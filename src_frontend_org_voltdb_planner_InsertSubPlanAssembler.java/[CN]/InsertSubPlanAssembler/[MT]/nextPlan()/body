@@ -1,0 +1,54 @@
+{
+  if (m_bestAndOnlyPlanWasGenerated) {
+    return null;
+  }
+  m_bestAndOnlyPlanWasGenerated=true;
+  ParsedInsertStmt insertStmt=(ParsedInsertStmt)m_parsedStmt;
+  Table targetTable=insertStmt.m_tableList.get(0);
+  String targetTableName=targetTable.getTypeName();
+  StmtSubqueryScan subquery=insertStmt.getSubquery();
+  if (targetTable.getIsreplicated()) {
+    assert(!m_partitioning.wasSpecifiedAsSingle() && !m_partitioning.isInferredSingle());
+    if (!subquery.getIsReplicated()) {
+      throw new PlanningErrorException("Subquery in INSERT INTO ... SELECT statement may not access " + "partitioned data for insertion into replicated table " + targetTable.getTypeName() + ".");
+    }
+  }
+ else   if (!m_partitioning.wasSpecifiedAsSingle()) {
+    if (countSendNodes(subquery.getBestCostPlan().rootPlanGraph) > 0) {
+      m_recentErrorMsg="INSERT INTO ... SELECT statement subquery is too complex.  " + "Please either simplify the subquery or use a SELECT followed by an INSERT.";
+      return null;
+    }
+    List<StmtTableScan> tables=new ArrayList<>();
+    tables.add(new StmtTargetTableScan(targetTable,targetTable.getTypeName()));
+    tables.add(subquery);
+    HashMap<AbstractExpression,Set<AbstractExpression>> valueEquivalence=new HashMap<>();
+    int i=0;
+    Column partitioningCol=targetTable.getPartitioncolumn();
+    boolean setEquivalenceForPartitioningCol=false;
+    for (    Column col : insertStmt.m_columns.keySet()) {
+      if (partitioningCol.compareTo(col) == 0) {
+        TupleValueExpression tve=new TupleValueExpression(targetTableName,targetTableName,col.getName(),col.getName(),col.getIndex());
+        AbstractExpression selectedExpr=subquery.getOutputExpression(i);
+        assert(!valueEquivalence.containsKey(tve));
+        assert(!valueEquivalence.containsKey(selectedExpr));
+        Set<AbstractExpression> equivSet=new HashSet<>();
+        equivSet.add(tve);
+        equivSet.add(selectedExpr);
+        valueEquivalence.put(tve,equivSet);
+        valueEquivalence.put(selectedExpr,equivSet);
+        setEquivalenceForPartitioningCol=true;
+      }
+      ++i;
+    }
+    if (!setEquivalenceForPartitioningCol) {
+      m_recentErrorMsg="Partitioning column must be assigned a value " + "produced by the subquery in an INSERT INTO ... SELECT statement.";
+      return null;
+    }
+    m_partitioning.analyzeForMultiPartitionAccess(tables,valueEquivalence);
+    if (!m_partitioning.isJoinValid()) {
+      m_recentErrorMsg="Partitioning could not be determined for INSERT INTO ... SELECT statement.  " + "Please ensure that statement does not attempt to copy row data from one partition to another, " + "which is unsupported.";
+      return null;
+    }
+  }
+  return subquery.getBestCostPlan().rootPlanGraph;
+}
