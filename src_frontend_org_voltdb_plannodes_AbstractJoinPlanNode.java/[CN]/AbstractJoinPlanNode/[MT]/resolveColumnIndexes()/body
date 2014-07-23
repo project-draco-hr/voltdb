@@ -4,10 +4,13 @@
   for (  AbstractPlanNode child : m_children) {
     child.resolveColumnIndexes();
   }
-  NodeSchema outer_schema=m_children.get(0).getOutputSchema();
-  NodeSchema inner_schema=m_children.get(1).getOutputSchema();
+  final NodeSchema outer_schema=m_children.get(0).getOutputSchema();
+  final NodeSchema inner_schema=m_children.get(1).getOutputSchema();
+  resolvePredicate(m_preJoinPredicate,outer_schema,inner_schema);
+  resolvePredicate(m_joinPredicate,outer_schema,inner_schema);
+  resolvePredicate(m_wherePredicate,outer_schema,inner_schema);
   TreeMap<Integer,SchemaColumn> sort_cols=new TreeMap<Integer,SchemaColumn>();
-  for (  SchemaColumn col : m_outputSchema.getColumns()) {
+  for (  SchemaColumn col : m_outputSchemaPreInlineAgg.getColumns()) {
     assert(col.getExpression() instanceof TupleValueExpression);
     TupleValueExpression tve=(TupleValueExpression)col.getExpression();
     int index=tve.resolveColumnIndexesUsingSchema(outer_schema);
@@ -29,7 +32,9 @@
   }
   m_outputSchema=new_output_schema;
   m_hasSignificantOutputSchema=true;
-  resolvePredicate(m_preJoinPredicate,outer_schema,inner_schema);
-  resolvePredicate(m_joinPredicate,outer_schema,inner_schema);
-  resolvePredicate(m_wherePredicate,outer_schema,inner_schema);
+  AggregatePlanNode aggNode=AggregatePlanNode.getInlineAggregationNode(this);
+  if (aggNode != null) {
+    aggNode.resolveColumnIndexesUsingSchema(m_outputSchema);
+    m_outputSchema=aggNode.getOutputSchema().clone();
+  }
 }
