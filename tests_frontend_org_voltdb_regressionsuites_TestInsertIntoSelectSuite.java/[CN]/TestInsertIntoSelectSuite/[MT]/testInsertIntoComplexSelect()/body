@@ -1,0 +1,28 @@
+{
+  final Client client=getClient();
+  initializeTables(client);
+  String[] procs=new String[]{"insert_select_with_join","insert_select_join_replicated","insert_select_subquery","insert_select_subquery_inner_filter","insert_select_subquery_join","insert_select_join_two_subqueries","insert_select_nested_subqueries"};
+  final long partitioningValue=7;
+  for (int i=0; i < procs.length; ++i) {
+    clearTargetTable(client);
+    ClientResponse resp=client.callProcedure(procs[i],partitioningValue);
+    assertEquals(ClientResponse.SUCCESS,resp.getStatus());
+    VoltTable insertResult=resp.getResults()[0];
+    insertResult.advanceRow();
+    assertTrue(insertResult.getLong(0) > 0);
+    resp=client.callProcedure("get_all_target_rows");
+    assertEquals(ClientResponse.SUCCESS,resp.getStatus());
+    VoltTable actualRows=resp.getResults()[0];
+    resp=client.callProcedure("verify_" + procs[i],partitioningValue);
+    assertEquals(ClientResponse.SUCCESS,resp.getStatus());
+    VoltTable expectedRows=resp.getResults()[0];
+    while (expectedRows.advanceRow()) {
+      assertTrue(actualRows.advanceRow());
+      assertEquals(expectedRows.getLong(0),actualRows.getLong(0));
+      assertEquals(expectedRows.getString(1),actualRows.getString(1));
+      assertEquals(expectedRows.getLong(2),actualRows.getLong(2));
+      assertEquals(expectedRows.getLong(3),actualRows.getLong(3));
+    }
+    assertFalse(actualRows.advanceRow());
+  }
+}
