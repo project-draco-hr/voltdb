@@ -1,18 +1,14 @@
 {
   AbstractPlanNode receiveNode=root;
+  List<ParsedColInfo> orderBys=m_parsedSelect.orderByColumns();
+  boolean orderByCoversAllGroupBy=m_parsedSelect.groupByIsAnOrderByPermutation();
   while (!(receiveNode instanceof ReceivePlanNode)) {
-    if (!(receiveNode instanceof OrderByPlanNode) && !(receiveNode instanceof ProjectionPlanNode) && !isValidAggregateNodeForLimitPushdown(receiveNode)) {
+    if (!(receiveNode instanceof OrderByPlanNode) && !(receiveNode instanceof ProjectionPlanNode) && !isValidAggregateNodeForLimitPushdown(receiveNode,orderBys,orderByCoversAllGroupBy)) {
       return null;
     }
     if (receiveNode instanceof OrderByPlanNode) {
-      for (      ParsedSelectStmt.ParsedColInfo col : m_parsedSelect.orderByColumns()) {
-        AbstractExpression rootExpr=col.expression;
-        ArrayList<AbstractExpression> tves=rootExpr.findBaseTVEs();
-        for (        AbstractExpression tve : tves) {
-          if (((TupleValueExpression)tve).hasAggregate() && !m_parsedSelect.hasPartitionColumnInGroupby()) {
-            return null;
-          }
-        }
+      if (!m_parsedSelect.hasPartitionColumnInGroupby() && isOrderByAggregationValue(m_parsedSelect.orderByColumns())) {
+        return null;
       }
     }
     if (receiveNode.getChildCount() == 0) {
