@@ -10,7 +10,20 @@
   retval.originalUniqueId=work.originalUniqueId;
   CatalogContext context=VoltDB.instance().getCatalogContext();
   byte[] newCatalogBytes=work.catalogBytes;
-  if (work.catalogBytes == null) {
+  String deploymentString=work.deploymentString;
+  if (work.invocationName.equals("@UpdateApplicationCatalog")) {
+    if (newCatalogBytes == null) {
+      try {
+        newCatalogBytes=context.getCatalogJarBytes();
+      }
+ catch (      IOException ioe) {
+        retval.errorMsg="Unexpected exception retrieving internal catalog bytes: " + ioe.getMessage();
+        return retval;
+      }
+    }
+  }
+ else   if (work.invocationName.equals("@UpdateClasses")) {
+    compilerLog.warn("DELETE STRING: " + work.deploymentString);
     try {
       newCatalogBytes=context.getCatalogJarBytes();
     }
@@ -18,33 +31,44 @@
       retval.errorMsg="Unexpected exception retrieving internal catalog bytes: " + ioe.getMessage();
       return retval;
     }
-    if (work.adhocDDLStmts != null) {
+    if (work.deploymentString != null) {
       try {
-        newCatalogBytes=addDDLToCatalog(newCatalogBytes,work.adhocDDLStmts);
+        newCatalogBytes=removeClassesFromCatalog(newCatalogBytes,work.deploymentString);
       }
- catch (      IOException ioe) {
-        retval.errorMsg=ioe.getMessage();
-        return retval;
-      }
-      if (newCatalogBytes == null) {
-        retval.errorMsg="Unexpected failure in applying DDL statements to original catalog";
+ catch (      IOException e) {
+        retval.errorMsg="Unexpected exception @UpdateClasses deleting classes " + "from catalog: " + e.getMessage();
         return retval;
       }
     }
-  }
- else {
-    if (work.invocationName.equals("@UpdateClasses")) {
+    if (work.catalogBytes != null) {
       try {
         InMemoryJarfile jarfile=new InMemoryJarfile(work.catalogBytes);
-        newCatalogBytes=addJarClassesToCatalog(context.getCatalogJarBytes(),jarfile);
+        newCatalogBytes=addJarClassesToCatalog(newCatalogBytes,jarfile);
       }
- catch (      Exception e) {
-        e.printStackTrace();
-        retval.encodedDiffCommands=null;
-        retval.errorMsg=e.getMessage();
+ catch (      IOException e) {
+        retval.errorMsg="Unexpected exception @UpdateClasses adding classes " + "to catalog: " + e.getMessage();
         return retval;
       }
     }
+    deploymentString=null;
+  }
+ else   if (work.invocationName.startsWith("@AdHoc")) {
+    try {
+      newCatalogBytes=addDDLToCatalog(context.getCatalogJarBytes(),work.adhocDDLStmts);
+    }
+ catch (    IOException ioe) {
+      retval.errorMsg="Unexpected exception applying DDL statements to original catalog: " + ioe.getMessage();
+      return retval;
+    }
+    if (newCatalogBytes == null) {
+      retval.errorMsg="Unexpected failure in applying DDL statements to original catalog";
+      return retval;
+    }
+    deploymentString=null;
+  }
+ else {
+    retval.errorMsg="Unexpected work in the AsyncCompilerAgentHelper: " + work.invocationName;
+    return retval;
   }
   retval.catalogBytes=newCatalogBytes;
   retval.catalogHash=CatalogUtil.makeCatalogOrDeploymentHash(newCatalogBytes);
@@ -58,7 +82,6 @@
     }
     Catalog newCatalog=new Catalog();
     newCatalog.execute(newCatalogCommands);
-    String deploymentString=work.deploymentString;
     if (deploymentString == null) {
       CatalogAndIds catalogStuff=CatalogUtil.getCatalogFromZK(VoltDB.instance().getHostMessenger().getZK());
       byte[] deploymentBytes=catalogStuff.deploymentBytes;
