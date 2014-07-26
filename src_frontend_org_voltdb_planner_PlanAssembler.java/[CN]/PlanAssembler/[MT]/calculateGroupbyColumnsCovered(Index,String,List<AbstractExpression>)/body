@@ -1,0 +1,66 @@
+{
+  List<Integer> coveredGroupByColumns=new ArrayList<>();
+  ArrayList<ParsedColInfo> groupBys=m_parsedSelect.m_groupByColumns;
+  String exprsjson=index.getExpressionsjson();
+  if (exprsjson.isEmpty()) {
+    List<ColumnRef> indexedColRefs=CatalogUtil.getSortedCatalogItems(index.getColumns(),"index");
+    for (int j=0; j < indexedColRefs.size(); j++) {
+      String indexColumnName=indexedColRefs.get(j).getColumn().getName();
+      int ithCovered=0;
+      boolean foundPrefixedColumn=false;
+      for (; ithCovered < groupBys.size(); ithCovered++) {
+        AbstractExpression gbExpr=groupBys.get(ithCovered).expression;
+        if (!(gbExpr instanceof TupleValueExpression)) {
+          continue;
+        }
+        TupleValueExpression gbTVE=(TupleValueExpression)gbExpr;
+        if (!fromTableAlias.equals(gbTVE.getTableAlias())) {
+          continue;
+        }
+        if (indexColumnName.equals(gbTVE.getColumnName())) {
+          foundPrefixedColumn=true;
+          break;
+        }
+      }
+      if (!foundPrefixedColumn) {
+        break;
+      }
+      coveredGroupByColumns.add(ithCovered);
+      if (coveredGroupByColumns.size() == groupBys.size()) {
+        break;
+      }
+    }
+  }
+ else {
+    StmtTableScan fromTableScan=m_parsedSelect.m_tableAliasMap.get(fromTableAlias);
+    List<AbstractExpression> indexedExprs=null;
+    try {
+      indexedExprs=AbstractExpression.fromJSONArrayString(exprsjson,fromTableScan);
+    }
+ catch (    JSONException e) {
+      e.printStackTrace();
+      return coveredGroupByColumns;
+    }
+    for (int j=0; j < indexedExprs.size(); j++) {
+      AbstractExpression indexExpr=indexedExprs.get(j);
+      int ithCovered=0;
+      List<AbstractExpression> binding=null;
+      for (; ithCovered < groupBys.size(); ithCovered++) {
+        AbstractExpression gbExpr=groupBys.get(ithCovered).expression;
+        binding=gbExpr.bindingToIndexedExpression(indexExpr);
+        if (binding != null) {
+          break;
+        }
+      }
+      if (binding == null) {
+        break;
+      }
+      bindings.addAll(binding);
+      coveredGroupByColumns.add(ithCovered);
+      if (coveredGroupByColumns.size() == groupBys.size()) {
+        break;
+      }
+    }
+  }
+  return coveredGroupByColumns;
+}
