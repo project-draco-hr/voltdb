@@ -33,20 +33,27 @@ def genjava(classes, prepath, postpath, package):
             else:
                 write(interp('    $ftype m_$fname;', locals()))
         write('')
-        write('    void setBaseValues(Catalog catalog, CatalogType parent, String path, String name) {')
-        write('        super.setBaseValues(catalog, parent, path, name);')
+        write('    void setBaseValues(Catalog catalog, CatalogMap<? extends CatalogType> parentMap, String name) {')
+        write('        super.setBaseValues(catalog, parentMap, name);')
         for field in cls.fields:
             ftype = javatypify(field.type)
             fname = field.name
             realtype = field.type[:(-1)]
             if (field.type[(-1)] == '*'):
-                write(interp('        m_$fname = new $ftype(catalog, this, path + "/" + "$fname", $realtype.class);', locals()))
-                write(interp('        m_childCollections.put("$fname", m_$fname);', locals()))
+                write(interp('        m_$fname = new $ftype(catalog, this, "$fname", $realtype.class);', locals()))
         write('    }\n')
         write('    public String[] getFields() {')
         write('        return new String[] {')
         for field in cls.fields:
             if (field.type[(-1)] != '*'):
+                fname = field.name
+                write(interp('            "$fname",', locals()))
+        write('        };')
+        write('    };\n')
+        write('    String[] getChildCollections() {')
+        write('        return new String[] {')
+        for field in cls.fields:
+            if (field.type[(-1)] == '*'):
                 fname = field.name
                 write(interp('            "$fname",', locals()))
         write('        };')
@@ -134,8 +141,10 @@ def genjava(classes, prepath, postpath, package):
                 fname = field.name
                 if (ftype in ['int', 'boolean', 'String']):
                     write(interp('        other.m_$fname = m_$fname;', locals()))
-                if (field.type[(-1)] == '?'):
+                elif (field.type[(-1)] == '?'):
                     write(interp('        other.m_$fname.setUnresolved(m_$fname.getPath());', locals()))
+                elif (field.type[(-1)] == '*'):
+                    write(interp('        other.m_$fname.copyFrom(m_$fname);', locals()))
         write('    }\n')
         write('    public boolean equals(Object obj) {')
         write("        // this isn't really the convention for null handling")
