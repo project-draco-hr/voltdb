@@ -1,0 +1,26 @@
+{
+  String pathToCatalog=Configuration.getPathToCatalogForTest("emptyDDL.jar");
+  String pathToDeployment=Configuration.getPathToCatalogForTest("emptyDDL.xml");
+  VoltProjectBuilder builder=new VoltProjectBuilder();
+  final URL url=TestCanonicalDDLThroughSQLcmd.class.getResource("emptyDDL.sql");
+  String pathToSchema=URLDecoder.decode(url.getPath(),"UTF-8");
+  boolean success;
+  builder.setUseAdhocSchema(true);
+  builder.addSchema(pathToSchema);
+  builder.setHTTPDPort(8080);
+  success=builder.compile(pathToCatalog);
+  assertTrue(success);
+  MiscUtils.copyFile(builder.getPathToDeployment(),pathToDeployment);
+  VoltDB.Configuration config=new VoltDB.Configuration();
+  config.m_pathToCatalog=pathToCatalog;
+  config.m_pathToDeployment=pathToDeployment;
+  startSystem(config);
+  String roundtripDDL;
+  callSQLcmd(firstCanonicalDDL);
+  roundtripDDL=getDDLFromHTTP();
+  assertTrue(firstCanonicalDDL.equals(roundtripDDL));
+  callSQLcmd("CREATE TABLE NONSENSE (id INTEGER);\n");
+  roundtripDDL=getDDLFromHTTP();
+  assertFalse(firstCanonicalDDL.equals(roundtripDDL));
+  teardownSystem();
+}
