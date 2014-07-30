@@ -25,6 +25,29 @@
     ClientStatsContext fullStatsContext=((IVoltDBConnection)Con).createStatsContext();
     System.out.println("Connected.  Starting benchmark.");
     final PayloadProcessor processor=new PayloadProcessor(config.keysize,config.minvaluesize,config.maxvaluesize,config.entropy,config.poolsize,config.usecompression);
+    if (config.preload) {
+      System.out.print("Initializing data store... ");
+      final PreparedStatement removeCS=Con.prepareStatement("DELETE FROM store;");
+      final CallableStatement putCS=Con.prepareCall("{call STORE.upsert(?,?)}");
+      int batchSize=0;
+      for (int i=0; i < config.poolsize; i++) {
+        if (i == 0) {
+          removeCS.execute();
+        }
+        putCS.setString(1,String.format(processor.KeyFormat,i));
+        putCS.setBytes(2,processor.generateForStore().getStoreValue());
+        putCS.addBatch();
+        batchSize++;
+        if (batchSize > 499) {
+          putCS.executeBatch();
+          batchSize=0;
+        }
+      }
+      if (batchSize > 0) {
+        putCS.executeBatch();
+      }
+      System.out.println(" Done.");
+    }
     fullStatsContext.fetchAndResetBaseline();
     Timer timer=new Timer();
     timer.scheduleAtFixedRate(new TimerTask(){
