@@ -9,8 +9,8 @@
   retval.originalTxnId=work.originalTxnId;
   retval.originalUniqueId=work.originalUniqueId;
   CatalogContext context=VoltDB.instance().getCatalogContext();
-  byte[] newCatalogBytes=work.catalogBytes;
-  String deploymentString=work.deploymentString;
+  byte[] newCatalogBytes=work.operationBytes;
+  String deploymentString=work.operationString;
   if (work.invocationName.equals("@UpdateApplicationCatalog")) {
     if (newCatalogBytes == null) {
       try {
@@ -23,7 +23,6 @@
     }
   }
  else   if (work.invocationName.equals("@UpdateClasses")) {
-    compilerLog.warn("DELETE STRING: " + work.deploymentString);
     try {
       newCatalogBytes=context.getCatalogJarBytes();
     }
@@ -31,24 +30,12 @@
       retval.errorMsg="Unexpected exception retrieving internal catalog bytes: " + ioe.getMessage();
       return retval;
     }
-    if (work.deploymentString != null) {
-      try {
-        newCatalogBytes=removeClassesFromCatalog(newCatalogBytes,work.deploymentString);
-      }
- catch (      IOException e) {
-        retval.errorMsg="Unexpected exception @UpdateClasses deleting classes " + "from catalog: " + e.getMessage();
-        return retval;
-      }
+    try {
+      newCatalogBytes=modifyCatalogClasses(newCatalogBytes,work.operationString,work.operationBytes);
     }
-    if (work.catalogBytes != null) {
-      try {
-        InMemoryJarfile jarfile=new InMemoryJarfile(work.catalogBytes);
-        newCatalogBytes=addJarClassesToCatalog(newCatalogBytes,jarfile);
-      }
- catch (      IOException e) {
-        retval.errorMsg="Unexpected exception @UpdateClasses adding classes " + "to catalog: " + e.getMessage();
-        return retval;
-      }
+ catch (    IOException e) {
+      retval.errorMsg="Unexpected exception @UpdateClasses modifying classes " + "from catalog: " + e.getMessage();
+      return retval;
     }
     deploymentString=null;
   }
