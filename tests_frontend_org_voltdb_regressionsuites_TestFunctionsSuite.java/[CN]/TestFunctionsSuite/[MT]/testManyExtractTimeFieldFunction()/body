@@ -1,0 +1,49 @@
+{
+  System.out.println("STARTING test functions extracting fields in timestamp ...");
+  Client cl=getClient();
+  VoltTable result;
+  String sql;
+  ClientResponse cr=cl.callProcedure("P1.insert",0,null,null,null,Timestamp.valueOf("2014-07-15 01:02:03.456"));
+  assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+  cr=cl.callProcedure("P1.insert",1,null,null,null,Timestamp.valueOf("2012-02-29 12:20:30.123"));
+  assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+  cr=cl.callProcedure("P1.insert",2,null,null,null,Timestamp.valueOf("2012-12-31 12:59:30"));
+  assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+  sql="select id, YEAR(past) from p1 order by id;";
+  validateTableOfLongs(cl,sql,new long[][]{{0,2014},{1,2012},{2,2012}});
+  sql="select id, MONTH(past) from p1 order by id;";
+  validateTableOfLongs(cl,sql,new long[][]{{0,7},{1,2},{2,12}});
+  sql="select id, DAY(past) from p1 order by id;";
+  validateTableOfLongs(cl,sql,new long[][]{{0,15},{1,29},{2,31}});
+  sql="select id, HOUR(past) from p1 order by id;";
+  validateTableOfLongs(cl,sql,new long[][]{{0,1},{1,12},{2,12}});
+  sql="select id, MINUTE(past) from p1 order by id;";
+  validateTableOfLongs(cl,sql,new long[][]{{0,2},{1,20},{2,59}});
+  sql="select id, cast(SECOND(past) as VARCHAR) from p1 order by id;";
+  cr=cl.callProcedure("@AdHoc",sql);
+  assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+  result=cr.getResults()[0];
+  if (isHSQL()) {
+    validateTableColumnOfScalarVarchar(result,1,new String[]{"3.456000","30.123000","30.000000"});
+  }
+ else {
+    validateTableColumnOfScalarVarchar(result,1,new String[]{"3.456000000000","30.123000000000","30.000000000000"});
+  }
+  sql="select id, QUARTER(past) from p1 order by id;";
+  validateTableOfLongs(cl,sql,new long[][]{{0,3},{1,1},{2,4}});
+  sql="select DAYOFWEEK(past) from p1 order by id;";
+  validateTableOfLongs(cl,sql,new long[][]{{3},{4},{2}});
+  sql="select WEEKDAY(past) from p1 order by id;";
+  if (isHSQL()) {
+    validateTableOfLongs(cl,sql,new long[][]{{3},{4},{2}});
+  }
+ else {
+    validateTableOfLongs(cl,sql,new long[][]{{1},{2},{0}});
+  }
+  sql="select DAYOFMONTH(past) from p1 order by id;";
+  validateTableOfLongs(cl,sql,new long[][]{{15},{29},{31}});
+  sql="select DAYOFYEAR(past) from p1 order by id;";
+  validateTableOfLongs(cl,sql,new long[][]{{196},{60},{366}});
+  sql="select WEEK(past) from p1 order by id;";
+  validateTableOfLongs(cl,sql,new long[][]{{29},{9},{1}});
+}

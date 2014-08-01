@@ -1,0 +1,40 @@
+{
+  if (root.isSubQuery()) {
+    return root;
+  }
+  String fromTableAlias=root.getTargetTableAlias();
+  assert(fromTableAlias != null);
+  ArrayList<ParsedColInfo> groupBys=m_parsedSelect.m_groupByColumns;
+  Table targetTable=m_catalogDb.getTables().get(root.getTargetTableName());
+  assert(targetTable != null);
+  CatalogMap<Index> allIndexes=targetTable.getIndexes();
+  List<Integer> maxCoveredGroupByColumns=new ArrayList<>();
+  ArrayList<AbstractExpression> maxCoveredBindings=null;
+  Index pickedUpIndex=null;
+  boolean foundAllGroupByCoveredIndex=false;
+  for (  Index index : allIndexes) {
+    if (!IndexType.isScannable(index.getType())) {
+      continue;
+    }
+    ArrayList<AbstractExpression> bindings=new ArrayList<AbstractExpression>();
+    List<Integer> coveredGroupByColumns=calculateGroupbyColumnsCovered(index,fromTableAlias,bindings);
+    if (coveredGroupByColumns.size() > maxCoveredGroupByColumns.size()) {
+      maxCoveredGroupByColumns=coveredGroupByColumns;
+      pickedUpIndex=index;
+      maxCoveredBindings=bindings;
+      if (maxCoveredGroupByColumns.size() == groupBys.size()) {
+        foundAllGroupByCoveredIndex=true;
+        break;
+      }
+    }
+  }
+  if (pickedUpIndex == null) {
+    return root;
+  }
+  IndexScanPlanNode indexScanNode=new IndexScanPlanNode(root,null,pickedUpIndex,SortDirectionType.INVALID);
+  indexScanNode.setForGroupingOnly();
+  indexScanNode.setBindings(maxCoveredBindings);
+  gbInfo.m_coveredGroupByColumns=maxCoveredGroupByColumns;
+  gbInfo.m_canBeFullySerialized=foundAllGroupByCoveredIndex;
+  return indexScanNode;
+}
