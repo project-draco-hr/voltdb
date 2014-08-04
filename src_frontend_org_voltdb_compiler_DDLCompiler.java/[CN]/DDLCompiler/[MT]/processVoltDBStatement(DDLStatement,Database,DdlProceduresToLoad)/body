@@ -125,14 +125,19 @@ catch (      Exception ex) {
   statementMatcher=importClassPattern.matcher(statement);
   if (statementMatcher.matches()) {
     if (whichProcs == DdlProceduresToLoad.ALL_DDL_PROCEDURES) {
-      String classNameStr=statementMatcher.group(1);
-      checkIdentifierWithWildcard(classNameStr,statement);
-      ClassNameMatchStatus matchStatus=m_classMatcher.addPattern(classNameStr);
-      if (matchStatus == ClassNameMatchStatus.NO_EXACT_MATCH) {
-        throw m_compiler.new VoltCompilerException(String.format("IMPORT CLASS not found: '%s'",classNameStr));
+      if (!(m_classLoader instanceof InMemoryJarfile.JarLoader)) {
+        String classNameStr=statementMatcher.group(1);
+        checkIdentifierWithWildcard(classNameStr,statement);
+        ClassNameMatchStatus matchStatus=m_classMatcher.addPattern(classNameStr);
+        if (matchStatus == ClassNameMatchStatus.NO_EXACT_MATCH) {
+          throw m_compiler.new VoltCompilerException(String.format("IMPORT CLASS not found: '%s'",classNameStr));
+        }
+ else         if (matchStatus == ClassNameMatchStatus.NO_WILDCARD_MATCH) {
+          m_compiler.addWarn(String.format("IMPORT CLASS no match for wildcarded class: '%s'",classNameStr),ddlStatement.lineNo);
+        }
       }
- else       if (matchStatus == ClassNameMatchStatus.NO_WILDCARD_MATCH) {
-        m_compiler.addWarn(String.format("IMPORT CLASS no match for wildcarded class: '%s'",classNameStr),ddlStatement.lineNo);
+ else {
+        m_compiler.addInfo("Internal cluster recompilation ignoring IMPORT CLASS line: " + statement);
       }
       m_tracker.addImportLine(statement);
     }
