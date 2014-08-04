@@ -1,0 +1,24 @@
+{
+  final Client client=getClient();
+  initializeTables(client);
+  final long partitioningValue=3;
+  ClientResponse resp=client.callProcedure("select_and_insert_into_source",partitioningValue);
+  assertEquals(ClientResponse.SUCCESS,resp.getStatus());
+  validateTableOfScalarLongs(resp.getResults()[0],new long[]{4});
+  String selectOrigRows="select * from source_p1 where bi = ? and abs(ii) < 1000 order by bi, ii";
+  String selectNewRows="select * from source_p1 where bi = ? and abs(ii) > 1000 order by bi, ii";
+  resp=client.callProcedure("@AdHoc",selectOrigRows,partitioningValue);
+  assertEquals(ClientResponse.SUCCESS,resp.getStatus());
+  VoltTable origRows=resp.getResults()[0];
+  resp=client.callProcedure("@AdHoc",selectNewRows,partitioningValue);
+  assertEquals(ClientResponse.SUCCESS,resp.getStatus());
+  VoltTable newRows=resp.getResults()[0];
+  while (origRows.advanceRow()) {
+    assertTrue(newRows.advanceRow());
+    assertEquals(origRows.getLong(0),newRows.getLong(0));
+    assertEquals(origRows.getString(1),newRows.getString(1));
+    assertEquals(origRows.getLong(2) * 1000,newRows.getLong(2));
+    assertEquals(origRows.getLong(3),newRows.getLong(3));
+  }
+  assertFalse(newRows.advanceRow());
+}
