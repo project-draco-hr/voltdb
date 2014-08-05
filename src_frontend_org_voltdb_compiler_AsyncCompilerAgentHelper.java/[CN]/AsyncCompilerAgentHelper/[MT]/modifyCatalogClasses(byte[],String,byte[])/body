@@ -1,0 +1,39 @@
+{
+  InMemoryJarfile jarfile=CatalogUtil.loadInMemoryJarFile(oldCatalogBytes);
+  boolean deletedClasses=false;
+  if (deletePatterns != null) {
+    String[] patterns=deletePatterns.split(",");
+    ClassMatcher matcher=new ClassMatcher();
+    String currentClasses="";
+    for (    String classname : jarfile.getLoader().getClassNames()) {
+      currentClasses=currentClasses.concat(classname + "\n");
+    }
+    matcher.m_classList=currentClasses;
+    for (    String pattern : patterns) {
+      ClassNameMatchStatus status=matcher.addPattern(pattern.trim());
+      if (status == ClassNameMatchStatus.MATCH_FOUND) {
+        deletedClasses=true;
+      }
+    }
+    for (    String classname : matcher.getMatchedClassList()) {
+      jarfile.removeClassFromJar(classname);
+    }
+  }
+  boolean foundClasses=false;
+  if (newClassBytes != null) {
+    InMemoryJarfile newJarfile=new InMemoryJarfile(newClassBytes);
+    for (    Entry<String,byte[]> e : newJarfile.entrySet()) {
+      String filename=e.getKey();
+      if (!filename.endsWith(".class")) {
+        continue;
+      }
+      foundClasses=true;
+      jarfile.put(e.getKey(),e.getValue());
+    }
+  }
+  if (deletedClasses || foundClasses) {
+    VoltCompiler compiler=new VoltCompiler();
+    compiler.compileInMemoryJarfile(jarfile);
+  }
+  return jarfile.getFullJarBytes();
+}
