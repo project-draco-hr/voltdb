@@ -3,10 +3,10 @@
   m_bestAndOnlyPlanWasGenerated=true;
   assert(m_parsedInsert.m_tableList.size() == 1);
   Table targetTable=m_parsedInsert.m_tableList.get(0);
-  final boolean hasSubquery=(m_parsedInsert.getSubquery() != null);
+  StmtSubqueryScan subquery=m_parsedInsert.isInsertWithSubquery() ? m_parsedInsert.getSubqueries().get(0) : null;
   CompiledPlan retval=null;
-  if (hasSubquery) {
-    if (m_parsedInsert.getSubquery().getBestCostPlan() == null) {
+  if (subquery != null) {
+    if (subquery.getBestCostPlan() == null) {
       throw new PlanningErrorException("INSERT INTO ... SELECT subquery could not be planned: " + m_recentErrorMsg);
     }
     InsertSubPlanAssembler subPlanAssembler=new InsertSubPlanAssembler(m_catalogDb,m_parsedInsert,m_partitioning);
@@ -15,7 +15,7 @@
       throw new PlanningErrorException(subPlanAssembler.m_recentErrorMsg);
     }
     assert(m_partitioning.isJoinValid());
-    retval=m_parsedInsert.getSubquery().getBestCostPlan();
+    retval=subquery.getBestCostPlan();
   }
  else {
     retval=new CompiledPlan();
@@ -27,14 +27,14 @@
     if (needsValue && !m_parsedInsert.m_columns.containsKey(col)) {
       throw new PlanningErrorException("Column " + col.getName() + " has no default and is not nullable.");
     }
-    if (col.equals(m_partitioning.getPartitionColForDML()) && !hasSubquery) {
+    if (col.equals(m_partitioning.getPartitionColForDML()) && subquery == null) {
       AbstractExpression expr=m_parsedInsert.getExpressionForPartitioning(col);
       String fullColumnName=targetTable.getTypeName() + "." + col.getTypeName();
       m_partitioning.addPartitioningExpression(fullColumnName,expr,expr.getValueType());
     }
   }
   NodeSchema matSchema=null;
-  if (!hasSubquery) {
+  if (subquery == null) {
     matSchema=new NodeSchema();
   }
   int[] fieldMap=new int[m_parsedInsert.m_columns.size()];
