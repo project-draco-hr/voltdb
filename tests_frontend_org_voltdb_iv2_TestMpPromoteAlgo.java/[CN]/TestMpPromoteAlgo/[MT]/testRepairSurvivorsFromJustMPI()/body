@@ -1,4 +1,5 @@
 {
+  System.out.println("Running testRepairSurvivorsFromJustMPI");
   InitiatorMailbox mailbox=mock(MpInitiatorMailbox.class);
   doReturn(4L).when(mailbox).getHSId();
   ArrayList<Long> masters=new ArrayList<Long>();
@@ -6,17 +7,19 @@
   masters.add(2L);
   MpPromoteAlgo algo=new MpPromoteAlgo(masters,mailbox,"Test");
   long requestId=algo.getRequestId();
-  Future<Long> result=algo.start();
+  Future<Pair<Long,Long>> result=algo.start();
   verify(mailbox,times(1)).send(any(long[].class),any(Iv2RepairLogRequestMessage.class));
-  algo.deliver(makeRealAckResponse(requestId,1L,0,2,txnEgo(1000L),m_hashinatorConfig));
+  long uid=uig.getNextUniqueId();
+  algo.deliver(makeRealAckResponse(requestId,1L,0,2,txnEgo(1000L),m_hashinatorConfig,uid));
   algo.deliver(makeRealFragResponse(requestId,1L,1,2,txnEgo(1000L)));
-  algo.deliver(makeRealAckResponse(requestId,2L,0,1,Long.MAX_VALUE,m_hashinatorConfig));
-  algo.deliver(makeRealAckResponse(requestId,4L,0,2,txnEgo(1000L),m_hashinatorConfig));
+  algo.deliver(makeRealAckResponse(requestId,2L,0,1,Long.MAX_VALUE,m_hashinatorConfig,Long.MIN_VALUE));
+  algo.deliver(makeRealAckResponse(requestId,4L,0,2,txnEgo(1000L),m_hashinatorConfig,uid));
   algo.deliver(makeRealCompleteResponse(requestId,4L,1,2,txnEgo(1000L)));
   List<Long> needsRepair=new ArrayList<Long>();
   needsRepair.add(1L);
   needsRepair.add(2L);
   verify(mailbox,times(1)).repairReplicasWith(eq(needsRepair),any(Iv2RepairLogResponseMessage.class));
-  Long real_result=result.get();
+  Long real_result=result.get().getFirst();
   assertEquals(txnEgo(1000L),(long)real_result);
+  assertEquals(uid,(long)result.get().getSecond());
 }
