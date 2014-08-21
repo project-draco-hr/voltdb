@@ -1,0 +1,65 @@
+{
+  start=System.currentTimeMillis();
+  long insertTimeStart=start;
+  long insertTimeEnd;
+  final JDBCLoaderConfig cfg=new JDBCLoaderConfig();
+  cfg.parse(JDBCLoader.class.getName(),args);
+  config=cfg;
+  configuration();
+  final String[] serverlist=config.servers.split(",");
+  final ClientConfig c_config=new ClientConfig(config.user,config.password);
+  c_config.setProcedureCallTimeout(0);
+  Client csvClient=null;
+  try {
+    csvClient=JDBCLoader.getClient(c_config,serverlist,config.port);
+  }
+ catch (  Exception e) {
+    m_log.error("Error connecting to the servers: " + config.servers,e);
+    System.exit(-1);
+  }
+  assert(csvClient != null);
+  try {
+    long readerTime;
+    long insertCount;
+    long ackCount;
+    final JDBCLoader errHandler=new JDBCLoader();
+    final CSVDataLoader dataLoader;
+    errHandler.launchErrorFlushProcessor();
+    if (config.useSuppliedProcedure) {
+      dataLoader=new CSVTupleDataLoader((ClientImpl)csvClient,config.procedure,errHandler);
+    }
+ else {
+      dataLoader=new CSVBulkDataLoader((ClientImpl)csvClient,config.table,config.batch,errHandler);
+    }
+    JDBCSourceReader.initializeReader(cfg,csvClient);
+    JDBCSourceReader jdbcReader=new JDBCSourceReader(dataLoader,errHandler);
+    Thread readerThread=new Thread(jdbcReader);
+    readerThread.setName("JDBCSourceReader");
+    readerThread.setDaemon(true);
+    readerThread.start();
+    readerThread.join();
+    insertTimeEnd=System.currentTimeMillis();
+    csvClient.close();
+    errHandler.waitForErrorFlushComplete();
+    readerTime=(jdbcReader.m_parsingTime) / 1000000;
+    insertCount=dataLoader.getProcessedRows();
+    ackCount=insertCount - dataLoader.getFailedRows();
+    if (errHandler.hasReachedErrorLimit()) {
+      m_log.warn("The number of failed rows exceeds the configured maximum failed rows: " + config.maxerrors);
+    }
+    if (m_log.isDebugEnabled()) {
+      m_log.debug("Parsing CSV file took " + readerTime + " milliseconds.");
+      m_log.debug("Inserting Data took " + ((insertTimeEnd - insertTimeStart) - readerTime) + " milliseconds.");
+    }
+    m_log.info("Read " + insertCount + " rows from file and successfully inserted "+ ackCount+ " rows (final)");
+    errHandler.produceFiles(ackCount,insertCount);
+    close_cleanup();
+    if (!JDBCLoader.testMode) {
+      System.exit(errHandler.m_errorInfo.isEmpty() ? 0 : -1);
+    }
+  }
+ catch (  Exception ex) {
+    m_log.error("Exception Happened while loading CSV data",ex);
+    System.exit(1);
+  }
+}
