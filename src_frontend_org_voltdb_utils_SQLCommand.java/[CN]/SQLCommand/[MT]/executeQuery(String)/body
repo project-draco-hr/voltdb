@@ -1,9 +1,12 @@
 {
+  m_startTime=System.nanoTime();
   if (ExecuteCall.matcher(query).find()) {
     query=ExecuteCall.matcher(query).replaceFirst("");
     List<String> params=parseQueryProcedureCallParameters(query);
     String procedure=params.remove(0);
-    if (!Procedures.containsKey(procedure))     throw new Exception("Undefined procedure: " + procedure);
+    if (!Procedures.containsKey(procedure)) {
+      throw new Exception("Undefined procedure: " + procedure);
+    }
     List<String> paramTypes=Procedures.get(procedure).get(params.size());
     if (paramTypes == null || params.size() != paramTypes.size()) {
       String expectedSizes="";
@@ -22,11 +25,17 @@
         String paramType=paramTypes.get(i);
         String param=params.get(i);
         if (paramType.equals("bit")) {
-          if (param.equals("yes") || param.equals("true") || param.equals("1"))           objectParams[i]=(byte)1;
- else           objectParams[i]=(byte)0;
+          if (param.equals("yes") || param.equals("true") || param.equals("1")) {
+            objectParams[i]=(byte)1;
+          }
+ else {
+            objectParams[i]=(byte)0;
+          }
         }
  else         if (paramType.equals("tinyint")) {
-          if (IsNull.matcher(param).matches())           objectParams[i]=VoltType.NULL_TINYINT;
+          if (IsNull.matcher(param).matches()) {
+            objectParams[i]=null;
+          }
  else {
             try {
               objectParams[i]=Byte.parseByte(param);
@@ -37,7 +46,9 @@
           }
         }
  else         if (paramType.equals("smallint")) {
-          if (IsNull.matcher(param).matches())           objectParams[i]=VoltType.NULL_SMALLINT;
+          if (IsNull.matcher(param).matches()) {
+            objectParams[i]=null;
+          }
  else {
             try {
               objectParams[i]=Short.parseShort(param);
@@ -48,7 +59,9 @@
           }
         }
  else         if (paramType.equals("int") || paramType.equals("integer")) {
-          if (IsNull.matcher(param).matches())           objectParams[i]=VoltType.NULL_INTEGER;
+          if (IsNull.matcher(param).matches()) {
+            objectParams[i]=null;
+          }
  else {
             try {
               objectParams[i]=Integer.parseInt(param);
@@ -59,7 +72,9 @@
           }
         }
  else         if (paramType.equals("bigint")) {
-          if (IsNull.matcher(param).matches())           objectParams[i]=VoltType.NULL_BIGINT;
+          if (IsNull.matcher(param).matches()) {
+            objectParams[i]=null;
+          }
  else {
             try {
               objectParams[i]=Long.parseLong(param);
@@ -70,7 +85,9 @@
           }
         }
  else         if (paramType.equals("float")) {
-          if (IsNull.matcher(param).matches())           objectParams[i]=VoltType.NULL_FLOAT;
+          if (IsNull.matcher(param).matches()) {
+            objectParams[i]=null;
+          }
  else {
             try {
               objectParams[i]=Double.parseDouble(param);
@@ -81,16 +98,24 @@
           }
         }
  else         if (paramType.equals("varchar")) {
-          if (IsNull.matcher(param).matches())           objectParams[i]=VoltType.NULL_STRING_OR_VARBINARY;
- else           objectParams[i]=Unquote.matcher(param).replaceAll("").replace("''","'");
+          if (IsNull.matcher(param).matches()) {
+            objectParams[i]=null;
+          }
+ else {
+            objectParams[i]=Unquote.matcher(param).replaceAll("").replace("''","'");
+          }
         }
  else         if (paramType.equals("decimal")) {
-          if (IsNull.matcher(param).matches())           objectParams[i]=VoltType.NULL_DECIMAL;
- else           objectParams[i]=new BigDecimal(param);
+          if (IsNull.matcher(param).matches()) {
+            objectParams[i]=null;
+          }
+ else {
+            objectParams[i]=new BigDecimal(param);
+          }
         }
  else         if (paramType.equals("timestamp")) {
           if (IsNull.matcher(param).matches()) {
-            objectParams[i]=VoltType.NULL_TIMESTAMP;
+            objectParams[i]=null;
           }
  else {
             objectParams[i]=DateParser.parse(param.replaceAll("^\"|\"$","").replaceAll("^'|'$",""));
@@ -102,30 +127,52 @@
         }
  else         if (paramType.equals("sysinfoselector")) {
           String p=preprocessParam(param);
-          if (!SysInfoSelectors.contains(p))           throw new Exception("Invalid SysInfo Selector: " + param);
           objectParams[i]=p;
         }
  else         if (paramType.equals("metadataselector")) {
           String p=preprocessParam(param);
-          if (!MetaDataSelectors.contains(p))           throw new Exception("Invalid Meta-Data Selector: " + param);
           objectParams[i]=p;
         }
  else         if (paramType.equals("varbinary") || paramType.equals("tinyint_array")) {
-          if (IsNull.matcher(param).matches())           objectParams[i]=VoltType.NULL_STRING_OR_VARBINARY;
+          if (IsNull.matcher(param).matches()) {
+            objectParams[i]=null;
+          }
  else {
-            if (param.length() % 2 == 1)             throw new Exception("Invalid varbinary value: input must have an even amount of characters to be a valid hex string.");
+            if (param.length() % 2 == 1) {
+              throw new Exception("Invalid varbinary value: input must have an even amount of characters to be a valid hex string.");
+            }
             String val=Unquote.matcher(param).replaceAll("").replace("''","'");
             objectParams[i]=Encoder.hexDecode(val);
           }
         }
- else         throw new Exception("Unsupported Data Type: " + paramType);
+ else {
+          throw new Exception("Unsupported Data Type: " + paramType);
+        }
       }
     }
     if (procedure.equals("@UpdateApplicationCatalog")) {
-      printResponse(VoltDB.updateApplicationCatalog(new File((String)objectParams[0]),new File((String)objectParams[1])));
+      File catfile=null;
+      if (objectParams[0] != null) {
+        catfile=new File((String)objectParams[0]);
+      }
+      File depfile=null;
+      if (objectParams[1] != null) {
+        depfile=new File((String)objectParams[1]);
+      }
+      printResponse(VoltDB.updateApplicationCatalog(catfile,depfile));
       Procedures.clear();
       loadSystemProcedures();
-      loadStoredProcedures(Procedures);
+      loadStoredProcedures(Procedures,Classlist);
+    }
+ else     if (procedure.equals("@UpdateClasses")) {
+      File jarfile=null;
+      if (objectParams[0] != null) {
+        jarfile=new File((String)objectParams[0]);
+      }
+      printResponse(VoltDB.updateClasses(jarfile,(String)objectParams[1]));
+      Procedures.clear();
+      loadSystemProcedures();
+      loadStoredProcedures(Procedures,Classlist);
     }
  else {
       printResponse(VoltDB.callProcedure(procedure,objectParams));
@@ -144,6 +191,11 @@
  else {
     query=StripCRLF.matcher(query).replaceAll(" ");
     printResponse(VoltDB.callProcedure("@AdHoc",query));
+    if (SQLLexer.extractDDLToken(query) != null) {
+      Procedures.clear();
+      loadSystemProcedures();
+      loadStoredProcedures(Procedures,Classlist);
+    }
   }
   return;
 }

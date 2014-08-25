@@ -10,111 +10,32 @@
   if (config.warmup > 0) {
     System.out.println("Warming up...");
     for (int i=0; i < config.warmup; i++) {
-      client.callProcedure(new NullCallback(),"ids_insert",i,i);
-      client.callProcedure(new NullCallback(),"idsWithMatView_insert",i,i);
+      client.callProcedure(new NullCallback(),"ids_insert",i,i,i);
+      client.callProcedure(new NullCallback(),"idsWithMatView_insert",i,i,i);
+      client.callProcedure(new NullCallback(),"idsWithMinMatView_insert",i,i,i);
     }
     client.drain();
     for (int i=0; i < config.warmup; i++) {
       client.callProcedure(new NullCallback(),"ids_delete",i);
       client.callProcedure(new NullCallback(),"idsWithMatView_delete",i);
+      client.callProcedure(new NullCallback(),"idsWithMinMatView_delete",i);
     }
     client.drain();
   }
-  int grp=1;
   FileWriter fw=null;
   if ((config.statsfile != null) && (config.statsfile.length() != 0)) {
     fw=new FileWriter(config.statsfile);
   }
-  fullStatsContext.fetchAndResetBaseline();
-  periodicStatsContext.fetchAndResetBaseline();
-  benchmarkStartTS=System.currentTimeMillis();
-  schedulePeriodicStats();
   System.out.println("\nRunning benchmark...\n");
-  System.out.println("\n\nInserting into table w/ materialized view...\n");
-  if (config.group > 0) {
-    for (int i=0; i < config.txn; i++) {
-      client.callProcedure(new NullCallback(),"idsWithMatView_insert",i,grp);
-      if (grp == config.group) {
-        grp=1;
-      }
- else {
-        grp++;
-      }
-    }
-  }
- else {
-    for (int i=0; i < config.txn; i++) {
-      client.callProcedure(new NullCallback(),"idsWithMatView_insert",i,i);
-    }
-  }
-  timer.cancel();
-  client.drain();
-  grp=1;
-  if ((config.statsfile == null) || (config.statsfile.length() == 0)) {
-    printResults("idsWithMatView_insert");
-  }
- else {
-    printResults("idsWithMatView_insert",fw,"Insert w/ MV");
-  }
+  runHalf("matView",fw);
   System.out.print(HORIZONTAL_RULE);
-  benchmarkStartTS=System.currentTimeMillis();
-  schedulePeriodicStats();
-  System.out.println("\n\nDeleting from table w/ materialized view...\n");
-  for (int i=0; i < config.txn; i++) {
-    client.callProcedure(new NullCallback(),"idsWithMatView_delete",i);
-  }
-  timer.cancel();
-  client.drain();
-  if ((config.statsfile == null) || (config.statsfile.length() == 0)) {
-    printResults("idsWithMatView_delete");
-  }
- else {
-    printResults("idsWithMatView_delete",fw,"Delete w/ MV");
-  }
+  runHalf("noMatView",fw);
   System.out.print(HORIZONTAL_RULE);
-  benchmarkStartTS=System.currentTimeMillis();
-  schedulePeriodicStats();
-  System.out.println("\n\nInserting into table w/o materialized view...\n");
-  if (config.group > 0) {
-    for (int i=0; i < config.txn; i++) {
-      client.callProcedure(new NullCallback(),"ids_insert",i,grp);
-      if (grp == config.group) {
-        grp=1;
-      }
- else {
-        grp++;
-      }
-    }
-  }
- else {
-    for (int i=0; i < config.txn; i++) {
-      client.callProcedure(new NullCallback(),"ids_insert",i,i);
-    }
-  }
-  timer.cancel();
-  client.drain();
-  if ((config.statsfile == null) || (config.statsfile.length() == 0)) {
-    printResults("ids_insert");
-  }
- else {
-    printResults("ids_insert",fw,"Insert w/o MV");
-  }
-  System.out.print(HORIZONTAL_RULE);
-  benchmarkStartTS=System.currentTimeMillis();
-  schedulePeriodicStats();
-  System.out.println("\n\nDeleting from table w/o materialized view...\n");
-  for (int i=0; i < config.txn; i++) {
-    client.callProcedure(new NullCallback(),"ids_delete",i);
-  }
-  timer.cancel();
-  client.drain();
-  if ((config.statsfile == null) || (config.statsfile.length() == 0)) {
-    printResults("ids_delete");
-  }
- else {
-    printResults("ids_delete",fw,"Delete w/o MV");
+  insertThroughput=insertExecute=deleteThroughput=deleteExecute=0;
+  runHalf("minMatView",fw);
+  benchmarkActive=false;
+  if ((config.statsfile != null) && (config.statsfile.length() != 0)) {
     fw.close();
   }
-  benchmarkActive=false;
   client.close();
 }

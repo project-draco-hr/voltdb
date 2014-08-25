@@ -1,0 +1,34 @@
+{
+  List<StmtSubqueryScan> subqueryNodes=parsedStmt.getSubqueries();
+  ParsedResultAccumulator subQueryResult=null;
+  if (!subqueryNodes.isEmpty()) {
+    subQueryResult=getBestCostPlanForSubQueries(subqueryNodes);
+  }
+  setupForNewPlans(parsedStmt);
+  CompiledPlan rawplan=null;
+  while (true) {
+    rawplan=getNextPlan();
+    if (rawplan == null)     break;
+    m_planSelector.considerCandidatePlan(rawplan,parsedStmt);
+  }
+  CompiledPlan retval=m_planSelector.m_bestPlan;
+  if (subQueryResult != null && retval != null) {
+    boolean orderIsDeterministic;
+    if (subQueryResult.m_orderIsDeterministic) {
+      orderIsDeterministic=retval.isOrderDeterministic();
+    }
+ else {
+      orderIsDeterministic=retval.isOrderDeterministic() && parsedStmt.isOrderDeterministicInSpiteOfUnorderedSubqueries();
+    }
+    boolean hasLimitOrOffset=subQueryResult.m_hasLimitOrOffset || retval.hasLimitOrOffset();
+    retval.statementGuaranteesDeterminism(hasLimitOrOffset,orderIsDeterministic);
+    retval.rootPlanGraph=connectChildrenBestPlans(retval.rootPlanGraph);
+  }
+  if (!coordinateResult) {
+    retval.rootPlanGraph=StmtSubqueryScan.removeCoordinatorSendReceivePair(retval.rootPlanGraph);
+  }
+  if (retval != null && retval.hasLimitOrOffset() && !retval.isOrderDeterministic() && !retval.getReadOnly()) {
+    throw new PlanningErrorException("DML statement manipulates data in content non-deterministic way " + "(this may happen on INSERT INTO ... SELECT, for example).");
+  }
+  return retval;
+}

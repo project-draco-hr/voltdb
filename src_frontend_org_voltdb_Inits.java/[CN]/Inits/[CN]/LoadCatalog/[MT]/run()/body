@@ -10,17 +10,21 @@ catch (    Exception e) {
       VoltDB.crashLocalVoltDB("System was interrupted while waiting for a catalog.",false,null);
     }
   }
- while (catalogStuff == null);
+ while (catalogStuff == null || catalogStuff.catalogBytes.length == 0);
+  String serializedCatalog=null;
+  byte[] catalogJarBytes=catalogStuff.catalogBytes;
   try {
-    Pair<String,String> loadResults=CatalogUtil.loadAndUpgradeCatalogFromJar(catalogStuff.bytes,hostLog);
-    m_rvdb.m_serializedCatalog=loadResults.getFirst();
+    Pair<InMemoryJarfile,String> loadResults=CatalogUtil.loadAndUpgradeCatalogFromJar(catalogStuff.catalogBytes);
+    serializedCatalog=CatalogUtil.getSerializedCatalogStringFromJar(loadResults.getFirst());
+    catalogJarBytes=loadResults.getFirst().getFullJarBytes();
   }
  catch (  IOException e) {
     VoltDB.crashLocalVoltDB("Unable to load catalog",false,e);
   }
-  if ((m_rvdb.m_serializedCatalog == null) || (m_rvdb.m_serializedCatalog.length() == 0))   VoltDB.crashLocalVoltDB("Catalog loading failure",false,null);
+  if ((serializedCatalog == null) || (serializedCatalog.length() == 0))   VoltDB.crashLocalVoltDB("Catalog loading failure",false,null);
   Catalog catalog=new Catalog();
-  catalog.execute(m_rvdb.m_serializedCatalog);
+  catalog.execute(serializedCatalog);
+  serializedCatalog=null;
   try {
     long result=CatalogUtil.compileDeployment(catalog,m_deployment,true,false);
     if (result < 0) {
@@ -33,8 +37,7 @@ catch (    Exception e) {
     VoltDB.crashLocalVoltDB("Error parsing deployment file",true,e);
   }
   try {
-    m_rvdb.m_serializedCatalog=catalog.serialize();
-    m_rvdb.m_catalogContext=new CatalogContext(catalogStuff.txnId,catalogStuff.uniqueId,catalog,catalogStuff.bytes,m_rvdb.m_catalogContext.deploymentHash,catalogStuff.version,-1);
+    m_rvdb.m_catalogContext=new CatalogContext(catalogStuff.txnId,catalogStuff.uniqueId,catalog,catalogJarBytes,m_rvdb.m_catalogContext.deploymentHash,catalogStuff.version,-1);
   }
  catch (  Exception e) {
     VoltDB.crashLocalVoltDB("Error agreeing on starting catalog version",true,e);

@@ -32,17 +32,17 @@
       }
     }
     System.out.println("Connected.  Starting benchmark.");
+    final ClientStatsContext fullStatsContext=((IVoltDBConnection)Con).createStatsContext();
+    periodicStatsContext=((IVoltDBConnection)Con).createStatsContext();
+    benchmarkStartTS=System.currentTimeMillis();
     Timer timer=new Timer();
-    timer.scheduleAtFixedRate(new TimerTask(){
+    TimerTask statsPrinting=new TimerTask(){
       @Override public void run(){
-        try {
-          System.out.print(Con.unwrap(IVoltDBConnection.class).getStatistics(procedure));
-        }
- catch (        Exception x) {
-        }
+        printStatistics();
       }
     }
-,displayInterval * 1000l,displayInterval * 1000l);
+;
+    timer.scheduleAtFixedRate(statsPrinting,displayInterval * 1000l,displayInterval * 1000l);
     ArrayList<Thread> threads=new ArrayList<Thread>();
     for (int i=0; i < threadCount; i++)     threads.add(new Thread(new ClientThread(url,procedure,poolSize,wait,duration)));
     for (    Thread thread : threads)     thread.start();
@@ -50,8 +50,8 @@
     timer.cancel();
     System.out.printf("-------------------------------------------------------------------------------------\n" + " Benchmark Results\n" + "-------------------------------------------------------------------------------------\n\n"+ "A total of %d calls was received...\n"+ " - %,9d Succeeded\n"+ " - %,9d Failed (Transaction Error)\n"+ "\n\n"+ "-------------------------------------------------------------------------------------\n",TrackingResults.get(0) + TrackingResults.get(1),TrackingResults.get(0),TrackingResults.get(1));
     System.out.println("\n\n-------------------------------------------------------------------------------------\n" + " System Statistics\n" + "-------------------------------------------------------------------------------------\n\n");
-    System.out.print(Con.unwrap(IVoltDBConnection.class).getStatistics(procedure).toString(false));
-    Con.unwrap(IVoltDBConnection.class).saveStatistics(csv);
+    System.out.print(fullStatsContext.getStatsForProcedure(procedure).toString());
+    Con.unwrap(IVoltDBConnection.class).saveStatistics(fullStatsContext.getStats(),csv);
     Con.close();
   }
  catch (  Exception x) {

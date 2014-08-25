@@ -1,49 +1,32 @@
 {
   AggregatePlanNode aggNode=null;
-  boolean containsAggregateExpression=m_parsedSelect.hasAggregateExpression();
-  if (containsAggregateExpression || m_parsedSelect.isGrouped()) {
+  if (m_parsedSelect.hasAggregateOrGroupby()) {
     AggregatePlanNode topAggNode=null;
+    IndexGroupByInfo gbInfo=new IndexGroupByInfo();
     if (root.getPlanNodeType() == PlanNodeType.RECEIVE) {
       AbstractPlanNode candidate=root.getChild(0).getChild(0);
-      if (candidate.getPlanNodeType() == PlanNodeType.SEQSCAN && m_parsedSelect.isGrouped()) {
-        candidate=indexAccessForGroupByExprs(candidate);
-        if (candidate.getPlanNodeType() == PlanNodeType.INDEXSCAN) {
-          candidate.clearParents();
-          root.getChild(0).clearChildren();
-          root.getChild(0).addAndLinkChild(candidate);
-        }
-      }
+      gbInfo.m_multiPartition=true;
+      switchToIndexScanForGroupBy(candidate,gbInfo);
     }
- else     if (root.getPlanNodeType() == PlanNodeType.SEQSCAN && m_parsedSelect.isGrouped()) {
-      root=indexAccessForGroupByExprs(root);
+ else     if (switchToIndexScanForGroupBy(root,gbInfo)) {
+      root=gbInfo.m_indexAccess;
     }
-    boolean needHashAgg=m_parsedSelect.isGrouped();
+    boolean needHashAgg=gbInfo.needHashAggregator(root);
     if (needHashAgg) {
-      boolean predeterminedOrdering=false;
-      if (root instanceof IndexScanPlanNode) {
-        if (((IndexScanPlanNode)root).getSortDirection() == SortDirectionType.INVALID) {
-          if (((IndexScanPlanNode)root).isForGroupingOnly()) {
-            needHashAgg=false;
-          }
+      if (m_parsedSelect.m_mvFixInfo.needed()) {
+        aggNode=new HashAggregatePlanNode();
+      }
+ else {
+        if (gbInfo.isChangedToSerialAggregate()) {
+          assert(root instanceof ReceivePlanNode);
+          aggNode=new AggregatePlanNode();
+        }
+ else         if (gbInfo.isChangedToPartialAggregate()) {
+          aggNode=new PartialAggregatePlanNode(gbInfo.m_coveredGroupByColumns);
         }
  else {
-          predeterminedOrdering=true;
+          aggNode=new HashAggregatePlanNode();
         }
-      }
- else       if (root instanceof AbstractJoinPlanNode) {
-        if (((AbstractJoinPlanNode)root).getSortDirection() != SortDirectionType.INVALID) {
-          predeterminedOrdering=true;
-        }
-      }
-      if (predeterminedOrdering) {
-        if (m_parsedSelect.groupByIsAnOrderByPermutation()) {
-          needHashAgg=false;
-        }
-      }
-    }
-    if (needHashAgg) {
-      aggNode=new HashAggregatePlanNode();
-      if (!m_parsedSelect.m_mvFixInfo.needed()) {
         topAggNode=new HashAggregatePlanNode();
       }
     }
@@ -65,9 +48,7 @@
         ExpressionType agg_expression_type=rootExpr.getExpressionType();
         agg_input_expr=rootExpr.getLeft();
         TupleValueExpression tve=new TupleValueExpression("VOLT_TEMP_TABLE","VOLT_TEMP_TABLE","",col.alias,outputColumnIndex);
-        tve.setValueType(rootExpr.getValueType());
-        tve.setValueSize(rootExpr.getValueSize());
-        tve.setInBytes(rootExpr.getInBytes());
+        tve.setTypeSizeBytes(rootExpr.getValueType(),rootExpr.getValueSize(),rootExpr.getInBytes());
         boolean is_distinct=((AggregateExpression)rootExpr).isDistinct();
         aggNode.addAggregate(agg_expression_type,is_distinct,outputColumnIndex,agg_input_expr);
         schema_col=new SchemaColumn("VOLT_TEMP_TABLE","VOLT_TEMP_TABLE","",col.alias,tve);
@@ -123,15 +104,14 @@
         topAggNode.setOutputSchema(agg_schema);
       }
     }
-    NodeSchema newSchema=m_parsedSelect.getFinalProjectionSchema();
-    root=pushDownAggregate(root,aggNode,topAggNode,m_parsedSelect.hasComplexAgg(),newSchema,!m_parsedSelect.hasPartitionColumnInGroupby());
+    root=pushDownAggregate(root,aggNode,topAggNode,m_parsedSelect);
   }
   if (m_parsedSelect.isGrouped()) {
     if (m_parsedSelect.displayColumnsContainAllGroupByColumns()) {
       return root;
     }
   }
- else   if (containsAggregateExpression) {
+ else   if (m_parsedSelect.hasAggregateExpression()) {
     return root;
   }
   return handleDistinct(root);

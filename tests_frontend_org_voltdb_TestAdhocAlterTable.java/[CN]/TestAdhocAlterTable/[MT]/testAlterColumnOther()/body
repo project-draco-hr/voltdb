@@ -1,0 +1,82 @@
+{
+  String pathToCatalog=Configuration.getPathToCatalogForTest("adhocddl.jar");
+  String pathToDeployment=Configuration.getPathToCatalogForTest("adhocddl.xml");
+  VoltProjectBuilder builder=new VoltProjectBuilder();
+  builder.addLiteralSchema("create table FOO (" + "ID integer not null," + "VAL varchar(50), "+ "constraint PK_TREE primary key (ID)"+ ");\n");
+  builder.addPartitionInfo("FOO","ID");
+  builder.setUseAdhocSchema(true);
+  boolean success=builder.compile(pathToCatalog,2,1,0);
+  assertTrue("Schema compilation failed",success);
+  MiscUtils.copyFile(builder.getPathToDeployment(),pathToDeployment);
+  VoltDB.Configuration config=new VoltDB.Configuration();
+  config.m_pathToCatalog=pathToCatalog;
+  config.m_pathToDeployment=pathToDeployment;
+  try {
+    startSystem(config);
+    assertTrue(verifyTableColumnDefault("FOO","VAL",null));
+    try {
+      m_client.callProcedure("@AdHoc","alter table FOO alter VAL set default 'goats';");
+    }
+ catch (    ProcCallException pce) {
+      fail("Shouldn't fail");
+    }
+    assertTrue(verifyTableColumnDefault("FOO","VAL","'goats'"));
+    assertTrue(isColumnNullable("FOO","VAL"));
+    boolean threw=false;
+    try {
+      m_client.callProcedure("@AdHoc","alter table FOO alter VAL set not null;");
+    }
+ catch (    ProcCallException pce) {
+      threw=true;
+    }
+    assertTrue("Shouldn't be able to declare not null on existing column",threw);
+    assertTrue(isColumnNullable("FOO","VAL"));
+    try {
+      m_client.callProcedure("@AdHoc","alter table FOO alter VAL set default NULL;");
+    }
+ catch (    ProcCallException pce) {
+      fail("Shouldn't fail");
+    }
+    assertTrue(verifyTableColumnDefault("FOO","VAL",null));
+    assertTrue(isColumnNullable("FOO","VAL"));
+    assertFalse(isColumnNullable("FOO","ID"));
+    threw=false;
+    try {
+      m_client.callProcedure("@AdHoc","alter table FOO alter ID set null;");
+    }
+ catch (    ProcCallException pce) {
+      threw=true;
+    }
+    assertTrue("Shouldn't be able to make the primary key nullable",threw);
+    assertFalse(isColumnNullable("FOO","ID"));
+    assertTrue(findIndexInSystemCatalogResults("VOLTDB_AUTOGEN_CONSTRAINT_IDX_PK_TREE"));
+    assertTrue(verifyIndexUniqueness("VOLTDB_AUTOGEN_CONSTRAINT_IDX_PK_TREE",true));
+    try {
+      m_client.callProcedure("@AdHoc","alter table FOO add unique (ID);");
+    }
+ catch (    ProcCallException pce) {
+      fail("Shouldn't fail to add unique constraint to column with unique constraint");
+    }
+    assertTrue(findIndexInSystemCatalogResults("VOLTDB_AUTOGEN_CONSTRAINT_IDX_PK_TREE"));
+    assertTrue(verifyIndexUniqueness("VOLTDB_AUTOGEN_CONSTRAINT_IDX_PK_TREE",true));
+    try {
+      m_client.callProcedure("@AdHoc","alter table FOO drop constraint PK_TREE;");
+    }
+ catch (    ProcCallException pce) {
+      fail("Shouldn't fail to drop primary key constraint");
+    }
+    assertTrue(findIndexInSystemCatalogResults("VOLTDB_AUTOGEN_IDX_CT_FOO_ID"));
+    assertTrue(verifyIndexUniqueness("VOLTDB_AUTOGEN_IDX_CT_FOO_ID",true));
+    threw=false;
+    try {
+      m_client.callProcedure("@AdHoc","alter table FOO add constraint PK_TREE primary key (VAL);");
+    }
+ catch (    ProcCallException pce) {
+      threw=true;
+    }
+    assertTrue("Shouldn't be able to add a primary key on nullable column",threw);
+  }
+  finally {
+    teardownSystem();
+  }
+}

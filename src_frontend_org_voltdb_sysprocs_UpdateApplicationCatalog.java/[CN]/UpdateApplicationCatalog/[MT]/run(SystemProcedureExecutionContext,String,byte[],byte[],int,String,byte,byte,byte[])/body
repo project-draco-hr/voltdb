@@ -9,7 +9,7 @@
     log.debug("To: catalog hash: " + Encoder.hexEncode(catalogHash).substring(0,10) + ", deployment hash: "+ Encoder.hexEncode(deploymentHash).substring(0,10));
   }
  else {
-    if (catalogStuff.version == (expectedCatalogVersion + 1) && (Arrays.equals(catalogStuff.catalogHash,catalogHash) && Arrays.equals(catalogStuff.deploymentHash,deploymentHash))) {
+    if (catalogStuff.version == (expectedCatalogVersion + 1) && (Arrays.equals(catalogStuff.getCatalogHash(),catalogHash) && Arrays.equals(catalogStuff.getDeploymentHash(),deploymentHash))) {
       log.debug("Restarting catalog update: " + catalogStuff.toString());
     }
  else {
@@ -18,9 +18,15 @@
       throw new VoltAbortException(errmsg);
     }
   }
-  CatalogUtil.setCatalogToZK(zk,expectedCatalogVersion + 1,getVoltPrivateRealTransactionIdDontUseMe(),getUniqueId(),catalogHash,deploymentHash,catalogBytes);
-  if (deploymentString != null) {
-    zk.setData(VoltZK.deploymentBytes,deploymentString.getBytes("UTF-8"),-1,new ZKUtil.StatCallback(),null);
+  byte[] deploymentBytes=deploymentString.getBytes("UTF-8");
+  CatalogUtil.updateCatalogToZK(zk,expectedCatalogVersion + 1,getVoltPrivateRealTransactionIdDontUseMe(),getUniqueId(),catalogBytes,deploymentBytes);
+  try {
+    performCatalogVerifyWork(catalogDiffCommands,expectedCatalogVersion,requiresSnapshotIsolation);
+  }
+ catch (  VoltAbortException vae) {
+    log.debug("Catalog update cannot be applied.  Rolling back ZK state");
+    CatalogUtil.updateCatalogToZK(zk,catalogStuff.version,catalogStuff.txnId,catalogStuff.uniqueId,catalogStuff.catalogBytes,catalogStuff.deploymentBytes);
+    throw vae;
   }
   performCatalogUpdateWork(catalogDiffCommands,expectedCatalogVersion,requiresSnapshotIsolation);
   VoltTable result=new VoltTable(VoltSystemProcedure.STATUS_SCHEMA);

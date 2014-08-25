@@ -3,40 +3,36 @@
   int columnDrops;
   int columnAdds;
   int columnGrows;
-  int columnReorders;
+  int[] pkeyIndexes=table.m_extraMetadata.pkeyIndexes.clone();
+  int partitionColIndex=table.m_extraMetadata.partitionColIndex;
   do {
     columnDrops=Math.min((int)(Math.abs(rand.nextGaussian()) * 1.5),table.m_colCount);
     columnAdds=Math.min((int)(Math.abs(rand.nextGaussian()) * 1.5),table.m_colCount);
     columnGrows=Math.min((int)(Math.abs(rand.nextGaussian()) * 1.5),table.m_colCount);
-    columnReorders=Math.min((int)(Math.abs(rand.nextGaussian()) * 1.5),table.m_colCount);
-    totalMutations=columnDrops + columnAdds + columnGrows+ columnReorders;
+    totalMutations=columnDrops + columnAdds + columnGrows;
   }
  while ((allowIdenty == false) && (totalMutations == 0));
-  System.out.printf("Mutations: %d %d %d %d\n",columnDrops,columnAdds,columnGrows,columnReorders);
+  System.out.printf("Mutations: %d %d %d\n",columnDrops,columnAdds,columnGrows);
   ArrayList<VoltTable.ColumnInfo> columns=new ArrayList<VoltTable.ColumnInfo>();
-  for (int i=0; i < table.m_originalColumnInfos.length; i++) {
-    columns.add(table.m_originalColumnInfos[i].clone());
+  for (int i=0; i < table.m_extraMetadata.originalColumnInfos.length; i++) {
+    columns.add(table.m_extraMetadata.originalColumnInfos[i].clone());
   }
   int tries=columns.size() * 2;
   while ((columnDrops > 0) && (tries-- > 0)) {
     int indexToRemove=rand.nextInt(columns.size());
     VoltTable.ColumnInfo toRemove=columns.get(indexToRemove);
-    if (toRemove.pkeyIndex == -1) {
+    if (!isAPkeyColumn(table,toRemove)) {
       columnDrops--;
       columns.remove(indexToRemove);
-    }
-  }
-  while (columnReorders > 0) {
-    if (columns.size() > 1) {
-      int srcIndex=rand.nextInt(columns.size());
-      int destIndex;
-      do {
-        destIndex=rand.nextInt(columns.size());
+      if ((partitionColIndex >= 0) && (partitionColIndex > indexToRemove)) {
+        partitionColIndex--;
       }
- while (destIndex == srcIndex);
-      columns.add(destIndex,columns.remove(srcIndex));
+      for (int i=0; i < pkeyIndexes.length; i++) {
+        if (pkeyIndexes[i] > indexToRemove) {
+          pkeyIndexes[i]--;
+        }
+      }
     }
-    columnReorders--;
   }
   int newColIndex=getNextColumnIndex(table);
   while (columnAdds > 0) {
@@ -44,12 +40,20 @@
     VoltTable.ColumnInfo toAdd=getRandomColumn(String.format("NEW%d",newColIndex++),rand);
     columnAdds--;
     columns.add(indexToAdd,toAdd);
+    if ((partitionColIndex >= 0) && (partitionColIndex >= indexToAdd)) {
+      partitionColIndex++;
+    }
+    for (int i=0; i < pkeyIndexes.length; i++) {
+      if (pkeyIndexes[i] >= indexToAdd) {
+        pkeyIndexes[i]++;
+      }
+    }
   }
   tries=columns.size() * 2;
   while ((columnGrows > 0) && (tries-- > 0)) {
     int indexToGrow=rand.nextInt(columns.size());
     VoltTable.ColumnInfo toGrow=columns.get(indexToGrow);
-    if (toGrow.pkeyIndex != -1)     continue;
+    if (isAPkeyColumn(table,toGrow))     continue;
     toGrow=growColumn(toGrow);
     if (toGrow != null) {
       columns.remove(indexToGrow);
@@ -57,7 +61,7 @@
       columnGrows--;
     }
   }
-  VoltTable t2=new VoltTable(columns.toArray(new VoltTable.ColumnInfo[0]));
-  t2.m_name=table.m_name;
-  return t2;
+  VoltTable.ColumnInfo[] columnArray=columns.toArray(new VoltTable.ColumnInfo[0]);
+  VoltTable.ExtraMetadata extraMetadata=new VoltTable.ExtraMetadata(table.m_extraMetadata.name,partitionColIndex,pkeyIndexes,columnArray);
+  return new VoltTable(extraMetadata,columnArray,columnArray.length);
 }

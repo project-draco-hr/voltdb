@@ -1,13 +1,21 @@
 {
-  m_numSources++;
-  ExportDataSource source=new ExportDataSource(m_onSourceDrained,adFile);
+  ExportDataSource source=new ExportDataSource(m_onSourceDrained,adFile,isContinueingGeneration());
   partitions.add(source.getPartitionId());
-  m_timestamp=source.getGeneration();
+  if (source.getGeneration() != this.m_timestamp) {
+    throw new IOException("Failed to load generation from disk invalid data source generation found.");
+  }
   exportLog.info("Creating ExportDataSource for " + adFile + " table "+ source.getTableName()+ " signature "+ source.getSignature()+ " partition id "+ source.getPartitionId()+ " bytes "+ source.sizeInBytes());
-  HashMap<String,ExportDataSource> dataSourcesForPartition=m_dataSourcesByPartition.get(source.getPartitionId());
+  Map<String,ExportDataSource> dataSourcesForPartition=m_dataSourcesByPartition.get(source.getPartitionId());
   if (dataSourcesForPartition == null) {
     dataSourcesForPartition=new HashMap<String,ExportDataSource>();
     m_dataSourcesByPartition.put(source.getPartitionId(),dataSourcesForPartition);
   }
+ else {
+    if (dataSourcesForPartition.get(source.getSignature()) != null) {
+      exportLog.warn("On Disk generation with same table, partition already exists using known data source.");
+      return;
+    }
+  }
   dataSourcesForPartition.put(source.getSignature(),source);
+  m_numSources++;
 }
