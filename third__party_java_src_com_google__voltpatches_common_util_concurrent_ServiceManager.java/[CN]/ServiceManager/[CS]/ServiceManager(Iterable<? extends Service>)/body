@@ -4,14 +4,13 @@
     logger.log(Level.WARNING,"ServiceManager configured with no services.  Is your application configured properly?",new EmptyServiceManagerWarning());
     copy=ImmutableList.<Service>of(new NoOpService());
   }
-  this.state=new ServiceManagerState(copy.size());
-  ImmutableMap.Builder<Service,ServiceListener> builder=ImmutableMap.builder();
-  Executor executor=MoreExecutors.sameThreadExecutor();
+  this.state=new ServiceManagerState(copy);
+  this.services=copy;
+  WeakReference<ServiceManagerState> stateReference=new WeakReference<ServiceManagerState>(state);
+  Executor sameThreadExecutor=MoreExecutors.sameThreadExecutor();
   for (  Service service : copy) {
-    ServiceListener listener=new ServiceListener(service,state);
-    service.addListener(listener,executor);
-    checkArgument(service.state() == State.NEW,"Can only manage NEW services, %s",service);
-    builder.put(service,listener);
+    service.addListener(new ServiceListener(service,stateReference),sameThreadExecutor);
+    checkArgument(service.state() == NEW,"Can only manage NEW services, %s",service);
   }
-  this.services=builder.build();
+  this.state.markReady();
 }
