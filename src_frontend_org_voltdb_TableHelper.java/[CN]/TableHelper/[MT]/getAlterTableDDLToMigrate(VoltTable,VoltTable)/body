@@ -1,0 +1,36 @@
+{
+  assert(t1.m_extraMetadata.name.equals(t2.m_extraMetadata.name));
+  StringBuilder ddl=new StringBuilder();
+  for (  VoltTable.ColumnInfo t1Column : t1.m_extraMetadata.originalColumnInfos) {
+    boolean found=false;
+    for (    VoltTable.ColumnInfo t2Column : t2.m_extraMetadata.originalColumnInfos) {
+      if (t1Column.name.equals(t2Column.name)) {
+        found=true;
+        if (!t1Column.equals(t2Column)) {
+          ddl.append(String.format("ALTER TABLE %s ALTER COLUMN %s;\n",t1.m_extraMetadata.name,getDDLColumnDefinition(t2,t2Column)));
+        }
+      }
+    }
+    if (!found) {
+      ddl.append(String.format("ALTER TABLE %s DROP %s;\n",t1.m_extraMetadata.name,t1Column.name));
+    }
+  }
+  for (int i=t2.m_extraMetadata.originalColumnInfos.length - 1; i >= 0; i--) {
+    VoltTable.ColumnInfo t2Column=t2.m_extraMetadata.originalColumnInfos[i];
+    boolean found=false;
+    for (    VoltTable.ColumnInfo t1Column : t1.m_extraMetadata.originalColumnInfos) {
+      if (t1Column.name.equals(t2Column.name)) {
+        found=true;
+      }
+    }
+    if (!found) {
+      ddl.append(String.format("ALTER TABLE %s ADD COLUMN %s",t1.m_extraMetadata.name,getDDLColumnDefinition(t2,t2Column)));
+      if (i != t2.m_extraMetadata.originalColumnInfos.length - 1) {
+        VoltTable.ColumnInfo nextCol=t2.m_extraMetadata.originalColumnInfos[i + 1];
+        ddl.append(String.format(" BEFORE %s",nextCol.name));
+      }
+      ddl.append(";\n");
+    }
+  }
+  return ddl.toString();
+}
