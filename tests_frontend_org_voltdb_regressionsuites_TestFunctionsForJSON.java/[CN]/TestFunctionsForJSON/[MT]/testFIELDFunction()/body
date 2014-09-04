@@ -3,6 +3,11 @@
   VoltTable result;
   Client client=getClient();
   loadJS1(client);
+  if (DEBUG) {
+    for (int id=1; id <= TOTAL_NUM_ROWS; id++) {
+      System.out.println("JSON document (DOC column), for id=" + id + ":\n"+ getDocFromId(client,id));
+    }
+  }
   cr=client.callProcedure("IdFieldProc","id","1");
   assertEquals(ClientResponse.SUCCESS,cr.getStatus());
   result=cr.getResults()[0];
@@ -44,17 +49,16 @@
   cr=client.callProcedure("NullFieldProc","funky");
   assertEquals(ClientResponse.SUCCESS,cr.getStatus());
   result=cr.getResults()[0];
-  assertEquals(9,result.getRowCount());
+  assertEquals(TOTAL_NUM_ROWS,result.getRowCount());
   cr=client.callProcedure("NullFieldProc","id");
   assertEquals(ClientResponse.SUCCESS,cr.getStatus());
   result=cr.getResults()[0];
-  assertEquals(3,result.getRowCount());
-  assertTrue(result.advanceRow());
-  assertEquals(5L,result.getLong(0));
-  assertTrue(result.advanceRow());
-  assertEquals(6L,result.getLong(0));
-  assertTrue(result.advanceRow());
-  assertEquals(8L,result.getLong(0));
+  long[] expectedResults=new long[]{5L,6L,8L,10L,11L,12L,13L,14L,15L};
+  assertEquals(expectedResults.length,result.getRowCount());
+  for (  long expResult : expectedResults) {
+    assertTrue(result.advanceRow());
+    assertEquals(expResult,result.getLong(0));
+  }
   cr=client.callProcedure("InnerFieldProc","??????Vo","wakarimasen");
   assertEquals(ClientResponse.SUCCESS,cr.getStatus());
   result=cr.getResults()[0];
@@ -85,4 +89,14 @@
   assertTrue(result.advanceRow());
   result.getString(0);
   assertTrue(result.wasNull());
+  testProcWithValidJSON(FULL_TABLE,client,"NullFieldDocProc",null,null);
+  testProcWithValidJSON(FULL_TABLE,client,"NullFieldDocProc",null,0);
+  testProcWithValidJSON(FULL_TABLE,client,"NullFieldDocProc",null,1.2);
+  testProcWithValidJSON(FULL_TABLE,client,"NullFieldDocProc",null,"true");
+  testProcWithValidJSON(FULL_TABLE,client,"NullFieldDocProc",null,"one");
+  testProcWithInvalidJSON("Invalid FIELD path argument (SQL null)",client,"NullFieldProc",(Object)null);
+  testProcWithValidJSON(new long[][]{{11}},client,"NotNullFieldProc","null");
+  testProcWithValidJSON(new long[][]{{12}},client,"NotNullFieldProc","foo");
+  testProcWithValidJSON(new long[][]{{11}},client,"IdFieldProc","null","foo");
+  testProcWithValidJSON(new long[][]{{12}},client,"IdFieldProc","foo","null");
 }
