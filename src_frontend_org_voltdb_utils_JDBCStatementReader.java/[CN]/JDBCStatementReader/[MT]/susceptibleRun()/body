@@ -1,0 +1,68 @@
+{
+  PreparedStatement stmt=null;
+  Connection conn=null;
+  ResultSet rslt=null;
+  RowWithMetaData lineData=null;
+  int columnCount=0;
+  ImporterType.Acceptor[] acceptors=null;
+  Object[] columnValues=null;
+  String[] stringValues=null;
+  try {
+    conn=DriverManager.getConnection(m_config.jdbcurl,m_config.jdbcuser,m_config.jdbcpassword);
+    DatabaseMetaData dbmd=conn.getMetaData();
+    int resultSetType=ResultSet.TYPE_FORWARD_ONLY;
+    if (!dbmd.supportsResultSetType(resultSetType)) {
+      resultSetType=ResultSet.TYPE_SCROLL_INSENSITIVE;
+    }
+    stmt=conn.prepareStatement("select * from " + m_config.jdbctable,resultSetType,ResultSet.CONCUR_READ_ONLY);
+    stmt.setFetchSize(m_config.fetchsize);
+    rslt=stmt.executeQuery();
+    ResultSetMetaData mdata=rslt.getMetaData();
+    columnCount=mdata.getColumnCount();
+    acceptors=new ImporterType.Acceptor[columnCount];
+    for (int i=1; i <= columnCount; ++i) {
+      ImporterType type=ImporterType.forClassName(mdata.getColumnClassName(i));
+      if (type == null) {
+        throw new SQLException(String.format("Unsupported data type %s for column %s",mdata.getColumnTypeName(i),mdata.getColumnName(i)));
+      }
+      acceptors[i - 1]=type.getAcceptorFor(rslt,i);
+    }
+  }
+ catch (  Exception ex) {
+    m_log.error("database query initialization failed",ex);
+    forceClose(conn,stmt,rslt);
+    Throwables.propagate(ex);
+  }
+  StringWriter sw=new StringWriter(16384);
+  PrintWriter pw=new PrintWriter(sw,true);
+  CSVWriter csw=new CSVWriter(pw);
+  StringBuffer sb=sw.getBuffer();
+  stringValues=new String[columnCount];
+  try {
+    while (rslt.next()) {
+      long rownum=m_totalRowCount.incrementAndGet();
+      Arrays.fill(stringValues,"NULL");
+      columnValues=new Object[columnCount];
+      lineData=new RowWithMetaData(new String[1],rownum);
+      try {
+        for (int i=0; i < columnCount; ++i) {
+          columnValues[i]=acceptors[i].convert();
+          stringValues[i]=acceptors[i].format(columnValues[i]);
+        }
+        csw.writeNext(stringValues);
+        ((String[])lineData.rawLine)[0]=sb.toString();
+        sb.setLength(0);
+        m_loader.insertRow(lineData,columnValues);
+      }
+ catch (      SQLException ex) {
+        m_errHandler.handleError(lineData,null,getExceptionAndCauseMessages(ex));
+      }
+    }
+  }
+ catch (  InterruptedException ignoreIt) {
+  }
+ finally {
+    forceClose(conn,stmt,rslt);
+  }
+  m_log.debug("JSBCLoader Done.");
+}

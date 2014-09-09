@@ -1,0 +1,69 @@
+{
+  Set<Map.Entry<String,List<String>>> allEntries=mapOfAllGeneratedStatements().entrySet();
+  System.out.println("\n\nRUNNING testInsertIntoSelectGeneratedProcs with " + allEntries.size() + " stored procedures\n\n");
+  final Client client=getClient();
+  initializeTables(client);
+  for (long partitioningValue=4; partitioningValue < 11; partitioningValue++) {
+    for (    Map.Entry<String,List<String>> e : allEntries) {
+      clearTargetTables(client);
+      String proc=e.getKey();
+      boolean needsParams=(numberOfParametersNeeded(proc) > 0);
+      String prefix="Assertion failed running stored procedure " + proc + ": ";
+      ClientResponse resp;
+      if (needsParams) {
+        resp=client.callProcedure(proc,partitioningValue);
+      }
+ else {
+        resp=client.callProcedure(proc);
+      }
+      assertEquals(prefix + "procedure call failed",ClientResponse.SUCCESS,resp.getStatus());
+      VoltTable insertResult=resp.getResults()[0];
+      insertResult.advanceRow();
+      long numRowsInserted=insertResult.getLong(0);
+      if (proc.contains("target_p")) {
+        resp=client.callProcedure("get_all_target_p_rows");
+      }
+ else {
+        resp=client.callProcedure("get_all_target_r_rows");
+      }
+      assertEquals(prefix + "could not fetch rows of target table",ClientResponse.SUCCESS,resp.getStatus());
+      VoltTable actualRows=resp.getResults()[0];
+      if (needsParams) {
+        resp=client.callProcedure("verify_" + proc,partitioningValue);
+      }
+ else {
+        resp=client.callProcedure("verify_" + proc);
+      }
+      assertEquals(prefix + "could not verify rows of target table",ClientResponse.SUCCESS,resp.getStatus());
+      VoltTable expectedRows=resp.getResults()[0];
+      assertTablesAreEqual(prefix,expectedRows,actualRows);
+      int actualNumRows=actualRows.getRowCount();
+      assertEquals(prefix + "insert statement returned " + numRowsInserted+ " but only "+ actualNumRows+ " rows selected from target table",actualNumRows,numRowsInserted);
+      String adHocQuery=e.getValue().get(0);
+      prefix="Assertion failed running ad hoc SQL: " + adHocQuery;
+      clearTargetTables(client);
+      if (needsParams) {
+        resp=client.callProcedure("@AdHoc",adHocQuery,partitioningValue);
+      }
+ else {
+        resp=client.callProcedure("@AdHoc",adHocQuery);
+      }
+      assertEquals(prefix + "ad hoc statement failed",ClientResponse.SUCCESS,resp.getStatus());
+      insertResult=resp.getResults()[0];
+      insertResult.advanceRow();
+      numRowsInserted=insertResult.getLong(0);
+      if (proc.contains("target_p")) {
+        resp=client.callProcedure("get_all_target_p_rows");
+      }
+ else {
+        resp=client.callProcedure("get_all_target_r_rows");
+      }
+      assertEquals(prefix + "could not fetch rows of target table",ClientResponse.SUCCESS,resp.getStatus());
+      actualRows=resp.getResults()[0];
+      expectedRows.resetRowPosition();
+      assertTablesAreEqual(prefix,expectedRows,actualRows);
+      actualNumRows=actualRows.getRowCount();
+      assertEquals(prefix + "insert statement returned " + numRowsInserted+ " but only "+ actualNumRows+ " rows selected from target table",actualNumRows,numRowsInserted);
+    }
+  }
+}

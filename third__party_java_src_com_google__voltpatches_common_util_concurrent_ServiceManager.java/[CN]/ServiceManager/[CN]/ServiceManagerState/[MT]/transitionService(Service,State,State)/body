@@ -1,0 +1,36 @@
+{
+  checkNotNull(service);
+  checkArgument(from != to);
+  monitor.enter();
+  try {
+    transitioned=true;
+    if (!ready) {
+      return;
+    }
+    checkState(servicesByState.remove(from,service),"Service %s not at the expected location in the state map %s",service,from);
+    checkState(servicesByState.put(to,service),"Service %s in the state map unexpectedly at %s",service,to);
+    Stopwatch stopwatch=startupTimers.get(service);
+    if (from == NEW) {
+      stopwatch.start();
+    }
+    if (to.compareTo(RUNNING) >= 0 && stopwatch.isRunning()) {
+      stopwatch.stop();
+      if (!(service instanceof NoOpService)) {
+        logger.log(Level.FINE,"Started {0} in {1}.",new Object[]{service,stopwatch});
+      }
+    }
+    if (to == FAILED) {
+      fireFailedListeners(service);
+    }
+    if (states.count(RUNNING) == numberOfServices) {
+      fireHealthyListeners();
+    }
+ else     if (states.count(TERMINATED) + states.count(FAILED) == numberOfServices) {
+      fireStoppedListeners();
+    }
+  }
+  finally {
+    monitor.leave();
+    executeListeners();
+  }
+}
