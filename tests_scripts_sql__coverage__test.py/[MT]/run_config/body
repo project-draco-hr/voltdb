@@ -1,4 +1,5 @@
 def run_config(suite_name, config, basedir, output_dir, random_seed, report_all, generate_only, subversion_generation, submit_verbosely, args, testConfigKit):
+    time0 = time.time()
     for key in config.iterkeys():
         print ("in run_config key = '%s', config[key] = '%s'" % (key, config[key]))
         if (not os.path.isabs(config[key])):
@@ -30,17 +31,26 @@ def run_config(suite_name, config, basedir, output_dir, random_seed, report_all,
         print ('Generated %d statements.' % counter)
     if generate_only:
         return {'keyStats': None, 'mis': 0, }
+    global gensql_time
+    gensql_time += print_elapsed_seconds((('for generating statements (' + suite_name) + ')'), time0)
     if (run_once('jni', command, statements_path, jni_path, submit_verbosely, testConfigKit) != 0):
         print  >> sys.stderr, 'Test with the JNI backend had errors.'
         print  >> sys.stderr, ('  jni_path: %s' % jni_path)
         sys.stderr.flush()
         exit(1)
+    global voltdb_time
+    voltdb_time += print_elapsed_seconds((('for running VoltDB (JNI) statements (' + suite_name) + ')'))
     random.seed(random_seed)
     random.setstate(random_state)
     if (run_once('hsqldb', command, statements_path, hsql_path, submit_verbosely, testConfigKit) != 0):
         print  >> sys.stderr, 'Test with the HSQLDB backend had errors.'
         exit(1)
+    global hsqldb_time
+    hsqldb_time += print_elapsed_seconds((('for running HSqlDB statements (' + suite_name) + ')'))
     global compare_results
     compare_results = imp.load_source('normalizer', config['normalizer']).compare_results
     success = compare_results(suite_name, random_seed, statements_path, hsql_path, jni_path, output_dir, report_all)
+    global compar_time
+    compar_time += print_elapsed_seconds((('for comparing DB results (' + suite_name) + ')'))
+    print_elapsed_seconds((("for run_config of '" + suite_name) + "'"), time0, 'Sub-tot time: ')
     return success
