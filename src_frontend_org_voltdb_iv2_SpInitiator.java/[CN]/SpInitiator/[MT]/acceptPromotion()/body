@@ -4,6 +4,7 @@
     Boolean success=false;
     m_term=createTerm(m_messenger.getZK(),m_partitionId,getInitiatorHSId(),m_initiatorMailbox,m_whoami);
     m_term.start();
+    long binaryLogUniqueId=Long.MIN_VALUE;
     while (!success) {
       RepairAlgo repair=m_initiatorMailbox.constructRepairAlgo(m_term.getInterestingHSIds(),m_whoami);
       if (!m_initiatorMailbox.acceptPromotion()) {
@@ -11,12 +12,13 @@
         VoltDB.crashLocalVoltDB("A rejoining site can not be promoted to leader.",false,null);
         return;
       }
-      Long txnid=Long.MIN_VALUE;
-      Long uniqueId=UniqueIdGenerator.makeZero(m_partitionId);
+      long txnid=Long.MIN_VALUE;
+      long uniqueId=UniqueIdGenerator.makeZero(m_partitionId);
       try {
-        Pair<Long,Long> p=repair.start().get();
-        txnid=p.getFirst();
-        uniqueId=p.getSecond();
+        RepairResult res=repair.start().get();
+        txnid=res.m_txnId;
+        uniqueId=res.m_uniqueId;
+        binaryLogUniqueId=res.m_binaryLogUniqueId;
         success=true;
       }
  catch (      CancellationException e) {
@@ -34,7 +36,7 @@
     }
     ExportManager.instance().acceptMastership(m_partitionId);
     if (m_replicaDRGateway != null) {
-      m_replicaDRGateway.promotePartition(m_partitionId);
+      m_replicaDRGateway.promotePartition(m_partitionId,binaryLogUniqueId);
     }
   }
  catch (  Exception e) {
