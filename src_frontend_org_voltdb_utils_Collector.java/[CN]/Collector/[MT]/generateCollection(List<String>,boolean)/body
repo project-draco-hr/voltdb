@@ -3,7 +3,7 @@
     String timestamp="";
     String rootpath="";
     if (copyToVEM) {
-      rootpath=m_voltDbRootPath;
+      rootpath=m_config.voltdbroot;
     }
  else {
       TimestampType ts=new TimestampType(new java.util.Date());
@@ -11,9 +11,10 @@
       timestamp=timestamp.substring(0,"YYYY-mm-DD-HH-MM-ss".length());
       rootpath=System.getProperty("user.dir");
     }
-    String collectionFilePath=rootpath + File.separator + m_prefix+ timestamp+ ".tgz";
+    String collectionFilePath=rootpath + File.separator + m_config.prefix+ timestamp+ ".tgz";
     File collectionFile=new File(collectionFilePath);
     TarGenerator tarGenerator=new TarGenerator(collectionFile,true,null);
+    String folderPath=m_config.prefix + timestamp + File.separator;
     for (    String path : paths) {
       if (Arrays.asList(cmdFilenames).contains(path.split(" ")[0])) {
         continue;
@@ -34,22 +35,22 @@
         entryPath="syslog" + File.separator + file.getName();
       }
       if (file.isFile() && file.canRead() && file.length() > 0) {
-        tarGenerator.queueEntry(entryPath,file);
+        tarGenerator.queueEntry(folderPath + entryPath,file);
       }
     }
     String[] sarCmd={"bash","-c","sar -A"};
-    cmd(tarGenerator,sarCmd,"sardata");
+    cmd(tarGenerator,sarCmd,folderPath,"sardata");
     String[] dmesgCmd={"bash","-c","/bin/dmesg"};
-    cmd(tarGenerator,dmesgCmd,"dmesgdata");
-    tarGenerator.write(m_calledFromVEM ? null : System.out);
+    cmd(tarGenerator,dmesgCmd,folderPath,"dmesgdata");
+    tarGenerator.write(m_config.calledFromVEM ? null : System.out);
     long sizeInByte=collectionFile.length();
     String sizeStringInKB=String.format("%5.2f",(double)sizeInByte / 1000);
-    if (!m_calledFromVEM) {
+    if (!m_config.calledFromVEM) {
       System.out.println("Collection file created at " + collectionFilePath + " size: "+ sizeStringInKB+ " KB");
     }
     boolean upload=false;
-    if (!m_host.isEmpty()) {
-      if (m_noPrompt) {
+    if (!m_config.host.isEmpty()) {
+      if (m_config.noprompt) {
         upload=true;
       }
  else {
@@ -58,19 +59,19 @@
     }
     if (upload) {
       if (org.voltdb.utils.MiscUtils.isPro()) {
-        if (m_username.isEmpty() && !m_noPrompt) {
+        if (m_config.username.isEmpty() && !m_config.noprompt) {
           System.out.print("username: ");
-          m_username=System.console().readLine();
+          m_config.username=System.console().readLine();
         }
-        if (m_password.isEmpty() && !m_noPrompt) {
+        if (m_config.password.isEmpty() && !m_config.noprompt) {
           System.out.print("password: ");
-          m_password=new String(System.console().readPassword());
+          m_config.password=new String(System.console().readPassword());
         }
         try {
-          uploadToServer(collectionFilePath,m_host,m_username,m_password);
+          uploadToServer(collectionFilePath,m_config.host,m_config.username,m_config.password);
           System.out.println("Uploaded " + new File(collectionFilePath).getName() + " via SFTP");
           boolean delLocalCopy=false;
-          if (m_noPrompt) {
+          if (m_config.noprompt) {
             delLocalCopy=true;
           }
  else {
@@ -79,7 +80,7 @@
           if (delLocalCopy) {
             try {
               collectionFile.delete();
-              if (!m_calledFromVEM) {
+              if (!m_config.calledFromVEM) {
                 System.out.println("Local copy " + collectionFilePath + " deleted");
               }
             }

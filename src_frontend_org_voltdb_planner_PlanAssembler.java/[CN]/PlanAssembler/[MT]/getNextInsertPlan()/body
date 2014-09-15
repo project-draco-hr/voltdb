@@ -3,31 +3,38 @@
   m_bestAndOnlyPlanWasGenerated=true;
   assert(m_parsedInsert.m_tableList.size() == 1);
   Table targetTable=m_parsedInsert.m_tableList.get(0);
-  ParsedSelectStmt subselect=m_parsedInsert.getSubselect();
-  if (subselect != null) {
-    if (!m_partitioning.wasSpecifiedAsSingle()) {
-      throw new PlanningErrorException("INSERT INTO ... SELECT is only supported for single-partition stored procedures.");
+  StmtSubqueryScan subquery=m_parsedInsert.isInsertWithSubquery() ? m_parsedInsert.getSubqueries().get(0) : null;
+  CompiledPlan retval=null;
+  if (subquery != null) {
+    if (subquery.getBestCostPlan() == null) {
+      throw new PlanningErrorException("INSERT INTO ... SELECT subquery could not be planned: " + m_recentErrorMsg);
     }
-    assert(!targetTable.getIsreplicated());
+    InsertSubPlanAssembler subPlanAssembler=new InsertSubPlanAssembler(m_catalogDb,m_parsedInsert,m_partitioning);
+    AbstractPlanNode subplan=subPlanAssembler.nextPlan();
+    if (subplan == null) {
+      throw new PlanningErrorException(subPlanAssembler.m_recentErrorMsg);
+    }
+    assert(m_partitioning.isJoinValid());
+    retval=subquery.getBestCostPlan();
   }
-  CompiledPlan retval=new CompiledPlan();
-  retval.readOnly=false;
+ else {
+    retval=new CompiledPlan();
+  }
+  retval.setReadOnly(false);
   CatalogMap<Column> targetTableColumns=targetTable.getColumns();
   for (  Column col : targetTableColumns) {
     boolean needsValue=col.getNullable() == false && col.getDefaulttype() == 0;
     if (needsValue && !m_parsedInsert.m_columns.containsKey(col)) {
       throw new PlanningErrorException("Column " + col.getName() + " has no default and is not nullable.");
     }
-    if (col.equals(m_partitioning.getPartitionColForDML()) && subselect == null) {
+    if (col.equals(m_partitioning.getPartitionColForDML()) && subquery == null) {
       AbstractExpression expr=m_parsedInsert.getExpressionForPartitioning(col);
       String fullColumnName=targetTable.getTypeName() + "." + col.getTypeName();
       m_partitioning.addPartitioningExpression(fullColumnName,expr,expr.getValueType());
     }
   }
-  InsertPlanNode insertNode=new InsertPlanNode();
-  insertNode.setTargetTableName(targetTable.getTypeName());
   NodeSchema matSchema=null;
-  if (subselect == null) {
+  if (subquery == null) {
     matSchema=new NodeSchema();
   }
   int[] fieldMap=new int[m_parsedInsert.m_columns.size()];
@@ -43,6 +50,8 @@
     }
     i++;
   }
+  InsertPlanNode insertNode=new InsertPlanNode();
+  insertNode.setTargetTableName(targetTable.getTypeName());
   insertNode.setFieldMap(fieldMap);
   if (matSchema != null) {
     MaterializePlanNode matNode=new MaterializePlanNode();
@@ -51,11 +60,6 @@
     retval.statementGuaranteesDeterminism(false,true);
   }
  else {
-    retval=getBestCostPlan(subselect,false);
-    retval.readOnly=false;
-    boolean orderIsDeterministic=m_parsedInsert.getSubselect().isOrderDeterministic();
-    boolean hasLimitOrOffset=m_parsedInsert.getSubselect().hasLimitOrOffset();
-    retval.statementGuaranteesDeterminism(hasLimitOrOffset,orderIsDeterministic);
     insertNode.addAndLinkChild(retval.rootPlanGraph);
   }
   if (m_partitioning.wasSpecifiedAsSingle() || m_partitioning.isInferredSingle()) {

@@ -1,0 +1,28 @@
+{
+  List<Entry<Service,Long>> loadTimes;
+  monitor.enter();
+  try {
+    loadTimes=Lists.newArrayListWithCapacity(startupTimers.size());
+    for (    Entry<Service,Stopwatch> entry : startupTimers.entrySet()) {
+      Service service=entry.getKey();
+      Stopwatch stopWatch=entry.getValue();
+      if (!stopWatch.isRunning() && !(service instanceof NoOpService)) {
+        loadTimes.add(Maps.immutableEntry(service,stopWatch.elapsed(MILLISECONDS)));
+      }
+    }
+  }
+  finally {
+    monitor.leave();
+  }
+  Collections.sort(loadTimes,Ordering.<Long>natural().onResultOf(new Function<Entry<Service,Long>,Long>(){
+    @Override public Long apply(    Map.Entry<Service,Long> input){
+      return input.getValue();
+    }
+  }
+));
+  ImmutableMap.Builder<Service,Long> builder=ImmutableMap.builder();
+  for (  Entry<Service,Long> entry : loadTimes) {
+    builder.put(entry);
+  }
+  return builder.build();
+}
