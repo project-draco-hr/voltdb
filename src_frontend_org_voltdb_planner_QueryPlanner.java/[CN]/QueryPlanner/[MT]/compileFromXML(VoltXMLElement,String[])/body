@@ -4,6 +4,24 @@
     m_recentErrorMsg="Failed to parse SQL statement: " + m_sql;
     return null;
   }
+  if (m_isUpsert) {
+    if (parsedStmt.m_tableList.size() != 1) {
+      m_recentErrorMsg="UPSERT is support only with one single table: " + m_sql;
+      return null;
+    }
+    Table tb=parsedStmt.m_tableList.get(0);
+    Constraint pkey=null;
+    for (    Constraint ct : tb.getConstraints()) {
+      if (ct.getType() == ConstraintType.PRIMARY_KEY.getValue()) {
+        pkey=ct;
+        break;
+      }
+    }
+    if (pkey == null) {
+      m_recentErrorMsg="Unsupported UPSERT table without primary key: " + m_sql;
+      return null;
+    }
+  }
   m_planSelector.outputParsedStatement(parsedStmt);
   PlanAssembler assembler=new PlanAssembler(m_cluster,m_db,m_partitioning,(PlanSelector)m_planSelector.clone());
   CompiledPlan bestPlan=assembler.getBestCostPlan(parsedStmt,true);
