@@ -1,11 +1,12 @@
 {
-  CountDownLatch waitLatch=new CountDownLatch(m_lastPartitionTable - m_firstPartitionTable + 1);
   for (int i=m_firstPartitionTable; i <= m_lastPartitionTable; i++) {
-    VoltBulkLoaderRow drainRow=new VoltBulkLoaderRow(this);
-    drainRow.new DrainNotificationCallBack(waitLatch);
-    m_partitionTable[i].drainTableQueue(drainRow);
+    try {
+      m_partitionTable[i].flushAllTableQueues().get();
+    }
+ catch (    ExecutionException e) {
+      loaderLog.error("Failed to drain all buffers, some tuples may not be inserted yet.",e);
+    }
   }
-  waitLatch.await();
+  m_clientImpl.drain();
   assert(m_loaderBatchedRowCnt.get() == 0 && m_loaderQueuedRowCnt.get() == 0);
-  drainFailQueue();
 }

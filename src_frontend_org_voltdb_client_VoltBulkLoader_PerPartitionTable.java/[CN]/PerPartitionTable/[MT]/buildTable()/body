@@ -1,18 +1,11 @@
 {
-  PartitionProcedureCallback nextCallback;
-  List<VoltBulkLoaderRow> batchList=new ArrayList<VoltBulkLoaderRow>();
-  m_partitionRowQueue.drainTo(batchList,m_minBatchTriggerSize);
   ArrayList<LoaderSpecificRowCnt> usedLoaderList=new ArrayList<LoaderSpecificRowCnt>();
-  ArrayList<VoltBulkLoaderRow> notificationList=new ArrayList<VoltBulkLoaderRow>();
-  ListIterator<VoltBulkLoaderRow> it=batchList.listIterator();
+  ArrayList<VoltBulkLoaderRow> buf=new ArrayList<VoltBulkLoaderRow>(m_minBatchTriggerSize);
+  m_partitionRowQueue.drainTo(buf,m_minBatchTriggerSize);
+  ListIterator<VoltBulkLoaderRow> it=buf.listIterator();
   while (it.hasNext()) {
     VoltBulkLoaderRow currRow=it.next();
     VoltBulkLoader loader=currRow.m_loader;
-    if (currRow.isNotificationRow()) {
-      notificationList.add(currRow);
-      it.remove();
-      continue;
-    }
     Object row_args[];
     row_args=new Object[currRow.m_rowData.length];
     try {
@@ -48,23 +41,5 @@
     currPair.loader.m_loaderBatchedRowCnt.addAndGet(currPair.rowCnt);
     currPair.loader.m_loaderQueuedRowCnt.addAndGet(-1 * currPair.rowCnt);
   }
-synchronized (PerPartitionTable.this) {
-    if (notificationList.size() > 0) {
-      WrappedCallback currWrappedCallback=m_activeCallbacks.getListHead();
-      while (currWrappedCallback != null) {
-        currWrappedCallback.callback.m_notificationRows.addAll(notificationList);
-        currWrappedCallback=m_activeCallbacks.getListNext(currWrappedCallback);
-      }
-    }
-    nextCallback=new PartitionProcedureCallback(batchList,usedLoaderList,notificationList);
-    if (m_activeCallbacks.callbackCnt > 0) {
-      for (      VoltBulkLoaderRow currRow : notificationList) {
-        ((BulkLoaderNotification)currRow.m_rowHandle).setBatchCount(m_activeCallbacks.callbackCnt);
-      }
-    }
- else {
-      for (      VoltBulkLoaderRow currRow : notificationList)       ((BulkLoaderNotification)currRow.m_rowHandle).notifyOfClientResponse();
-    }
-  }
-  return nextCallback;
+  return new PartitionProcedureCallback(buf,usedLoaderList);
 }
