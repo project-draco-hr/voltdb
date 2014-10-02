@@ -1,0 +1,66 @@
+@task
+def do_it(version, oldvmdir=None):
+    if (not oldvmdir):
+        import urllib
+        import zipfile
+        tmpdir = tempfile.mkdtemp()
+        try:
+            oldvmzip = os.path.join(tmpdir, 'oldvm.zip')
+            _print_line()
+            print (('Downloading current VoltDB VM to ' + oldvmzip) + ' This may take a while.')
+            urllib.urlretrieve('http://voltdb.com/downloads/loader.php?kit=VmwareUrl&j=', oldvmzip)
+            if (not zipfile.is_zipfile(oldvmzip)):
+                exit(('FATAL: Downloaded kit is not .zip format. You can inspect the file at ' + oldvmzip))
+            _print_line()
+            print 'Extracting zipfile in tmpdir'
+            zip_read(oldvmzip, chdir=tmpdir)
+            (root, dirs, files) = os.walk(tmpdir).next()
+            assert (len(dirs) == 1)
+            oldvmdir = dirs[0]
+        except Exception as e:
+            exit(('FATAL: Error downloading and unzipping vmware image: ' + str(e)))
+    oldvmdir = os.path.abspath(os.path.expanduser(oldvmdir))
+    try:
+        oldvmx = _find_files('*.vmx', oldvmdir)[0]
+    except:
+        print ('FATAL: Cannot find vmx file in %s' % oldvmdir)
+    os.environ['VMX'] = oldvmx
+    _get_vmx()
+    newvmx = re.sub('LTS-v\\S+-Demo', ('LTS-v%s-Demo' % version), oldvmx)
+    _print_line()
+    print ('Cloning\n %s ---> %s' % (oldvmx, newvmx))
+    vm_clone(newvmx, ('VoltDB %s Demo on Ubuntu 14.04' % version))
+    _print_line()
+    print 'Starting cloned VM'
+    os.environ['VMX'] = newvmx
+    _get_vmx()
+    vm_start()
+    _print_line()
+    print ('Updating new VM with V' + version)
+    vm_update(version)
+    _print_line()
+    print 'Stopping VM'
+    vm_stop()
+    newvmdir = os.path.dirname(vmx)
+    try:
+        vmdkfiles = _find_files('*LTS*.vmdk', newvmdir)
+        vmdk = [v for v in vmdkfiles if ('s0' not in v)][0]
+    except:
+        exit(('FATAL: Cannot find vmdk file in %s' % newvmdir))
+    _print_line()
+    print 'Mounting VM disk locally to zerofill before compressing'
+    vm_zerofilldisk(vmdk)
+    _print_line()
+    print 'Compressing disk'
+    local(('du -hs ' + os.path.dirname(vmx)))
+    vmdk_compressdisk(vmdk)
+    local(('du -hs ' + os.path.dirname(vmx)))
+    _delete_files(_find_files('*.log*', newvmdir))
+    _print_line()
+    print ('Zipping to %s.zip' % newvmdir)
+    zip_write(newvmdir, (newvmdir + '.zip'), chdir='newvmdir/..')
+    _print_line()
+    print 'Starting cloned VM for your inspection.'
+    os.environ['VMX'] = newvmx
+    _get_vmx()
+    vm_start()
