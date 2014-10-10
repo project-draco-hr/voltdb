@@ -1,8 +1,31 @@
 {
-  List<InvocationAcceptancePolicy> policies=m_policies.get(name);
+  boolean deny=false;
   ClientResponseImpl error=null;
-  if (policies != null) {
-    for (    InvocationAcceptancePolicy policy : policies) {
+  for (  InvocationPermissionPolicy policy : m_permissionpolicies) {
+    PolicyResult res=policy.shouldAccept(user,task,catProc);
+    if (res == PolicyResult.ALLOW) {
+      deny=false;
+      break;
+    }
+    if (res == PolicyResult.DENY) {
+      deny=true;
+      if (error == null) {
+        error=policy.getErrorResponse(user,task,catProc);
+      }
+    }
+  }
+  if (deny) {
+    return error;
+  }
+  if ((error=m_replicationpolicy.shouldAccept(user,task,catProc)) != null) {
+    return error;
+  }
+  if ((error=m_paramdeserializationpolicy.shouldAccept(user,task,catProc)) != null) {
+    return error;
+  }
+  List<InvocationValidationPolicy> vpolicies=m_validationpolicies.get(name);
+  if (vpolicies != null) {
+    for (    InvocationValidationPolicy policy : vpolicies) {
       if ((error=policy.shouldAccept(user,task,catProc)) != null) {
         return error;
       }
