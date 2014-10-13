@@ -14,16 +14,45 @@
     assertEquals("user lacks privilege or object not found: CT",ex.getMessage());
   }
   try {
+    pns=compileToFragments("SELECT abs(PKEY) as sp, (count(*) +1 ) as ct FROM P1 GROUP BY ct");
+    fail();
+  }
+ catch (  Exception ex) {
+    assertEquals("user lacks privilege or object not found: CT",ex.getMessage());
+  }
+  try {
     pns=compileToFragments("SELECT abs(PKEY) as sp, count(*) as ct FROM P1 GROUP BY sp + 1");
     fail();
   }
  catch (  Exception ex) {
+    assertEquals("data type cast needed for parameter or null literal",ex.getMessage());
+  }
+  try {
+    pns=compileToFragments("SELECT ABS(A1) AS tag, count(*) as ct FROM P1 GROUP BY tag having ct > 3");
+    fail();
+  }
+ catch (  Exception ex) {
+    assertEquals("data type cast needed for parameter or null literal",ex.getMessage());
   }
   try {
     pns=compileToFragments("SELECT abs(PKEY) as sp, count(*) as ct FROM P1 GROUP BY P1.sp");
     fail();
   }
  catch (  Exception ex) {
+    assertEquals(null,ex.getMessage());
   }
-  pns=compileToFragments("SELECT A1 as B1, B1 as A1, count(*) as ct FROM P1 GROUP BY A1");
+  try {
+    pns=compileToFragments("SELECT 1 as tag, abs(PKEY) as sp, count(*) as ct FROM P1 GROUP BY tag");
+    fail();
+  }
+ catch (  Exception ex) {
+    assertEquals("expression not in aggregate or GROUP BY columns: ABS(PUBLIC.P1.PKEY)",ex.getMessage());
+  }
+  pns=compileToFragments("SELECT ABS(A1) AS A1, count(*) as ct FROM P1 GROUP BY A1");
+  printExplainPlan(pns);
+  AbstractPlanNode p=pns.get(1).getChild(0);
+  assertTrue(p instanceof AbstractScanPlanNode);
+  AggregatePlanNode agg=AggregatePlanNode.getInlineAggregationNode(p);
+  assertNotNull(agg);
+  assertEquals(agg.getGroupByExpressions().get(0).getExpressionType(),ExpressionType.VALUE_TUPLE);
 }
