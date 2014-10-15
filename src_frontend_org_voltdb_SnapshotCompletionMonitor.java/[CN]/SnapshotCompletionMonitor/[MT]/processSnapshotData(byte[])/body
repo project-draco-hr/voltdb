@@ -38,11 +38,25 @@ synchronized (m_snapshotTxnIdsToPartitionTxnIds) {
         partitionTxnIdsMap=ImmutableMap.copyOf(partitionTxnIdsList);
       }
     }
+    Map<Integer,Map<Integer,Long>> remoteDCLastUniqueIds=new HashMap<>();
+    final JSONObject remoteDCLastUniqueIdsObj=jsonObj.getJSONObject("remoteDCUniqueIds");
+    final Iterator<String> dcIdIter=remoteDCLastUniqueIdsObj.keys();
+    while (dcIdIter.hasNext()) {
+      final String dcIdKey=dcIdIter.next();
+      final JSONObject dataCenterUniqueIds=remoteDCLastUniqueIdsObj.getJSONObject(dcIdKey);
+      final HashMap<Integer,Long> lastSeenIds=new HashMap<>();
+      final Iterator<String> partitionKeyIter=dataCenterUniqueIds.keys();
+      while (partitionKeyIter.hasNext()) {
+        final String partitionIdString=partitionKeyIter.next();
+        lastSeenIds.put(Integer.valueOf(partitionIdString),dataCenterUniqueIds.getLong(partitionIdString));
+      }
+      remoteDCLastUniqueIds.put(Integer.valueOf(dcIdKey),Collections.unmodifiableMap(lastSeenIds));
+    }
     Iterator<SnapshotCompletionInterest> iter=m_interests.iterator();
     while (iter.hasNext()) {
       SnapshotCompletionInterest interest=iter.next();
       try {
-        interest.snapshotCompleted(new SnapshotCompletionEvent(path,nonce,txnId,partitionTxnIdsMap,truncation,didSucceed,truncReqId,exportSequenceNumbers));
+        interest.snapshotCompleted(new SnapshotCompletionEvent(path,nonce,txnId,partitionTxnIdsMap,truncation,didSucceed,truncReqId,exportSequenceNumbers,Collections.unmodifiableMap(remoteDCLastUniqueIds)));
       }
  catch (      Exception e) {
         SNAP_LOG.warn("Exception while executing snapshot completion interest",e);
