@@ -1,5 +1,4 @@
 {
-  ArrayList<LoaderSpecificRowCnt> usedLoaderList=new ArrayList<LoaderSpecificRowCnt>();
   ArrayList<VoltBulkLoaderRow> buf=new ArrayList<VoltBulkLoaderRow>(m_minBatchTriggerSize);
   m_partitionRowQueue.drainTo(buf,m_minBatchTriggerSize);
   ListIterator<VoltBulkLoaderRow> it=buf.listIterator();
@@ -16,30 +15,11 @@
     }
  catch (    VoltTypeException e) {
       loader.generateError(currRow.m_rowHandle,currRow.m_rowData,e.getMessage());
-      loader.m_loaderQueuedRowCnt.decrementAndGet();
+      loader.m_outstandingRowCount.decrementAndGet();
       it.remove();
       continue;
     }
     table.addRow(row_args);
-    LoaderSpecificRowCnt currLoaderPair=loader.m_currBatchPair[m_partitionId];
-    if (currLoaderPair == null) {
-      try {
-        currLoaderPair=(LoaderSpecificRowCnt)loader.m_availLoaderPairs.pop();
-      }
- catch (      EmptyStackException e) {
-        currLoaderPair=new LoaderSpecificRowCnt(loader,0);
-        loader.m_outstandingRowCnts[m_partitionId].add(currLoaderPair);
-      }
-      currLoaderPair.rowCnt=0;
-      usedLoaderList.add(currLoaderPair);
-      loader.m_currBatchPair[m_partitionId]=currLoaderPair;
-    }
-    currLoaderPair.rowCnt++;
   }
-  for (  LoaderSpecificRowCnt currPair : usedLoaderList) {
-    currPair.loader.m_currBatchPair[m_partitionId]=null;
-    currPair.loader.m_loaderBatchedRowCnt.addAndGet(currPair.rowCnt);
-    currPair.loader.m_loaderQueuedRowCnt.addAndGet(-1 * currPair.rowCnt);
-  }
-  return new PartitionProcedureCallback(buf,usedLoaderList);
+  return new PartitionProcedureCallback(buf);
 }
