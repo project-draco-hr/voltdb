@@ -16,7 +16,6 @@
       sleptTimes++;
     }
  catch (    InterruptedException ex) {
-      ;
     }
   }
   if (sleptTimes >= 120) {
@@ -66,44 +65,21 @@
   }
   m_isMP=(m_partitionedColumnIndex == -1);
   m_maxPartitionProcessors=((hostcount * sitesPerHost) / (kfactor + 1)) + 1;
-  int queueDepthMultiplier;
   if (!m_isMP) {
     m_firstPartitionTable=0;
     m_lastPartitionTable=m_maxPartitionProcessors - 2;
-    queueDepthMultiplier=Math.max(5,1000 / (m_maxPartitionProcessors - 1));
     m_procName="@LoadSinglepartitionTable";
   }
  else {
-    queueDepthMultiplier=1000;
     m_firstPartitionTable=m_maxPartitionProcessors - 1;
     m_lastPartitionTable=m_maxPartitionProcessors - 1;
     m_procName="@LoadMultipartitionTable";
   }
-  if (m_vblGlobals.m_TableNameToLoader.isEmpty()) {
-    m_vblGlobals.m_spawnedPartitionProcessors=new ArrayList<Thread>(m_maxPartitionProcessors);
-    m_vblGlobals.m_partitionProcessors=new PartitionProcessor[m_maxPartitionProcessors];
-    m_vblGlobals.m_tableQueues=(ConcurrentLinkedQueue<PerPartitionTable>[])new ConcurrentLinkedQueue[m_maxPartitionProcessors];
-    m_vblGlobals.m_processor_cdl=new CountDownLatch(m_maxPartitionProcessors);
-    for (int i=0; i < m_maxPartitionProcessors; i++) {
-      ConcurrentLinkedQueue<PerPartitionTable> tableQueue=new ConcurrentLinkedQueue<PerPartitionTable>();
-      m_vblGlobals.m_tableQueues[i]=tableQueue;
-      PartitionProcessor processor=new PartitionProcessor(i,i == m_maxPartitionProcessors - 1,m_vblGlobals);
-      m_vblGlobals.m_partitionProcessors[i]=processor;
-      Thread th=new Thread(processor);
-      th.setName(processor.m_processorName);
-      m_vblGlobals.m_spawnedPartitionProcessors.add(th);
-      th.start();
-    }
-  }
-  m_outstandingRowCnts=(ArrayList<LoaderSpecificRowCnt>[])Array.newInstance(ArrayList.class,m_maxPartitionProcessors);
-  m_availLoaderPairs=new Stack();
-  m_currBatchPair=new LoaderSpecificRowCnt[m_maxPartitionProcessors];
   List<VoltBulkLoader> loaderList=m_vblGlobals.m_TableNameToLoader.get(m_tableName);
   if (loaderList == null) {
     m_partitionTable=new PerPartitionTable[m_maxPartitionProcessors];
     for (int i=m_firstPartitionTable; i <= m_lastPartitionTable; i++) {
-      m_partitionTable[i]=new PerPartitionTable(m_clientImpl,m_tableName,m_vblGlobals.m_partitionProcessors[i],this,maxBatchSize,maxBatchSize * queueDepthMultiplier);
-      m_outstandingRowCnts[i]=new ArrayList<LoaderSpecificRowCnt>();
+      m_partitionTable[i]=new PerPartitionTable(m_clientImpl,m_tableName,i,i == m_maxPartitionProcessors - 1,this,maxBatchSize);
     }
     loaderList=new ArrayList<VoltBulkLoader>();
     loaderList.add(this);
@@ -117,10 +93,6 @@
       if (primary.m_maxBatchSize != maxBatchSize) {
         m_partitionTable[i].updateMinBatchTriggerSize(maxBatchSize);
       }
-      m_outstandingRowCnts[i]=new ArrayList<LoaderSpecificRowCnt>();
     }
   }
-  m_failedQueue=new LinkedBlockingQueue<VoltBulkLoaderRow>();
-  m_failureProcessor=new FailedBatchProcessor();
-  m_failureProcessor.start();
 }
