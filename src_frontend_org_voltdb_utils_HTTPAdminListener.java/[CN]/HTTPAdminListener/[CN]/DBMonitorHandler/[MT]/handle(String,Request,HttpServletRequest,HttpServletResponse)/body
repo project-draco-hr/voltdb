@@ -1,0 +1,90 @@
+{
+  VoltLogger logger=new VoltLogger("HOST");
+  try {
+    AsyncContinuation cont=baseRequest.getAsyncContinuation();
+    if (!cont.isInitial()) {
+      cont.suspend();
+      return;
+    }
+    if (baseRequest.getRequestURI().contains("/api/1.0/")) {
+      response.setContentType("application/json;charset=utf-8");
+      if (m_jsonEnabled) {
+        httpClientInterface.process(baseRequest,response);
+      }
+ else {
+        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+        baseRequest.setHandled(true);
+        response.getWriter().println("JSON API IS CURRENTLY DISABLED");
+      }
+      return;
+    }
+    if (baseRequest.getRequestURI().contains("/memorycsv/")) {
+      String msg=SystemStatsCollector.getCSV();
+      response.setContentType("text/plain;charset=utf-8");
+      response.setStatus(HttpServletResponse.SC_OK);
+      baseRequest.setHandled(true);
+      response.getWriter().print(msg);
+      return;
+    }
+    if (baseRequest.getRequestURI().contains("/memory/")) {
+      handleMemoryPage(baseRequest,response);
+      return;
+    }
+    if (baseRequest.getRequestURI().contains("/ddl/")) {
+      byte[] reportbytes=VoltDB.instance().getCatalogContext().getFileInJar("autogen-ddl.sql");
+      String ddl=new String(reportbytes,Charsets.UTF_8);
+      response.setContentType("text/plain;charset=utf-8");
+      response.setStatus(HttpServletResponse.SC_OK);
+      baseRequest.setHandled(true);
+      response.getWriter().print(ddl);
+      return;
+    }
+    if (baseRequest.getRequestURI().contains("/catalog/")) {
+      handleReportPage(baseRequest,response);
+    }
+    if (target.equals("/"))     target="/index.htm";
+    URL url=VoltDB.class.getResource("dbmonitor" + target);
+    if (url == null) {
+      logger.error("Can't find file" + target);
+      String msg="404: Resource not found.\n" + url.toString();
+      response.setContentType("text/plain;charset=utf-8");
+      response.setStatus(HttpServletResponse.SC_NOT_FOUND);
+      baseRequest.setHandled(true);
+      response.getWriter().print(msg);
+      return;
+    }
+    InputStream is=VoltDB.class.getResourceAsStream("dbmonitor" + target);
+    if (target.endsWith("/index.htm")) {
+      response.setContentType("text/html;charset=utf-8");
+      response.setStatus(HttpServletResponse.SC_OK);
+      baseRequest.setHandled(true);
+      OutputStream os=response.getOutputStream();
+      BufferedInputStream bis=new BufferedInputStream(is);
+      int c=-1;
+      while ((c=bis.read()) != -1) {
+        os.write(c);
+      }
+    }
+ else {
+      String mime="text/html;charset=utf-8";
+      if (target.endsWith(".js"))       mime="application/x-javascript;charset=utf-8";
+      if (target.endsWith(".css"))       mime="text/css;charset=utf-8";
+      if (target.endsWith(".gif"))       mime="image/gif";
+      if (target.endsWith(".png"))       mime="image/png";
+      if ((target.endsWith(".jpg")) || (target.endsWith(".jpeg")))       mime="image/jpeg";
+      response.setContentType(mime);
+      response.setStatus(HttpServletResponse.SC_OK);
+      baseRequest.setHandled(true);
+      BufferedInputStream bis=new BufferedInputStream(is);
+      OutputStream os=response.getOutputStream();
+      int c=-1;
+      while ((c=bis.read()) != -1) {
+        os.write(c);
+      }
+    }
+  }
+ catch (  Exception ex) {
+    logger.error(ex.getMessage());
+    logger.error(ex);
+  }
+}
