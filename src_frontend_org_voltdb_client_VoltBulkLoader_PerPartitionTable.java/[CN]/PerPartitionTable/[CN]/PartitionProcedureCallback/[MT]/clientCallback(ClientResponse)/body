@@ -1,23 +1,19 @@
 {
   if (response.getStatus() != ClientResponse.SUCCESS) {
-    for (    LoaderSpecificRowCnt currPair : m_waitingLoaders) {
-      currPair.loader.m_loaderBatchedRowCnt.addAndGet(-1 * currPair.rowCnt);
-      currPair.loader.m_failedBatchQueuedRowCnt.addAndGet(currPair.rowCnt);
-      currPair.loader.m_availLoaderPairs.push(currPair);
+    m_es.execute(new Runnable(){
+      @Override public void run(){
+        try {
+          reinsertFailed(m_batchRowList);
+        }
+ catch (        Exception e) {
+          loaderLog.error("Failed to re-insert failed batch",e);
+        }
+      }
     }
-    for (    VoltBulkLoaderRow currRow : m_batchRowList)     currRow.m_loader.m_failedQueue.add(currRow);
+);
   }
  else {
-    for (    LoaderSpecificRowCnt currPair : m_waitingLoaders) {
-      currPair.loader.m_loaderBatchedRowCnt.addAndGet(-1 * currPair.rowCnt);
-      currPair.loader.m_loaderCompletedCnt.addAndGet(currPair.rowCnt);
-      currPair.loader.m_availLoaderPairs.push(currPair);
-    }
-  }
-synchronized (PerPartitionTable.this) {
-    for (    VoltBulkLoaderRow currNotifyRow : m_notificationRows) {
-      ((BulkLoaderNotification)currNotifyRow.m_rowHandle).notifyOfClientResponse();
-    }
-    m_activeCallbacks.removeCallback(m_thisWrappedCallback);
+    m_batchRowList.get(0).m_loader.m_outstandingRowCount.addAndGet(-1 * m_batchRowList.size());
+    m_batchRowList.get(0).m_loader.m_loaderCompletedCnt.addAndGet(m_batchRowList.size());
   }
 }

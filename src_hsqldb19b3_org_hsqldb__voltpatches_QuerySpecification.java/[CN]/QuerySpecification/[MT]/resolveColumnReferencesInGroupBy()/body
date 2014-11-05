@@ -1,0 +1,59 @@
+{
+  if (!isAggregated) {
+    return;
+  }
+  if (unresolvedExpressions == null || unresolvedExpressions.isEmpty()) {
+    return;
+  }
+  HsqlList newUnresolvedExpressions=new ArrayListIdentity();
+  int size=unresolvedExpressions.size();
+  for (int i=0; i < size; i++) {
+    Object obj=unresolvedExpressions.get(i);
+    newUnresolvedExpressions.add(obj);
+    if (i + 1 < size && obj == unresolvedExpressions.get(i + 1)) {
+      i+=1;
+    }
+    if (obj instanceof ExpressionColumn == false) {
+      continue;
+    }
+    ExpressionColumn element=(ExpressionColumn)obj;
+    if (element.tableName != null) {
+      continue;
+    }
+    if (element.getType() != OpTypes.COLUMN) {
+      continue;
+    }
+    int k=indexLimitVisible;
+    int endGroupbyIndex=indexLimitVisible + groupByColumnCount;
+    for (; k < endGroupbyIndex; k++) {
+      if (element == exprColumns[k]) {
+        break;
+      }
+    }
+    if (k == endGroupbyIndex) {
+      continue;
+    }
+    assert(exprColumns[k].getType() == OpTypes.COLUMN);
+    ExpressionColumn exprCol=(ExpressionColumn)exprColumns[k];
+    String alias=exprCol.getColumnName();
+    if (alias == null) {
+      continue;
+    }
+    for (int j=0; j < indexLimitVisible; j++) {
+      Expression selectCol=exprColumns[j];
+      if (selectCol.isAggregate) {
+        continue;
+      }
+      if (selectCol.alias == null) {
+        continue;
+      }
+      if (alias.equals(selectCol.alias.name)) {
+        exprColumns[k]=selectCol;
+        exprColumnList.set(k,selectCol);
+        newUnresolvedExpressions.remove(element);
+        break;
+      }
+    }
+  }
+  unresolvedExpressions=newUnresolvedExpressions;
+}
