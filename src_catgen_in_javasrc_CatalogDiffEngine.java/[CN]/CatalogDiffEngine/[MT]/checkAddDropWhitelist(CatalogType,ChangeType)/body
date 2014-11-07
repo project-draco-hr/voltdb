@@ -1,7 +1,7 @@
 {
   m_canOccurWithElasticRebalance=false;
   if (suspect instanceof User || suspect instanceof Group || suspect instanceof Procedure|| suspect instanceof Connector|| suspect instanceof SnapshotSchedule|| suspect instanceof ConstraintRef|| suspect instanceof GroupRef|| suspect instanceof UserRef|| suspect instanceof Constraint|| suspect instanceof Table) {
-    return true;
+    return null;
   }
  else   if (suspect instanceof ColumnRef) {
     if (suspect.getParent() instanceof Index) {
@@ -10,53 +10,48 @@
         CatalogMap<Index> newIndexes=m_newIndexesByTable.get(parent.getParent().getTypeName());
         Index newIndex=newIndexes.get(parent.getTypeName());
         if (!checkNewUniqueIndex(newIndex)) {
-          m_errors.append("May not dynamically remove columns from unique index: " + parent.getTypeName() + "\n");
-          return false;
+          return "May not dynamically remove columns from unique index: " + parent.getTypeName();
         }
       }
     }
-    return true;
+    return null;
   }
  else   if (suspect instanceof Column) {
     if (m_inStrictMatViewDiffMode) {
-      m_errors.append("May not dynamically add, drop, or rename materialized view columns.\n");
-      return false;
+      return "May not dynamically add, drop, or rename materialized view columns.";
     }
     if (changeType == ChangeType.ADDITION) {
       Column col=(Column)suspect;
       if ((!col.getNullable()) && (col.getDefaultvalue() == null)) {
-        m_errors.append("May not dynamically add non-nullable column without default value.\n");
-        return false;
+        return "May not dynamically add non-nullable column without default value.";
       }
     }
     m_requiresSnapshotIsolation=true;
-    return true;
+    return null;
   }
  else   if (suspect instanceof Index) {
     Index index=(Index)suspect;
     if (!index.m_unique) {
-      return true;
+      return null;
     }
     if (changeType == ChangeType.DELETION) {
-      return true;
+      return null;
     }
     if (checkNewUniqueIndex(index)) {
-      return true;
+      return null;
     }
-    m_errors.append("May not dynamically add unique indexes that don't cover existing unique indexes.\n");
-    return false;
+    return "May not dynamically add unique indexes that don't cover existing unique indexes.\n";
   }
  else   if (suspect instanceof MaterializedViewInfo && !m_inStrictMatViewDiffMode) {
-    return true;
+    return null;
   }
   for (CatalogType parent=suspect.m_parent; parent != null; parent=parent.m_parent) {
     if (parent instanceof Procedure || parent instanceof Connector || parent instanceof ConstraintRef|| parent instanceof Column) {
       if (m_triggeredVerbosity) {
         System.out.println("DEBUG VERBOSE diffRecursively " + ((changeType == ChangeType.ADDITION) ? "addition" : "deletion") + " of schema object '"+ suspect+ "'"+ " rescued by context '"+ parent+ "'");
       }
-      return true;
+      return null;
     }
   }
-  m_errors.append("May not dynamically add/drop schema object: '" + suspect + "'\n");
-  return false;
+  return "May not dynamically add/drop schema object: '" + suspect + "'\n";
 }

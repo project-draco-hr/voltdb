@@ -14,7 +14,7 @@
           }
  else {
             try {
-              createAdHocTransaction(plannedStmtBatch);
+              createAdHocTransaction(plannedStmtBatch,c);
             }
  catch (            VoltTypeException vte) {
               String msg="Unable to execute adhoc sql statement(s): " + vte.getMessage();
@@ -40,19 +40,28 @@
  else {
             StoredProcedureInvocation task=new StoredProcedureInvocation();
             task.procName="@UpdateApplicationCatalog";
-            task.setParams(changeResult.encodedDiffCommands,changeResult.catalogHash,changeResult.catalogBytes,changeResult.expectedCatalogVersion,changeResult.deploymentString,changeResult.requiresSnapshotIsolation ? 1 : 0,changeResult.worksWithElastic ? 1 : 0,changeResult.deploymentHash);
+            task.setParams(changeResult.encodedDiffCommands,changeResult.catalogHash,changeResult.catalogBytes,changeResult.expectedCatalogVersion,changeResult.deploymentString,changeResult.tablesThatMustBeEmpty,changeResult.reasonsForEmptyTables,changeResult.requiresSnapshotIsolation ? 1 : 0,changeResult.worksWithElastic ? 1 : 0,changeResult.deploymentHash);
             task.clientHandle=changeResult.clientHandle;
             task.type=changeResult.invocationType;
             task.originalTxnId=changeResult.originalTxnId;
             task.originalUniqueId=changeResult.originalUniqueId;
-            try {
-              task=MiscUtils.roundTripForCL(task);
+            ClientResponseImpl error=null;
+            if ((error=m_permissionValidator.shouldAccept(task.procName,result.user,task,SystemProcedureCatalog.listing.get(task.procName).asCatalogProcedure())) != null) {
+              ByteBuffer buffer=ByteBuffer.allocate(error.getSerializedSize() + 4);
+              buffer.putInt(buffer.capacity() - 4);
+              error.flattenToBuffer(buffer).flip();
+              c.writeStream().enqueue(buffer);
             }
- catch (            Exception e) {
-              hostLog.fatal(e);
-              VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
+ else {
+              try {
+                task=MiscUtils.roundTripForCL(task);
+              }
+ catch (              Exception e) {
+                hostLog.fatal(e);
+                VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
+              }
+              createTransaction(changeResult.connectionId,task,false,false,false,0,task.getSerializedSize(),System.nanoTime());
             }
-            createTransaction(changeResult.connectionId,task,false,false,false,0,task.getSerializedSize(),System.nanoTime());
           }
         }
  else {
