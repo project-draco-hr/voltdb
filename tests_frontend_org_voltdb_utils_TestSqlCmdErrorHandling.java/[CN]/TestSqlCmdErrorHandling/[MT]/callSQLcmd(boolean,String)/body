@@ -1,0 +1,38 @@
+{
+  final String commandPath="bin/sqlcmd";
+  final long timeout=60000;
+  File f=new File("ddl.sql");
+  f.deleteOnExit();
+  FileOutputStream fos=new FileOutputStream(f);
+  fos.write(inputText.getBytes());
+  fos.close();
+  File out=new File("out.log");
+  File error=new File("error.log");
+  ProcessBuilder pb=(stopOnError ? new ProcessBuilder(commandPath,"--stop-on-first-error") : new ProcessBuilder(commandPath));
+  pb.redirectInput(f);
+  pb.redirectOutput(out);
+  pb.redirectError(error);
+  Process process=pb.start();
+  long starttime=System.currentTimeMillis();
+  long elapsedtime=0;
+  long pollcount=0;
+  do {
+    Thread.sleep(1000);
+    try {
+      int exitValue=process.exitValue();
+      if (pollcount > 0) {
+        elapsedtime=System.currentTimeMillis() - starttime;
+        System.err.println("External process (" + commandPath + ") exited after being polled "+ pollcount+ " times over "+ elapsedtime+ "ms");
+      }
+      return exitValue;
+    }
+ catch (    Exception e) {
+      elapsedtime=System.currentTimeMillis() - starttime;
+      ++pollcount;
+      System.err.println("External process (" + commandPath + ") has not yet exited after "+ elapsedtime+ "ms");
+    }
+  }
+ while (elapsedtime < timeout);
+  fail("External process (" + commandPath + ") timed out after "+ elapsedtime+ "ms on input:\n"+ inputText);
+  return 0;
+}
