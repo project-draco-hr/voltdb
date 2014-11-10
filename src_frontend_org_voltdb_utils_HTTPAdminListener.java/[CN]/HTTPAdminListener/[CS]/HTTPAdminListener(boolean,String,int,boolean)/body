@@ -1,4 +1,5 @@
 {
+  m_mustListen=mustListen;
   try {
     loadTemplate(HTTPAdminListener.class,"admintemplate.html");
   }
@@ -7,31 +8,37 @@
     logger.error("Unable to load HTML templates from jar for admin pages.",e);
     throw e;
   }
+  SocketConnector connector=null;
   try {
-    SocketConnector connector=new SocketConnector();
+    connector=new SocketConnector();
     if (intf != null && intf.length() > 0) {
       connector.setHost(intf);
     }
     connector.setPort(port);
+    connector.statsReset();
     connector.setName("VoltDB-HTTPD");
+    connector.open();
     m_server.addConnector(connector);
-    ContextHandler studioHander=new ContextHandler("/studio");
-    studioHander.setHandler(new StudioHander());
-    ContextHandler baseHander=new ContextHandler("/");
-    baseHander.setHandler(new RequestHandler());
+    ContextHandler dbMonitorHandler=new ContextHandler("/");
+    dbMonitorHandler.setHandler(new DBMonitorHandler());
+    ContextHandler apiRequestHandler=new ContextHandler("/api/1.0");
+    apiRequestHandler.setHandler(new APIRequestHandler());
+    ContextHandler catalogRequestHandler=new ContextHandler("/catalog");
+    catalogRequestHandler.setHandler(new CatalogRequestHandler());
+    ContextHandler ddlRequestHandler=new ContextHandler("/ddl");
+    ddlRequestHandler.setHandler(new DDLRequestHandler());
     ContextHandlerCollection handlers=new ContextHandlerCollection();
-    handlers.setHandlers(new Handler[]{studioHander,baseHander});
+    handlers.setHandlers(new Handler[]{apiRequestHandler,catalogRequestHandler,ddlRequestHandler,dbMonitorHandler});
     m_server.setHandler(handlers);
     final QueuedThreadPool qtp=new QueuedThreadPool();
     qtp.setMaxIdleTimeMs(15000);
     qtp.setMinThreads(1);
     m_server.setThreadPool(qtp);
-    m_server.start();
     m_jsonEnabled=jsonEnabled;
   }
  catch (  Exception e) {
     try {
-      m_server.stop();
+      connector.close();
     }
  catch (    Exception e2) {
     }
