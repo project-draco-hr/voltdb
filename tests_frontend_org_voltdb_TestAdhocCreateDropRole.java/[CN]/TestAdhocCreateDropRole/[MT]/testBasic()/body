@@ -1,0 +1,97 @@
+{
+  System.out.println("\n\n-----\n testBasic \n-----\n\n");
+  String pathToCatalog=Configuration.getPathToCatalogForTest("adhocddl.jar");
+  String pathToDeployment=Configuration.getPathToCatalogForTest("adhocddl.xml");
+  VoltProjectBuilder builder=new VoltProjectBuilder();
+  DeploymentBuilder dbuilder=new DeploymentBuilder(2,1,0);
+  builder.addLiteralSchema("create table FOO (" + "ID integer not null," + "VAL bigint, "+ "constraint PK_TREE primary key (ID)"+ ");\n"+ "create table FOO_R ("+ "ID integer not null,"+ "VAL bigint, "+ "constraint PK_TREE_R primary key (ID)"+ ");\n");
+  builder.addPartitionInfo("FOO","ID");
+  dbuilder.setUseDDLSchema(true);
+  dbuilder.addUsers(new DeploymentBuilder.UserInfo[]{new DeploymentBuilder.UserInfo("admin","admin",new String[]{"ADMINISTRATOR"})});
+  dbuilder.setSecurityEnabled(true);
+  dbuilder.setEnableCommandLogging(false);
+  boolean success=builder.compile(pathToCatalog,2,1,0);
+  assertTrue("Schema compilation failed",success);
+  dbuilder.writeXML(pathToDeployment);
+  VoltDB.Configuration config=new VoltDB.Configuration();
+  config.m_pathToCatalog=pathToCatalog;
+  config.m_pathToDeployment=pathToDeployment;
+  try {
+    startServer(config);
+    ClientConfig adminConfig=new ClientConfig("admin","admin");
+    Client adminClient=ClientFactory.createClient(adminConfig);
+    ClientConfig userConfig=new ClientConfig("user","user");
+    Client userClient=ClientFactory.createClient(userConfig);
+    adminClient.createConnection("localhost");
+    boolean threw=false;
+    try {
+      userClient.createConnection("localhost");
+    }
+ catch (    IOException ioe) {
+      threw=true;
+      assertTrue(ioe.getMessage().contains("Authentication rejected"));
+    }
+    assertTrue("Connecting bad user should have failed",threw);
+    dbuilder.addUsers(new UserInfo[]{new UserInfo("user","user",new String[]{"NEWROLE"})});
+    dbuilder.writeXML(pathToDeployment);
+    threw=false;
+    try {
+      adminClient.updateApplicationCatalog(null,new File(pathToDeployment));
+    }
+ catch (    ProcCallException pce) {
+      threw=true;
+    }
+    assertTrue("Adding a user with a bad role should have failed",threw);
+    try {
+      adminClient.callProcedure("@AdHoc","create role NEWROLE with ALLPROC");
+    }
+ catch (    ProcCallException pce) {
+      pce.printStackTrace();
+      fail("Creating role should have succeeded");
+    }
+    try {
+      adminClient.updateApplicationCatalog(null,new File(pathToDeployment));
+    }
+ catch (    ProcCallException pce) {
+      pce.printStackTrace();
+      fail("Adding 'user' should have succeeded this time");
+    }
+    try {
+      userClient.createConnection("localhost");
+    }
+ catch (    IOException ioe) {
+      ioe.printStackTrace();
+      fail("Should have been able to connect 'user'");
+    }
+    threw=false;
+    try {
+      adminClient.callProcedure("@AdHoc","create role NEWROLE with ALLPROC");
+    }
+ catch (    ProcCallException pce) {
+      assertTrue(pce.getMessage().contains("already exists"));
+      threw=true;
+    }
+    assertTrue("Shouldn't be able to 'create' same role twice",threw);
+    threw=false;
+    try {
+      adminClient.callProcedure("@AdHoc","create role ADMINISTRATOR with ALLPROC");
+    }
+ catch (    ProcCallException pce) {
+      assertTrue(pce.getMessage().contains("already exists"));
+      threw=true;
+    }
+    assertTrue("Shouldn't be able to 'create' ADMINISTRATOR role",threw);
+    threw=false;
+    try {
+      adminClient.callProcedure("@AdHoc","create role USER with ALLPROC");
+    }
+ catch (    ProcCallException pce) {
+      assertTrue(pce.getMessage().contains("already exists"));
+      threw=true;
+    }
+    assertTrue("Shouldn't be able to 'create' USER role",threw);
+  }
+  finally {
+    teardownSystem();
+  }
+}
