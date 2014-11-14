@@ -1,0 +1,119 @@
+{
+  String pathToCatalog=Configuration.getPathToCatalogForTest("adhocddl.jar");
+  String pathToDeployment=Configuration.getPathToCatalogForTest("adhocddl.xml");
+  VoltProjectBuilder builder=new VoltProjectBuilder();
+  builder.addLiteralSchema("create table FOO (" + "ID integer not null," + "VAL varchar(50) not null, "+ "VAL2 bigint"+ ");\n"+ "create table EMPTYFOO ("+ "ID integer not null,"+ "VAL varchar(50) not null, "+ "VAL2 bigint"+ ");\n");
+  builder.addPartitionInfo("FOO","ID");
+  builder.addPartitionInfo("EMPTYFOO","ID");
+  builder.setUseDDLSchema(true);
+  boolean success=builder.compile(pathToCatalog,2,1,0);
+  assertTrue("Schema compilation failed",success);
+  MiscUtils.copyFile(builder.getPathToDeployment(),pathToDeployment);
+  VoltDB.Configuration config=new VoltDB.Configuration();
+  config.m_pathToCatalog=pathToCatalog;
+  config.m_pathToDeployment=pathToDeployment;
+  try {
+    startSystem(config);
+    m_client.callProcedure("FOO.insert",0,"ryanloves",0);
+    m_client.callProcedure("FOO.insert",1,"theyankees",1);
+    assertTrue(findTableInSystemCatalogResults("FOO"));
+    assertTrue(isColumnPartitionColumn("FOO","ID"));
+    assertTrue(findTableInSystemCatalogResults("EMPTYFOO"));
+    assertTrue(isColumnPartitionColumn("EMPTYFOO","ID"));
+    try {
+      m_client.callProcedure("@AdHoc","alter table EMPTYFOO alter column ID bigint not null;");
+    }
+ catch (    ProcCallException pce) {
+      pce.printStackTrace();
+      fail("Should be able to alter partition column type on empty table");
+    }
+    assertTrue(isColumnPartitionColumn("EMPTYFOO","ID"));
+    assertTrue(verifyTableColumnType("EMPTYFOO","ID","BIGINT"));
+    try {
+      m_client.callProcedure("@AdHoc","partition table EMPTYFOO on column VAL;");
+    }
+ catch (    ProcCallException pce) {
+      pce.printStackTrace();
+      fail("Should be able to change partition column on empty table");
+    }
+    assertTrue(isColumnPartitionColumn("EMPTYFOO","VAL"));
+    assertTrue(verifyTableColumnType("EMPTYFOO","VAL","VARCHAR"));
+    boolean threw=false;
+    try {
+      m_client.callProcedure("@AdHoc","partition table EMPTYFOO on column VAL2;");
+    }
+ catch (    ProcCallException pce) {
+      pce.printStackTrace();
+      threw=true;
+    }
+    assertTrue("Shouldn't be able to change partition column to nullable column",threw);
+    assertTrue(isColumnPartitionColumn("EMPTYFOO","VAL"));
+    assertTrue(verifyTableColumnType("EMPTYFOO","VAL","VARCHAR"));
+    try {
+      m_client.callProcedure("@AdHoc","alter table EMPTYFOO drop column VAL;");
+    }
+ catch (    ProcCallException pce) {
+      pce.printStackTrace();
+      fail("Should be able to drop partition column on empty table");
+    }
+    assertFalse(isColumnPartitionColumn("EMPTYFOO","ID"));
+    assertFalse(isColumnPartitionColumn("EMPTYFOO","VAL"));
+    assertFalse(isColumnPartitionColumn("EMPTYFOO","VAL2"));
+    try {
+      m_client.callProcedure("@AdHoc","alter table FOO alter column ID bigint not null;");
+    }
+ catch (    ProcCallException pce) {
+      pce.printStackTrace();
+      fail("Should be able to alter partition column type to wider type on non-empty table");
+    }
+    assertTrue(isColumnPartitionColumn("FOO","ID"));
+    assertTrue(verifyTableColumnType("FOO","ID","BIGINT"));
+    threw=false;
+    try {
+      m_client.callProcedure("@AdHoc","alter table FOO alter column ID integer not null;");
+    }
+ catch (    ProcCallException pce) {
+      pce.printStackTrace();
+      threw=true;
+    }
+    assertTrue("Shouldn't be able to narrow partition column on non-empty table",threw);
+    assertTrue(isColumnPartitionColumn("FOO","ID"));
+    assertTrue(verifyTableColumnType("FOO","ID","BIGINT"));
+    threw=false;
+    try {
+      m_client.callProcedure("@AdHoc","partition table FOO on column VAL;");
+    }
+ catch (    ProcCallException pce) {
+      pce.printStackTrace();
+      threw=true;
+    }
+    assertTrue("Shouldn't be able to change partition column on non-empty table",threw);
+    assertTrue(isColumnPartitionColumn("FOO","ID"));
+    assertTrue(verifyTableColumnType("FOO","ID","BIGINT"));
+    threw=false;
+    try {
+      m_client.callProcedure("@AdHoc","partition table FOO on column VAL2;");
+    }
+ catch (    ProcCallException pce) {
+      pce.printStackTrace();
+      threw=true;
+    }
+    assertTrue("Shouldn't be able to change partition column to nullable column",threw);
+    assertTrue(isColumnPartitionColumn("FOO","ID"));
+    assertTrue(verifyTableColumnType("FOO","ID","BIGINT"));
+    threw=false;
+    try {
+      m_client.callProcedure("@AdHoc","alter table FOO drop column ID;");
+    }
+ catch (    ProcCallException pce) {
+      pce.printStackTrace();
+      threw=true;
+    }
+    assertTrue("Shouldn't be able to drop partition column on non-empty table",threw);
+    assertTrue(isColumnPartitionColumn("FOO","ID"));
+    assertTrue(verifyTableColumnType("FOO","ID","BIGINT"));
+  }
+  finally {
+    teardownSystem();
+  }
+}
