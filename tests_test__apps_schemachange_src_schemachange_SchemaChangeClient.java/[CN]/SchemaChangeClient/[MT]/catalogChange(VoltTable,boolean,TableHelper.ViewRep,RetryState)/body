@@ -19,30 +19,39 @@
       newViewRep=null;
     }
   }
-  schemaChanger.beginBatch();
-  try {
-    schemaChanger.dropTables(_F("V%d",schemaVersionNo));
-    if (activeViewRep != null) {
-      schemaChanger.dropViews(activeViewRep.viewName);
-      activeViewRep=null;
+  if (retryState.stage == 0) {
+    if (retryState.retry > 0) {
+      log.info(_F("Retry #%d: stage %d (drops)",retryState.retry,retryState.stage + 1));
     }
-    activeViewRep=newViewRep;
-    if (activeVerifyProc != null) {
-      schemaChanger.dropProcedures(activeVerifyProc.getName());
-      activeVerifyProc=null;
-    }
-    if (newTable) {
-      if (activeTableNames.contains(newName)) {
-        schemaChanger.dropTables(newName);
-        activeTableNames.remove(newName);
+    schemaChanger.beginBatch();
+    try {
+      schemaChanger.dropTables(_F("V%d",schemaVersionNo));
+      if (activeViewRep != null) {
+        schemaChanger.dropViews(activeViewRep.viewName);
+        activeViewRep=null;
+      }
+      activeViewRep=newViewRep;
+      if (activeVerifyProc != null) {
+        schemaChanger.dropProcedures(activeVerifyProc.getName());
+        activeVerifyProc=null;
+      }
+      if (newTable) {
+        if (activeTableNames.contains(newName)) {
+          schemaChanger.dropTables(newName);
+          activeTableNames.remove(newName);
+        }
+      }
+      if (!schemaChanger.executeBatch(this.client)) {
+        return null;
       }
     }
-    if (!schemaChanger.executeBatch(this.client)) {
+ catch (    IOException e) {
       return null;
     }
+    retryState.stage++;
   }
- catch (  IOException e) {
-    return null;
+  if (retryState.retry > 0) {
+    log.info(_F("Retry #%d: stage %d (creates/alters)",retryState.retry,retryState.stage + 1));
   }
   schemaChanger.beginBatch();
   long count=0;
@@ -83,6 +92,7 @@
  catch (  IOException e) {
     return null;
   }
+  retryState.stage=0;
   int obsCatVersion=verifyAndGetSchemaVersion();
   if (obsCatVersion == schemaVersionNo) {
     log.error(_F("Catalog update was reported to be successful but did not pass " + "verification: expected V%d, observed V%d",schemaVersionNo + 1,obsCatVersion));
