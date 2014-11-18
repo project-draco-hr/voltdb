@@ -1,0 +1,30 @@
+{
+  if (!m_parsedSelect.hasDistinctNonTricky()) {
+    return root;
+  }
+  assert(m_parsedSelect.isGrouped());
+  if (m_parsedSelect.displayColumnsContainAllGroupByColumns()) {
+    return root;
+  }
+  AggregatePlanNode distinctAggNode=new HashAggregatePlanNode();
+  distinctAggNode.setOutputSchema(m_parsedSelect.getFinalProjectionSchemaForDistinct());
+  for (  ParsedSelectStmt.ParsedColInfo col : m_parsedSelect.m_distinctGroupByColumns) {
+    distinctAggNode.addGroupByExpression(col.expression);
+  }
+  boolean pushdownDistinctAgg=m_parsedSelect.hasPartitionColumnInDistinctGroupby();
+  if (pushdownDistinctAgg) {
+    assert(m_parsedSelect.hasPartitionColumnInGroupby());
+    if (root instanceof ReceivePlanNode && !m_parsedSelect.m_mvFixInfo.needed()) {
+      AbstractPlanNode accessPlanTemp=root;
+      accessPlanTemp=root.getChild(0).getChild(0);
+      root.getChild(0).unlinkChild(accessPlanTemp);
+      distinctAggNode.addAndLinkChild(accessPlanTemp);
+      root.getChild(0).addAndLinkChild(distinctAggNode);
+    }
+  }
+ else {
+    distinctAggNode.addAndLinkChild(root);
+    root=distinctAggNode;
+  }
+  return root;
+}
