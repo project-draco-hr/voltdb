@@ -1,5 +1,5 @@
 {
-  if (!m_parsedSelect.hasDistinctNonTricky()) {
+  if (!m_parsedSelect.hasDistinctWithGroupBy()) {
     return root;
   }
   assert(m_parsedSelect.isGrouped());
@@ -7,22 +7,30 @@
     return root;
   }
   AggregatePlanNode distinctAggNode=new HashAggregatePlanNode();
-  distinctAggNode.setOutputSchema(m_parsedSelect.getFinalProjectionSchemaForDistinct());
+  distinctAggNode.setOutputSchema(m_parsedSelect.getDistinctProjectionSchema());
   for (  ParsedSelectStmt.ParsedColInfo col : m_parsedSelect.m_distinctGroupByColumns) {
     distinctAggNode.addGroupByExpression(col.expression);
   }
-  boolean pushdownDistinctAgg=m_parsedSelect.hasPartitionColumnInDistinctGroupby();
-  if (pushdownDistinctAgg) {
+  boolean canPushdownDistinctAgg=m_parsedSelect.hasPartitionColumnInDistinctGroupby();
+  boolean pushedDown=false;
+  if (canPushdownDistinctAgg && !m_parsedSelect.m_mvFixInfo.needed()) {
     assert(m_parsedSelect.hasPartitionColumnInGroupby());
-    if (root instanceof ReceivePlanNode && !m_parsedSelect.m_mvFixInfo.needed()) {
-      AbstractPlanNode accessPlanTemp=root;
-      accessPlanTemp=root.getChild(0).getChild(0);
-      root.getChild(0).unlinkChild(accessPlanTemp);
-      distinctAggNode.addAndLinkChild(accessPlanTemp);
-      root.getChild(0).addAndLinkChild(distinctAggNode);
+    AbstractPlanNode receive=root;
+    if (receive instanceof ProjectionPlanNode && receive.getChildCount() > 0) {
+      receive=receive.getChild(0);
+    }
+    if (receive instanceof OrderByPlanNode && receive.getChildCount() > 0) {
+      receive=receive.getChild(0);
+    }
+    if (receive instanceof ReceivePlanNode) {
+      AbstractPlanNode distNode=receive.getChild(0).getChild(0);
+      receive.getChild(0).unlinkChild(distNode);
+      distinctAggNode.addAndLinkChild(distNode);
+      receive.getChild(0).addAndLinkChild(distinctAggNode);
+      pushedDown=true;
     }
   }
- else {
+  if (!pushedDown) {
     distinctAggNode.addAndLinkChild(root);
     root=distinctAggNode;
   }
