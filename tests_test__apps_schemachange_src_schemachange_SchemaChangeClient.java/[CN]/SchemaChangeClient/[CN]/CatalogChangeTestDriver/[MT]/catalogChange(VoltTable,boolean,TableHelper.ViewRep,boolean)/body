@@ -1,14 +1,25 @@
 {
+  FailBot failBot=new FailBot(3,t1 != null);
+  boolean skipDrops=false;
   if (isRetry) {
-    if (++this.retryCount > config.retryLimit) {
+    log.info(_F("Catalog update retry #%d for V%d in %d seconds...",this.retryCount + 1,schemaVersionNo + 1,config.retrySleep));
+    Thread.sleep(config.retrySleep * 1000);
+    if (++this.retryCount >= config.retryLimit) {
       throw new IOException("Retry limit reached");
     }
     assert(this.t2 != null);
     assert(this.currentName != null);
     assert(this.newName != null);
     assert(this.versionT != null);
-  }
+    if (isSchemaVersionObservable(schemaVersionNo)) {
+      log.info(_F("The old version table V%d is present, enabling drop batch.",schemaVersionNo));
+    }
  else {
+      log.info(_F("The old version table V%d is not present, disabling drop batch.",schemaVersionNo));
+      skipDrops=true;
+    }
+  }
+  if (this.retryCount == 0) {
     this.t2=null;
     this.currentName=t1 == null ? "B" : TableHelper.getTableName(t1);
     this.newName=this.currentName;
@@ -30,13 +41,11 @@
       }
     }
   }
-  if (!isRetry || this.retryFromStage == 0) {
-    if (isRetry) {
-      this.logRetryStage("drop");
-    }
+  if (!skipDrops) {
+    this.logStage("drop");
     schemaChanger.beginBatch();
     try {
-      if (t1 != null && config.retryForcedPercent > rand.nextInt(100)) {
+      if (failBot.failHere("in drop batch")) {
         schemaChanger.addForcedFailure();
       }
       schemaChanger.dropTables(_F("V%d",schemaVersionNo));
@@ -62,16 +71,14 @@
  catch (    IOException e) {
       return null;
     }
-    this.retryFromStage++;
   }
-  if (isRetry) {
-    this.logRetryStage("create/alter");
-  }
+  this.logStage("create/alter");
   schemaChanger.beginBatch();
   long count=0;
   long start=0;
+  Class<?> provisionalActiveVerifyProc=null;
   try {
-    if (t1 != null && config.retryForcedPercent > rand.nextInt(100)) {
+    if (failBot.failHere("in create/alter batch")) {
       schemaChanger.addForcedFailure();
     }
     schemaChanger.createTables(this.versionT);
@@ -82,7 +89,6 @@
  else {
       schemaChanger.updateTable(t1,this.t2);
     }
-    Class<?> provisionalActiveVerifyProc;
     if (partitioned) {
       schemaChanger.addTablePartitionInfo(this.t2,this.newName);
       provisionalActiveVerifyProc=VerifySchemaChangedA.class;
@@ -102,19 +108,25 @@
  else {
       log.info("Starting to change schema.");
     }
-    if (!schemaChanger.executeBatch(client)) {
-      return null;
+    boolean executionSucceeded=schemaChanger.executeBatch(client);
+    if (executionSucceeded && failBot.failHere("after create/alter batch")) {
+      executionSucceeded=false;
     }
-    if (newTable) {
-      activeTableNames.add(this.newName);
+    if (!executionSucceeded) {
+      if (!isSchemaVersionObservable(schemaVersionNo + 1)) {
+        return null;
+      }
+      log.info(_F("The new version table V%d is present, not retrying.",schemaVersionNo + 1));
     }
-    activeVerifyProc=provisionalActiveVerifyProc;
   }
  catch (  IOException e) {
     return null;
   }
+  if (newTable) {
+    activeTableNames.add(this.newName);
+  }
+  activeVerifyProc=provisionalActiveVerifyProc;
   this.retryCount=0;
-  this.retryFromStage=0;
   int obsCatVersion=verifyAndGetSchemaVersion();
   if (obsCatVersion == schemaVersionNo) {
     log.error(_F("Catalog update was reported to be successful but did not pass " + "verification: expected V%d, observed V%d",schemaVersionNo + 1,obsCatVersion));
