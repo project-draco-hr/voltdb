@@ -20,11 +20,13 @@ class watchDog extends Thread {
   clientConfig.setMaxOutstandingTxns(512);
   client=ClientFactory.createClient(clientConfig);
   connect(config.servers);
-  topo=getCluterTopology();
+  topo=getClusterTopology();
+  schemaChanger.addProcedureClasses(client,VerifySchemaChangedA.class,VerifySchemaChangedB.class);
+  CatalogChangeTestDriver testDriver=new CatalogChangeTestDriver();
   VoltTable t=null;
   TableHelper.ViewRep v=null;
   while (t == null) {
-    Pair<VoltTable,TableHelper.ViewRep> schema=catalogChange(null,true,null);
+    Pair<VoltTable,TableHelper.ViewRep> schema=testDriver.catalogChange(null,true,null,false);
     t=schema.getFirst();
     v=schema.getSecond();
   }
@@ -46,14 +48,17 @@ class watchDog extends Thread {
       VoltTable newT=null;
       TableHelper.ViewRep newV=null;
       boolean isNewTable=(j == 0) && (rand.nextInt(5) == 0);
+      boolean isRetry=false;
       while (newT == null) {
-        Pair<VoltTable,TableHelper.ViewRep> schema=catalogChange(t,isNewTable,v);
+        Pair<VoltTable,TableHelper.ViewRep> schema=testDriver.catalogChange(t,isNewTable,v,isRetry);
         if (schema == null) {
-          log.info(_F("Retrying an unsuccessful catalog update."));
-          continue;
+          isRetry=true;
         }
-        newT=schema.getFirst();
-        newV=schema.getSecond();
+ else {
+          isRetry=false;
+          newT=schema.getFirst();
+          newV=schema.getSecond();
+        }
       }
       t=newT;
       v=newV;

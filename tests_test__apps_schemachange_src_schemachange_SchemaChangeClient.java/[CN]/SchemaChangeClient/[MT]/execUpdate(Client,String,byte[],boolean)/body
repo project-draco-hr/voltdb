@@ -1,0 +1,39 @@
+{
+  boolean success=false;
+  ClientResponse cr=null;
+  try {
+    cr=client.callProcedure(procName,bytes,null);
+    success=true;
+  }
+ catch (  NoConnectionsException e) {
+  }
+catch (  ProcCallException e) {
+    log.error(_F("Procedure %s call exception: %s",procName,e.getMessage()));
+    cr=e.getClientResponse();
+  }
+  if (success && cr != null) {
+switch (cr.getStatus()) {
+case ClientResponse.SUCCESS:
+      log.info("Catalog update was reported to be successful");
+    break;
+case ClientResponse.CONNECTION_LOST:
+case ClientResponse.CONNECTION_TIMEOUT:
+case ClientResponse.RESPONSE_UNKNOWN:
+case ClientResponse.SERVER_UNAVAILABLE:
+  success=false;
+break;
+case ClientResponse.UNEXPECTED_FAILURE:
+case ClientResponse.GRACEFUL_FAILURE:
+case ClientResponse.USER_ABORT:
+log.error(_F("USER_ABORT in procedure call for Catalog update"));
+log.error(((ClientResponseImpl)cr).toJSONString());
+assert(false);
+System.exit(-1);
+}
+}
+if (!success && hardFail) {
+String msg=(cr != null ? ((ClientResponseImpl)cr).toJSONString() : _F("Unknown %s failure",procName));
+throw new IOException(msg);
+}
+return success;
+}
