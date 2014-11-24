@@ -3,6 +3,7 @@
   boolean adminMode=false;
   Continuation continuation=ContinuationSupport.getContinuation(request);
   continuation.suspend(response);
+  String jsonp=null;
   try {
     if (m_shouldUpdateCatalog.compareAndSet(true,false)) {
       m_connections.closeAll();
@@ -26,6 +27,7 @@
       }
       m_connections=new AuthenticatedConnectionCache(10,clientInterface,port,adminInterface,adminPort);
     }
+    jsonp=request.getParameter("jsonp");
     if (request.getMethod().equalsIgnoreCase("POST")) {
       int queryParamSize=request.getContentLength();
       if (queryParamSize > 150000) {
@@ -40,7 +42,6 @@
     String hashedPassword=request.getParameter("Hashedpassword");
     String procName=request.getParameter("Procedure");
     String params=request.getParameter("Parameters");
-    String jsonp=request.getParameter("jsonp");
     String admin=request.getParameter("admin");
     if (admin != null) {
       if (admin.compareToIgnoreCase("true") == 0) {
@@ -110,6 +111,9 @@ catch (      UnsupportedEncodingException e) {
  catch (  java.net.ConnectException c_ex) {
     ClientResponseImpl rimpl=new ClientResponseImpl(ClientResponse.SERVER_UNAVAILABLE,new VoltTable[0],c_ex.getMessage());
     String msg=rimpl.toJSONString();
+    if (jsonp != null) {
+      msg=String.format("%s( %s )",jsonp,msg);
+    }
     response.setStatus(HttpServletResponse.SC_OK);
     request.setHandled(true);
     try {
@@ -124,6 +128,9 @@ catch (  Exception e) {
     m_rate_limited_log.log("JSON interface exception: " + msg,EstTime.currentTimeMillis());
     ClientResponseImpl rimpl=new ClientResponseImpl(ClientResponse.UNEXPECTED_FAILURE,new VoltTable[0],msg);
     msg=rimpl.toJSONString();
+    if (jsonp != null) {
+      msg=String.format("%s( %s )",jsonp,msg);
+    }
     response.setStatus(HttpServletResponse.SC_OK);
     request.setHandled(true);
     try {

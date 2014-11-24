@@ -95,7 +95,15 @@ catch (      Exception ex) {
       if (!statementMatcher.matches()) {
         throw m_compiler.new VoltCompilerException(String.format("Invalid PARTITION statement: \"%s\", " + "expected syntax: PARTITION TABLE <table> ON COLUMN <column>",statement.substring(0,statement.length() - 1)));
       }
-      m_tracker.put(checkIdentifierStart(statementMatcher.group(1),statement),checkIdentifierStart(statementMatcher.group(2),statement));
+      String tableName=checkIdentifierStart(statementMatcher.group(1),statement);
+      String columnName=checkIdentifierStart(statementMatcher.group(2),statement);
+      VoltXMLElement tableXML=m_schema.findChild("table",tableName.toUpperCase());
+      if (tableXML != null) {
+        tableXML.attributes.put("partitioncolumn",columnName.toUpperCase());
+      }
+ else {
+        throw m_compiler.new VoltCompilerException(String.format("Invalid PARTITION statement: table %s does not exist",tableName));
+      }
       return true;
     }
  else     if (PROCEDURE.equals(partitionee)) {
@@ -119,7 +127,14 @@ catch (      Exception ex) {
   }
   statementMatcher=replicatePattern.matcher(statement);
   if (statementMatcher.matches()) {
-    m_tracker.put(checkIdentifierStart(statementMatcher.group(1),statement),null);
+    String tableName=checkIdentifierStart(statementMatcher.group(1),statement);
+    VoltXMLElement tableXML=m_schema.findChild("table",tableName.toUpperCase());
+    if (tableXML != null) {
+      tableXML.attributes.remove("partitioncolumn");
+    }
+ else {
+      throw m_compiler.new VoltCompilerException(String.format("Invalid REPLICATE statement: table %s does not exist",tableName));
+    }
     return true;
   }
   statementMatcher=importClassPattern.matcher(statement);
@@ -145,7 +160,7 @@ catch (      Exception ex) {
   }
   statementMatcher=createRolePattern.matcher(statement);
   if (statementMatcher.matches()) {
-    String roleName=statementMatcher.group(1);
+    String roleName=statementMatcher.group(1).toLowerCase();
     CatalogMap<Group> groupMap=db.getGroups();
     if (groupMap.get(roleName) != null) {
       throw m_compiler.new VoltCompilerException(String.format("Role name \"%s\" in CREATE ROLE statement already exists.",roleName));
@@ -162,10 +177,31 @@ catch (      Exception ex) {
     }
     return true;
   }
+  statementMatcher=dropRolePattern.matcher(statement);
+  if (statementMatcher.matches()) {
+    String roleName=statementMatcher.group(1).toUpperCase();
+    CatalogMap<Group> groupMap=db.getGroups();
+    if (groupMap.get(roleName) == null) {
+      throw m_compiler.new VoltCompilerException(String.format("Role name \"%s\" in DROP ROLE statement does not exist.",roleName));
+    }
+ else {
+      if (roleName.equals("ADMINISTRATOR") || roleName.equals("USER")) {
+        throw m_compiler.new VoltCompilerException(String.format("You may not drop the built-in role \"%s\".",roleName));
+      }
+      groupMap.delete(roleName);
+    }
+    return true;
+  }
   statementMatcher=exportPattern.matcher(statement);
   if (statementMatcher.matches()) {
     String tableName=checkIdentifierStart(statementMatcher.group(1),statement);
-    m_tracker.addExportedTable(tableName);
+    VoltXMLElement tableXML=m_schema.findChild("table",tableName.toUpperCase());
+    if (tableXML != null) {
+      tableXML.attributes.put("export","true");
+    }
+ else {
+      throw m_compiler.new VoltCompilerException(String.format("Invalid EXPORT statement: table %s was not present in the catalog.",tableName));
+    }
     return true;
   }
   if (PARTITION.equals(commandPrefix)) {
