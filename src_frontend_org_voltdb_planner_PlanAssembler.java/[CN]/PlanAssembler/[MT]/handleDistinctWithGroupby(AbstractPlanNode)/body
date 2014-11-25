@@ -6,8 +6,12 @@
   if (m_parsedSelect.displayColumnsContainAllGroupByColumns()) {
     return root;
   }
+  assert(m_parsedSelect.hasComplexAgg());
+  assert(root instanceof ProjectionPlanNode && root.getChildCount() == 1);
+  root=root.getChild(0);
+  root.clearParents();
   AggregatePlanNode distinctAggNode=new HashAggregatePlanNode();
-  distinctAggNode.setOutputSchema(m_parsedSelect.getDistinctProjectionSchema());
+  distinctAggNode.setOutputSchema(m_parsedSelect.getFinalProjectionSchema());
   for (  ParsedSelectStmt.ParsedColInfo col : m_parsedSelect.m_distinctGroupByColumns) {
     distinctAggNode.addGroupByExpression(col.expression);
   }
@@ -17,12 +21,6 @@
   if (canPushdownDistinctAgg && !m_parsedSelect.m_mvFixInfo.needed()) {
     assert(m_parsedSelect.hasPartitionColumnInGroupby());
     AbstractPlanNode receive=root;
-    if (receive instanceof ProjectionPlanNode && receive.getChildCount() > 0) {
-      receive=receive.getChild(0);
-    }
-    if (receive instanceof OrderByPlanNode && receive.getChildCount() > 0) {
-      receive=receive.getChild(0);
-    }
     if (receive instanceof ReceivePlanNode) {
       AbstractPlanNode distNode=receive.getChild(0).getChild(0);
       receive.getChild(0).unlinkChild(distNode);
