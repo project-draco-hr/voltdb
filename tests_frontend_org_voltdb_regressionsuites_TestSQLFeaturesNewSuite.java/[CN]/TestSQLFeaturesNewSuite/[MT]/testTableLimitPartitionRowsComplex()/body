@@ -1,0 +1,27 @@
+{
+  if (isHSQL())   return;
+  Client client=getClient();
+  VoltTable vt;
+  vt=client.callProcedure("CAPPED3_LIMIT_EXEC_COMPLEX.insert",37,1,0,"important",17000).getResults()[0];
+  assertTablesAreEqual("Insert 1 ",new Object[][]{{1}},vt);
+  vt=client.callProcedure("CAPPED3_LIMIT_EXEC_COMPLEX.insert",37,2,0,"important",17000).getResults()[0];
+  assertTablesAreEqual("Insert 2 ",new Object[][]{{1}},vt);
+  vt=client.callProcedure("CAPPED3_LIMIT_EXEC_COMPLEX.insert",37,3,0,"important",17000).getResults()[0];
+  assertTablesAreEqual("Insert 3 ",new Object[][]{{1}},vt);
+  verifyProcFails(client,"exceeds table maximum row count 3","CAPPED3_LIMIT_EXEC_COMPLEX.insert",37,4,0,"important",17000);
+  vt=client.callProcedure("@AdHoc","UPDATE CAPPED3_LIMIT_EXEC_COMPLEX SET relevance='moot' WHERE dept = 2").getResults()[0];
+  assertTablesAreEqual("Updated rows ",new Object[][]{{1}},vt);
+  verifyProcFails(client,"exceeds table maximum row count 3","CAPPED3_LIMIT_EXEC_COMPLEX.insert",37,4,0,"important",17000);
+  vt=client.callProcedure("@AdHoc","UPDATE CAPPED3_LIMIT_EXEC_COMPLEX SET priority=100 WHERE dept = 2").getResults()[0];
+  assertTablesAreEqual("Updated rows ",new Object[][]{{1}},vt);
+  verifyProcFails(client,"exceeds table maximum row count 3","CAPPED3_LIMIT_EXEC_COMPLEX.insert",37,4,0,"important",17000);
+  vt=client.callProcedure("@AdHoc","UPDATE CAPPED3_LIMIT_EXEC_COMPLEX SET may_be_purged=1 WHERE dept = 2").getResults()[0];
+  assertTablesAreEqual("Updated rows ",new Object[][]{{1}},vt);
+  vt=client.callProcedure("CAPPED3_LIMIT_EXEC_COMPLEX.insert",37,4,1,"moot",500).getResults()[0];
+  assertTablesAreEqual("Insert with purge ",new Object[][]{{1}},vt);
+  assertQueryProduces("Table contents mismatch ",client,new Object[][]{{37,1,0,"important",32000},{37,3,0,"important",32000},{37,4,1,"moot",500}},"SELECT * FROM CAPPED3_LIMIT_EXEC_COMPLEX ORDER BY dept");
+  for (int i=5; i < 100; ++i) {
+    vt=client.callProcedure("CAPPED3_LIMIT_EXEC_COMPLEX.insert",37,i,1,"irrelevant",i + 10).getResults()[0];
+    assertTablesAreEqual("Loop insert ",new Object[][]{{1}},vt);
+  }
+}
