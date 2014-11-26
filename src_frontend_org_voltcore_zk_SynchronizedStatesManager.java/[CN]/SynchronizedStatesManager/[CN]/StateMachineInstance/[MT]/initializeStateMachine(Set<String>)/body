@@ -1,0 +1,31 @@
+{
+  addIfMissing(m_statePath,CreateMode.PERSISTENT,null);
+  addIfMissing(m_lockPath,CreateMode.PERSISTENT,null);
+  addIfMissing(m_barrierParticipantsPath,CreateMode.PERSISTENT,null);
+  ByteBuffer startStates=buildResultPair(m_requestedInitialState,m_requestedInitialState);
+  boolean stateMachineNodeCreated=addIfMissing(m_barrierResultsPath,CreateMode.PERSISTENT,startStates.array());
+  lockLocalState();
+  m_knownMembers=knownMembers;
+  if (stateMachineNodeCreated) {
+    m_synchronizedState=m_requestedInitialState;
+    m_requestedInitialState=null;
+    ByteBuffer readOnlyResult=m_synchronizedState.asReadOnlyBuffer();
+    m_lockWaitingOn="bogus";
+    assignStateChangeAgreement(true);
+    lockLocalState();
+    checkForBarrierParticipantsChange();
+    m_log.debug(m_stateMachineId + " initialized (first member).");
+    setInitialState(readOnlyResult);
+  }
+ else {
+    if (requestLockUnderLocalLock()) {
+      m_proposedState=m_requestedInitialState;
+      assignStateChangeAgreement(true);
+    }
+ else {
+      m_currentParticipants=1;
+      checkForBarrierParticipantsChange();
+    }
+    assert(!isLocalStateLocked());
+  }
+}

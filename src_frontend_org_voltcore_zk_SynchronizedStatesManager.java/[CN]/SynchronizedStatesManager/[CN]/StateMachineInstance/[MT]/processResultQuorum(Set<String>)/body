@@ -1,0 +1,40 @@
+{
+  boolean success=resultsAgreeOnSuccess(resultNodes);
+  if (m_requestedInitialState != null) {
+    byte oldAndProposedState[]=m_zk.getData(m_barrierResultsPath,false,null);
+    Pair<ByteBuffer,ByteBuffer> existingAndProposedStates=getExistingAndProposedBuffersFromResultsNode(oldAndProposedState);
+    if (success) {
+      m_synchronizedState=existingAndProposedStates.getSecond();
+    }
+ else {
+      m_synchronizedState=existingAndProposedStates.getFirst();
+    }
+    m_requestedInitialState=null;
+    m_proposedState=null;
+    m_zk.getChildren(m_barrierParticipantsPath,m_barrierParticipantsWatcher);
+    cancelLockUnderLocalLock();
+    ByteBuffer readOnlyResult=m_synchronizedState.asReadOnlyBuffer();
+    unlockLocalState();
+    m_log.debug(m_stateMachineId + " initialized.");
+    setInitialState(readOnlyResult);
+  }
+ else {
+    m_zk.delete(m_myPartiticpantsPath,-1);
+    if (success) {
+      m_synchronizedState=m_proposedState;
+    }
+    ByteBuffer attemptedChange=m_proposedState.asReadOnlyBuffer();
+    m_proposedState=null;
+    if (m_stateChangeInitiator) {
+      m_stateChangeInitiator=false;
+      cancelLockUnderLocalLock();
+      unlockLocalState();
+      proposedStateResolved(true,attemptedChange,success);
+    }
+ else {
+      unlockLocalState();
+      proposedStateResolved(false,attemptedChange,success);
+    }
+  }
+  m_resultsSet=null;
+}

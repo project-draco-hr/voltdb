@@ -1,0 +1,36 @@
+{
+  assert(m_registeredStateMachineInstances < m_registeredStateMachines.length);
+  m_registeredStateMachines[m_registeredStateMachineInstances]=machine;
+  m_registeredStateMachineInstances++;
+  if (m_registeredStateMachineInstances == m_registeredStateMachines.length) {
+    if (machine.m_log.isDebugEnabled()) {
+      Set<String> instanceNames=new HashSet<String>();
+      for (      StateMachineInstance instance : m_registeredStateMachines) {
+        if (!instanceNames.add(instance.m_statePath)) {
+          machine.m_log.error("Multiple state machine instances with the same path registered: " + instance.m_statePath);
+        }
+      }
+    }
+    addIfMissing(m_stateMachineMemberPath,CreateMode.PERSISTENT,null);
+    addIfMissing(ZKUtil.joinZKPath(m_stateMachineMemberPath,m_memberId),CreateMode.EPHEMERAL,null);
+    try {
+      m_members=ImmutableSet.copyOf(m_zk.getChildren(m_stateMachineMemberPath,false));
+      for (      StateMachineInstance instance : m_registeredStateMachines) {
+        instance.initializeStateMachine(m_members);
+      }
+    }
+ catch (    KeeperException.SessionExpiredException e) {
+      e.printStackTrace();
+    }
+catch (    KeeperException.ConnectionLossException e) {
+      e.printStackTrace();
+    }
+catch (    InterruptedException e) {
+      e.printStackTrace();
+    }
+catch (    Exception e) {
+      org.voltdb.VoltDB.crashLocalVoltDB("Unexepected failure in LeaderElector.",true,e);
+    }
+    m_shared_es.submit(childrenEventHandler);
+  }
+}

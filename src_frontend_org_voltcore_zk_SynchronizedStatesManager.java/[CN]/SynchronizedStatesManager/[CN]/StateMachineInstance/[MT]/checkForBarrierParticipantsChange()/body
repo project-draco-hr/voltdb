@@ -1,0 +1,49 @@
+{
+  assert(isLocalStateLocked());
+  try {
+    Set<String> children=ImmutableSet.copyOf(m_zk.getChildren(m_barrierParticipantsPath,m_barrierParticipantsWatcher));
+    if (m_currentParticipants == 0 && children.size() > 0 && m_proposedState == null) {
+      if (m_requestedInitialState != null) {
+        requestedStateChangeAcceptable(true);
+        m_currentParticipants=children.size();
+        unlockLocalState();
+      }
+ else {
+        m_zk.create(m_myPartiticpantsPath,null,Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL);
+        byte statePair[]=m_zk.getData(m_barrierResultsPath,false,null);
+        Pair<ByteBuffer,ByteBuffer> existingAndProposedStates=getExistingAndProposedBuffersFromResultsNode(statePair);
+        m_proposedState=existingAndProposedStates.getSecond();
+        ByteBuffer proposed=m_proposedState.asReadOnlyBuffer();
+        assert(existingAndProposedStates.getFirst().equals(m_synchronizedState));
+        m_currentParticipants=children.size();
+        m_log.debug(m_stateMachineId + " new state proposed.");
+        unlockLocalState();
+        stateChangeProposed(proposed);
+      }
+    }
+ else {
+      m_currentParticipants=children.size();
+      if (m_currlockName != null && m_currlockName == m_lockWaitingOn && children.size() == 0) {
+        notifyLockWaiter();
+      }
+ else {
+        unlockLocalState();
+      }
+    }
+  }
+ catch (  KeeperException.SessionExpiredException e) {
+    e.printStackTrace();
+    unlockLocalState();
+  }
+catch (  KeeperException.ConnectionLossException e) {
+    e.printStackTrace();
+    unlockLocalState();
+  }
+catch (  InterruptedException e) {
+    e.printStackTrace();
+    unlockLocalState();
+  }
+catch (  Exception e) {
+    org.voltdb.VoltDB.crashLocalVoltDB("Unexepected failure in StateMachine.",true,e);
+  }
+}
