@@ -1,0 +1,38 @@
+{
+  VoltServerConfig config=null;
+  final MultiConfigSuiteBuilder builder=new MultiConfigSuiteBuilder(TestMaxSuite.class);
+  final VoltProjectBuilder project=new VoltProjectBuilder();
+  try {
+    StringBuilder sb=new StringBuilder("CREATE TABLE max_column_table(");
+    for (int i=0; i < 1000; i++) {
+      sb.append("column");
+      sb.append(i);
+      sb.append(" INTEGER NOT NULL,");
+    }
+    sb.append("PRIMARY KEY(column0));");
+    project.addLiteralSchema(sb.toString());
+    project.addPartitionInfo("max_column_table","column0");
+    sb=new StringBuilder();
+    for (int i=0; i < 100; i++) {
+      sb.append("create table max_join_table");
+      sb.append(i);
+      sb.append("(column0 INTEGER NOT NULL, column1 INTEGER NOT NULL, PRIMARY KEY (column0));");
+      project.addLiteralSchema(sb.toString());
+      sb.setLength(0);
+    }
+    project.addLiteralSchema("CREATE TABLE max_in_table(column0 INTEGER NOT NULL, column1 INTEGER NOT NULL, PRIMARY KEY (column0));");
+    project.addPartitionInfo("max_in_table","column0");
+  }
+ catch (  IOException error) {
+    fail(error.getMessage());
+  }
+  config=new LocalCluster("testMax-onesite.jar",1,1,0,BackendTarget.NATIVE_EE_JNI);
+  boolean t1=config.compile(project);
+  assertTrue(t1);
+  builder.addServerConfig(config);
+  config=new LocalCluster("testMax-cluster.jar",2,3,1,BackendTarget.NATIVE_EE_JNI);
+  boolean t2=config.compile(project);
+  assertTrue(t2);
+  builder.addServerConfig(config);
+  return builder;
+}
