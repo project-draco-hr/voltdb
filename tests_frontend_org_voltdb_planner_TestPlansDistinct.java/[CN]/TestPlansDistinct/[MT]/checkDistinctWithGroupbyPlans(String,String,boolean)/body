@@ -1,25 +1,47 @@
 {
   List<AbstractPlanNode> pns1=compileToFragments(distinctSQL);
   List<AbstractPlanNode> pns2=compileToFragments(groupbySQL);
-  printExplainPlan(pns1);
-  printExplainPlan(pns2);
-  if (pns1.size() > 1) {
-    assertEquals(pns1.get(1).toExplainPlanString(),pns2.get(1).toExplainPlanString());
-  }
   assertTrue(pns1.get(0) instanceof SendPlanNode);
   assertTrue(pns2.get(0) instanceof SendPlanNode);
   AbstractPlanNode apn1, apn2;
   apn1=pns1.get(0).getChild(0);
   apn2=pns2.get(0).getChild(0);
-  if (hasLimit) {
-    assertTrue(apn1 instanceof LimitPlanNode);
+  boolean hasLimit=false;
+  if (apn1 instanceof LimitPlanNode) {
+    hasLimit=true;
     apn1=apn1.getChild(0);
-    assertTrue(apn2 instanceof LimitPlanNode);
-    apn2=apn2.getChild(0);
   }
   assertTrue(apn1 instanceof HashAggregatePlanNode);
   assertEquals(0,((HashAggregatePlanNode)apn1).getAggregateTypesSize());
   assertEquals(pns1.get(0).getOutputSchema().getColumns().size(),((HashAggregatePlanNode)apn1).getGroupByExpressionsSize());
   apn1=apn1.getChild(0);
+  if (apn1 instanceof ProjectionPlanNode) {
+    assertTrue(apn2 instanceof ProjectionPlanNode);
+    apn1=apn1.getChild(0);
+    apn2=apn2.getChild(0);
+  }
+  if (apn1 instanceof OrderByPlanNode) {
+    apn1=apn1.getChild(0);
+    assertTrue(apn2 instanceof OrderByPlanNode);
+    if (hasLimit) {
+      assertNotNull(apn2.getInlinePlanNode(PlanNodeType.LIMIT));
+    }
+    apn2=apn2.getChild(0);
+  }
+ else   if (hasLimit) {
+    assertTrue(apn2 instanceof LimitPlanNode);
+    apn2=apn2.getChild(0);
+  }
   assertEquals(apn1.toExplainPlanString(),apn2.toExplainPlanString());
+  if (pns1.size() > 1) {
+    if (!pushdown) {
+      assertEquals(pns1.get(1).toExplainPlanString(),pns2.get(1).toExplainPlanString());
+      return;
+    }
+    assertTrue(pns1.get(1) instanceof SendPlanNode);
+    assertTrue(pns2.get(1) instanceof SendPlanNode);
+    apn1=pns1.get(1).getChild(0);
+    apn2=pns2.get(1).getChild(0).getChild(0);
+    assertEquals(apn1.toExplainPlanString(),apn2.toExplainPlanString());
+  }
 }
