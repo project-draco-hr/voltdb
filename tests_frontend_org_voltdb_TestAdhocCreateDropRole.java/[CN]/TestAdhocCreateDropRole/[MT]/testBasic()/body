@@ -7,7 +7,7 @@
   builder.addLiteralSchema("create table FOO (" + "ID integer not null," + "VAL bigint, "+ "constraint PK_TREE primary key (ID)"+ ");\n"+ "create table FOO_R ("+ "ID integer not null,"+ "VAL bigint, "+ "constraint PK_TREE_R primary key (ID)"+ ");\n");
   builder.addPartitionInfo("FOO","ID");
   dbuilder.setUseDDLSchema(true);
-  dbuilder.addUsers(new DeploymentBuilder.UserInfo[]{new DeploymentBuilder.UserInfo("admin","admin",new String[]{"ADMINISTRATOR"})});
+  dbuilder.addUsers(new DeploymentBuilder.UserInfo[]{new DeploymentBuilder.UserInfo("admin","admin",new String[]{"Administrator"})});
   dbuilder.setSecurityEnabled(true);
   dbuilder.setEnableCommandLogging(false);
   boolean success=builder.compile(pathToCatalog,2,1,0);
@@ -34,16 +34,31 @@
     assertTrue("Connecting bad user should have failed",threw);
     dbuilder.addUsers(new UserInfo[]{new UserInfo("user","user",new String[]{"NEWROLE"})});
     dbuilder.writeXML(pathToDeployment);
-    threw=false;
     try {
       adminClient.updateApplicationCatalog(null,new File(pathToDeployment));
     }
  catch (    ProcCallException pce) {
+      pce.printStackTrace();
+      fail("Should be able to add a user even with a role that doesn't exist");
+    }
+    try {
+      userClient.createConnection("localhost");
+    }
+ catch (    IOException ioe) {
+      ioe.printStackTrace();
+      fail("Should have been able to connect 'user'");
+    }
+    threw=false;
+    try {
+      userClient.callProcedure("FOO.insert",0,0);
+    }
+ catch (    ProcCallException pce) {
+      pce.printStackTrace();
       threw=true;
     }
-    assertTrue("Adding a user with a bad role should have failed",threw);
+    assertTrue("'user' shouldn't be able to call procedures yet",threw);
     try {
-      adminClient.callProcedure("@AdHoc","create role NEWROLE with ALLPROC");
+      adminClient.callProcedure("@AdHoc","create role NEWROLE with DEFAULTPROC");
     }
  catch (    ProcCallException pce) {
       pce.printStackTrace();
@@ -57,11 +72,11 @@
       fail("Adding 'user' should have succeeded this time");
     }
     try {
-      userClient.createConnection("localhost");
+      userClient.callProcedure("FOO.insert",0,0);
     }
- catch (    IOException ioe) {
-      ioe.printStackTrace();
-      fail("Should have been able to connect 'user'");
+ catch (    ProcCallException pce) {
+      pce.printStackTrace();
+      fail("'user' should be able to call default procs now");
     }
     threw=false;
     try {
@@ -74,7 +89,7 @@
     assertTrue("Shouldn't be able to 'create' same role twice",threw);
     threw=false;
     try {
-      adminClient.callProcedure("@AdHoc","create role ADMINISTRATOR with ALLPROC");
+      adminClient.callProcedure("@AdHoc","create role aDministrator with ALLPROC");
     }
  catch (    ProcCallException pce) {
       assertTrue(pce.getMessage().contains("already exists"));
@@ -90,6 +105,68 @@
       threw=true;
     }
     assertTrue("Shouldn't be able to 'create' USER role",threw);
+    try {
+      adminClient.callProcedure("@AdHoc","drop role NEWROLE;");
+    }
+ catch (    ProcCallException pce) {
+      pce.printStackTrace();
+      fail("Should be able to drop role NEWROLE");
+    }
+    try {
+      adminClient.callProcedure("@AdHoc","drop role NEWROLE;");
+    }
+ catch (    ProcCallException pce) {
+      pce.printStackTrace();
+      threw=true;
+    }
+    assertTrue("Can't vanilla DROP a role which doesn't exist",threw);
+    try {
+      adminClient.callProcedure("@AdHoc","drop role NEWROLE if exists;");
+    }
+ catch (    ProcCallException pce) {
+      pce.printStackTrace();
+      fail("Should be able to drop role NEWROLE if exists");
+    }
+    threw=false;
+    try {
+      userClient.callProcedure("FOO.insert",0,0);
+    }
+ catch (    ProcCallException pce) {
+      pce.printStackTrace();
+      threw=true;
+    }
+    assertTrue("'user' shouldn't be able to call procedures yet",threw);
+    threw=false;
+    try {
+      adminClient.callProcedure("@AdHoc","drop role USER;");
+    }
+ catch (    ProcCallException pce) {
+      threw=true;
+      assertTrue(pce.getMessage().contains("You may not drop the built-in role"));
+      pce.printStackTrace();
+    }
+    assertTrue("Shouldn't be able to drop role USER",threw);
+    threw=false;
+    try {
+      adminClient.callProcedure("@AdHoc","drop role adMinistrator;");
+    }
+ catch (    ProcCallException pce) {
+      threw=true;
+      assertTrue(pce.getMessage().contains("You may not drop the built-in role"));
+      pce.printStackTrace();
+    }
+    assertTrue("Shouldn't be able to drop role ADMINISTRATOR",threw);
+    dbuilder.removeUser("admin");
+    dbuilder.writeXML(pathToDeployment);
+    threw=false;
+    try {
+      adminClient.updateApplicationCatalog(null,new File(pathToDeployment));
+    }
+ catch (    ProcCallException pce) {
+      pce.printStackTrace();
+      threw=true;
+    }
+    assertTrue("Shouldn't be able to remove the last remaining ADMINSTRATOR user",threw);
   }
   finally {
     teardownSystem();
