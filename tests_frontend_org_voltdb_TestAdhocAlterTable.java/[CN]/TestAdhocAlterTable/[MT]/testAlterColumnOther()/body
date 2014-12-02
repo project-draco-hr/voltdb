@@ -14,15 +14,38 @@
   config.m_pathToDeployment=pathToDeployment;
   try {
     startSystem(config);
+    try {
+      m_client.callProcedure("@AdHoc","alter table FOO alter VAL set not null;");
+    }
+ catch (    ProcCallException pce) {
+      fail(String.format("Should be able to declare not null on existing column of an empty table. " + "Exception: %s",pce.getLocalizedMessage()));
+    }
+    assertFalse(isColumnNullable("FOO","VAL"));
+    try {
+      m_client.callProcedure("@AdHoc","alter table FOO alter VAL set null;");
+    }
+ catch (    ProcCallException pce) {
+      fail(String.format("Should be able to make an existing column nullable. " + "Exception: %s",pce.getLocalizedMessage()));
+    }
+    assertTrue(isColumnNullable("FOO","VAL"));
     assertTrue(verifyTableColumnDefault("FOO","VAL",null));
     try {
       m_client.callProcedure("@AdHoc","alter table FOO alter VAL set default 'goats';");
     }
  catch (    ProcCallException pce) {
-      fail("Shouldn't fail");
+      fail(String.format("Shouldn't fail. Exception: %s",pce.getLocalizedMessage()));
     }
     assertTrue(verifyTableColumnDefault("FOO","VAL","'goats'"));
     assertTrue(isColumnNullable("FOO","VAL"));
+    try {
+      m_client.callProcedure("@AdHoc","alter table FOO alter VAL set default NULL;");
+    }
+ catch (    ProcCallException pce) {
+      fail("Shouldn't fail");
+    }
+    assertTrue(verifyTableColumnDefault("FOO","VAL",null));
+    assertTrue(isColumnNullable("FOO","VAL"));
+    m_client.callProcedure("FOO.insert",0,"whatever");
     boolean threw=false;
     try {
       m_client.callProcedure("@AdHoc","alter table FOO alter VAL set not null;");
@@ -31,8 +54,14 @@
       pce.printStackTrace();
       threw=true;
     }
-    assertTrue("Shouldn't be able to declare not null on existing column",threw);
+    assertTrue("Shouldn't be able to declare not null on existing column of a non-empty table",threw);
     assertTrue(isColumnNullable("FOO","VAL"));
+    try {
+      m_client.callProcedure("@AdHoc","delete from FOO;");
+    }
+ catch (    ProcCallException pce) {
+      fail("Shouldn't fail");
+    }
     try {
       m_client.callProcedure("@AdHoc","alter table FOO alter VAL set default NULL;");
     }
