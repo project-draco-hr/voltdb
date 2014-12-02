@@ -1,0 +1,128 @@
+{
+  FailBot failBot=new FailBot(3,this.currentSchema.table != null);
+  boolean skipDrops=false;
+  if (retryCount > 0) {
+    assert(this.newSchema.table != null);
+    assert(this.currentName != null);
+    assert(this.newName != null);
+    assert(this.versionT != null);
+    assert(this.provisionalActiveVerifyProc != null);
+    if (isSchemaVersionObservable(schemaVersionNo + 1)) {
+      log.info(_F("The new version table V%d is present, not retrying.",schemaVersionNo + 1));
+      finishUpdate(newTable);
+      return true;
+    }
+    if (isSchemaVersionObservable(schemaVersionNo)) {
+      log.info(_F("The old version table V%d is present, enabling drop batch.",schemaVersionNo));
+    }
+ else {
+      log.info(_F("The old version table V%d is not present, disabling drop batch.",schemaVersionNo));
+      skipDrops=true;
+    }
+  }
+  if (retryCount == 0) {
+    this.newSchema.table=null;
+    this.currentName=this.currentSchema.table == null ? "B" : TableHelper.getTableName(this.currentSchema.table);
+    this.newName=this.currentName;
+    this.versionT=TableHelper.quickTable(_F("V%d (BIGINT)",schemaVersionNo + 1));
+    if (newTable) {
+      this.newName=this.currentName.equals("A") ? "B" : "A";
+      this.newSchema.table=TableHelper.getTotallyRandomTable(this.newName,rand,false);
+    }
+ else {
+      this.newSchema.table=TableHelper.mutateTable(this.currentSchema.table,true,rand);
+    }
+    this.newSchema.view=this.currentSchema.view;
+    if (this.newSchema.view == null) {
+      this.newSchema.view=TableHelper.ViewRep.viewRepForTable("MV",this.newSchema.table,rand);
+    }
+ else {
+      if (!this.newSchema.view.compatibleWithTable(this.newSchema.table)) {
+        this.newSchema.view=null;
+      }
+    }
+  }
+  if (!skipDrops) {
+    if (retryCount > 0) {
+      log.info(_F("Retry #%d: drop",retryCount));
+    }
+    schemaChanger.beginBatch();
+    try {
+      if (failBot.failHere("in drop batch")) {
+        schemaChanger.addForcedFailure();
+      }
+      schemaChanger.dropTables(_F("V%d",schemaVersionNo));
+      if (activeViewRep != null) {
+        schemaChanger.dropViews(activeViewRep.viewName);
+      }
+      activeViewRep=this.newSchema.view;
+      if (activeVerifyProc != null) {
+        schemaChanger.dropProcedures(activeVerifyProc.getName());
+      }
+      if (newTable) {
+        if (activeTableNames.contains(this.newName)) {
+          schemaChanger.dropTables(this.newName);
+          activeTableNames.remove(this.newName);
+        }
+      }
+      if (!schemaChanger.executeBatch(client)) {
+        return false;
+      }
+      activeViewRep=null;
+      activeVerifyProc=null;
+    }
+ catch (    IOException e) {
+      return false;
+    }
+  }
+  if (retryCount > 0) {
+    log.info(_F("Retry #%d: create/alter",retryCount));
+  }
+  schemaChanger.beginBatch();
+  this.count=0;
+  this.start=0;
+  this.provisionalActiveVerifyProc=null;
+  try {
+    if (failBot.failHere("in create/alter batch")) {
+      schemaChanger.addForcedFailure();
+    }
+    schemaChanger.createTables(this.versionT);
+    boolean partitioned=this.newName.equalsIgnoreCase("A");
+    if (newTable) {
+      schemaChanger.createTables(this.newSchema.table);
+    }
+ else {
+      schemaChanger.updateTable(this.currentSchema.table,this.newSchema.table);
+    }
+    if (partitioned) {
+      schemaChanger.addTablePartitionInfo(this.newSchema.table,this.newName);
+      this.provisionalActiveVerifyProc=VerifySchemaChangedA.class;
+    }
+ else {
+      this.provisionalActiveVerifyProc=VerifySchemaChangedB.class;
+    }
+    schemaChanger.createProcedures(client,this.provisionalActiveVerifyProc);
+    if (activeViewRep != null) {
+      schemaChanger.createViews(activeViewRep);
+    }
+    this.count=tupleCount(this.currentSchema.table);
+    this.start=System.nanoTime();
+    if (newTable) {
+      log.info("Starting to swap tables.");
+    }
+ else {
+      log.info("Starting to change schema.");
+    }
+    if (!schemaChanger.executeBatch(client)) {
+      return false;
+    }
+    if (failBot.failHere("after create/alter batch")) {
+      return false;
+    }
+  }
+ catch (  IOException e) {
+    return false;
+  }
+  finishUpdate(newTable);
+  return true;
+}
