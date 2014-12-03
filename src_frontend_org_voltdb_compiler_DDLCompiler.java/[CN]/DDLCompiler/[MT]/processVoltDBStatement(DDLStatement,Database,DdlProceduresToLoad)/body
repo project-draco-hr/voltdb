@@ -84,7 +84,7 @@ catch (      Exception ex) {
   statementMatcher=procedureDropPattern.matcher(statement);
   if (statementMatcher.matches()) {
     String classOrProcName=checkIdentifierStart(statementMatcher.group(1),statement);
-    m_tracker.removeProcedure(classOrProcName);
+    m_tracker.removeProcedure(classOrProcName,(statementMatcher.group(2) != null));
     return true;
   }
   statementMatcher=prePartitionPattern.matcher(statement);
@@ -95,7 +95,15 @@ catch (      Exception ex) {
       if (!statementMatcher.matches()) {
         throw m_compiler.new VoltCompilerException(String.format("Invalid PARTITION statement: \"%s\", " + "expected syntax: PARTITION TABLE <table> ON COLUMN <column>",statement.substring(0,statement.length() - 1)));
       }
-      m_tracker.put(checkIdentifierStart(statementMatcher.group(1),statement),checkIdentifierStart(statementMatcher.group(2),statement));
+      String tableName=checkIdentifierStart(statementMatcher.group(1),statement);
+      String columnName=checkIdentifierStart(statementMatcher.group(2),statement);
+      VoltXMLElement tableXML=m_schema.findChild("table",tableName.toUpperCase());
+      if (tableXML != null) {
+        tableXML.attributes.put("partitioncolumn",columnName.toUpperCase());
+      }
+ else {
+        throw m_compiler.new VoltCompilerException(String.format("Invalid PARTITION statement: table %s does not exist",tableName));
+      }
       return true;
     }
  else     if (PROCEDURE.equals(partitionee)) {
@@ -119,7 +127,14 @@ catch (      Exception ex) {
   }
   statementMatcher=replicatePattern.matcher(statement);
   if (statementMatcher.matches()) {
-    m_tracker.put(checkIdentifierStart(statementMatcher.group(1),statement),null);
+    String tableName=checkIdentifierStart(statementMatcher.group(1),statement);
+    VoltXMLElement tableXML=m_schema.findChild("table",tableName.toUpperCase());
+    if (tableXML != null) {
+      tableXML.attributes.remove("partitioncolumn");
+    }
+ else {
+      throw m_compiler.new VoltCompilerException(String.format("Invalid REPLICATE statement: table %s does not exist",tableName));
+    }
     return true;
   }
   statementMatcher=importClassPattern.matcher(statement);
@@ -145,57 +160,70 @@ catch (      Exception ex) {
   }
   statementMatcher=createRolePattern.matcher(statement);
   if (statementMatcher.matches()) {
-    String roleName=statementMatcher.group(1);
+    String roleName=statementMatcher.group(1).toLowerCase();
     CatalogMap<Group> groupMap=db.getGroups();
     if (groupMap.get(roleName) != null) {
       throw m_compiler.new VoltCompilerException(String.format("Role name \"%s\" in CREATE ROLE statement already exists.",roleName));
     }
     org.voltdb.catalog.Group catGroup=groupMap.add(roleName);
     if (statementMatcher.group(2) != null) {
-      for (      String tokenRaw : StringUtils.split(statementMatcher.group(2),',')) {
-        String token=tokenRaw.trim().toLowerCase();
-        Permission permission;
-        try {
-          permission=Permission.valueOf(token);
-        }
- catch (        IllegalArgumentException iaex) {
-          throw m_compiler.new VoltCompilerException(String.format("Invalid permission \"%s\" in CREATE ROLE statement: \"%s\", " + "available permissions: %s",token,statement.substring(0,statement.length() - 1),Permission.toListString()));
-        }
-switch (permission) {
-case adhoc:
-          catGroup.setAdhoc(true);
-        break;
-case sysproc:
-      catGroup.setSysproc(true);
-    break;
-case defaultproc:
-  catGroup.setDefaultproc(true);
-break;
-}
-}
-}
-return true;
-}
-statementMatcher=exportPattern.matcher(statement);
-if (statementMatcher.matches()) {
-String tableName=checkIdentifierStart(statementMatcher.group(1),statement);
-m_tracker.addExportedTable(tableName);
-return true;
-}
-if (PARTITION.equals(commandPrefix)) {
-throw m_compiler.new VoltCompilerException(String.format("Invalid PARTITION statement: \"%s\", " + "expected syntax: \"PARTITION TABLE <table> ON COLUMN <column>\" or " + "\"PARTITION PROCEDURE <procedure> ON "+ "TABLE <table> COLUMN <column> [PARAMETER <parameter-index-no>]\"",statement.substring(0,statement.length() - 1)));
-}
-if (REPLICATE.equals(commandPrefix)) {
-throw m_compiler.new VoltCompilerException(String.format("Invalid REPLICATE statement: \"%s\", " + "expected syntax: REPLICATE TABLE <table>",statement.substring(0,statement.length() - 1)));
-}
-if (PROCEDURE.equals(commandPrefix)) {
-throw m_compiler.new VoltCompilerException(String.format("Invalid CREATE PROCEDURE statement: \"%s\", " + "expected syntax: \"CREATE PROCEDURE [ALLOW <role> [, <role> ...] FROM CLASS <class-name>\" " + "or: \"CREATE PROCEDURE <name> [ALLOW <role> [, <role> ...] AS <single-select-or-dml-statement>\" "+ "or: \"CREATE PROCEDURE <proc-name> [ALLOW <role> ...] AS ### <code-block> ### LANGUAGE GROOVY\"",statement.substring(0,statement.length() - 1)));
-}
-if (ROLE.equals(commandPrefix)) {
-throw m_compiler.new VoltCompilerException(String.format("Invalid CREATE ROLE statement: \"%s\", " + "expected syntax: CREATE ROLE <role>",statement.substring(0,statement.length() - 1)));
-}
-if (EXPORT.equals(commandPrefix)) {
-throw m_compiler.new VoltCompilerException(String.format("Invalid EXPORT TABLE statement: \"%s\", " + "expected syntax: EXPORT TABLE <table>",statement.substring(0,statement.length() - 1)));
-}
-return false;
+      try {
+        EnumSet<Permission> permset=Permission.getPermissionsFromAliases(Arrays.asList(StringUtils.split(statementMatcher.group(2),',')));
+        Permission.setPermissionsInGroup(catGroup,permset);
+      }
+ catch (      IllegalArgumentException iaex) {
+        throw m_compiler.new VoltCompilerException(String.format("Invalid permission \"%s\" in CREATE ROLE statement: \"%s\", " + "available permissions: %s",iaex.getMessage(),statement.substring(0,statement.length() - 1),Permission.toListString()));
+      }
+    }
+    return true;
+  }
+  statementMatcher=dropRolePattern.matcher(statement);
+  if (statementMatcher.matches()) {
+    String roleName=statementMatcher.group(1).toUpperCase();
+    boolean ifExists=(statementMatcher.group(2) != null);
+    CatalogMap<Group> groupMap=db.getGroups();
+    if (groupMap.get(roleName) == null) {
+      if (!ifExists) {
+        throw m_compiler.new VoltCompilerException(String.format("Role name \"%s\" in DROP ROLE statement does not exist.",roleName));
+      }
+ else {
+        return true;
+      }
+    }
+ else {
+      if (roleName.equals("ADMINISTRATOR") || roleName.equals("USER")) {
+        throw m_compiler.new VoltCompilerException(String.format("You may not drop the built-in role \"%s\".",roleName));
+      }
+      groupMap.delete(roleName);
+    }
+    return true;
+  }
+  statementMatcher=exportPattern.matcher(statement);
+  if (statementMatcher.matches()) {
+    String tableName=checkIdentifierStart(statementMatcher.group(1),statement);
+    VoltXMLElement tableXML=m_schema.findChild("table",tableName.toUpperCase());
+    if (tableXML != null) {
+      tableXML.attributes.put("export","true");
+    }
+ else {
+      throw m_compiler.new VoltCompilerException(String.format("Invalid EXPORT statement: table %s was not present in the catalog.",tableName));
+    }
+    return true;
+  }
+  if (PARTITION.equals(commandPrefix)) {
+    throw m_compiler.new VoltCompilerException(String.format("Invalid PARTITION statement: \"%s\", " + "expected syntax: \"PARTITION TABLE <table> ON COLUMN <column>\" or " + "\"PARTITION PROCEDURE <procedure> ON "+ "TABLE <table> COLUMN <column> [PARAMETER <parameter-index-no>]\"",statement.substring(0,statement.length() - 1)));
+  }
+  if (REPLICATE.equals(commandPrefix)) {
+    throw m_compiler.new VoltCompilerException(String.format("Invalid REPLICATE statement: \"%s\", " + "expected syntax: REPLICATE TABLE <table>",statement.substring(0,statement.length() - 1)));
+  }
+  if (PROCEDURE.equals(commandPrefix)) {
+    throw m_compiler.new VoltCompilerException(String.format("Invalid CREATE PROCEDURE statement: \"%s\", " + "expected syntax: \"CREATE PROCEDURE [ALLOW <role> [, <role> ...] FROM CLASS <class-name>\" " + "or: \"CREATE PROCEDURE <name> [ALLOW <role> [, <role> ...] AS <single-select-or-dml-statement>\" "+ "or: \"CREATE PROCEDURE <proc-name> [ALLOW <role> ...] AS ### <code-block> ### LANGUAGE GROOVY\"",statement.substring(0,statement.length() - 1)));
+  }
+  if (ROLE.equals(commandPrefix)) {
+    throw m_compiler.new VoltCompilerException(String.format("Invalid CREATE ROLE statement: \"%s\", " + "expected syntax: CREATE ROLE <role>",statement.substring(0,statement.length() - 1)));
+  }
+  if (EXPORT.equals(commandPrefix)) {
+    throw m_compiler.new VoltCompilerException(String.format("Invalid EXPORT TABLE statement: \"%s\", " + "expected syntax: EXPORT TABLE <table>",statement.substring(0,statement.length() - 1)));
+  }
+  return false;
 }
