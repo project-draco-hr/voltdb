@@ -1,0 +1,14 @@
+{
+  if (isHSQL())   return;
+  Client client=getClient();
+  client.callProcedure("CAPPED3_LIMIT_ROWS_EXEC.insert",1,10,20);
+  client.callProcedure("CAPPED3_LIMIT_ROWS_EXEC.insert",1,20,40);
+  client.callProcedure("CAPPED3_LIMIT_ROWS_EXEC.insert",1,30,60);
+  verifyStmtFails(client,"INSERT INTO CAPPED3_LIMIT_ROWS_EXEC " + "SELECT purge_me, wage + 1, dept from CAPPED3_LIMIT_ROWS_EXEC WHERE WAGE = 20","exceeds table maximum row count 3");
+  String selectAll="SELECT * FROM CAPPED3_LIMIT_ROWS_EXEC ORDER BY WAGE";
+  VoltTable vt=client.callProcedure("@AdHoc",selectAll).getResults()[0];
+  validateTableOfLongs(vt,new long[][]{{1,10,20},{1,20,40},{1,30,60}});
+  verifyStmtFails(client,"UPSERT INTO CAPPED3_LIMIT_ROWS_EXEC " + "SELECT purge_me, wage + 1, dept from CAPPED3_LIMIT_ROWS_EXEC WHERE WAGE = 20 " + "ORDER BY 1, 2, 3","exceeds table maximum row count 3");
+  vt=client.callProcedure("@AdHoc",selectAll).getResults()[0];
+  validateTableOfLongs(vt,new long[][]{{1,10,20},{1,20,40},{1,30,60}});
+}
