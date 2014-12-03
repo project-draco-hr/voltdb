@@ -1,6 +1,5 @@
 {
-  Client client=null;
-  boolean adminMode=false;
+  AuthenticationResult authResult=null;
   Continuation continuation=ContinuationSupport.getContinuation(request);
   continuation.suspend(response);
   String jsonp=null;
@@ -22,9 +21,29 @@
       continuation.complete();
       return;
     }
-    ClientInfo clientInfo=getClient(request);
-    client=clientInfo.m_client;
-    adminMode=clientInfo.m_adminMode;
+    String username=request.getParameter("User");
+    String password=request.getParameter("Password");
+    String hashedPassword=request.getParameter("Hashedpassword");
+    String admin=request.getParameter("admin");
+    authResult=getAuthenticationResult(request,username,password,hashedPassword,admin);
+    if (!authResult.isAuthenticated()) {
+      String msg=authResult.m_message;
+      m_rate_limited_log.log("JSON interface exception: " + msg,EstTime.currentTimeMillis());
+      ClientResponseImpl rimpl=new ClientResponseImpl(ClientResponse.UNEXPECTED_FAILURE,new VoltTable[0],msg);
+      msg=rimpl.toJSONString();
+      if (jsonp != null) {
+        msg=String.format("%s( %s )",jsonp,msg);
+      }
+      response.setStatus(HttpServletResponse.SC_OK);
+      request.setHandled(true);
+      try {
+        response.getWriter().print(msg);
+        continuation.complete();
+      }
+ catch (      IOException e1) {
+      }
+      return;
+    }
     JSONProcCallback cb=new JSONProcCallback(request,continuation,jsonp);
     boolean success;
     if (params != null) {
@@ -42,34 +61,19 @@
         continuation.complete();
         return;
       }
-      success=client.callProcedure(cb,procName,paramSet.toArray());
+      success=authResult.m_client.callProcedure(cb,procName,paramSet.toArray());
     }
  else {
-      success=client.callProcedure(cb,procName);
+      success=authResult.m_client.callProcedure(cb,procName);
     }
     if (!success) {
       throw new Exception("Server is not accepting work at this time.");
     }
-    if (adminMode) {
+    if (authResult.m_adminMode) {
       cb.waitForResponse();
     }
   }
- catch (  java.net.ConnectException c_ex) {
-    ClientResponseImpl rimpl=new ClientResponseImpl(ClientResponse.SERVER_UNAVAILABLE,new VoltTable[0],c_ex.getMessage());
-    String msg=rimpl.toJSONString();
-    if (jsonp != null) {
-      msg=String.format("%s( %s )",jsonp,msg);
-    }
-    response.setStatus(HttpServletResponse.SC_OK);
-    request.setHandled(true);
-    try {
-      response.getWriter().print(msg);
-      continuation.complete();
-    }
- catch (    IOException e1) {
-    }
-  }
-catch (  Exception e) {
+ catch (  Exception e) {
     String msg=e.getMessage();
     m_rate_limited_log.log("JSON interface exception: " + msg,EstTime.currentTimeMillis());
     ClientResponseImpl rimpl=new ClientResponseImpl(ClientResponse.UNEXPECTED_FAILURE,new VoltTable[0],msg);
@@ -87,20 +91,18 @@ catch (  Exception e) {
     }
   }
  finally {
-    if (client != null) {
+    if (authResult != null && authResult.m_client != null) {
       assert(m_connections != null);
-      if (adminMode) {
-        if (client != null) {
-          try {
-            client.close();
-          }
- catch (          InterruptedException e) {
-            m_log.warn("JSON interface was interrupted while closing an internal admin client connection.");
-          }
+      if (authResult.m_adminMode) {
+        try {
+          authResult.m_client.close();
+        }
+ catch (        InterruptedException e) {
+          m_log.warn("JSON interface was interrupted while closing an internal admin client connection.");
         }
       }
  else {
-        m_connections.releaseClient(client);
+        m_connections.releaseClient(authResult.m_client);
       }
     }
   }

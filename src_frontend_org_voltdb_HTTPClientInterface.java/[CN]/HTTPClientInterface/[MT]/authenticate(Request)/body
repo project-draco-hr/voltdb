@@ -1,28 +1,30 @@
 {
-  ClientInfo clientInfo=null;
+  AuthenticationResult authResult=null;
+  String username=request.getParameter("User");
+  String password=request.getParameter("Password");
+  String hashedPassword=request.getParameter("Hashedpassword");
+  String admin=request.getParameter("admin");
   try {
-    clientInfo=getClient(request);
-    return clientInfo.m_client != null;
+    authResult=getAuthenticationResult(request,username,password,hashedPassword,admin);
+    if (!authResult.isAuthenticated()) {
+      m_rate_limited_log.log("JSON interface exception: " + authResult.m_message,EstTime.currentTimeMillis());
+    }
+    return authResult;
   }
- catch (  Exception ex) {
-  }
- finally {
-    if (clientInfo != null) {
+  finally {
+    if (authResult != null && authResult.m_client != null) {
       assert(m_connections != null);
-      if (clientInfo.m_adminMode) {
-        if (clientInfo.m_client != null) {
-          try {
-            clientInfo.m_client.close();
-          }
- catch (          InterruptedException e) {
-            m_log.warn("JSON interface was interrupted while closing an internal admin client connection.");
-          }
+      if (authResult.m_adminMode) {
+        try {
+          authResult.m_client.close();
+        }
+ catch (        InterruptedException e) {
+          m_log.warn("JSON interface was interrupted while closing an internal admin client connection.");
         }
       }
  else {
-        m_connections.releaseClient(clientInfo.m_client);
+        m_connections.releaseClient(authResult.m_client);
       }
     }
   }
-  return false;
 }

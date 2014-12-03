@@ -22,10 +22,6 @@
     }
     m_connections=new AuthenticatedConnectionCache(10,clientInterface,port,adminInterface,adminPort);
   }
-  String username=request.getParameter("User");
-  String password=request.getParameter("Password");
-  String hashedPassword=request.getParameter("Hashedpassword");
-  String admin=request.getParameter("admin");
   if (admin != null) {
     if (admin.compareToIgnoreCase("true") == 0) {
       adminMode=true;
@@ -38,23 +34,32 @@
       hashedPasswordBytes=md.digest(password.getBytes("UTF-8"));
     }
  catch (    NoSuchAlgorithmException e) {
-      throw new RuntimeException("JVM doesn't support SHA-1 hashing. Please use a supported JVM",e);
+      return new AuthenticationResult(null,adminMode,username,"JVM doesn't support SHA-1 hashing. Please use a supported JVM" + e);
     }
 catch (    UnsupportedEncodingException e) {
-      throw new RuntimeException("JVM doesn't support UTF-8. Please use a supported JVM",e);
+      return new AuthenticationResult(null,adminMode,username,"JVM doesn't support UTF-8. Please use a supported JVM" + e);
     }
   }
   if (hashedPassword != null) {
     if (hashedPassword.length() != 40) {
-      throw new Exception("Hashedpassword must be a 40-byte hex-encoded SHA-1 hash (20 bytes unencoded).");
+      return new AuthenticationResult(null,adminMode,username,"Hashedpassword must be a 40-byte hex-encoded SHA-1 hash (20 bytes unencoded).");
     }
     try {
       hashedPasswordBytes=Encoder.hexDecode(hashedPassword);
     }
  catch (    Exception e) {
-      throw new Exception("Hashedpassword must be a 40-byte hex-encoded SHA-1 hash (20 bytes unencoded).");
+      return new AuthenticationResult(null,adminMode,username,"Hashedpassword must be a 40-byte hex-encoded SHA-1 hash (20 bytes unencoded).");
     }
   }
   assert((hashedPasswordBytes == null) || (hashedPasswordBytes.length == 20));
-  return new ClientInfo(m_connections.getClient(username,password,hashedPasswordBytes,adminMode),adminMode);
+  try {
+    Client client=m_connections.getClient(username,password,hashedPasswordBytes,adminMode);
+    if (client != null) {
+      return new AuthenticationResult(client,adminMode,username,"");
+    }
+    return new AuthenticationResult(null,adminMode,username,"");
+  }
+ catch (  IOException ex) {
+    return new AuthenticationResult(null,adminMode,username,"");
+  }
 }
