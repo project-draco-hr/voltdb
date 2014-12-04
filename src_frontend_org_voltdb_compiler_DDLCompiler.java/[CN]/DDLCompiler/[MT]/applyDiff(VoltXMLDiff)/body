@@ -1,0 +1,29 @@
+{
+  m_schema.applyDiff(stmtDiff);
+  if (stmtDiff.getChangedNodes().isEmpty()) {
+    return;
+  }
+  assert(stmtDiff.getChangedNodes().size() == 1);
+  Entry<String,VoltXMLDiff> tableEntry=stmtDiff.getChangedNodes().entrySet().iterator().next();
+  VoltXMLDiff tableDiff=tableEntry.getValue();
+  if (tableDiff.getChangedNodes().isEmpty() || !tableDiff.getChangedNodes().containsKey("columnscolumns")) {
+    return;
+  }
+  VoltXMLDiff columnsDiff=tableDiff.getChangedNodes().get("columnscolumns");
+  assert(columnsDiff != null);
+  if (columnsDiff.getRemovedNodes().isEmpty()) {
+    return;
+  }
+  Set<String> removedColumns=new HashSet<String>();
+  for (  VoltXMLElement e : columnsDiff.getRemovedNodes()) {
+    assert(e.attributes.get("name") != null);
+    removedColumns.add(e.attributes.get("name"));
+  }
+  VoltXMLElement tableElement=m_schema.findChild(tableEntry.getKey());
+  assert(tableElement != null);
+  String partitionCol=tableElement.attributes.get("partitioncolumn");
+  if (partitionCol != null && removedColumns.contains(partitionCol)) {
+    m_compiler.addWarn(String.format("Partition column %s was dropped from table %s.  Attempting to change table to replicated.",partitionCol,tableElement.attributes.get("name")));
+    tableElement.attributes.remove("partitioncolumn");
+  }
+}
