@@ -1,25 +1,22 @@
 {
-  if (deployment.getUsers() == null) {
-    if (deployment.getSecurity() != null && deployment.getSecurity().isEnabled()) {
-      hostLog.error("Cannot enable security without defining users in the deployment file.");
-      return false;
+  if (deployment.getSecurity() != null && deployment.getSecurity().isEnabled()) {
+    if (deployment.getUsers() == null) {
+      String msg="Cannot enable security without defining at least one user in the built-in ADMINISTRATOR role in the deployment file.";
+      throw new RuntimeException(msg);
     }
-    return true;
-  }
-  Cluster cluster=catalog.getClusters().get("cluster");
-  Database database=cluster.getDatabases().get("database");
-  Set<String> validGroups=new HashSet<String>();
-  for (  Group group : database.getGroups()) {
-    validGroups.add(group.getTypeName());
-  }
-  for (  UsersType.User user : deployment.getUsers().getUser()) {
-    if (user.getGroups() == null && user.getRoles() == null)     continue;
-    for (    String group : mergeUserRoles(user)) {
-      if (!validGroups.contains(group)) {
-        hostLog.error("Cannot assign user \"" + user.getName() + "\" to non-existent group \""+ group+ "\"");
-        return false;
+    boolean foundAdminUser=false;
+    for (    UsersType.User user : deployment.getUsers().getUser()) {
+      if (user.getGroups() == null && user.getRoles() == null)       continue;
+      for (      String group : mergeUserRoles(user)) {
+        if (group.equalsIgnoreCase("ADMINISTRATOR")) {
+          foundAdminUser=true;
+          break;
+        }
       }
     }
+    if (!foundAdminUser) {
+      String msg="Cannot enable security without defining at least one user in the built-in ADMINISTRATOR role in the deployment file.";
+      throw new RuntimeException(msg);
+    }
   }
-  return true;
 }

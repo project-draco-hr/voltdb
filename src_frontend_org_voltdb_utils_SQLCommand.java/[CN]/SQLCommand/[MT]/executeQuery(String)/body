@@ -1,204 +1,133 @@
 {
-  m_startTime=System.nanoTime();
-  Matcher matcher=ExecuteCall.matcher(query);
-  if (matcher.find()) {
-    query=matcher.replaceFirst("");
-    List<String> params=parseQueryProcedureCallParameters(query);
-    String procedure=params.remove(0);
-    Map<Integer,List<String>> signature=Procedures.get(procedure);
-    if (signature == null) {
-      throw new Exception("Undefined procedure: " + procedure);
-    }
-    List<String> paramTypes=signature.get(params.size());
-    if (paramTypes == null || params.size() != paramTypes.size()) {
-      String expectedSizes="";
-      for (      Integer expectedSize : signature.keySet()) {
-        expectedSizes+=expectedSize + ", ";
+  try {
+    m_startTime=System.nanoTime();
+    Matcher matcher=ExecuteCall.matcher(query);
+    if (matcher.find()) {
+      query=matcher.replaceFirst("");
+      List<String> params=parseQueryProcedureCallParameters(query);
+      String procedure=params.remove(0);
+      Map<Integer,List<String>> signature=Procedures.get(procedure);
+      if (signature == null) {
+        throw new Exception("Undefined procedure: " + procedure);
       }
-      throw new Exception("Invalid parameter count for procedure: " + procedure + "(expected: "+ expectedSizes+ " received: "+ params.size()+ ")");
-    }
-    Object[] objectParams=new Object[params.size()];
-    if (procedure.equals("@SnapshotDelete")) {
-      objectParams[0]=new String[]{Unquote.matcher(params.get(0)).replaceAll("").replace("''","'")};
-      objectParams[1]=new String[]{Unquote.matcher(params.get(1)).replaceAll("").replace("''","'")};
-    }
- else {
-      for (int i=0; i < params.size(); i++) {
-        String paramType=paramTypes.get(i);
-        String param=params.get(i);
-        if (paramType.equals("bit")) {
-          if (param.equals("yes") || param.equals("true") || param.equals("1")) {
-            objectParams[i]=(byte)1;
-          }
- else {
-            objectParams[i]=(byte)0;
-          }
+      List<String> paramTypes=signature.get(params.size());
+      if (paramTypes == null || params.size() != paramTypes.size()) {
+        String expectedSizes="";
+        for (        Integer expectedSize : signature.keySet()) {
+          expectedSizes+=expectedSize + ", ";
         }
- else         if (paramType.equals("tinyint")) {
-          if (IsNull.matcher(param).matches()) {
-            objectParams[i]=null;
-          }
+        throw new Exception("Invalid parameter count for procedure: " + procedure + "(expected: "+ expectedSizes+ " received: "+ params.size()+ ")");
+      }
+      Object[] objectParams=new Object[params.size()];
+      if (procedure.equals("@SnapshotDelete")) {
+        objectParams[0]=new String[]{Unquote.matcher(params.get(0)).replaceAll("").replace("''","'")};
+        objectParams[1]=new String[]{Unquote.matcher(params.get(1)).replaceAll("").replace("''","'")};
+      }
  else {
-            try {
-              objectParams[i]=Byte.parseByte(param);
+        int i=0;
+        try {
+          for (; i < params.size(); i++) {
+            String paramType=paramTypes.get(i);
+            String param=params.get(i);
+            Object objParam=null;
+            if (paramType.equals("bit")) {
+              if (param.equals("yes") || param.equals("true") || param.equals("1")) {
+                objParam=(byte)1;
+              }
+ else {
+                objParam=(byte)0;
+              }
             }
- catch (            NumberFormatException nfe) {
-              throw new Exception("Invalid parameter:  Expected a byte numeric value, got '" + param + "' (param "+ (i + 1)+ ").");
+ else             if (paramType.equals("statisticscomponent") || paramType.equals("sysinfoselector") || paramType.equals("metadataselector")) {
+              objParam=preprocessParam(param);
             }
-          }
-        }
- else         if (paramType.equals("smallint")) {
-          if (IsNull.matcher(param).matches()) {
-            objectParams[i]=null;
-          }
+ else             if (!"null".equalsIgnoreCase(param)) {
+              if (paramType.equals("tinyint")) {
+                objParam=Byte.parseByte(param);
+              }
+ else               if (paramType.equals("smallint")) {
+                objParam=Short.parseShort(param);
+              }
+ else               if (paramType.equals("int") || paramType.equals("integer")) {
+                objParam=Integer.parseInt(param);
+              }
+ else               if (paramType.equals("bigint")) {
+                objParam=Long.parseLong(param);
+              }
+ else               if (paramType.equals("float")) {
+                objParam=Double.parseDouble(param);
+              }
+ else               if (paramType.equals("varchar")) {
+                objParam=Unquote.matcher(param).replaceAll("").replace("''","'");
+              }
+ else               if (paramType.equals("decimal")) {
+                objParam=new BigDecimal(param);
+              }
+ else               if (paramType.equals("timestamp")) {
+                objParam=DateParser.parse(param.replaceAll("^\"|\"$","").replaceAll("^'|'$",""));
+              }
+ else               if (paramType.equals("varbinary") || paramType.equals("tinyint_array")) {
+                String val=Unquote.matcher(param).replaceAll("");
+                objParam=Encoder.hexDecode(val);
+                if (param.length() % 2 == 1) {
+                  throw new RuntimeException("Invalid varbinary value (" + param + ") (param "+ (i + 1)+ ") :  must have an even number of hex characters to be valid.");
+                }
+              }
  else {
-            try {
-              objectParams[i]=Short.parseShort(param);
+                throw new Exception("Unsupported Data Type: " + paramType);
+              }
             }
- catch (            NumberFormatException nfe) {
-              throw new Exception("Invalid parameter:  Expected a short numeric value, got '" + param + "' (param "+ (i + 1)+ ").");
-            }
+            objectParams[i]=objParam;
           }
         }
- else         if (paramType.equals("int") || paramType.equals("integer")) {
-          if (IsNull.matcher(param).matches()) {
-            objectParams[i]=null;
-          }
- else {
-            try {
-              objectParams[i]=Integer.parseInt(param);
-            }
- catch (            NumberFormatException nfe) {
-              throw new Exception("Invalid parameter:  Expected a numeric value, got '" + param + "' (param "+ (i + 1)+ ").");
-            }
-          }
-        }
- else         if (paramType.equals("bigint")) {
-          if (IsNull.matcher(param).matches()) {
-            objectParams[i]=null;
-          }
- else {
-            try {
-              objectParams[i]=Long.parseLong(param);
-            }
- catch (            NumberFormatException nfe) {
-              throw new Exception("Invalid parameter:  Expected a numeric value, got '" + param + "' (param "+ (i + 1)+ ").");
-            }
-          }
-        }
- else         if (paramType.equals("float")) {
-          if (IsNull.matcher(param).matches()) {
-            objectParams[i]=null;
-          }
- else {
-            try {
-              objectParams[i]=Double.parseDouble(param);
-            }
- catch (            NumberFormatException nfe) {
-              throw new Exception("Invalid parameter:  Expected a float value, got '" + param + "' (param "+ (i + 1)+ ").");
-            }
-          }
-        }
- else         if (paramType.equals("varchar")) {
-          if (IsNull.matcher(param).matches()) {
-            objectParams[i]=null;
-          }
- else {
-            objectParams[i]=Unquote.matcher(param).replaceAll("").replace("''","'");
-          }
-        }
- else         if (paramType.equals("decimal")) {
-          if (IsNull.matcher(param).matches()) {
-            objectParams[i]=null;
-          }
- else {
-            objectParams[i]=new BigDecimal(param);
-          }
-        }
- else         if (paramType.equals("timestamp")) {
-          if (IsNull.matcher(param).matches()) {
-            objectParams[i]=null;
-          }
- else {
-            objectParams[i]=DateParser.parse(param.replaceAll("^\"|\"$","").replaceAll("^'|'$",""));
-          }
-        }
- else         if (paramType.equals("statisticscomponent")) {
-          String p=preprocessParam(param);
-          objectParams[i]=p;
-        }
- else         if (paramType.equals("sysinfoselector")) {
-          String p=preprocessParam(param);
-          objectParams[i]=p;
-        }
- else         if (paramType.equals("metadataselector")) {
-          String p=preprocessParam(param);
-          objectParams[i]=p;
-        }
- else         if (paramType.equals("varbinary") || paramType.equals("tinyint_array")) {
-          if (IsNull.matcher(param).matches()) {
-            objectParams[i]=null;
-          }
- else {
-            if (param.length() % 2 == 1) {
-              throw new Exception("Invalid varbinary value: input must have an even amount of characters to be a valid hex string.");
-            }
-            String val=Unquote.matcher(param).replaceAll("").replace("''","'");
-            objectParams[i]=Encoder.hexDecode(val);
-          }
-        }
- else {
-          throw new Exception("Unsupported Data Type: " + paramType);
+ catch (        NumberFormatException nfe) {
+          throw new RuntimeException("Invalid parameter:  Expected a " + friendlyTypeDescription(paramTypes.get(i)) + " value, got '"+ params.get(i)+ "' (param "+ (i + 1)+ ").",nfe);
         }
       }
+      if (procedure.equals("@UpdateApplicationCatalog")) {
+        File catfile=null;
+        if (objectParams[0] != null) {
+          catfile=new File((String)objectParams[0]);
+        }
+        File depfile=null;
+        if (objectParams[1] != null) {
+          depfile=new File((String)objectParams[1]);
+        }
+        printResponse(VoltDB.updateApplicationCatalog(catfile,depfile));
+        loadStoredProcedures(Procedures,Classlist);
+      }
+ else       if (procedure.equals("@UpdateClasses")) {
+        File jarfile=null;
+        if (objectParams[0] != null) {
+          jarfile=new File((String)objectParams[0]);
+        }
+        printResponse(VoltDB.updateClasses(jarfile,(String)objectParams[1]));
+        loadStoredProcedures(Procedures,Classlist);
+      }
+ else {
+        printResponse(VoltDB.callProcedure(procedure,objectParams));
+      }
     }
-    if (procedure.equals("@UpdateApplicationCatalog")) {
-      File catfile=null;
-      if (objectParams[0] != null) {
-        catfile=new File((String)objectParams[0]);
-      }
-      File depfile=null;
-      if (objectParams[1] != null) {
-        depfile=new File((String)objectParams[1]);
-      }
-      printResponse(VoltDB.updateApplicationCatalog(catfile,depfile));
-      Procedures.clear();
-      loadSystemProcedures();
-      loadStoredProcedures(Procedures,Classlist);
+ else     if (ExplainCall.matcher(query).find()) {
+      query=query.substring("explain ".length());
+      query=StripCRLF.matcher(query).replaceAll(" ");
+      printResponse(VoltDB.callProcedure("@Explain",query));
     }
- else     if (procedure.equals("@UpdateClasses")) {
-      File jarfile=null;
-      if (objectParams[0] != null) {
-        jarfile=new File((String)objectParams[0]);
-      }
-      printResponse(VoltDB.updateClasses(jarfile,(String)objectParams[1]));
-      Procedures.clear();
-      loadSystemProcedures();
-      loadStoredProcedures(Procedures,Classlist);
+ else     if (ExplainProcCall.matcher(query).find()) {
+      query=query.substring("explainProc ".length());
+      query=StripCRLF.matcher(query).replaceAll(" ");
+      query=query.trim();
+      printResponse(VoltDB.callProcedure("@ExplainProc",query));
     }
  else {
-      printResponse(VoltDB.callProcedure(procedure,objectParams));
+      query=StripCRLF.matcher(query).replaceAll(" ");
+      printResponse(VoltDB.callProcedure("@AdHoc",query));
+      if (SQLLexer.extractDDLToken(query) != null) {
+        loadStoredProcedures(Procedures,Classlist);
+      }
     }
   }
- else   if (ExplainCall.matcher(query).find()) {
-    query=query.substring("explain ".length());
-    query=StripCRLF.matcher(query).replaceAll(" ");
-    printResponse(VoltDB.callProcedure("@Explain",query));
+ catch (  Exception exc) {
+    stopOrContinue(exc);
   }
- else   if (ExplainProcCall.matcher(query).find()) {
-    query=query.substring("explainProc ".length());
-    query=StripCRLF.matcher(query).replaceAll(" ");
-    query=query.trim();
-    printResponse(VoltDB.callProcedure("@ExplainProc",query));
-  }
- else {
-    query=StripCRLF.matcher(query).replaceAll(" ");
-    printResponse(VoltDB.callProcedure("@AdHoc",query));
-    if (SQLLexer.extractDDLToken(query) != null) {
-      Procedures.clear();
-      loadSystemProcedures();
-      loadStoredProcedures(Procedures,Classlist);
-    }
-  }
-  return;
 }
