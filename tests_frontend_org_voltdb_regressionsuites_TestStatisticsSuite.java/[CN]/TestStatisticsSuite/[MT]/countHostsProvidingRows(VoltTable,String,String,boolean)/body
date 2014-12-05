@@ -2,29 +2,34 @@
   result.resetRowPosition();
   Set<Long> hostsSeen=new HashSet<Long>();
   while (result.advanceRow()) {
-    String idFromRow=result.getString(columnName);
-    if (rowId.equalsIgnoreCase(idFromRow)) {
+    String colValFromRow=result.getString(columnName);
+    if (targetValue.equalsIgnoreCase(colValFromRow)) {
       Long thisHostId=result.getLong("HOST_ID");
       if (enforceUnique) {
-        assertFalse("HOST_ID: " + thisHostId + " seen twice in table looking for "+ rowId+ " in column "+ columnName,hostsSeen.contains(thisHostId));
+        assertFalse("HOST_ID: " + thisHostId + " seen twice in table looking for "+ targetValue+ " in column "+ columnName,hostsSeen.contains(thisHostId));
       }
       hostsSeen.add(thisHostId);
     }
   }
+  m_recentAnalysis=null;
   if (HOSTS != hostsSeen.size()) {
-    System.out.println("Something in the following results may fail an assert expecting " + HOSTS + " and getting "+ hostsSeen.size());
+    m_recentAnalysis=new StringBuilder();
+    m_recentAnalysis.append("Failure follows from these results:\n");
     Set<Long> seenAgain=new HashSet<Long>();
     result.resetRowPosition();
     while (result.advanceRow()) {
-      String idFromRow=result.getString(columnName);
+      String colValFromRow=result.getString(columnName);
       Long thisHostId=result.getLong("HOST_ID");
-      if (rowId.equalsIgnoreCase(idFromRow)) {
-        System.out.println("Found the match at host " + thisHostId + " for "+ columnName+ " "+ idFromRow+ (seenAgain.add(thisHostId) ? " added" : " duplicated"));
-        seenAgain.add(thisHostId);
-      }
+      String rowStatus="Found a non-match";
+      if (targetValue.equalsIgnoreCase(colValFromRow)) {
+        if (seenAgain.add(thisHostId)) {
+          rowStatus="Added a match";
+        }
  else {
-        System.out.println("Found non-match at host " + thisHostId + " for "+ columnName+ " "+ idFromRow);
+          rowStatus="Duplicated a match";
+        }
       }
+      m_recentAnalysis.append(rowStatus + " at host " + thisHostId+ " for "+ columnName+ " "+ colValFromRow+ "\n");
     }
   }
   return hostsSeen.size();
