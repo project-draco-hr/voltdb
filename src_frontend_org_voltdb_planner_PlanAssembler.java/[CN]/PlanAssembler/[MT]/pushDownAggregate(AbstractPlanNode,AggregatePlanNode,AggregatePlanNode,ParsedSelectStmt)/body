@@ -1,5 +1,5 @@
 {
-  boolean needCoordNode=!selectStmt.hasPartitionColumnInGroupby();
+  boolean noNeedCoordNode=selectStmt.hasPartitionColumnInGroupby();
   if (coordNode != null) {
     coordNode.m_isCoordinatingAggregator=true;
   }
@@ -8,29 +8,25 @@
     root=root.getChild(0).getChild(0);
     root.clearParents();
     distNode.addAndLinkChild(root);
-    root=distNode;
-    accessPlanTemp.getChild(0).clearChildren();
-    accessPlanTemp.getChild(0).addAndLinkChild(root);
-    root=accessPlanTemp;
-    if (needCoordNode) {
-      coordNode.addAndLinkChild(root);
-      root=coordNode;
-      coordNode.setPostPredicate(m_parsedSelect.m_having);
-    }
- else {
+    if (noNeedCoordNode) {
       distNode.setPostPredicate(m_parsedSelect.m_having);
+      root=processComplexAggProjectionNode(selectStmt,distNode);
+      accessPlanTemp.getChild(0).clearChildren();
+      accessPlanTemp.getChild(0).addAndLinkChild(root);
+      return accessPlanTemp;
     }
+    accessPlanTemp.getChild(0).clearChildren();
+    accessPlanTemp.getChild(0).addAndLinkChild(distNode);
+    root=accessPlanTemp;
+    coordNode.addAndLinkChild(root);
+    root=coordNode;
+    coordNode.setPostPredicate(m_parsedSelect.m_having);
   }
  else {
     distNode.addAndLinkChild(root);
     root=distNode;
     distNode.setPostPredicate(m_parsedSelect.m_having);
   }
-  if (selectStmt.hasComplexAgg()) {
-    ProjectionPlanNode proj=new ProjectionPlanNode();
-    proj.addAndLinkChild(root);
-    proj.setOutputSchema(selectStmt.getFinalProjectionSchema());
-    root=proj;
-  }
+  root=processComplexAggProjectionNode(selectStmt,root);
   return root;
 }
