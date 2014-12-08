@@ -4,15 +4,13 @@
   List<String> parsedQueries=new ArrayList<>();
   StringBuilder query=new StringBuilder();
   boolean isRecall=false;
-  while (true) {
-    String prompt=isRecall ? "" : ((Lines.size() + 1) + "> ");
+  boolean executeImmediate=false;
+  while (!executeImmediate) {
+    String prompt=isRecall ? "" : ((RecallableSessionLines.size() + 1) + "> ");
     isRecall=false;
     String line=lineInputReader.readLine(prompt);
-    if (line == null) {
-      parsedQueries=parseQuery(query.toString());
-      return parsedQueries;
-    }
-    boolean executeImmediate=SemicolonToken.matcher(line).matches();
+    assert(line != null);
+    executeImmediate=SemicolonToken.matcher(line).matches();
     if (multiLineStatementBuffer.isEmpty()) {
       if (ExitToken.matcher(line).matches()) {
         return null;
@@ -25,22 +23,25 @@
         }
  catch (        Exception x) {
         }
-        if (recall > -1 && recall < Lines.size()) {
-          line=Lines.get(recall);
+        if (recall > -1 && recall < RecallableSessionLines.size()) {
+          line=RecallableSessionLines.get(recall);
           lineInputReader.putString(line);
           lineInputReader.flush();
           isRecall=true;
         }
  else {
-          System.out.printf("%s> Invalid RECALL reference: '" + recallMatcher.group(1) + "'.\n",Lines.size());
+          System.out.printf("%s> Invalid RECALL reference: '" + recallMatcher.group(1) + "'.\n",RecallableSessionLines.size());
         }
+        executeImmediate=false;
         continue;
       }
-      Lines.add(line);
+      RecallableSessionLines.add(line);
       if (executesAsSimpleDirective(line)) {
+        executeImmediate=false;
         continue;
       }
       if (GoToken.matcher(line).matches()) {
+        executeImmediate=true;
         line=";";
       }
       Matcher fileMatcher=FileToken.matcher(line);
@@ -48,22 +49,18 @@
         line=readScriptFile(fileMatcher.group(1));
         if (m_returningToPromptAfterError) {
           query=new StringBuilder();
-          line=null;
           m_returningToPromptAfterError=false;
+          executeImmediate=false;
           continue;
         }
       }
     }
  else {
-      Lines.add(line);
+      RecallableSessionLines.add(line);
     }
     query.append(line);
     query.append("\n");
-    if (executeImmediate) {
-      parsedQueries=parseQuery(query.toString());
-      return parsedQueries;
-    }
- else {
-    }
   }
+  parsedQueries=parseQuery(query.toString());
+  return parsedQueries;
 }
