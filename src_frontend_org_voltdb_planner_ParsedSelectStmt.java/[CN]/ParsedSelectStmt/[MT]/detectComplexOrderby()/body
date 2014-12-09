@@ -1,0 +1,35 @@
+{
+  if (m_isComplexOrderBy) {
+    return;
+  }
+  if (!hasOrderByColumns() || !isGrouped()) {
+    return;
+  }
+  if (!hasComplexAgg()) {
+    return;
+  }
+  if (hasDistinctWithGroupBy()) {
+    return;
+  }
+  Set<AbstractExpression> missingGroupBySet=new HashSet<AbstractExpression>();
+  for (  ParsedColInfo col : m_groupByColumns) {
+    if (col.groupByInDisplay) {
+      continue;
+    }
+    if (hasComplexGroupby() && col.expression.hasAnySubexpressionOfClass(ParameterValueExpression.class)) {
+      m_isComplexOrderBy=true;
+      return;
+    }
+    missingGroupBySet.add(col.expression);
+  }
+  if (missingGroupBySet.size() == 0) {
+    return;
+  }
+  for (  ParsedColInfo orderCol : m_orderColumns) {
+    AbstractExpression expr=orderCol.expression;
+    if (expr.hasSubExpressionFrom(missingGroupBySet)) {
+      m_isComplexOrderBy=true;
+      return;
+    }
+  }
+}
