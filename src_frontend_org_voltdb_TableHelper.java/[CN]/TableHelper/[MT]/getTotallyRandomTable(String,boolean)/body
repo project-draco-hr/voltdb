@@ -1,0 +1,32 @@
+{
+  int numRandomColumns=Math.max(1,Math.min(Math.abs((int)(m_rand.nextGaussian() * 25)),1000));
+  boolean partitioned=false;
+  boolean partitionMetadata=true;
+  if (partition) {
+switch (m_config.randomPartitioning) {
+case CALLER:
+      partitioned=true;
+    partitionMetadata=false;
+  break;
+case RANDOM:
+partitioned=m_rand.nextBoolean();
+break;
+}
+}
+int numUniqueColumns=partitioned ? 0 : m_config.numAdditionalUniqueColumns;
+int numColumnsTotal=numRandomColumns + numUniqueColumns;
+VoltTable.ColumnInfo[] columns=new VoltTable.ColumnInfo[numColumnsTotal];
+for (int i=0; i < numRandomColumns; i++) {
+columns[i]=getRandomColumn(String.format("C%d",i));
+}
+for (int i=0; i < numUniqueColumns; i++) {
+columns[numRandomColumns + i]=new VoltTable.ColumnInfo(String.format("AKEY%d",i),VoltType.BIGINT,20,false,true,null);
+}
+int bigintPrimaryKey=m_rand.nextInt(numRandomColumns);
+columns[bigintPrimaryKey]=new VoltTable.ColumnInfo("PKEY",VoltType.BIGINT,0,false,true,"0");
+int[] pkeyIndexes=new int[]{bigintPrimaryKey};
+int partitionColumn=partitioned && partitionMetadata ? pkeyIndexes[0] : -1;
+VoltTable.ExtraMetadata extraMetadata=new VoltTable.ExtraMetadata(name,partitionColumn,pkeyIndexes,columns);
+VoltTable table=new VoltTable(extraMetadata,columns,columns.length);
+return new RandomTable(table,bigintPrimaryKey,numRandomColumns,numUniqueColumns);
+}

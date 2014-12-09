@@ -1,0 +1,67 @@
+{
+  int totalMutations=0;
+  int columnDrops;
+  int columnAdds;
+  int columnGrows;
+  int[] pkeyIndexes=table.m_extraMetadata.pkeyIndexes.clone();
+  int partitionColIndex=table.m_extraMetadata.partitionColIndex;
+  do {
+    columnDrops=Math.min((int)(Math.abs(m_rand.nextGaussian()) * 1.5),table.m_colCount);
+    columnAdds=Math.min((int)(Math.abs(m_rand.nextGaussian()) * 1.5),table.m_colCount);
+    columnGrows=Math.min((int)(Math.abs(m_rand.nextGaussian()) * 1.5),table.m_colCount);
+    totalMutations=columnDrops + columnAdds + columnGrows;
+  }
+ while ((allowIdenty == false) && (totalMutations == 0));
+  System.out.printf("Mutations: %d %d %d\n",columnDrops,columnAdds,columnGrows);
+  ArrayList<VoltTable.ColumnInfo> columns=new ArrayList<VoltTable.ColumnInfo>();
+  for (int i=0; i < table.m_extraMetadata.originalColumnInfos.length; i++) {
+    columns.add(table.m_extraMetadata.originalColumnInfos[i].clone());
+  }
+  int tries=columns.size() * 2;
+  while ((columnDrops > 0) && (tries-- > 0)) {
+    int indexToRemove=m_rand.nextInt(columns.size());
+    VoltTable.ColumnInfo toRemove=columns.get(indexToRemove);
+    if (!isAPkeyColumn(table,toRemove)) {
+      columnDrops--;
+      columns.remove(indexToRemove);
+      if ((partitionColIndex >= 0) && (partitionColIndex > indexToRemove)) {
+        partitionColIndex--;
+      }
+      for (int i=0; i < pkeyIndexes.length; i++) {
+        if (pkeyIndexes[i] > indexToRemove) {
+          pkeyIndexes[i]--;
+        }
+      }
+    }
+  }
+  int newColIndex=getNextColumnIndex(table);
+  while (columnAdds > 0) {
+    int indexToAdd=m_rand.nextInt(columns.size());
+    VoltTable.ColumnInfo toAdd=getRandomColumn(String.format("NEW%d",newColIndex++));
+    columnAdds--;
+    columns.add(indexToAdd,toAdd);
+    if ((partitionColIndex >= 0) && (partitionColIndex >= indexToAdd)) {
+      partitionColIndex++;
+    }
+    for (int i=0; i < pkeyIndexes.length; i++) {
+      if (pkeyIndexes[i] >= indexToAdd) {
+        pkeyIndexes[i]++;
+      }
+    }
+  }
+  tries=columns.size() * 2;
+  while ((columnGrows > 0) && (tries-- > 0)) {
+    int indexToGrow=m_rand.nextInt(columns.size());
+    VoltTable.ColumnInfo toGrow=columns.get(indexToGrow);
+    if (isAPkeyColumn(table,toGrow))     continue;
+    toGrow=growColumn(toGrow);
+    if (toGrow != null) {
+      columns.remove(indexToGrow);
+      columns.add(indexToGrow,toGrow);
+      columnGrows--;
+    }
+  }
+  VoltTable.ColumnInfo[] columnArray=columns.toArray(new VoltTable.ColumnInfo[0]);
+  VoltTable.ExtraMetadata extraMetadata=new VoltTable.ExtraMetadata(table.m_extraMetadata.name,partitionColIndex,pkeyIndexes,columnArray);
+  return new VoltTable(extraMetadata,columnArray,columnArray.length);
+}

@@ -1,0 +1,85 @@
+{
+  log.info(_F("::::: Catalog Change (newTable=%s, firstTime=%s, retry=%s) :::::",newTable.toString(),this.currentSchema == null ? "yes" : "no",this.newSchema != null ? "yes" : "no"));
+  assert(newTable || this.currentSchema != null);
+  boolean skipBatchExecution=false;
+  if (this.newSchema == null) {
+    this.versionT=TableHelper.quickTable(_F("V%d (BIGINT)",schemaVersionNo + 1));
+    if (newTable) {
+      this.newSchema=createSchema();
+    }
+ else {
+      this.newSchema=mutateSchema();
+    }
+  }
+ else {
+    skipBatchExecution=isRetryNeeded();
+  }
+  boolean ddlBatchFailed=false;
+  if (!skipBatchExecution) {
+    batch.begin();
+    try {
+      batch.add("DROP TABLE %s IF EXISTS",_F("V%d",schemaVersionNo));
+      if (activeViewRep != null) {
+        batch.add("DROP VIEW %s IF EXISTS",activeViewRep.viewName);
+      }
+      if (activeVerifyProc != null) {
+        batch.add("DROP PROCEDURE %s IF EXISTS",activeVerifyProc.getName());
+      }
+      if (newTable) {
+        if (activeTableNames.contains(this.newSchema.tableName)) {
+          batch.add("DROP TABLE %s IF EXISTS",this.newSchema.tableName);
+        }
+      }
+      log.info("Starting to drop database objects.");
+      if (!batch.execute()) {
+        ddlBatchFailed=true;
+      }
+    }
+ catch (    IOException e) {
+      ddlBatchFailed=true;
+    }
+    if (!ddlBatchFailed) {
+      batch.begin();
+      try {
+        if (this.currentSchema != null && config.retryForcedPercent > rand.nextInt(100)) {
+          log.info(_F("Forcing failure"));
+          batch.add("CREATE DEATH FOR BATCH");
+          batch.failureForced=true;
+        }
+        batch.add(TableHelper.ddlForTable(this.versionT));
+        if (newTable) {
+          batch.add(TableHelper.ddlForTable(this.newSchema.table));
+          this.count=0;
+        }
+ else {
+          batch.add(TableHelper.getAlterTableDDLToMigrate(this.currentSchema.table,this.newSchema.table));
+          this.count=tupleCount(this.currentSchema.table);
+        }
+        if (this.newSchema.partitioned) {
+          batch.add("PARTITION TABLE %s ON COLUMN %s",this.newSchema.tableName,this.newSchema.pkeyName);
+        }
+        batch.add("CREATE PROCEDURE FROM CLASS %s",this.newSchema.verifyProc.getName());
+        if (this.newSchema.viewRep != null) {
+          batch.add(this.newSchema.viewRep.ddlForView());
+        }
+        this.start=System.nanoTime();
+        if (newTable) {
+          log.info("Starting to swap tables.");
+        }
+ else {
+          log.info("Starting to change schema.");
+        }
+        if (!batch.execute()) {
+          ddlBatchFailed=true;
+        }
+      }
+ catch (      IOException e) {
+        ddlBatchFailed=true;
+      }
+    }
+  }
+  if (!ddlBatchFailed) {
+    catalogChangeComplete(newTable);
+  }
+  return !ddlBatchFailed;
+}
