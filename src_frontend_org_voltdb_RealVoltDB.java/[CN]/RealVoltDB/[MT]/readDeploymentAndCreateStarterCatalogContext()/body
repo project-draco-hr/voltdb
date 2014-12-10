@@ -41,27 +41,27 @@
       hostLog.error("Deployment could not be obtained from cluster node or locally");
       VoltDB.crashLocalVoltDB("No such deployment file: " + m_config.m_pathToDeployment,false,null);
     }
-    m_deployment=CatalogUtil.getDeployment(new ByteArrayInputStream(deploymentBytes));
-    if (m_deployment == null) {
+    DeploymentType deployment=CatalogUtil.getDeployment(new ByteArrayInputStream(deploymentBytes));
+    if (deployment == null) {
       hostLog.error("Not a valid XML deployment file at URL: " + m_config.m_pathToDeployment);
       VoltDB.crashLocalVoltDB("Not a valid XML deployment file at URL: " + m_config.m_pathToDeployment,false,null);
     }
     if (!m_config.m_isEnterprise) {
       boolean shutdownDeployment=false;
       boolean shutdownAction=false;
-      if ((m_deployment.getCluster() != null) && (m_deployment.getCluster().getKfactor() > 0)) {
+      if ((deployment.getCluster() != null) && (deployment.getCluster().getKfactor() > 0)) {
         consoleLog.error("K-Safety is not supported " + "in the community edition of VoltDB.");
         shutdownDeployment=true;
       }
-      if ((m_deployment.getSnapshot() != null) && (m_deployment.getSnapshot().isEnabled())) {
+      if ((deployment.getSnapshot() != null) && (deployment.getSnapshot().isEnabled())) {
         consoleLog.error("Snapshots are not supported " + "in the community edition of VoltDB.");
         shutdownDeployment=true;
       }
-      if ((m_deployment.getCommandlog() != null) && (m_deployment.getCommandlog().isEnabled())) {
+      if ((deployment.getCommandlog() != null) && (deployment.getCommandlog().isEnabled())) {
         consoleLog.error("Command logging is not supported " + "in the community edition of VoltDB.");
         shutdownDeployment=true;
       }
-      if ((m_deployment.getExport() != null) && (m_deployment.getExport().isEnabled())) {
+      if ((deployment.getExport() != null) && (deployment.getExport().isEnabled())) {
         consoleLog.error("Export is not supported " + "in the community edition of VoltDB.");
         shutdownDeployment=true;
       }
@@ -84,7 +84,7 @@
         VoltDB.crashLocalVoltDB(msg,false,null);
       }
     }
-    HeartbeatType hbt=m_deployment.getHeartbeat();
+    HeartbeatType hbt=deployment.getHeartbeat();
     if (hbt != null) {
       m_config.m_deadHostTimeoutMS=hbt.getTimeout() * 1000;
       m_messenger.setDeadHostTimeout(m_config.m_deadHostTimeoutMS);
@@ -92,7 +92,7 @@
  else {
       hostLog.info("Dead host timeout set to " + m_config.m_deadHostTimeoutMS + " milliseconds");
     }
-    final String elasticSetting=m_deployment.getCluster().getElastic().trim().toUpperCase();
+    final String elasticSetting=deployment.getCluster().getElastic().trim().toUpperCase();
     if (elasticSetting.equals("ENABLED")) {
       TheHashinator.setConfiguredHashinatorType(HashinatorType.ELASTIC);
     }
@@ -102,7 +102,7 @@
  else {
       TheHashinator.setConfiguredHashinatorType(HashinatorType.LEGACY);
     }
-    SystemSettingsType sysType=m_deployment.getSystemsettings();
+    SystemSettingsType sysType=deployment.getSystemsettings();
     if (sysType != null) {
       if (sysType.getElastic() != null) {
         hostLog.info("Elastic duration set to " + sysType.getElastic().getDuration() + " milliseconds");
@@ -120,33 +120,13 @@
     }
     Catalog catalog=new Catalog();
     Cluster cluster=catalog.getClusters().add("cluster");
-    Database db=cluster.getDatabases().add("database");
-    if (m_deployment.getUsers() != null) {
-      for (      UsersType.User user : m_deployment.getUsers().getUser()) {
-        Set<String> roles=CatalogUtil.mergeUserRoles(user);
-        if (roles.isEmpty()) {
-          continue;
-        }
-        for (        String role : roles) {
-          if (db.getGroups().get(role) == null) {
-            db.getGroups().add(role);
-          }
-        }
-      }
+    @SuppressWarnings("unused") Database db=cluster.getDatabases().add("database");
+    String result=CatalogUtil.compileDeployment(catalog,deployment,true);
+    if (result != null) {
+      VoltDB.crashLocalVoltDB(result);
     }
-    long result=CatalogUtil.compileDeployment(catalog,m_deployment,true,true);
-    if (result < 0) {
-      hostLog.fatal("Error validating deployment file");
-      VoltDB.crashLocalVoltDB("Error validating deployment file");
-    }
-    byte[] deploymentHash=CatalogUtil.makeCatalogOrDeploymentHash(deploymentBytes);
-    m_catalogContext=new CatalogContext(TxnEgo.makeZero(MpInitiator.MP_INIT_PID).getTxnId(),0,catalog,null,deploymentHash,0,-1);
-    int numberOfNodes=m_deployment.getCluster().getHostcount();
-    if (numberOfNodes <= 0) {
-      hostLog.l7dlog(Level.FATAL,LogKeys.host_VoltDB_InvalidHostCount.name(),new Object[]{numberOfNodes},null);
-      VoltDB.crashLocalVoltDB("Invalid cluster size: " + numberOfNodes,false,null);
-    }
-    return numberOfNodes;
+    m_catalogContext=new CatalogContext(TxnEgo.makeZero(MpInitiator.MP_INIT_PID).getTxnId(),0,catalog,null,deploymentBytes,0,-1);
+    return deployment.getCluster().getHostcount();
   }
  catch (  Exception e) {
     throw new RuntimeException(e);
