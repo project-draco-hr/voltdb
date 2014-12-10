@@ -1,22 +1,25 @@
 {
   Client client=getClient();
-  loadData(client);
+  loadData(true);
   VoltTable vt;
-  for (  String tb : procs) {
-    client.callProcedure(tb,6,10,2,"2013-07-18 02:00:00.123457");
-    client.callProcedure(tb,7,40,2,"2013-07-18 02:00:00.123457");
-  }
   for (  String tb : tbs) {
-    vt=client.callProcedure("@Explain","select * from ( SELECT dept, sum(wage) as sw, sum(wage)/count(wage) as avg_wage " + "from " + tb + " GROUP BY dept) T1 ORDER BY dept DESC;").getResults()[0];
-    System.err.println(vt);
-    vt=client.callProcedure("@AdHoc","select * from ( SELECT dept, sum(wage) as sw, sum(wage)/count(wage) as avg_wage " + "from " + tb + " GROUP BY dept) T1 ORDER BY dept DESC;").getResults()[0];
-    System.out.println(vt.toString());
+    sql="select * from ( SELECT dept, sum(wage) as sw, sum(wage)/count(wage) as avg_wage " + "from " + tb + " GROUP BY dept) T1 ORDER BY dept DESC;";
+    vt=client.callProcedure("@AdHoc",sql).getResults()[0];
     validateTableOfLongs(vt,new long[][]{{2,140,35},{1,60,20}});
-    vt=client.callProcedure("@AdHoc"," select a4, sum(wage) " + " from (select wage, sum(id)+1 as a1, sum(id+1) as a2, sum(dept+3)/count(distinct dept) as a4 " + "       from " + tb + "       GROUP BY wage ORDER BY wage ASC LIMIT 4) T1"+ " Group by a4 order by a4;").getResults()[0];
+    sql="select sw from ( SELECT dept, sum(wage) as sw, sum(wage)/count(wage) as avg_wage " + "from " + tb + " GROUP BY dept) T1 ORDER BY dept DESC;";
+    vt=client.callProcedure("@AdHoc",sql).getResults()[0];
+    validateTableOfScalarLongs(vt,new long[]{140,60});
+    sql="select avg_wage from ( SELECT dept, sum(wage) as sw, sum(wage)/count(wage) as avg_wage " + "from " + tb + " GROUP BY dept) T1 ORDER BY dept DESC;";
+    vt=client.callProcedure("@AdHoc",sql).getResults()[0];
+    validateTableOfScalarLongs(vt,new long[]{35,20});
+    sql=" select a4, sum(wage) " + " from (select wage, sum(id)+1 as a1, sum(id+1) as a2, sum(dept+3)/count(distinct dept) as a4 " + "       from " + tb + "       GROUP BY wage ORDER BY wage ASC LIMIT 4) T1"+ " Group by a4 order by a4;";
+    vt=client.callProcedure("@AdHoc",sql).getResults()[0];
     validateTableOfLongs(vt,new long[][]{{4,60},{10,40}});
-    vt=client.callProcedure("@AdHoc","select dept_count, count(*) from (select dept, count(*) as dept_count from R1 group by dept) T1 " + "group by dept_count order by dept_count").getResults()[0];
+    sql="select dept_count, count(*) from (select dept, count(*) as dept_count from R1 group by dept) T1 " + "group by dept_count order by dept_count";
+    vt=client.callProcedure("@AdHoc",sql).getResults()[0];
     validateTableOfLongs(vt,new long[][]{{3,1},{4,1}});
-    vt=client.callProcedure("@AdHoc","select dept_count, count(*) " + "from (select dept, count(*) as dept_count " + "       from (select dept, id from " + tb + " order by dept limit 6) T1 group by dept) T2 "+ "group by dept_count order by dept_count").getResults()[0];
+    sql="select dept_count, count(*) " + "from (select dept, count(*) as dept_count " + "       from (select dept, id from " + tb + " order by dept limit 6) T1 group by dept) T2 "+ "group by dept_count order by dept_count";
+    vt=client.callProcedure("@AdHoc",sql).getResults()[0];
     validateTableOfLongs(vt,new long[][]{{3,2}});
   }
 }

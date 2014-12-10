@@ -56,8 +56,26 @@
   }
   if (m_parsedSelect.hasOrderByColumns()) {
     root=handleOrderBy(root);
-    if (m_parsedSelect.isComplexOrderby()) {
-      root=swapOrderbyAndProjectionNode(root);
+    if (m_parsedSelect.isComplexOrderby() && root instanceof OrderByPlanNode) {
+      AbstractPlanNode child=root.getChild(0);
+      AbstractPlanNode grandChild=child.getChild(0);
+      if (child instanceof ProjectionPlanNode) {
+        root.unlinkChild(child);
+        child.unlinkChild(grandChild);
+        child.addAndLinkChild(root);
+        root.addAndLinkChild(grandChild);
+        root=child;
+      }
+ else       if (m_parsedSelect.hasDistinctWithGroupBy() && child.getPlanNodeType() == PlanNodeType.HASHAGGREGATE && grandChild.getPlanNodeType() == PlanNodeType.PROJECTION) {
+        AbstractPlanNode grandGrandChild=grandChild.getChild(0);
+        child.clearParents();
+        root.clearChildren();
+        grandGrandChild.clearParents();
+        grandChild.clearChildren();
+        grandChild.addAndLinkChild(root);
+        root.addAndLinkChild(grandGrandChild);
+        root=child;
+      }
     }
   }
   if (mvFixNeedsProjection || needProjectionNode(root)) {
