@@ -22,19 +22,32 @@ class watchDog extends Thread {
   topo=getClusterTopology();
   CatalogChangeTestDriver testDriver=new CatalogChangeTestDriver();
   testDriver.addProcedureClasses(client,VerifySchemaChangedA.class,VerifySchemaChangedB.class);
-  testDriver.catalogChange(true);
+  testDriver.catalogChange(ChangeType.CREATE);
+  boolean tableHasData=false;
   while (true) {
-    testDriver.loadTable();
-    for (int j=0; j < 3; j++) {
-      CatalogChangeTestDriver.SampleResults sampleResults=testDriver.sampleRows();
-      boolean isNewTable=(j == 0) && (rand.nextInt(5) == 0);
-      testDriver.catalogChange(isNewTable);
-      if (!isNewTable && (sampleResults.table != null)) {
+    boolean isNewTable=rand.nextInt(100) < percentNewTable;
+    boolean addDataToTable=rand.nextInt(100) < percentLoadTable;
+    CatalogChangeTestDriver.SampleResults sampleResults=null;
+    if (tableHasData && !isNewTable) {
+      sampleResults=testDriver.sampleRows();
+    }
+    ChangeType changeType=(isNewTable ? ChangeType.CREATE : (tableHasData ? ChangeType.MUTATE_NONEMPTY : ChangeType.MUTATE_EMPTY));
+    testDriver.catalogChange(changeType);
+    if (isNewTable) {
+      tableHasData=false;
+    }
+    if (tableHasData) {
+      assert(sampleResults != null);
+      if (sampleResults.table != null) {
         String err=testDriver.checkSample(sampleResults);
         if (err != null) {
           SchemaChangeUtility.die(false,err);
         }
       }
+    }
+    if (addDataToTable) {
+      testDriver.loadTable();
+      tableHasData=true;
     }
   }
 }
