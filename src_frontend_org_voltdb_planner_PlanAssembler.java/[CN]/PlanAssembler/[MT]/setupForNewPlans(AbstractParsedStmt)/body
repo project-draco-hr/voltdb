@@ -15,19 +15,8 @@
       simplifyOuterJoin((BranchNode)m_parsedSelect.m_joinTree);
     }
     subAssembler=new SelectSubPlanAssembler(m_catalogDb,m_parsedSelect,m_partitioning);
-    for (    ParsedColInfo groupbyCol : m_parsedSelect.m_groupByColumns) {
-      StmtTableScan scanTable=m_parsedSelect.m_tableAliasMap.get(groupbyCol.tableAlias);
-      if (scanTable != null && scanTable.getPartitioningColumns() != null) {
-        for (        SchemaColumn pcol : scanTable.getPartitioningColumns()) {
-          if (pcol != null && pcol.getColumnName().equals(groupbyCol.columnName)) {
-            m_parsedSelect.setHasPartitionColumnInGroupby();
-            break;
-          }
-        }
-      }
-      if (m_parsedSelect.hasPartitionColumnInGroupby()) {
-        break;
-      }
+    if (isPartitionColumnInGroupbyList(m_parsedSelect.m_groupByColumns)) {
+      m_parsedSelect.setHasPartitionColumnInGroupby();
     }
     return;
   }
@@ -38,7 +27,7 @@
   assert(parsedStmt.m_tableList.size() == 1);
   Table targetTable=parsedStmt.m_tableList.get(0);
   if (targetTable.getIsreplicated()) {
-    if (m_partitioning.wasSpecifiedAsSingle()) {
+    if (m_partitioning.wasSpecifiedAsSingle() && !m_partitioning.isReplicatedDmlToRunOnAllPartitions()) {
       String msg="Trying to write to replicated table '" + targetTable.getTypeName() + "' in a single-partition procedure.";
       throw new PlanningErrorException(msg);
     }
