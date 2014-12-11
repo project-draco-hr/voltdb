@@ -1,0 +1,68 @@
+{
+  boolean adminMode=false;
+  if (m_shouldUpdateCatalog.compareAndSet(true,false)) {
+    if (m_connections != null) {
+      m_connections.closeAll();
+      m_connections=null;
+    }
+  }
+  if (m_connections == null) {
+    Configuration config=VoltDB.instance().getConfig();
+    int port=config.m_port;
+    int adminPort=config.m_adminPort;
+    String externalInterface=config.m_externalInterface;
+    String adminInterface="localhost";
+    String clientInterface="localhost";
+    if (externalInterface != null && !externalInterface.isEmpty()) {
+      clientInterface=externalInterface;
+      adminInterface=externalInterface;
+    }
+    if (config.m_clientInterface.length() > 0) {
+      clientInterface=config.m_clientInterface;
+    }
+    if (config.m_adminInterface.length() > 0) {
+      adminInterface=config.m_adminInterface;
+    }
+    m_connections=new AuthenticatedConnectionCache(10,clientInterface,port,adminInterface,adminPort);
+  }
+  if (admin != null) {
+    if (admin.compareToIgnoreCase("true") == 0) {
+      adminMode=true;
+    }
+  }
+  byte[] hashedPasswordBytes=null;
+  if (password != null) {
+    try {
+      MessageDigest md=MessageDigest.getInstance("SHA-1");
+      hashedPasswordBytes=md.digest(password.getBytes("UTF-8"));
+    }
+ catch (    NoSuchAlgorithmException e) {
+      return new AuthenticationResult(null,adminMode,username,"JVM doesn't support SHA-1 hashing. Please use a supported JVM" + e);
+    }
+catch (    UnsupportedEncodingException e) {
+      return new AuthenticationResult(null,adminMode,username,"JVM doesn't support UTF-8. Please use a supported JVM" + e);
+    }
+  }
+  if (hashedPassword != null) {
+    if (hashedPassword.length() != 40) {
+      return new AuthenticationResult(null,adminMode,username,"Hashedpassword must be a 40-byte hex-encoded SHA-1 hash (20 bytes unencoded).");
+    }
+    try {
+      hashedPasswordBytes=Encoder.hexDecode(hashedPassword);
+    }
+ catch (    Exception e) {
+      return new AuthenticationResult(null,adminMode,username,"Hashedpassword must be a 40-byte hex-encoded SHA-1 hash (20 bytes unencoded).");
+    }
+  }
+  assert((hashedPasswordBytes == null) || (hashedPasswordBytes.length == 20));
+  try {
+    Client client=m_connections.getClient(username,password,hashedPasswordBytes,adminMode);
+    if (client != null) {
+      return new AuthenticationResult(client,adminMode,username,"");
+    }
+    return new AuthenticationResult(null,adminMode,username,"Failed to get client.");
+  }
+ catch (  IOException ex) {
+    return new AuthenticationResult(null,adminMode,username,ex.getMessage());
+  }
+}
