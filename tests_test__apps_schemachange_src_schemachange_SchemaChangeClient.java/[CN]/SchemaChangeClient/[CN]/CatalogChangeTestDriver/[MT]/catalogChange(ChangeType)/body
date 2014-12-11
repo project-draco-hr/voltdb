@@ -9,7 +9,8 @@
     this.newSchema=mutateSchema();
   }
   int retryCount=0;
-  while (!this.executeChanges(changeType,retryCount > 0)) {
+  BatchResult result=this.executeChanges(changeType,false);
+  while (result != BatchResult.BATCH_SUCCEEDED) {
     if (isSchemaVersionObservable(schemaVersionNo + 1)) {
       log.info(_F("The new version table V%d is present, not retrying.",schemaVersionNo + 1));
       break;
@@ -18,8 +19,12 @@
     if (retryCount > config.retryLimit) {
       this.die("Retry limit (%d) exceeded.",config.retryLimit);
     }
-    log.info(_F("::::: Catalog Change (retry #%d in %d seconds): %s :::::",retryCount,config.retrySleep,changeType.toString()));
-    Thread.sleep(config.retrySleep * 1000);
+    log.info(_F("::::: Catalog Change (retry #%d): %s :::::",retryCount,changeType.toString()));
+    if (result != BatchResult.BATCH_FAILED_AS_EXPECTED) {
+      log.info(_F("Sleeping %d seconds...",config.retrySleep));
+      Thread.sleep(config.retrySleep * 1000);
+    }
+    result=this.executeChanges(changeType,true);
   }
   this.catalogChangeComplete(changeType);
 }
