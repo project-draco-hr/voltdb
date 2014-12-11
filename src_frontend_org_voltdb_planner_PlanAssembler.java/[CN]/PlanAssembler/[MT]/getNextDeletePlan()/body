@@ -11,29 +11,38 @@
   }
   DeletePlanNode deleteNode=new DeletePlanNode();
   deleteNode.setTargetTableName(targetTable.getTypeName());
-  ProjectionPlanNode projectionNode=new ProjectionPlanNode();
-  AbstractExpression addressExpr=new TupleAddressExpression();
-  NodeSchema proj_schema=new NodeSchema();
-  proj_schema.addColumn(new SchemaColumn("VOLT_TEMP_TABLE","VOLT_TEMP_TABLE","tuple_address","tuple_address",addressExpr));
-  projectionNode.setOutputSchema(proj_schema);
   assert(subSelectRoot instanceof AbstractScanPlanNode);
-  if ((subSelectRoot instanceof SeqScanPlanNode) && (((SeqScanPlanNode)subSelectRoot).getPredicate() == null)) {
+  if (deleteIsTruncate(m_parsedDelete,subSelectRoot)) {
     deleteNode.setTruncate(true);
     if (m_partitioning.wasSpecifiedAsSingle()) {
       return deleteNode;
     }
   }
  else {
-    if (m_parsedDelete.hasOrderByColumns()) {
-      subSelectRoot=handleOrderBy(m_parsedDelete,subSelectRoot);
+    boolean needsOrderByNode=isOrderByNodeRequired(m_parsedDelete,subSelectRoot);
+    ProjectionPlanNode projectionNode=new ProjectionPlanNode();
+    AbstractExpression addressExpr=new TupleAddressExpression();
+    NodeSchema proj_schema=new NodeSchema();
+    proj_schema.addColumn(new SchemaColumn("VOLT_TEMP_TABLE","VOLT_TEMP_TABLE","tuple_address","tuple_address",addressExpr));
+    if (needsOrderByNode) {
+      for (      ParsedColInfo col : m_parsedDelete.orderByColumns()) {
+        proj_schema.addColumn(col.asSchemaColumn());
+      }
     }
-    subSelectRoot=m_parsedDelete.handleLimit(subSelectRoot);
-    projectionNode.addAndLinkChild(subSelectRoot);
-    subSelectRoot=projectionNode;
-    deleteNode.addAndLinkChild(subSelectRoot);
-    System.out.println("\n\n----------------------------------------");
-    System.out.println(deleteNode.toExplainPlanString());
-    System.out.println("----------------------------------------\n\n");
+    projectionNode.setOutputSchema(proj_schema);
+    subSelectRoot.addInlinePlanNode(projectionNode);
+    AbstractPlanNode root=subSelectRoot;
+    if (needsOrderByNode) {
+      OrderByPlanNode ob=buildOrderByPlanNode(m_parsedDelete.orderByColumns());
+      ob.addAndLinkChild(root);
+      root=ob;
+    }
+    LimitPlanNode limitNode=m_parsedDelete.limitPlanNode();
+    if (limitNode != null) {
+      assert(m_parsedDelete.orderByColumns().size() > 0);
+      root.addInlinePlanNode(limitNode);
+    }
+    deleteNode.addAndLinkChild(root);
   }
   if (m_partitioning.wasSpecifiedAsSingle() || m_partitioning.isInferredSingle()) {
     return deleteNode;
