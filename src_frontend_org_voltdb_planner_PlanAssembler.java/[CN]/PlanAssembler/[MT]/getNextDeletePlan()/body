@@ -9,16 +9,17 @@
   if (disableNestedLoopIndexJoinForInComparison(subSelectRoot,m_parsedDelete)) {
     return getNextDeletePlan();
   }
+  boolean isSinglePartitionPlan=m_partitioning.wasSpecifiedAsSingle() || m_partitioning.isInferredSingle();
   DeletePlanNode deleteNode=new DeletePlanNode();
   deleteNode.setTargetTableName(targetTable.getTypeName());
   assert(subSelectRoot instanceof AbstractScanPlanNode);
   if (deleteIsTruncate(m_parsedDelete,subSelectRoot)) {
     deleteNode.setTruncate(true);
-    if (m_partitioning.wasSpecifiedAsSingle()) {
-      return deleteNode;
-    }
   }
  else {
+    if (m_parsedDelete.orderByColumns().size() > 0 && !isSinglePartitionPlan && !targetTable.getIsreplicated()) {
+      throw new PlanningErrorException("Only single-partition DELETE statements " + "may contain ORDER BY with LIMIT and/or OFFSET clauses.");
+    }
     boolean needsOrderByNode=isOrderByNodeRequired(m_parsedDelete,subSelectRoot);
     ProjectionPlanNode projectionNode=new ProjectionPlanNode();
     AbstractExpression addressExpr=new TupleAddressExpression();
@@ -44,7 +45,7 @@
     }
     deleteNode.addAndLinkChild(root);
   }
-  if (m_partitioning.wasSpecifiedAsSingle() || m_partitioning.isInferredSingle()) {
+  if (isSinglePartitionPlan) {
     return deleteNode;
   }
   AbstractPlanNode recvNode=SubPlanAssembler.addSendReceivePair(deleteNode);
