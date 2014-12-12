@@ -1,0 +1,40 @@
+{
+  try {
+    String simpleSchema="CREATE TABLE foo (\n" + "    bar BIGINT NOT NULL,\n" + "    PRIMARY KEY (bar)\n"+ ");";
+    File schemaFile=VoltProjectBuilder.writeStringToTempFile(simpleSchema);
+    String schemaPath=schemaFile.getPath();
+    schemaPath=URLEncoder.encode(schemaPath,"UTF-8");
+    VoltProjectBuilder builder=new VoltProjectBuilder();
+    builder.addSchema(schemaPath);
+    builder.addPartitionInfo("foo","bar");
+    builder.addProcedures(DelayProc.class);
+    builder.setHTTPDPort(8095);
+    UserInfo users[]=new UserInfo[]{new UserInfo("user1","admin",new String[]{"user"}),new UserInfo("user2","admin",new String[]{"administrator"})};
+    builder.addUsers(users);
+    builder.setSecurityEnabled(true,false);
+    boolean success=builder.compile(Configuration.getPathToCatalogForTest("json.jar"));
+    assertTrue(success);
+    VoltDB.Configuration config=new VoltDB.Configuration();
+    config.m_pathToCatalog=config.setPathToCatalogForTest("json.jar");
+    config.m_pathToDeployment=builder.getPathToDeployment();
+    server=new ServerThread(config);
+    server.start();
+    server.waitForInitialization();
+    String dep=getUrlOverJSON("http://localhost:8095/deployment/","user1","admin","basic",200,"application/json");
+    assertTrue(dep.contains("Permission denied"));
+    dep=getUrlOverJSON("http://localhost:8095/deployment/","user2","admin","basic",200,"application/json");
+    assertTrue(dep.contains("cluster"));
+    dep=getUrlOverJSON("http://localhost:8095/deployment/download","user1","admin","basic",200,"application/json");
+    assertTrue(dep.contains("Permission denied"));
+    dep=getUrlOverJSON("http://localhost:8095/deployment/download","user2","admin","basic",200,"text/xml");
+    assertTrue(dep.contains("<deployment>"));
+    assertTrue(dep.contains("</deployment>"));
+  }
+  finally {
+    if (server != null) {
+      server.shutdown();
+      server.join();
+    }
+    server=null;
+  }
+}
