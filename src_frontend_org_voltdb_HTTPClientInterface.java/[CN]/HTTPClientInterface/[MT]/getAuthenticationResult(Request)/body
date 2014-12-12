@@ -1,0 +1,101 @@
+{
+  boolean adminMode=false;
+  String username=null;
+  String hashedPassword=null;
+  String password=null;
+  String auth=request.getHeader("Authorization");
+  boolean validAuthHeader=false;
+  if (auth != null) {
+    String schemeAndHandle[]=auth.split(" ");
+    if (schemeAndHandle.length == 2) {
+      if (schemeAndHandle[0].equalsIgnoreCase("hashed")) {
+        String up[]=schemeAndHandle[1].split(":");
+        if (up.length == 2) {
+          username=up[0];
+          hashedPassword=up[1];
+          validAuthHeader=true;
+        }
+      }
+ else       if (schemeAndHandle[0].equalsIgnoreCase("basic")) {
+        String unpw=new String(Base64.decode(schemeAndHandle[1]));
+        String up[]=unpw.split(":");
+        if (up.length == 2) {
+          username=up[0];
+          password=up[1];
+          validAuthHeader=true;
+        }
+      }
+    }
+  }
+  if (!validAuthHeader) {
+    username=request.getParameter(PARAM_USERNAME);
+    hashedPassword=request.getParameter(PARAM_HASHEDPASSWORD);
+    password=request.getParameter(PARAM_PASSWORD);
+  }
+  String admin=request.getParameter(PARAM_ADMIN);
+  if (m_shouldUpdateCatalog.compareAndSet(true,false)) {
+    if (m_connections != null) {
+      m_connections.closeAll();
+      m_connections=null;
+    }
+  }
+  if (m_connections == null) {
+    Configuration config=VoltDB.instance().getConfig();
+    int port=config.m_port;
+    int adminPort=config.m_adminPort;
+    String externalInterface=config.m_externalInterface;
+    String adminInterface="localhost";
+    String clientInterface="localhost";
+    if (externalInterface != null && !externalInterface.isEmpty()) {
+      clientInterface=externalInterface;
+      adminInterface=externalInterface;
+    }
+    if (config.m_clientInterface.length() > 0) {
+      clientInterface=config.m_clientInterface;
+    }
+    if (config.m_adminInterface.length() > 0) {
+      adminInterface=config.m_adminInterface;
+    }
+    m_connections=new AuthenticatedConnectionCache(10,clientInterface,port,adminInterface,adminPort);
+  }
+  if (admin != null) {
+    if (admin.compareToIgnoreCase("true") == 0) {
+      adminMode=true;
+    }
+  }
+  byte[] hashedPasswordBytes=null;
+  if (password != null) {
+    try {
+      MessageDigest md=MessageDigest.getInstance("SHA-1");
+      hashedPasswordBytes=md.digest(password.getBytes("UTF-8"));
+    }
+ catch (    NoSuchAlgorithmException e) {
+      return new AuthenticationResult(null,adminMode,username,"JVM doesn't support SHA-1 hashing. Please use a supported JVM" + e);
+    }
+catch (    UnsupportedEncodingException e) {
+      return new AuthenticationResult(null,adminMode,username,"JVM doesn't support UTF-8. Please use a supported JVM" + e);
+    }
+  }
+  if (hashedPassword != null) {
+    if (hashedPassword.length() != 40) {
+      return new AuthenticationResult(null,adminMode,username,"Hashedpassword must be a 40-byte hex-encoded SHA-1 hash (20 bytes unencoded).");
+    }
+    try {
+      hashedPasswordBytes=Encoder.hexDecode(hashedPassword);
+    }
+ catch (    Exception e) {
+      return new AuthenticationResult(null,adminMode,username,"Hashedpassword must be a 40-byte hex-encoded SHA-1 hash (20 bytes unencoded).");
+    }
+  }
+  assert((hashedPasswordBytes == null) || (hashedPasswordBytes.length == 20));
+  try {
+    Client client=m_connections.getClient(username,password,hashedPasswordBytes,adminMode);
+    if (client != null) {
+      return new AuthenticationResult(client,adminMode,username,"");
+    }
+    return new AuthenticationResult(null,adminMode,username,"Failed to get client.");
+  }
+ catch (  IOException ex) {
+    return new AuthenticationResult(null,adminMode,username,ex.getMessage());
+  }
+}
