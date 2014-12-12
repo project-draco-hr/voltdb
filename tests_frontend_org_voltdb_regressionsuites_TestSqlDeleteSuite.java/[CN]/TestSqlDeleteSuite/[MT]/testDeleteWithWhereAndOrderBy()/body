@@ -3,25 +3,36 @@
     return;
   }
   Client client=getClient();
-  String[] stmtTemplates={"DELETE FROM %s WHERE ID = %d ORDER BY NUM ASC LIMIT 1","DELETE FROM %s WHERE ID = %d AND DESC LIKE 'de%%' ORDER BY NUM DESC LIMIT 2","DELETE FROM %s WHERE NUM = ID and ID = %d ORDER BY NUM LIMIT 3"};
-  long[][] expectedResults={new long[]{1,2},new long[]{10},new long[]{}};
-  long[] expectedCountStar={29,27,24};
   VoltTable vt;
   for (  String table : Arrays.asList("P3","R3")) {
     insertMoreRows(client,table,10,3);
-    for (int i=0; i < stmtTemplates.length; ++i) {
-      long key=i * 10;
-      vt=client.callProcedure("@AdHoc","select * from " + table).getResults()[0];
-      System.out.println(vt);
-      String stmt=String.format(stmtTemplates[i],table,key);
-      int len=stmt.length();
-      long expectedModCount=Long.valueOf(stmt.substring(len - 1,len));
-      vt=client.callProcedure("@AdHoc",stmt).getResults()[0];
-      validateTableOfScalarLongs(vt,new long[]{expectedModCount});
-      vt=client.callProcedure("@AdHoc","select num from " + table + " where id = "+ key+ " order by num asc").getResults()[0];
-      validateTableOfScalarLongs(vt,expectedResults[i]);
-      vt=client.callProcedure("@AdHoc","select count(*) from " + table).getResults()[0];
-      validateTableOfScalarLongs(vt,new long[]{expectedCountStar[i]});
-    }
+    String stmt="DELETE FROM " + table + " WHERE ID = 0 ORDER BY NUM ASC LIMIT 1";
+    vt=client.callProcedure("@AdHoc",stmt).getResults()[0];
+    validateTableOfScalarLongs(vt,new long[]{1});
+    vt=client.callProcedure("@AdHoc","select num from " + table + " where id = 0 order by num asc").getResults()[0];
+    validateTableOfScalarLongs(vt,new long[]{1,2});
+    vt=client.callProcedure("@AdHoc","select count(*) from " + table).getResults()[0];
+    validateTableOfScalarLongs(vt,new long[]{29});
+    stmt="DELETE FROM " + table + " WHERE DESC LIKE 'de%' AND ID = 10 ORDER BY NUM DESC LIMIT 2";
+    vt=client.callProcedure("@AdHoc",stmt).getResults()[0];
+    validateTableOfScalarLongs(vt,new long[]{2});
+    vt=client.callProcedure("@AdHoc","select num from " + table + " where id = 10 order by num asc").getResults()[0];
+    validateTableOfScalarLongs(vt,new long[]{10});
+    vt=client.callProcedure("@AdHoc","select count(*) from " + table).getResults()[0];
+    validateTableOfScalarLongs(vt,new long[]{27});
+    stmt="DELETE FROM " + table + " WHERE ID = 20 ORDER BY NUM LIMIT 10 OFFSET 2";
+    vt=client.callProcedure("@AdHoc",stmt).getResults()[0];
+    validateTableOfScalarLongs(vt,new long[]{1});
+    vt=client.callProcedure("@AdHoc","select num from " + table + " where id = 20 order by num asc").getResults()[0];
+    validateTableOfScalarLongs(vt,new long[]{20,21});
+    vt=client.callProcedure("@AdHoc","select count(*) from " + table).getResults()[0];
+    validateTableOfScalarLongs(vt,new long[]{26});
+    stmt="DELETE FROM " + table + " WHERE ID = 30 ORDER BY NUM LIMIT 1 OFFSET 1";
+    vt=client.callProcedure("@AdHoc",stmt).getResults()[0];
+    validateTableOfScalarLongs(vt,new long[]{1});
+    vt=client.callProcedure("@AdHoc","select num from " + table + " where id = 30 order by num asc").getResults()[0];
+    validateTableOfScalarLongs(vt,new long[]{30,32});
+    vt=client.callProcedure("@AdHoc","select count(*) from " + table).getResults()[0];
+    validateTableOfScalarLongs(vt,new long[]{25});
   }
 }
