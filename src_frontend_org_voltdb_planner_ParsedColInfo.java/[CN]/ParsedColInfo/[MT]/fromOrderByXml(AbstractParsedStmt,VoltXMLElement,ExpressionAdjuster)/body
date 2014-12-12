@@ -1,0 +1,35 @@
+{
+  assert(orderByXml.name.equalsIgnoreCase("orderby"));
+  String desc=orderByXml.attributes.get("desc");
+  boolean descending=(desc != null) && (desc.equalsIgnoreCase("true"));
+  VoltXMLElement child=orderByXml.children.get(0);
+  assert(child != null);
+  ParsedColInfo orderCol=new ParsedColInfo();
+  orderCol.orderBy=true;
+  orderCol.ascending=!descending;
+  AbstractExpression orderExpr=parsedStmt.parseExpressionTree(child);
+  assert(orderExpr != null);
+  orderCol.expression=adjuster.adjust(orderExpr);
+  if (child.name.equals("columnref")) {
+    assert(orderExpr instanceof TupleValueExpression);
+    TupleValueExpression tve=(TupleValueExpression)orderExpr;
+    orderCol.columnName=tve.getColumnName();
+    orderCol.tableName=tve.getTableName();
+    orderCol.tableAlias=tve.getTableAlias();
+    if (orderCol.tableAlias == null) {
+      orderCol.tableAlias=orderCol.tableName;
+    }
+    orderCol.alias=tve.getColumnAlias();
+  }
+ else {
+    String alias=child.attributes.get("alias");
+    orderCol.alias=alias;
+    orderCol.tableName="VOLT_TEMP_TABLE";
+    orderCol.tableAlias="VOLT_TEMP_TABLE";
+    orderCol.columnName="";
+    if ((child.name.equals("operation") == false) && (child.name.equals("aggregation") == false) && (child.name.equals("function") == false)) {
+      throw new RuntimeException("ORDER BY parsed with strange child node type: " + child.name);
+    }
+  }
+  return orderCol;
+}
