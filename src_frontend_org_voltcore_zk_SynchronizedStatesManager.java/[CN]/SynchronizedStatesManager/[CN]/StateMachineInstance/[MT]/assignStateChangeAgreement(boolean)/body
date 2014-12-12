@@ -1,34 +1,27 @@
 {
+  assert(isLocalStateLocked());
+  assert(m_pendingProposal != null);
+  assert(m_currentRequestType == REQUEST_TYPE.STATE_CHANGE_REQUEST);
   byte result[]=new byte[1];
   result[0]=(byte)(acceptable ? 1 : 0);
-  try {
-    m_zk.create(m_myResultPath,result,Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
-    if (acceptable) {
-      if (m_proposedState != null) {
-        checkForBarrierResultsChanges();
-      }
+  addResultEntry(result);
+  if (acceptable) {
+    checkForBarrierResultsChanges();
+  }
  else {
-        unlockLocalState();
-      }
-    }
- else {
+    try {
       m_zk.delete(m_myPartiticpantsPath,-1);
-      unlockLocalState();
+      System.out.println(m_stateMachineId + ": From " + m_memberId+ " from participants (assignStateChangeAgreement)");
     }
-  }
- catch (  KeeperException.SessionExpiredException e) {
-    e.printStackTrace();
+ catch (    KeeperException.ConnectionLossException e) {
+      e.printStackTrace();
+    }
+catch (    InterruptedException e) {
+      e.printStackTrace();
+    }
+catch (    Exception e) {
+      org.voltdb.VoltDB.crashLocalVoltDB("Unexepected failure in StateMachine.",true,e);
+    }
     unlockLocalState();
-  }
-catch (  KeeperException.ConnectionLossException e) {
-    e.printStackTrace();
-    unlockLocalState();
-  }
-catch (  InterruptedException e) {
-    e.printStackTrace();
-    unlockLocalState();
-  }
-catch (  Exception e) {
-    org.voltdb.VoltDB.crashLocalVoltDB("Unexepected failure in StateMachine.",true,e);
   }
 }

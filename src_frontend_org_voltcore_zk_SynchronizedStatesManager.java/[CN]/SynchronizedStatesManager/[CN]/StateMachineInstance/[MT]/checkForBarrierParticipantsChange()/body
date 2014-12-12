@@ -2,29 +2,74 @@
   assert(isLocalStateLocked());
   try {
     Set<String> children=ImmutableSet.copyOf(m_zk.getChildren(m_barrierParticipantsPath,m_barrierParticipantsWatcher));
-    if (m_currentParticipants == 0 && children.size() > 0 && m_proposedState == null) {
-      if (m_requestedInitialState != null) {
-        requestedStateChangeAcceptable(true);
-        m_currentParticipants=children.size();
-        unlockLocalState();
+    Stat nodeStat=new Stat();
+    byte statePair[]=m_zk.getData(m_barrierResultsPath,false,nodeStat);
+    int proposalVersion=nodeStat.getVersion();
+    System.out.println(m_stateMachineId + ": Waking up partipantMonitor (lastVer " + m_lastProposalVersion+ ") from "+ proposalVersion+ "/"+ m_currentParticipants+ " with: "+ children.toString());
+    if (proposalVersion != m_lastProposalVersion) {
+      m_lastProposalVersion=proposalVersion;
+      m_currentParticipants=children.size();
+      if (!m_stateChangeInitiator) {
+        assert(m_pendingProposal == null);
+        StateChangeRequest existingAndProposedStates=getExistingAndProposedBuffersFromResultsNode(statePair);
+        m_currentRequestType=existingAndProposedStates.m_requestType;
+        if (m_requestedInitialState != null) {
+          m_zk.create(m_myPartiticpantsPath,null,Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL);
+          System.out.println(m_stateMachineId + ": Adding " + m_memberId+ " to participants (checkForBarrierParticipantsChange)");
+          assert(m_requestedInitialState == m_pendingProposal);
+          addResultEntry(null);
+          unlockLocalState();
+        }
+ else {
+          REQUEST_TYPE type=m_currentRequestType;
+          if (type == REQUEST_TYPE.LAST_CHANGE_OUTCOME_REQUEST) {
+            byte result[]=new byte[1];
+            if (existingAndProposedStates.m_proposal.equals(m_synchronizedState)) {
+              result[0]=(byte)1;
+              addResultEntry(result);
+            }
+ else {
+              assert(existingAndProposedStates.m_previousState.equals(m_synchronizedState));
+              result[0]=(byte)0;
+              addResultEntry(result);
+            }
+            unlockLocalState();
+          }
+ else {
+            m_zk.create(m_myPartiticpantsPath,null,Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL);
+            System.out.println(m_stateMachineId + ": Adding " + m_memberId+ " to participants (checkForBarrierParticipantsChange)");
+            m_pendingProposal=existingAndProposedStates.m_proposal;
+            ByteBuffer proposedState=m_pendingProposal.asReadOnlyBuffer();
+            assert(existingAndProposedStates.m_previousState.equals(m_synchronizedState));
+            unlockLocalState();
+            if (type == REQUEST_TYPE.STATE_CHANGE_REQUEST) {
+              m_log.debug(m_stateMachineId + ": new state proposed");
+              stateChangeProposed(proposedState);
+            }
+ else {
+              m_log.info(m_stateMachineId + ": task Requested");
+              taskRequested(proposedState);
+            }
+          }
+        }
       }
  else {
-        m_zk.create(m_myPartiticpantsPath,null,Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL);
-        byte statePair[]=m_zk.getData(m_barrierResultsPath,false,null);
-        Pair<ByteBuffer,ByteBuffer> existingAndProposedStates=getExistingAndProposedBuffersFromResultsNode(statePair);
-        m_proposedState=existingAndProposedStates.getSecond();
-        ByteBuffer proposed=m_proposedState.asReadOnlyBuffer();
-        assert(existingAndProposedStates.getFirst().equals(m_synchronizedState));
-        m_currentParticipants=children.size();
-        m_log.debug(m_stateMachineId + " new state proposed.");
-        unlockLocalState();
-        stateChangeProposed(proposed);
+        assert(m_pendingProposal != null);
+        if (m_currentRequestType == REQUEST_TYPE.CORRELATED_COORDINATED_TASK || m_currentRequestType == REQUEST_TYPE.UNCORRELATED_COORDINATED_TASK) {
+          ByteBuffer taskRequest=m_pendingProposal.asReadOnlyBuffer();
+          unlockLocalState();
+          m_log.info(m_stateMachineId + ": task Requested (by this member)");
+          taskRequested(taskRequest);
+        }
+ else {
+          unlockLocalState();
+        }
       }
     }
  else {
       m_currentParticipants=children.size();
-      if (m_currlockName != null && m_currlockName == m_lockWaitingOn && children.size() == 0) {
-        notifyLockWaiter();
+      if (m_ourDistributedLockName != null && m_ourDistributedLockName == m_lockWaitingOn && children.size() == 0) {
+        notifyDistributedLockWaiter();
       }
  else {
         unlockLocalState();
@@ -46,4 +91,5 @@ catch (  InterruptedException e) {
 catch (  Exception e) {
     org.voltdb.VoltDB.crashLocalVoltDB("Unexepected failure in StateMachine.",true,e);
   }
+  assert(isLocalStateUnlocked());
 }

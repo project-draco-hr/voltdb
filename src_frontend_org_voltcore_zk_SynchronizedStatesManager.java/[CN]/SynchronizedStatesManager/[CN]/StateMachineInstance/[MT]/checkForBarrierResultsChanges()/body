@@ -1,33 +1,37 @@
 {
   assert(isLocalStateLocked());
+  if (m_pendingProposal == null) {
+    System.out.println(m_stateMachineId + ": Canceled Result Monitor");
+    unlockLocalState();
+    return;
+  }
+  Set<String> membersWithResults;
   try {
-    if (m_proposedState == null) {
-      unlockLocalState();
-      return;
-    }
-    m_barrierResultsWatcher.canceled=false;
-    Set<String> children=ImmutableSet.copyOf(m_zk.getChildren(m_barrierResultsPath,m_barrierResultsWatcher));
-    if (Sets.difference(m_knownMembers,children).isEmpty()) {
-      processResultQuorum(children);
-    }
- else {
-      m_resultsSet=children;
-      unlockLocalState();
-    }
+    membersWithResults=ImmutableSet.copyOf(m_zk.getChildren(m_barrierResultsPath,m_barrierResultsWatcher));
+    System.out.println(m_stateMachineId + ": Waking up resultMonitor with: " + membersWithResults.toString());
   }
  catch (  KeeperException.SessionExpiredException e) {
+    membersWithResults=new TreeSet<String>(Arrays.asList("We died so avoid Quorum path"));
     e.printStackTrace();
-    unlockLocalState();
   }
 catch (  KeeperException.ConnectionLossException e) {
+    membersWithResults=new TreeSet<String>(Arrays.asList("We died so avoid Quorum path"));
     e.printStackTrace();
-    unlockLocalState();
   }
 catch (  InterruptedException e) {
+    membersWithResults=new TreeSet<String>(Arrays.asList("We died so avoid Quorum path"));
     e.printStackTrace();
-    unlockLocalState();
   }
 catch (  Exception e) {
     org.voltdb.VoltDB.crashLocalVoltDB("Unexepected failure in StateMachine.",true,e);
+    membersWithResults=new TreeSet<String>();
+  }
+  if (Sets.difference(m_knownMembers,membersWithResults).isEmpty()) {
+    processResultQuorum(membersWithResults);
+    assert(isLocalStateUnlocked());
+  }
+ else {
+    m_memberResults=membersWithResults;
+    unlockLocalState();
   }
 }

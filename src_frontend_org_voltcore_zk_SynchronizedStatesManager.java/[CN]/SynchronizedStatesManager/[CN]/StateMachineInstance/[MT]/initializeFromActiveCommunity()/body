@@ -1,0 +1,63 @@
+{
+  ByteBuffer readOnlyResult=null;
+  ByteBuffer staleTask=null;
+  byte oldAndProposedState[];
+  try {
+    Stat lastProposal=new Stat();
+    oldAndProposedState=m_zk.getData(m_barrierResultsPath,false,lastProposal);
+    StateChangeRequest existingAndProposedStates=getExistingAndProposedBuffersFromResultsNode(oldAndProposedState);
+    if (existingAndProposedStates.m_requestType == REQUEST_TYPE.LAST_CHANGE_OUTCOME_REQUEST) {
+      RESULT_CONCENSUS result=resultsAgreeOnSuccess(m_knownMembers);
+      if (result == RESULT_CONCENSUS.AGREE) {
+        existingAndProposedStates.m_previousState=existingAndProposedStates.m_proposal;
+        existingAndProposedStates.m_requestType=REQUEST_TYPE.INITIALIZING;
+      }
+ else       if (result == RESULT_CONCENSUS.DISAGREE) {
+        existingAndProposedStates.m_requestType=REQUEST_TYPE.INITIALIZING;
+      }
+ else {
+        existingAndProposedStates.m_requestType=REQUEST_TYPE.STATE_CHANGE_REQUEST;
+      }
+    }
+    if (existingAndProposedStates.m_requestType == REQUEST_TYPE.STATE_CHANGE_REQUEST) {
+      m_stateChangeInitiator=true;
+      m_pendingProposal=m_requestedInitialState;
+      m_currentRequestType=REQUEST_TYPE.LAST_CHANGE_OUTCOME_REQUEST;
+      ByteBuffer stateChange=buildProposal(REQUEST_TYPE.LAST_CHANGE_OUTCOME_REQUEST,existingAndProposedStates.m_previousState,existingAndProposedStates.m_proposal);
+      m_lastProposalVersion=wakeCommunityWithProposal(stateChange.array());
+      addResultEntry(null);
+      checkForBarrierResultsChanges();
+    }
+ else {
+      m_synchronizedState=existingAndProposedStates.m_previousState;
+      m_requestedInitialState=null;
+      readOnlyResult=m_synchronizedState.asReadOnlyBuffer();
+      m_lastProposalVersion=lastProposal.getVersion();
+      if (existingAndProposedStates.m_requestType != REQUEST_TYPE.INITIALIZING) {
+        staleTask=existingAndProposedStates.m_proposal;
+      }
+      cancelDistributedLock();
+      m_lockWaitingOn="bogus";
+      checkForBarrierParticipantsChange();
+      m_log.debug(m_stateMachineId + " initialized (from stable community).");
+    }
+  }
+ catch (  KeeperException.SessionExpiredException e) {
+    e.printStackTrace();
+  }
+catch (  KeeperException.ConnectionLossException e) {
+    e.printStackTrace();
+  }
+catch (  InterruptedException e) {
+    e.printStackTrace();
+  }
+catch (  Exception e) {
+    org.voltdb.VoltDB.crashLocalVoltDB("Unexepected failure in StateMachine.",true,e);
+  }
+  if (readOnlyResult != null) {
+    setInitialState(readOnlyResult);
+  }
+  if (staleTask != null) {
+    staleTaskRequestNotification(staleTask);
+  }
+}

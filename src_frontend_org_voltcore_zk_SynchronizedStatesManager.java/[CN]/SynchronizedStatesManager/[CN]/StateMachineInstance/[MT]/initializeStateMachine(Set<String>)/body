@@ -2,30 +2,42 @@
   addIfMissing(m_statePath,CreateMode.PERSISTENT,null);
   addIfMissing(m_lockPath,CreateMode.PERSISTENT,null);
   addIfMissing(m_barrierParticipantsPath,CreateMode.PERSISTENT,null);
-  ByteBuffer startStates=buildResultPair(m_requestedInitialState,m_requestedInitialState);
-  boolean stateMachineNodeCreated=addIfMissing(m_barrierResultsPath,CreateMode.PERSISTENT,startStates.array());
   lockLocalState();
-  m_knownMembers=knownMembers;
+  boolean ownDistributedLock=requestDistributedLock();
+  ByteBuffer startStates=buildProposal(REQUEST_TYPE.INITIALIZING,m_requestedInitialState,m_requestedInitialState);
+  boolean stateMachineNodeCreated=addIfMissing(m_barrierResultsPath,CreateMode.PERSISTENT,startStates.array());
+  if (m_membershipChangePending) {
+    getLatestMembership();
+  }
+ else {
+    m_knownMembers=knownMembers;
+  }
   if (stateMachineNodeCreated) {
+    assert(ownDistributedLock);
     m_synchronizedState=m_requestedInitialState;
     m_requestedInitialState=null;
+    m_lastProposalVersion=getProposalVersion();
     ByteBuffer readOnlyResult=m_synchronizedState.asReadOnlyBuffer();
+    byte result[]=new byte[1];
+    result[0]=(byte)(1);
+    addResultEntry(result);
     m_lockWaitingOn="bogus";
-    assignStateChangeAgreement(true);
-    lockLocalState();
+    cancelDistributedLock();
     checkForBarrierParticipantsChange();
     m_log.debug(m_stateMachineId + " initialized (first member).");
     setInitialState(readOnlyResult);
   }
  else {
-    if (requestLockUnderLocalLock()) {
-      m_proposedState=m_requestedInitialState;
-      assignStateChangeAgreement(true);
+    if (ownDistributedLock) {
+      initializeFromActiveCommunity();
     }
  else {
-      m_currentParticipants=1;
+      addResultEntry(null);
+      Stat nodeStat=new Stat();
+      m_zk.getData(m_barrierResultsPath,false,nodeStat);
+      m_lastProposalVersion=nodeStat.getVersion();
       checkForBarrierParticipantsChange();
     }
-    assert(!isLocalStateLocked());
+    assert(isLocalStateUnlocked());
   }
 }
