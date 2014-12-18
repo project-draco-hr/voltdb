@@ -17,10 +17,37 @@
     server=new ServerThread(config);
     server.start();
     server.waitForInitialization();
-    String dep=getUrlOverJSON("http://localhost:8095/deployment",200);
-    assertTrue(dep.contains("cluster"));
-    String schema=getUrlOverJSON("http://localhost:8095/deployment/schema",200);
-    assertTrue(dep.contains("\"cluster\""));
+    String jdep=getUrlOverJSON("http://localhost:8095/deployment",null,null,null,200,"application/json");
+    assertTrue(jdep.contains("cluster"));
+    String xdep=getUrlOverJSON("http://localhost:8095/deployment/download",null,null,null,200,"text/xml");
+    assertTrue(xdep.contains("<deployment>"));
+    assertTrue(xdep.contains("</deployment>"));
+    String pdep=postUrlOverJSON("http://localhost:8095/deployment/",null,null,null,200,"application/json",null);
+    assertTrue(pdep.contains("Failed"));
+    Map<String,String> params=new HashMap<>();
+    params.put("deployment",jdep);
+    pdep=postUrlOverJSON("http://localhost:8095/deployment/",null,null,null,200,"application/json",params);
+    assertTrue(pdep.contains("Deployment Updated"));
+    ObjectMapper mapper=new ObjectMapper();
+    DeploymentType deptype=mapper.readValue(jdep,DeploymentType.class);
+    if (deptype.getHeartbeat() == null) {
+      HeartbeatType hb=new HeartbeatType();
+      hb.setTimeout(99);
+      deptype.setHeartbeat(hb);
+    }
+ else {
+      deptype.getHeartbeat().setTimeout(99);
+    }
+    String ndeptype=mapper.writeValueAsString(deptype);
+    params.put("deployment",ndeptype);
+    pdep=postUrlOverJSON("http://localhost:8095/deployment/",null,null,null,200,"application/json",params);
+    System.out.println("POST result is: " + pdep);
+    assertTrue(pdep.contains("Deployment Updated"));
+    jdep=getUrlOverJSON("http://localhost:8095/deployment",null,null,null,200,"application/json");
+    assertTrue(jdep.contains("cluster"));
+    deptype=mapper.readValue(jdep,DeploymentType.class);
+    int nto=deptype.getHeartbeat().getTimeout();
+    assertEquals(nto,99);
   }
   finally {
     if (server != null) {

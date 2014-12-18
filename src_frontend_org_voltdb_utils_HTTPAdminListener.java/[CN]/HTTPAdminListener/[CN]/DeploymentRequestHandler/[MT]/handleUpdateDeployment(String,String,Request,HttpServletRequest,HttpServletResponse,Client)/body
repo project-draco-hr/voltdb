@@ -1,0 +1,37 @@
+{
+  String deployment=request.getParameter("deployment");
+  if (deployment == null || deployment.length() == 0) {
+    response.getWriter().print(buildClientResponse(jsonp,ClientResponse.UNEXPECTED_FAILURE,"Failed to get deployment information."));
+    return;
+  }
+  try {
+    DeploymentType newDeployment=m_mapper.readValue(deployment,DeploymentType.class);
+    if (newDeployment == null) {
+      response.getWriter().print(buildClientResponse(jsonp,ClientResponse.UNEXPECTED_FAILURE,"Failed to build deployment information."));
+      return;
+    }
+    if (newDeployment.getSecurity().isEnabled()) {
+      DeploymentType currentDeployment=this.getDeployment();
+      List<User> users=currentDeployment.getUsers().getUser();
+      for (      UsersType.User user : newDeployment.getUsers().getUser()) {
+        if (user.getPassword() == null || user.getPassword().trim().length() == 0) {
+          for (          User u : users) {
+            if (user.getName().equalsIgnoreCase(u.getName())) {
+              user.setPassword(u.getPassword());
+            }
+          }
+        }
+      }
+    }
+    String dep=CatalogUtil.getDeployment(newDeployment);
+    Object[] params=new Object[2];
+    params[0]=null;
+    params[1]=dep;
+    client.callProcedure("@UpdateApplicationCatalog",params);
+    response.getWriter().print(buildClientResponse(jsonp,ClientResponse.SUCCESS,"Deployment Updated."));
+  }
+ catch (  Exception ex) {
+    logger.error("Failed to update deployment from API",ex);
+    response.getWriter().print(buildClientResponse(jsonp,ClientResponse.UNEXPECTED_FAILURE,ex.toString()));
+  }
+}
