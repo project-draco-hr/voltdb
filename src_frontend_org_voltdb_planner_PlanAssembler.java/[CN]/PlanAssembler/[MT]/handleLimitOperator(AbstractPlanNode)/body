@@ -1,7 +1,7 @@
 {
   LimitPlanNode topLimit=m_parsedSelect.getLimitNodeTop();
   AbstractPlanNode sendNode=null;
-  boolean canPushDown=!m_parsedSelect.hasDistinct();
+  boolean canPushDown=!m_parsedSelect.hasDistinctWithGroupBy();
   if (canPushDown) {
     sendNode=checkLimitPushDownViability(root);
     if (sendNode == null) {
@@ -19,7 +19,9 @@
     AbstractPlanNode distributedPlan=sendNode.getChild(0);
     distributedPlan.clearParents();
     sendNode.clearChildren();
-    distributedPlan=handleOrderBy(distributedPlan);
+    if (m_parsedSelect.hasOrderByColumns()) {
+      distributedPlan=handleOrderBy(distributedPlan);
+    }
     if (isInlineLimitPlanNodePossible(distributedPlan)) {
       distributedPlan.addInlinePlanNode(distLimit);
       sendNode.addAndLinkChild(distributedPlan);
@@ -29,29 +31,15 @@
       sendNode.addAndLinkChild(distLimit);
     }
   }
-  if (m_parsedSelect.hasComplexAgg()) {
-    AbstractPlanNode child=root.getChild(0);
-    if (isInlineLimitPlanNodePossible(child)) {
-      child.addInlinePlanNode(topLimit);
-    }
- else {
-      root.clearChildren();
-      child.clearParents();
-      topLimit.addAndLinkChild(child);
-      root.addAndLinkChild(topLimit);
-    }
+  if (isInlineLimitPlanNodePossible(root)) {
+    root.addInlinePlanNode(topLimit);
+  }
+ else   if (root instanceof ProjectionPlanNode && isInlineLimitPlanNodePossible(root.getChild(0))) {
+    root.getChild(0).addInlinePlanNode(topLimit);
   }
  else {
-    if (isInlineLimitPlanNodePossible(root)) {
-      root.addInlinePlanNode(topLimit);
-    }
- else     if (root instanceof ProjectionPlanNode && isInlineLimitPlanNodePossible(root.getChild(0))) {
-      root.getChild(0).addInlinePlanNode(topLimit);
-    }
- else {
-      topLimit.addAndLinkChild(root);
-      root=topLimit;
-    }
+    topLimit.addAndLinkChild(root);
+    root=topLimit;
   }
   return root;
 }
