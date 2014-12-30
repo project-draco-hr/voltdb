@@ -3,6 +3,8 @@
   if (wrapper.payload instanceof AdHocPlannerWork) {
     final AdHocPlannerWork w=(AdHocPlannerWork)(wrapper.payload);
     Boolean hasDDL=null;
+    SortedSet<String> conflictTables=new TreeSet<String>();
+    Set<String> createdTables=new HashSet<String>();
     for (    String stmt : w.sqlStatements) {
       String ddlToken=SQLLexer.extractDDLToken(stmt);
       if (hasDDL == null) {
@@ -13,10 +15,24 @@
         w.completionHandler.onCompletion(errResult);
         return;
       }
-      if (hasDDL && !SQLLexer.isPermitted(stmt)) {
-        AsyncCompilerResult errResult=AsyncCompilerResult.makeErrorResult(w,"AdHoc DDL contains an unsupported DDL statement: " + stmt);
-        w.completionHandler.onCompletion(errResult);
-        return;
+      if (hasDDL) {
+        if (!SQLLexer.isPermitted(stmt)) {
+          AsyncCompilerResult errResult=AsyncCompilerResult.makeErrorResult(w,"AdHoc DDL contains an unsupported DDL statement: " + stmt);
+          w.completionHandler.onCompletion(errResult);
+          return;
+        }
+        if (ddlToken.equals("drop")) {
+          String tableName=SQLLexer.extractDDLTableName(stmt);
+          if (tableName != null) {
+            conflictTables.add(tableName);
+          }
+        }
+ else         if (ddlToken.equals("create")) {
+          String tableName=SQLLexer.extractDDLTableName(stmt);
+          if (tableName != null) {
+            createdTables.add(tableName);
+          }
+        }
       }
     }
     if (!hasDDL) {
@@ -24,6 +40,19 @@
       w.completionHandler.onCompletion(result);
     }
  else {
+      conflictTables.retainAll(createdTables);
+      if (!conflictTables.isEmpty()) {
+        StringBuilder sb=new StringBuilder();
+        sb.append("AdHoc DDL contains both DROP and CREATE statements for the following table(s):");
+        for (        String tableName : conflictTables) {
+          sb.append(" ");
+          sb.append(tableName);
+        }
+        sb.append("\nYou cannot DROP and ADD a table with the same name in a single batch " + "(via @AdHoc). Issue the DROP and ADD statements as separate commands.");
+        AsyncCompilerResult errResult=AsyncCompilerResult.makeErrorResult(w,sb.toString());
+        w.completionHandler.onCompletion(errResult);
+        return;
+      }
       if (!w.onReplica && !w.useAdhocDDL) {
         AsyncCompilerResult errResult=AsyncCompilerResult.makeErrorResult(w,"Cluster is configured to use @UpdateApplicationCatalog " + "to change application schema.  AdHoc DDL is forbidden.");
         w.completionHandler.onCompletion(errResult);
