@@ -1,11 +1,10 @@
 {
-  assert(isLocalStateLocked());
+  assert(debugIsLocalStateLocked());
   try {
     Set<String> children=ImmutableSet.copyOf(m_zk.getChildren(m_barrierParticipantsPath,m_barrierParticipantsWatcher));
     Stat nodeStat=new Stat();
     byte statePair[]=m_zk.getData(m_barrierResultsPath,false,nodeStat);
     int proposalVersion=nodeStat.getVersion();
-    System.out.println(m_stateMachineId + ": Waking up partipantMonitor (lastVer " + m_lastProposalVersion+ ") from "+ proposalVersion+ "/"+ m_currentParticipants+ " with: "+ children.toString());
     if (proposalVersion != m_lastProposalVersion) {
       m_lastProposalVersion=proposalVersion;
       m_currentParticipants=children.size();
@@ -15,7 +14,6 @@
         m_currentRequestType=existingAndProposedStates.m_requestType;
         if (m_requestedInitialState != null) {
           m_zk.create(m_myPartiticpantsPath,null,Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL);
-          System.out.println(m_stateMachineId + ": Adding " + m_memberId+ " to participants (checkForBarrierParticipantsChange)");
           assert(m_requestedInitialState == m_pendingProposal);
           addResultEntry(null);
           unlockLocalState();
@@ -37,17 +35,16 @@
           }
  else {
             m_zk.create(m_myPartiticpantsPath,null,Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL);
-            System.out.println(m_stateMachineId + ": Adding " + m_memberId+ " to participants (checkForBarrierParticipantsChange)");
             m_pendingProposal=existingAndProposedStates.m_proposal;
             ByteBuffer proposedState=m_pendingProposal.asReadOnlyBuffer();
             assert(existingAndProposedStates.m_previousState.equals(m_synchronizedState));
             unlockLocalState();
             if (type == REQUEST_TYPE.STATE_CHANGE_REQUEST) {
-              m_log.debug(m_stateMachineId + ": new state proposed");
+              m_log.info(m_stateMachineId + " received new state proposal (" + stateToString(proposedState.asReadOnlyBuffer())+ ")");
               stateChangeProposed(proposedState);
             }
  else {
-              m_log.info(m_stateMachineId + ": task Requested");
+              m_log.info(m_stateMachineId + " received new task (" + taskToString(proposedState.asReadOnlyBuffer())+ ")");
               taskRequested(proposedState);
             }
           }
@@ -91,5 +88,5 @@ catch (  InterruptedException e) {
 catch (  Exception e) {
     org.voltdb.VoltDB.crashLocalVoltDB("Unexepected failure in StateMachine.",true,e);
   }
-  assert(isLocalStateUnlocked());
+  assert(debugIsLocalStateUnlocked());
 }
