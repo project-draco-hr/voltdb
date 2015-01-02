@@ -1,0 +1,51 @@
+{
+  String oldDDL=new String(jarfile.get(VoltCompiler.AUTOGEN_DDL_FILE_NAME),Constants.UTF8ENCODING);
+  compilerLog.trace("OLD DDL: " + oldDDL);
+  VoltCompilerStringReader cannonicalDDLReader=null;
+  VoltCompilerStringReader newDDLReader=null;
+  ClassLoader originalClassLoader=m_classLoader;
+  try {
+    cannonicalDDLReader=new VoltCompilerStringReader(VoltCompiler.AUTOGEN_DDL_FILE_NAME,oldDDL);
+    newDDLReader=new VoltCompilerStringReader("ADHOCDDL.sql",newDDL);
+    List<VoltCompilerReader> ddlList=new ArrayList<>();
+    ddlList.add(newDDLReader);
+    m_classLoader=jarfile.getLoader();
+    InMemoryJarfile jarOut=compileInternal(null,cannonicalDDLReader,oldCatalog,ddlList,jarfile);
+    if (jarOut != null) {
+      compilerLog.debug("Successfully recompiled InMemoryJarfile");
+    }
+ else {
+      String errString="Adhoc DDL failed";
+      if (m_errors.size() > 0) {
+        errString=m_errors.get(m_errors.size() - 1).getLogString();
+      }
+      int fronttrim=errString.indexOf("DDL Error");
+      if (fronttrim < 0) {
+        fronttrim=0;
+      }
+      int endtrim=errString.indexOf(" in statement starting");
+      if (endtrim < 0) {
+        endtrim=errString.length();
+      }
+      String trimmed=errString.substring(fronttrim,endtrim);
+      throw new IOException(trimmed);
+    }
+  }
+  finally {
+    m_classLoader=originalClassLoader;
+    if (cannonicalDDLReader != null) {
+      try {
+        cannonicalDDLReader.close();
+      }
+ catch (      IOException ioe) {
+      }
+    }
+    if (newDDLReader != null) {
+      try {
+        newDDLReader.close();
+      }
+ catch (      IOException ioe) {
+      }
+    }
+  }
+}
