@@ -8,6 +8,7 @@
     return getNextUpdatePlan();
   }
   UpdatePlanNode updateNode=new UpdatePlanNode();
+  assert(m_parsedUpdate.m_tableList.size() == 1);
   Table targetTable=m_parsedUpdate.m_tableList.get(0);
   updateNode.setTargetTableName(targetTable.getTypeName());
   updateNode.setUpdateIndexes(false);
@@ -29,9 +30,20 @@
   assert(subSelectRoot instanceof AbstractScanPlanNode);
   subSelectRoot.addInlinePlanNode(projectionNode);
   updateNode.addAndLinkChild(subSelectRoot);
+  AbstractPlanNode planRoot=null;
   if (m_partitioning.wasSpecifiedAsSingle() || m_partitioning.isInferredSingle()) {
-    return updateNode;
+    planRoot=updateNode;
   }
-  AbstractPlanNode recvNode=SubPlanAssembler.addSendReceivePair(updateNode);
-  return addSumOrLimitAndSendToDMLNode(recvNode,targetTable.getIsreplicated());
+ else {
+    AbstractPlanNode recvNode=SubPlanAssembler.addSendReceivePair(updateNode);
+    planRoot=addSumOrLimitAndSendToDMLNode(recvNode,targetTable.getIsreplicated());
+  }
+  CompiledPlan retval=new CompiledPlan();
+  retval.rootPlanGraph=planRoot;
+  retval.setReadOnly(false);
+  if (targetTable.getIsreplicated()) {
+    retval.replicatedTableDML=true;
+  }
+  retval.statementGuaranteesDeterminism(false,true);
+  return retval;
 }
