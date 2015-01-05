@@ -6,6 +6,7 @@
   String password="";
   String kerberos="";
   List<String> queries=null;
+  String ddlFile="";
   for (int i=0; i < args.length; i++) {
     String arg=args[i];
     if (arg.startsWith("--servers=")) {
@@ -78,6 +79,15 @@
  else     if ((arg.equals("--usage")) || (arg.equals("-?"))) {
       printUsage(0);
     }
+ else     if (arg.startsWith("--ddl-file=")) {
+      String ddlFilePath=arg.split("=")[1];
+      try {
+        ddlFile=new Scanner(new File(ddlFilePath)).useDelimiter("\\Z").next();
+      }
+ catch (      FileNotFoundException e) {
+        e.printStackTrace();
+      }
+    }
  else {
       printUsage("Invalid Parameter: " + arg);
     }
@@ -98,47 +108,52 @@
     System.exit(-1);
   }
   try {
-    loadSystemProcedures();
-    loadStoredProcedures(Procedures,Classlist);
-    in=new FileInputStream(FileDescriptor.in);
-    out=System.out;
-    lineInputReader=new SQLConsoleReader(in,out);
-    lineInputReader.setBellEnabled(false);
-    Completer completer=new SQLCompleter(m_commandPrefixes);
-    lineInputReader.addCompleter(completer);
-    historyFile=new FileHistory(new File(System.getProperty("user.home"),".sqlcmd_history"));
-    lineInputReader.setHistory(historyFile);
-    KeyMap keyMap=lineInputReader.getKeys();
-    keyMap.bind(new Character(KeyMap.CTRL_D).toString(),new ActionListener(){
-      @Override public void actionPerformed(      ActionEvent e){
-        CursorBuffer cursorBuffer=lineInputReader.getCursorBuffer();
-        if (cursorBuffer.length() == 0) {
-          System.exit(m_exitCode);
-        }
+    if (ddlFile.equals("")) {
+      loadSystemProcedures();
+      loadStoredProcedures(Procedures,Classlist);
+      in=new FileInputStream(FileDescriptor.in);
+      out=System.out;
+      lineInputReader=new SQLConsoleReader(in,out);
+      lineInputReader.setBellEnabled(false);
+      Completer completer=new SQLCompleter(m_commandPrefixes);
+      lineInputReader.addCompleter(completer);
+      historyFile=new FileHistory(new File(System.getProperty("user.home"),".sqlcmd_history"));
+      lineInputReader.setHistory(historyFile);
+      KeyMap keyMap=lineInputReader.getKeys();
+      keyMap.bind(new Character(KeyMap.CTRL_D).toString(),new ActionListener(){
+        @Override public void actionPerformed(        ActionEvent e){
+          CursorBuffer cursorBuffer=lineInputReader.getCursorBuffer();
+          if (cursorBuffer.length() == 0) {
+            System.exit(m_exitCode);
+          }
  else {
-          try {
-            lineInputReader.delete();
-          }
- catch (          IOException e1) {
+            try {
+              lineInputReader.delete();
+            }
+ catch (            IOException e1) {
+            }
           }
         }
       }
-    }
 );
-    m_interactive=true;
-    if (queries != null && !queries.isEmpty()) {
-      m_interactive=false;
-      for (      String query : queries) {
-        executeQuery(query);
+      m_interactive=true;
+      if (queries != null && !queries.isEmpty()) {
+        m_interactive=false;
+        for (        String query : queries) {
+          executeQuery(query);
+        }
+      }
+      if (System.in.available() > 0) {
+        m_interactive=false;
+        executeNoninteractive();
+      }
+      if (m_interactive) {
+        System.out.printf("SQL Command :: %s%s:%d\n",(user == "" ? "" : user + "@"),serverList,port);
+        interactWithTheUser();
       }
     }
-    if (System.in.available() > 0) {
-      m_interactive=false;
-      executeNoninteractive();
-    }
-    if (m_interactive) {
-      System.out.printf("SQL Command :: %s%s:%d\n",(user == "" ? "" : user + "@"),serverList,port);
-      interactWithTheUser();
+ else {
+      VoltDB.callProcedure("@AdHoc",ddlFile);
     }
   }
  catch (  Exception x) {
