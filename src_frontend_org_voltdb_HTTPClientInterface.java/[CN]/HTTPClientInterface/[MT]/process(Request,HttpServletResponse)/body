@@ -21,14 +21,9 @@
       continuation.complete();
       return;
     }
-    String username=request.getParameter(PARAM_USERNAME);
-    String password=request.getParameter(PARAM_PASSWORD);
-    String hashedPassword=request.getParameter(PARAM_HASHEDPASSWORD);
-    String admin=request.getParameter(PARAM_ADMIN);
-    authResult=getAuthenticationResult(request,username,password,hashedPassword,admin);
+    authResult=authenticate(request);
     if (!authResult.isAuthenticated()) {
       String msg=authResult.m_message;
-      m_rate_limited_log.log("JSON interface exception: " + msg,EstTime.currentTimeMillis());
       ClientResponseImpl rimpl=new ClientResponseImpl(ClientResponse.UNEXPECTED_FAILURE,new VoltTable[0],msg);
       msg=rimpl.toJSONString();
       if (jsonp != null) {
@@ -91,19 +86,6 @@
     }
   }
  finally {
-    if (authResult != null && authResult.m_client != null) {
-      assert(m_connections != null);
-      if (authResult.m_adminMode) {
-        try {
-          authResult.m_client.close();
-        }
- catch (        InterruptedException e) {
-          m_log.warn("JSON interface was interrupted while closing an internal admin client connection.");
-        }
-      }
- else {
-        m_connections.releaseClient(authResult.m_client);
-      }
-    }
+    releaseClient(authResult);
   }
 }
