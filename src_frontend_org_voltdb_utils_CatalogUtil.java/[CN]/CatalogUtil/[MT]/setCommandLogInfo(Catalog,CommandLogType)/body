@@ -1,22 +1,33 @@
 {
   int fsyncInterval=200;
   int maxTxnsBeforeFsync=Integer.MAX_VALUE;
+  boolean enabled=false;
+  if (MiscUtils.isPro()) {
+    enabled=true;
+  }
+  boolean sync=false;
+  int logSizeMb=1024;
   org.voltdb.catalog.CommandLog config=catalog.getClusters().get("cluster").getLogconfig().get("log");
-  Frequency freq=commandlog.getFrequency();
-  if (freq != null) {
-    long maxTxnsBeforeFsyncTemp=freq.getTransactions();
-    if (maxTxnsBeforeFsyncTemp < 1 || maxTxnsBeforeFsyncTemp > Integer.MAX_VALUE) {
-      throw new RuntimeException("Invalid command log max txns before fsync (" + maxTxnsBeforeFsync + ") specified. Supplied value must be between 1 and (2^31 - 1) txns");
-    }
-    maxTxnsBeforeFsync=(int)maxTxnsBeforeFsyncTemp;
-    fsyncInterval=freq.getTime();
-    if (fsyncInterval < 1 | fsyncInterval > 5000) {
-      throw new RuntimeException("Invalid command log fsync interval(" + fsyncInterval + ") specified. Supplied value must be between 1 and 5000 milliseconds");
+  if (commandlog != null) {
+    logSizeMb=commandlog.getLogsize();
+    sync=commandlog.isSynchronous();
+    enabled=commandlog.isEnabled();
+    Frequency freq=commandlog.getFrequency();
+    if (freq != null) {
+      long maxTxnsBeforeFsyncTemp=freq.getTransactions();
+      if (maxTxnsBeforeFsyncTemp < 1 || maxTxnsBeforeFsyncTemp > Integer.MAX_VALUE) {
+        throw new RuntimeException("Invalid command log max txns before fsync (" + maxTxnsBeforeFsync + ") specified. Supplied value must be between 1 and (2^31 - 1) txns");
+      }
+      maxTxnsBeforeFsync=(int)maxTxnsBeforeFsyncTemp;
+      fsyncInterval=freq.getTime();
+      if (fsyncInterval < 1 | fsyncInterval > 5000) {
+        throw new RuntimeException("Invalid command log fsync interval(" + fsyncInterval + ") specified. Supplied value must be between 1 and 5000 milliseconds");
+      }
     }
   }
-  config.setEnabled(commandlog.isEnabled());
-  config.setSynchronous(commandlog.isSynchronous());
+  config.setEnabled(enabled);
+  config.setSynchronous(sync);
   config.setFsyncinterval(fsyncInterval);
   config.setMaxtxns(maxTxnsBeforeFsync);
-  config.setLogsize(commandlog.getLogsize());
+  config.setLogsize(logSizeMb);
 }
