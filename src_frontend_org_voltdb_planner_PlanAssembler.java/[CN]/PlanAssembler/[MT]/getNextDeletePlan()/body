@@ -9,27 +9,52 @@
   if (disableNestedLoopIndexJoinForInComparison(subSelectRoot,m_parsedDelete)) {
     return getNextDeletePlan();
   }
+  boolean isSinglePartitionPlan=m_partitioning.wasSpecifiedAsSingle() || m_partitioning.isInferredSingle();
   DeletePlanNode deleteNode=new DeletePlanNode();
   deleteNode.setTargetTableName(targetTable.getTypeName());
-  ProjectionPlanNode projectionNode=new ProjectionPlanNode();
-  AbstractExpression addressExpr=new TupleAddressExpression();
-  NodeSchema proj_schema=new NodeSchema();
-  proj_schema.addColumn(new SchemaColumn("VOLT_TEMP_TABLE","VOLT_TEMP_TABLE","tuple_address","tuple_address",addressExpr));
-  projectionNode.setOutputSchema(proj_schema);
   assert(subSelectRoot instanceof AbstractScanPlanNode);
-  if ((subSelectRoot instanceof SeqScanPlanNode) && (((SeqScanPlanNode)subSelectRoot).getPredicate() == null)) {
+  if (deleteIsTruncate(m_parsedDelete,subSelectRoot)) {
     deleteNode.setTruncate(true);
-    if (m_partitioning.wasSpecifiedAsSingle()) {
-      return deleteNode;
-    }
   }
  else {
-    deleteNode.addAndLinkChild(subSelectRoot);
+    if (m_parsedDelete.orderByColumns().size() > 0 && !isSinglePartitionPlan && !targetTable.getIsreplicated()) {
+      throw new PlanningErrorException("DELETE statements affecting partitioned tables must " + "be able to execute on one partition " + "when ORDER BY and LIMIT or OFFSET clauses "+ "are present.");
+    }
+    boolean needsOrderByNode=isOrderByNodeRequired(m_parsedDelete,subSelectRoot);
+    ProjectionPlanNode projectionNode=new ProjectionPlanNode();
+    AbstractExpression addressExpr=new TupleAddressExpression();
+    NodeSchema proj_schema=new NodeSchema();
+    proj_schema.addColumn(new SchemaColumn("VOLT_TEMP_TABLE","VOLT_TEMP_TABLE","tuple_address","tuple_address",addressExpr));
+    if (needsOrderByNode) {
+      for (      ParsedColInfo col : m_parsedDelete.orderByColumns()) {
+        proj_schema.addColumn(col.asSchemaColumn());
+      }
+    }
+    projectionNode.setOutputSchema(proj_schema);
     subSelectRoot.addInlinePlanNode(projectionNode);
+    AbstractPlanNode root=subSelectRoot;
+    if (needsOrderByNode) {
+      OrderByPlanNode ob=buildOrderByPlanNode(m_parsedDelete.orderByColumns());
+      ob.addAndLinkChild(root);
+      root=ob;
+    }
+    if (m_parsedDelete.hasLimitOrOffset()) {
+      assert(m_parsedDelete.orderByColumns().size() > 0);
+      root.addInlinePlanNode(m_parsedDelete.limitPlanNode());
+    }
+    deleteNode.addAndLinkChild(root);
   }
-  if (m_partitioning.wasSpecifiedAsSingle() || m_partitioning.isInferredSingle()) {
-    return deleteNode;
+  CompiledPlan plan=new CompiledPlan();
+  if (isSinglePartitionPlan) {
+    plan.rootPlanGraph=deleteNode;
   }
-  AbstractPlanNode recvNode=SubPlanAssembler.addSendReceivePair(deleteNode);
-  return addSumOrLimitAndSendToDMLNode(recvNode,targetTable.getIsreplicated());
+ else {
+    AbstractPlanNode recvNode=SubPlanAssembler.addSendReceivePair(deleteNode);
+    plan.rootPlanGraph=addSumOrLimitAndSendToDMLNode(recvNode,targetTable.getIsreplicated());
+  }
+  plan.setReadOnly(false);
+  boolean orderIsDeterministic=true;
+  boolean hasLimitOrOffset=m_parsedDelete.hasLimitOrOffset();
+  plan.statementGuaranteesDeterminism(hasLimitOrOffset,orderIsDeterministic);
+  return plan;
 }
