@@ -1,0 +1,24 @@
+{
+  if (isHSQL()) {
+    return;
+  }
+  Client client=getClient();
+  verifyStmtFails(client,"DELETE FROM R1 ORDER BY NUM ASC","DELETE statement with ORDER BY but no LIMIT or OFFSET is not allowed.");
+  verifyStmtFails(client,"DELETE FROM R1 LIMIT 1","DELETE statement with LIMIT or OFFSET but no ORDER BY would produce non-deterministic results.");
+  verifyStmtFails(client,"DELETE FROM R1 OFFSET 1","PlanningErrorException");
+  verifyStmtFails(client,"DELETE FROM R1 LIMIT 1 OFFSET 1","DELETE statement with LIMIT or OFFSET but no ORDER BY would produce non-deterministic results.");
+  verifyStmtFails(client,"DELETE FROM R1 OFFSET 1 LIMIT 1","DELETE statement with LIMIT or OFFSET but no ORDER BY would produce non-deterministic results.");
+  verifyStmtFails(client,"DELETE FROM P1_VIEW ORDER BY ID ASC LIMIT 1","INSERT, UPDATE, or DELETE not permitted for view");
+  verifyStmtFails(client,"DELETE FROM P1 WHERE ID < 50 ORDER BY NUM DESC LIMIT 1","DELETE statements affecting partitioned tables must " + "be able to execute on one partition " + "when ORDER BY and LIMIT or OFFSET clauses "+ "are present.");
+  verifyStmtFails(client,"DELETE FROM P1 WHERE ID = 1 ORDER BY RATIO LIMIT 1","statement manipulates data in a non-deterministic way");
+  verifyStmtFails(client,"DELETE FROM P4 WHERE ID = 1 ORDER BY RATIO LIMIT 1","statement manipulates data in a non-deterministic way");
+  verifyStmtFails(client,"DELETE FROM P4 WHERE ID = 1 ORDER BY NUM LIMIT 1","statement manipulates data in a non-deterministic way");
+  insertMoreRows(client,"P4",1,12);
+  String stmt="DELETE FROM P4 WHERE ID = 0 ORDER BY RATIO, NUM LIMIT 9";
+  validateTableOfScalarLongs(client,stmt,new long[]{9});
+  validateTableOfScalarLongs(client,"select num from P4 order by num",new long[]{9,10,11});
+  insertMoreRows(client,"P5",1,15);
+  stmt="DELETE FROM P5 WHERE ID = 0 ORDER BY NUM, DESC, ID, RATIO LIMIT 13";
+  validateTableOfScalarLongs(client,stmt,new long[]{13});
+  validateTableOfScalarLongs(client,"select num from P5 order by num",new long[]{13,14});
+}
