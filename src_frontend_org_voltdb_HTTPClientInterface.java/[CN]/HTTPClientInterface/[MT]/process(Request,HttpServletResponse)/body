@@ -1,7 +1,30 @@
 {
   AuthenticationResult authResult=null;
   Continuation continuation=ContinuationSupport.getContinuation(request);
-  continuation.suspend(response);
+  if (m_timeout > 0) {
+    continuation.setTimeout(m_timeout);
+  }
+  String result=(String)request.getAttribute("result");
+  if (result != null) {
+    try {
+      response.setStatus(HttpServletResponse.SC_OK);
+      request.setHandled(true);
+      response.getWriter().print(result);
+    }
+ catch (    IllegalStateException|IOException e) {
+      m_log.warn("JSON failed to send response: ",e);
+    }
+    return;
+  }
+  if (Boolean.TRUE.equals(request.getAttribute("SQLSUBMITTED"))) {
+    try {
+      continuation.suspend(response);
+    }
+ catch (    IllegalStateException e) {
+      m_log.warn("JSON request completion exception in process: ",e);
+    }
+    return;
+  }
   String jsonp=null;
   try {
     jsonp=request.getParameter("jsonp");
@@ -18,7 +41,6 @@
     String params=request.getParameter("Parameters");
     if (procName == null) {
       response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
-      continuation.complete();
       return;
     }
     authResult=authenticate(request);
@@ -33,13 +55,15 @@
       request.setHandled(true);
       try {
         response.getWriter().print(msg);
-        continuation.complete();
       }
  catch (      IOException e1) {
       }
       return;
     }
-    JSONProcCallback cb=new JSONProcCallback(request,continuation,jsonp);
+    if (!authResult.m_adminMode) {
+      continuation.suspend(response);
+    }
+    JSONProcCallback cb=new JSONProcCallback(request,continuation,jsonp,authResult.m_adminMode);
     boolean success;
     if (params != null) {
       ParameterSet paramSet=null;
@@ -64,8 +88,41 @@
     if (!success) {
       throw new Exception("Server is not accepting work at this time.");
     }
+    if (jsonp != null) {
+      request.setAttribute("jsonp",jsonp);
+    }
+    request.setAttribute("SQLSUBMITTED",Boolean.TRUE);
     if (authResult.m_adminMode) {
-      cb.waitForResponse();
+      result=null;
+      try {
+        if (!cb.waitForResponse(m_timeout,TimeUnit.MILLISECONDS)) {
+          m_log.info("JSON failed to get response from client in time: " + m_timeout);
+          result=m_timeoutResponse;
+          if (jsonp != null) {
+            result=String.format("%s( %s )",jsonp,result);
+          }
+        }
+ else {
+          result=(String)request.getAttribute("result");
+        }
+      }
+ catch (      InterruptedException ex) {
+        m_log.info("JSON failed to get response from client in time: " + m_timeout,ex);
+        result=m_timeoutResponse;
+        if (jsonp != null) {
+          result=String.format("%s( %s )",jsonp,result);
+        }
+      }
+      response.setStatus(HttpServletResponse.SC_OK);
+      request.setHandled(true);
+      if (result != null) {
+        try {
+          response.getWriter().print(result);
+        }
+ catch (        IllegalStateException|IOException e) {
+          m_log.warn("JSON failed to send response: ",e);
+        }
+      }
     }
   }
  catch (  Exception e) {
