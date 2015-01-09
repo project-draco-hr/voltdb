@@ -1,22 +1,32 @@
 {
-  Set<String> existingTableNames=stmtInfo.cascade ? getTableNames() : null;
   String expectedTableAffected=null;
-  if (stmtInfo.noun == HSQLDDLNoun.INDEX) {
-    if (stmtInfo.verb == HSQLDDLVerb.CREATE) {
-      expectedTableAffected=stmtInfo.secondName;
+  boolean expectFailure=false;
+  Set<String> existingTableNames=null;
+  if (stmtInfo != null) {
+    if (stmtInfo.cascade) {
+      existingTableNames=getTableNames();
+    }
+    if (stmtInfo.noun == HSQLDDLInfo.Noun.INDEX) {
+      if (stmtInfo.verb == HSQLDDLInfo.Verb.CREATE) {
+        expectedTableAffected=stmtInfo.secondName;
+      }
+ else {
+        expectedTableAffected=tableNameForIndexName(stmtInfo.name);
+      }
     }
  else {
-      expectedTableAffected=tableNameForIndexName(stmtInfo.name);
+      expectedTableAffected=stmtInfo.name;
     }
+    expectFailure=(expectedTableAffected == null) && !stmtInfo.ifexists;
   }
  else {
-    expectedTableAffected=stmtInfo.name;
+    expectFailure=true;
   }
-  boolean expectFailure=(expectedTableAffected == null) && !stmtInfo.ifexists;
   runDDLCommand(ddl);
   if (expectFailure) {
     throw new HSQLParseException("Unable to plan statement due to VoltDB DDL pre-processing error");
   }
+  assert(stmtInfo != null);
   VoltXMLElement tableXMLNew=null, tableXMLOld=null;
   if (expectedTableAffected != null) {
     tableXMLNew=getXMLForTable(expectedTableAffected);
