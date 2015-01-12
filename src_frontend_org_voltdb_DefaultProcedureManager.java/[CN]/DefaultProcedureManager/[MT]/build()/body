@@ -1,0 +1,54 @@
+{
+  for (  Table table : m_db.getTables()) {
+    String prefix=table.getTypeName() + '.';
+    if (CatalogUtil.isTableExportOnly(m_db,table)) {
+      continue;
+    }
+    if (table.getMaterializer() != null) {
+      continue;
+    }
+    final CatalogMap<Constraint> constraints=table.getConstraints();
+    final Iterator<Constraint> it=constraints.iterator();
+    Constraint pkey=null;
+    while (it.hasNext()) {
+      Constraint constraint=it.next();
+      if (constraint.getType() == ConstraintType.PRIMARY_KEY.getValue()) {
+        pkey=constraint;
+        break;
+      }
+    }
+    if (table.getIsreplicated()) {
+      addShimProcedure(prefix + "insert",table,-1,null,false);
+      if (pkey != null) {
+        addShimProcedure(prefix + "delete",table,-1,null,false);
+        addShimProcedure(prefix + "update",table,-1,null,false);
+        addShimProcedure(prefix + "upsert",table,-1,null,false);
+      }
+      continue;
+    }
+    final Column partitioncolumn=table.getPartitioncolumn();
+    final int partitionIndex=partitioncolumn.getIndex();
+    addShimProcedure(prefix + "insert",table,partitionIndex,partitioncolumn,false);
+    if (pkey == null) {
+      continue;
+    }
+    int pkeyPartitionIndex=-1;
+    CatalogMap<ColumnRef> pkeycols=pkey.getIndex().getColumns();
+    Iterator<ColumnRef> pkeycolsit=pkeycols.iterator();
+    while (pkeycolsit.hasNext()) {
+      ColumnRef colref=pkeycolsit.next();
+      if (colref.getColumn().equals(partitioncolumn)) {
+        pkeyPartitionIndex=colref.getIndex();
+        break;
+      }
+    }
+    if (pkeyPartitionIndex < 0) {
+      continue;
+    }
+    int columnCount=table.getColumns().size();
+    addShimProcedure(prefix + "select",table,pkeyPartitionIndex,partitioncolumn,true);
+    addShimProcedure(prefix + "delete",table,pkeyPartitionIndex,partitioncolumn,false);
+    addShimProcedure(prefix + "update",table,columnCount + pkeyPartitionIndex,partitioncolumn,false);
+    addShimProcedure(prefix + "upsert",table,partitionIndex,partitioncolumn,false);
+  }
+}
