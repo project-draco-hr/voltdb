@@ -1,0 +1,50 @@
+{
+  try {
+    String simpleSchema="CREATE TABLE foo (\n" + "    bar BIGINT NOT NULL,\n" + "    PRIMARY KEY (bar)\n"+ ");";
+    VoltProjectBuilder builder=new VoltProjectBuilder();
+    builder.addLiteralSchema(simpleSchema);
+    builder.setHTTPDPort(8095);
+    boolean success=builder.compile(Configuration.getPathToCatalogForTest("json.jar"));
+    assertTrue(success);
+    VoltDB.Configuration config=new VoltDB.Configuration();
+    config.m_pathToCatalog=config.setPathToCatalogForTest("json.jar");
+    config.m_pathToDeployment=builder.getPathToDeployment();
+    VoltProjectBuilder.UserInfo users[]=new VoltProjectBuilder.UserInfo[]{new VoltProjectBuilder.UserInfo("admin","password",new String[]{"AdMINISTRATOR"}),new VoltProjectBuilder.UserInfo("user","password",new String[]{"User"})};
+    builder.addUsers(users);
+    builder.setSecurityEnabled(true,false);
+    server=new ServerThread(config);
+    server.start();
+    server.waitForInitialization();
+    AuthenticatedConnectionCache ccache=new AuthenticatedConnectionCache(10,"localhost",server.m_config.m_port,"localhost",server.m_config.m_adminPort);
+    client=ccache.getClient(null,null,null,true);
+    assertEquals(client.hashCode(),ccache.getUnauthenticatedAdminClient().hashCode());
+    client=ccache.getClient(null,null,null,false);
+    assertEquals(client.hashCode(),ccache.getUnauthenticatedClient().hashCode());
+    client=ccache.getClient("admin","password",null,true);
+    assertEquals(1,ccache.getSize());
+    Client client2=ccache.getClient("admin","password",null,true);
+    assertEquals(client2.hashCode(),client.hashCode());
+    client=ccache.getClient("admin","password",null,false);
+    assertEquals(2,ccache.getSize());
+    client2=ccache.getClient("admin","password",null,false);
+    assertEquals(client2.hashCode(),client.hashCode());
+    client=ccache.getClient("user","password",null,true);
+    assertEquals(3,ccache.getSize());
+    client2=ccache.getClient("user","password",null,true);
+    assertEquals(client2.hashCode(),client.hashCode());
+    client=ccache.getClient("user","password",null,false);
+    assertEquals(4,ccache.getSize());
+    client2=ccache.getClient("user","password",null,false);
+    assertEquals(client2.hashCode(),client.hashCode());
+  }
+  finally {
+    if (server != null) {
+      server.shutdown();
+      server.join();
+    }
+    server=null;
+    if (client != null) {
+      client.close();
+    }
+  }
+}
