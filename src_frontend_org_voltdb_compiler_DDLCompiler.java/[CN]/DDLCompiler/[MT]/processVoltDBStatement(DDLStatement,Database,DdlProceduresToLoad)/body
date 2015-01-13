@@ -14,7 +14,7 @@
     if (whichProcs != DdlProceduresToLoad.ALL_DDL_PROCEDURES) {
       return true;
     }
-    String className=checkIdentifierStart(statementMatcher.group(2),statement);
+    String className=checkIdentifierStart(statementMatcher.group(5),statement);
     Class<?> clazz;
     try {
       clazz=Class.forName(className,true,m_classLoader);
@@ -36,13 +36,14 @@
         }
       }
     }
-    m_tracker.add(descriptor);
+    String procName=m_tracker.add(descriptor);
+    addProcedurePartitionInfo(procName,statementMatcher.group(2),statementMatcher.group(3),statementMatcher.group(4),statement);
     return true;
   }
   statementMatcher=procedureSingleStatementPattern.matcher(statement);
   if (statementMatcher.matches()) {
     String clazz=checkIdentifierStart(statementMatcher.group(1),statement);
-    String sqlStatement=statementMatcher.group(3) + ";";
+    String sqlStatement=statementMatcher.group(6) + ";";
     ProcedureDescriptor descriptor=m_compiler.new ProcedureDescriptor(new ArrayList<String>(),clazz,sqlStatement,null,null,false,null,null,null);
     if (statementMatcher.group(2) != null) {
       for (      String roleName : StringUtils.split(statementMatcher.group(2),',')) {
@@ -50,13 +51,14 @@
       }
     }
     m_tracker.add(descriptor);
+    addProcedurePartitionInfo(clazz,statementMatcher.group(3),statementMatcher.group(4),statementMatcher.group(5),statement);
     return true;
   }
   statementMatcher=procedureWithScriptPattern.matcher(statement);
   if (statementMatcher.matches()) {
     String className=checkIdentifierStart(statementMatcher.group(1),statement);
-    String codeBlock=statementMatcher.group(3);
-    Language language=Language.valueOf(statementMatcher.group(4).toUpperCase());
+    String codeBlock=statementMatcher.group(6);
+    Language language=Language.valueOf(statementMatcher.group(7).toUpperCase());
     Class<?> scriptClass=null;
     if (language == Language.GROOVY) {
       try {
@@ -79,6 +81,7 @@ catch (      Exception ex) {
       }
     }
     m_tracker.add(descriptor);
+    addProcedurePartitionInfo(className,statementMatcher.group(3),statementMatcher.group(4),statementMatcher.group(5),statement);
     return true;
   }
   statementMatcher=procedureDropPattern.matcher(statement);
@@ -110,7 +113,7 @@ catch (      Exception ex) {
       if (whichProcs != DdlProceduresToLoad.ALL_DDL_PROCEDURES) {
         return true;
       }
-      statementMatcher=partitionProcedurePattern.matcher(statement);
+      statementMatcher=partitionProcedureStatementPattern.matcher(statement);
       if (!statementMatcher.matches()) {
         throw m_compiler.new VoltCompilerException(String.format("Invalid PARTITION statement: \"%s\", " + "expected syntax: PARTITION PROCEDURE <procedure> ON " + "TABLE <table> COLUMN <column> [PARAMETER <parameter-index-no>]",statement.substring(0,statement.length() - 1)));
       }
