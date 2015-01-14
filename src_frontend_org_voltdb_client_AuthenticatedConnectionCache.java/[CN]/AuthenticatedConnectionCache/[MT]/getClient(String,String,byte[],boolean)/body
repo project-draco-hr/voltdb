@@ -1,30 +1,12 @@
 {
-  if (admin) {
-    ClientImpl adminClient=null;
-    try {
-      adminClient=(ClientImpl)ClientFactory.createClient();
-      if ((userName == null) || (userName.equals(""))) {
-        if ((hashedPassword != null) && (hashedPassword.length > 0)) {
-          throw new IOException("Username was null but password was not.");
-        }
-        adminClient.createConnection(m_adminHostName,m_adminPort);
-      }
- else {
-        adminClient.createConnectionWithHashedCredentials(m_adminHostName,m_adminPort,userName,hashedPassword);
-      }
+  String userNameWithAdminSuffix=null;
+  if (userName != null && !userName.trim().isEmpty()) {
+    if (userName.endsWith(ADMIN_SUFFIX)) {
+      throw new IOException("User name cannot end with " + ADMIN_SUFFIX);
     }
- catch (    IOException ioe) {
-      try {
-        adminClient.close();
-      }
- catch (      InterruptedException ex) {
-        throw new IOException("Unable to close rejected admin client connection",ex);
-      }
-      throw ioe;
-    }
-    return adminClient;
+    userNameWithAdminSuffix=userName + ADMIN_SUFFIX;
   }
-  if ((userName == null) || userName.equals("")) {
+  if ((userName == null) || userName.trim().isEmpty()) {
     if ((hashedPassword != null) && (hashedPassword.length > 0)) {
       throw new IOException("Username was null but password was not.");
     }
@@ -44,14 +26,31 @@
         throw e;
       }
     }
+    if (m_adminUnauthClient == null) {
+      try {
+        m_adminUnauthClient=(ClientImpl)ClientFactory.createClient();
+        m_adminUnauthClient.createConnection(m_hostname,m_adminPort);
+      }
+ catch (      IOException e) {
+        try {
+          m_adminUnauthClient.close();
+        }
+ catch (        InterruptedException ex) {
+          throw new IOException("Unable to close rejected unauthenticated admin client connection",ex);
+        }
+        m_adminUnauthClient=null;
+        throw e;
+      }
+    }
     assert(m_unauthClient != null);
-    return m_unauthClient;
+    assert(m_adminUnauthClient != null);
+    return admin ? m_adminUnauthClient : m_unauthClient;
   }
   int passHash=0;
   if (hashedPassword != null) {
     passHash=Arrays.hashCode(hashedPassword);
   }
-  Connection conn=m_connections.get(userName);
+  Connection conn=m_connections.get(admin ? userNameWithAdminSuffix : userName);
   if (conn != null) {
     if (conn.passHash != passHash) {
       throw new IOException("Incorrect authorization credentials.");
@@ -72,19 +71,19 @@
     conn.user=userName;
     conn.client=(ClientImpl)ClientFactory.createClient(config);
     try {
-      conn.client.createConnectionWithHashedCredentials(m_hostname,m_port,userName,hashedPassword);
+      conn.client.createConnectionWithHashedCredentials(m_hostname,(admin ? m_adminPort : m_port),userName,hashedPassword);
     }
  catch (    IOException ioe) {
       try {
         conn.client.close();
       }
  catch (      InterruptedException ex) {
-        throw new IOException("Unable to close rejected authenticated client connection.",ex);
+        throw new IOException("Unable to close rejected authenticated " + (admin ? "admin " : "") + "client connection.",ex);
       }
       conn=null;
       throw ioe;
     }
-    m_connections.put(userName,conn);
+    m_connections.put(admin ? userNameWithAdminSuffix : userName,conn);
     attemptToShrinkPoolIfNeeded();
   }
   return conn.client;

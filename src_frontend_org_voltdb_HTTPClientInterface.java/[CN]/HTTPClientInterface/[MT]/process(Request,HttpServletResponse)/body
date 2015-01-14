@@ -1,7 +1,30 @@
 {
   AuthenticationResult authResult=null;
   Continuation continuation=ContinuationSupport.getContinuation(request);
-  continuation.suspend(response);
+  if (m_timeout > 0) {
+    continuation.setTimeout(m_timeout);
+  }
+  String result=(String)request.getAttribute("result");
+  if (result != null) {
+    try {
+      response.setStatus(HttpServletResponse.SC_OK);
+      request.setHandled(true);
+      response.getWriter().print(result);
+    }
+ catch (    IllegalStateException|IOException e) {
+      m_log.warn("JSON failed to send response: ",e);
+    }
+    return;
+  }
+  if (Boolean.TRUE.equals(request.getAttribute("SQLSUBMITTED"))) {
+    try {
+      continuation.suspend(response);
+    }
+ catch (    IllegalStateException e) {
+      m_log.warn("JSON request completion exception in process: ",e);
+    }
+    return;
+  }
   String jsonp=null;
   try {
     jsonp=request.getParameter("jsonp");
@@ -18,7 +41,6 @@
     String params=request.getParameter("Parameters");
     if (procName == null) {
       response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
-      continuation.complete();
       return;
     }
     authResult=authenticate(request);
@@ -33,12 +55,12 @@
       request.setHandled(true);
       try {
         response.getWriter().print(msg);
-        continuation.complete();
       }
  catch (      IOException e1) {
       }
       return;
     }
+    continuation.suspend(response);
     JSONProcCallback cb=new JSONProcCallback(request,continuation,jsonp);
     boolean success;
     if (params != null) {
@@ -64,9 +86,10 @@
     if (!success) {
       throw new Exception("Server is not accepting work at this time.");
     }
-    if (authResult.m_adminMode) {
-      cb.waitForResponse();
+    if (jsonp != null) {
+      request.setAttribute("jsonp",jsonp);
     }
+    request.setAttribute("SQLSUBMITTED",Boolean.TRUE);
   }
  catch (  Exception e) {
     String msg=e.getMessage();
