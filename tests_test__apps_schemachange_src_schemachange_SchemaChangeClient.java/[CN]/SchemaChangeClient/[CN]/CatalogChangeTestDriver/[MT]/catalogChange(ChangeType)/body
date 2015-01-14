@@ -1,0 +1,40 @@
+{
+  ChangeType changeType=reqChangeType;
+  log.info(_F("::::: Catalog Change: %s%s :::::",changeType.toString(),this.oldSchema == null ? " FIRST" : ""));
+  assert(changeType == ChangeType.CREATE || this.oldSchema != null);
+  this.versionT=TableHelper.quickTable(_F("V%d (BIGINT)",schemaVersionNo + 1));
+  if (changeType == ChangeType.CREATE) {
+    this.newSchema=createSchema();
+  }
+ else {
+    this.newSchema=mutateSchema();
+  }
+  int retryCount=0;
+  BatchResult result=this.executeChanges(changeType,false);
+  while (result != BatchResult.BATCH_SUCCEEDED) {
+    int actualSchemaVersionNo=findSchemaVersion();
+    if (actualSchemaVersionNo == schemaVersionNo + 1) {
+      log.info(_F("The new version table V%d is present, not retrying.",schemaVersionNo + 1));
+      break;
+    }
+    retryCount++;
+    if (retryCount > config.retryLimit) {
+      this.die("Retry limit (%d) exceeded.",config.retryLimit);
+    }
+    if (actualSchemaVersionNo < schemaVersionNo) {
+      schemaVersionNo=actualSchemaVersionNo;
+      if (changeType != ChangeType.CREATE) {
+        changeType=ChangeType.CREATE;
+        this.newSchema=createSchema();
+      }
+    }
+    log.info(_F("::::: Catalog Change (retry #%d): %s :::::",retryCount,changeType.toString()));
+    if (result != BatchResult.BATCH_FAILED_AS_EXPECTED) {
+      log.info(_F("Sleeping %d seconds...",config.retrySleep));
+      Thread.sleep(config.retrySleep * 1000);
+    }
+    result=this.executeChanges(changeType,true);
+  }
+  this.catalogChangeComplete(changeType);
+  return changeType;
+}
