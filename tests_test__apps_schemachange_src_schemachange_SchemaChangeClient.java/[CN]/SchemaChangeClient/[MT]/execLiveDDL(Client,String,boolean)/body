@@ -1,17 +1,17 @@
 {
-  boolean success=false;
+  String error=null;
   ClientResponse cr=null;
   try {
     cr=client.callProcedure("@AdHoc",ddl);
-    success=true;
   }
  catch (  NoConnectionsException e) {
+    error=e.getLocalizedMessage();
   }
 catch (  ProcCallException e) {
-    log.error(_F("Procedure @AdHoc call exception: %s",e.getMessage()));
+    error=_F("Procedure @AdHoc call exception: %s",e.getLocalizedMessage());
     cr=e.getClientResponse();
   }
-  if (success && cr != null) {
+  if (error == null && cr != null) {
 switch (cr.getStatus()) {
 case ClientResponse.SUCCESS:
       log.info("Live DDL execution was reported to be successful");
@@ -20,20 +20,20 @@ case ClientResponse.CONNECTION_LOST:
 case ClientResponse.CONNECTION_TIMEOUT:
 case ClientResponse.RESPONSE_UNKNOWN:
 case ClientResponse.SERVER_UNAVAILABLE:
-  success=false;
+  error=String.format("Communication error: %s",cr.getStatusString());
 break;
 case ClientResponse.UNEXPECTED_FAILURE:
 case ClientResponse.GRACEFUL_FAILURE:
 case ClientResponse.USER_ABORT:
-log.error(_F("USER_ABORT in procedure call for live DDL"));
-log.error(((ClientResponseImpl)cr).toJSONString());
-assert(false);
-System.exit(-1);
+SchemaChangeUtility.die(false,"USER_ABORT in procedure call for live DDL: %s",((ClientResponseImpl)cr).toJSONString());
 }
 }
-if (!success && hardFail) {
+if (error != null) {
+log.error(error);
+if (hardFail) {
 String msg=(cr != null ? ((ClientResponseImpl)cr).toJSONString() : _F("Unknown @AdHoc failure"));
 throw new IOException(msg);
 }
-return success;
+}
+return error;
 }
