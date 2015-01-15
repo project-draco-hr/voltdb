@@ -1,0 +1,17 @@
+{
+  final Connection c=(Connection)planBatch.clientData;
+  Database db=m_catalogContext.get().database;
+  assert(planBatch.getPlannedStatementCount() == 1);
+  AdHocPlannedStatement ahps=planBatch.getPlannedStatement(0);
+  String sql=new String(ahps.sql,Charsets.UTF_8);
+  String explain=planBatch.explainStatement(0,db);
+  VoltTable vt=new VoltTable(new VoltTable.ColumnInfo("SQL_STATEMENT",VoltType.STRING),new VoltTable.ColumnInfo("EXECUTION_PLAN",VoltType.STRING));
+  vt.addRow(sql,explain);
+  ClientResponseImpl response=new ClientResponseImpl(ClientResponseImpl.SUCCESS,ClientResponse.UNINITIALIZED_APP_STATUS_CODE,null,new VoltTable[]{vt},null);
+  response.setClientHandle(planBatch.clientHandle);
+  ByteBuffer buf=ByteBuffer.allocate(response.getSerializedSize() + 4);
+  buf.putInt(buf.capacity() - 4);
+  response.flattenToBuffer(buf);
+  buf.flip();
+  c.writeStream().enqueue(buf);
+}
