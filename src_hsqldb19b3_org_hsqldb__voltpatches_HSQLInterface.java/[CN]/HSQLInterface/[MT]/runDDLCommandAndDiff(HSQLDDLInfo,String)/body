@@ -1,0 +1,61 @@
+{
+  String expectedTableAffected=null;
+  boolean expectFailure=false;
+  Set<String> existingTableNames=null;
+  if (stmtInfo != null) {
+    if (stmtInfo.cascade) {
+      existingTableNames=getTableNames();
+    }
+    if (stmtInfo.noun == HSQLDDLInfo.Noun.INDEX) {
+      if (stmtInfo.verb == HSQLDDLInfo.Verb.CREATE) {
+        expectedTableAffected=stmtInfo.secondName;
+      }
+ else {
+        expectedTableAffected=tableNameForIndexName(stmtInfo.name);
+      }
+    }
+ else {
+      expectedTableAffected=stmtInfo.name;
+    }
+    expectFailure=(expectedTableAffected == null) && !stmtInfo.ifexists;
+  }
+ else {
+    expectFailure=true;
+  }
+  runDDLCommand(ddl);
+  if (expectFailure) {
+    throw new HSQLParseException("Unable to plan statement due to VoltDB DDL pre-processing error");
+  }
+  assert(stmtInfo != null);
+  VoltXMLElement tableXMLNew=null, tableXMLOld=null;
+  if (expectedTableAffected != null) {
+    tableXMLNew=getXMLForTable(expectedTableAffected);
+    tableXMLOld=lastSchema.get(expectedTableAffected);
+  }
+  if (tableXMLNew == null) {
+    tableXMLNew=emptySchema;
+  }
+  if (tableXMLOld == null) {
+    tableXMLOld=emptySchema;
+  }
+  VoltXMLDiff diff=VoltXMLElement.computeDiff(tableXMLOld,tableXMLNew);
+  if (stmtInfo.cascade) {
+    Set<String> finalTableNames=getTableNames();
+    for (    String tableName : existingTableNames) {
+      if (!finalTableNames.contains(tableName)) {
+        tableName=tableName.toLowerCase();
+        tableXMLOld=lastSchema.get(tableName).children.get(0);
+        lastSchema.remove(tableName);
+        if (tableName.equals(expectedTableAffected)) {
+          continue;
+        }
+        diff.m_removedElements.add(tableXMLOld);
+      }
+    }
+  }
+  diff.m_elementOrder.clear();
+  if (expectedTableAffected != null) {
+    lastSchema.put(expectedTableAffected,tableXMLNew.duplicate());
+  }
+  return diff;
+}

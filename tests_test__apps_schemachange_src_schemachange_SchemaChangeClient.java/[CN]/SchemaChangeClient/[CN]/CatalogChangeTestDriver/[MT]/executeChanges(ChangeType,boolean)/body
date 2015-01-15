@@ -1,0 +1,71 @@
+{
+  batch.begin();
+  try {
+    batch.add("DROP VIEW MV IF EXISTS");
+    batch.add("DROP PROCEDURE VerifySchemaChangedA IF EXISTS");
+    batch.add("DROP PROCEDURE VerifySchemaChangedB IF EXISTS");
+    if (changeType == ChangeType.CREATE) {
+      batch.add("DROP TABLE A IF EXISTS");
+      batch.add("DROP TABLE B IF EXISTS");
+    }
+    log.info("Starting to drop database objects.");
+    BatchResult result=batch.execute();
+    if (result != BatchResult.BATCH_SUCCEEDED) {
+      return result;
+    }
+  }
+ catch (  IOException e) {
+    return BatchResult.BATCH_FAILED;
+  }
+  batch.begin();
+  try {
+    batch.add("DROP TABLE V%d IF EXISTS",schemaVersionNo);
+    if (this.oldSchema != null && config.retryForcedPercent > rand.nextInt(100)) {
+      log.info(_F("Forcing failure"));
+      batch.add("CREATE DEATH FOR BATCH");
+      batch.setExpectedError();
+    }
+    batch.add(TableHelper.ddlForTable(this.versionT));
+switch (changeType) {
+case CREATE:
+      batch.add(TableHelper.ddlForTable(this.newSchema.table));
+    this.count=0;
+  break;
+case MUTATE_EMPTY:
+if (!isRetry && this.mutationCount == 1 && this.newSchema.uniqueIndexName != null) {
+  batch.add("CREATE UNIQUE INDEX %s ON %s (%s)",this.newSchema.uniqueIndexName,this.newSchema.tableName,this.newSchema.uniqueColumnName);
+}
+batch.add(TableHelper.getAlterTableDDLToMigrate(this.oldSchema.table,this.newSchema.table));
+this.count=tupleCount(this.oldSchema.table);
+break;
+case MUTATE_NONEMPTY:
+if (!isRetry && this.mutationCount == 1 && this.newSchema.uniqueIndexName != null) {
+batch.add("CREATE UNIQUE INDEX %s ON %s (%s)",this.newSchema.uniqueIndexName,this.newSchema.tableName,this.newSchema.uniqueColumnName);
+if (changeType == ChangeType.MUTATE_NONEMPTY) {
+batch.setExpectedError("is not empty.");
+}
+}
+batch.add(TableHelper.getAlterTableDDLToMigrate(this.oldSchema.table,this.newSchema.table));
+this.count=tupleCount(this.oldSchema.table);
+break;
+}
+if (this.newSchema.partitioned) {
+batch.add("PARTITION TABLE %s ON COLUMN %s",this.newSchema.tableName,this.newSchema.pkeyName);
+}
+batch.add("CREATE PROCEDURE FROM CLASS %s",this.newSchema.verifyProc.getName());
+if (this.newSchema.viewRep != null) {
+batch.add(this.newSchema.viewRep.ddlForView());
+}
+this.start=System.nanoTime();
+if (changeType == ChangeType.CREATE) {
+log.info("Starting to swap tables.");
+}
+ else {
+log.info("Starting to change schema.");
+}
+return batch.execute();
+}
+ catch (IOException e) {
+return BatchResult.BATCH_FAILED;
+}
+}
