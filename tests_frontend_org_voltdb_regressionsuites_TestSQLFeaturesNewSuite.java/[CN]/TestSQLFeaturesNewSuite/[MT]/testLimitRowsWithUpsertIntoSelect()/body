@@ -1,0 +1,23 @@
+{
+  if (isHSQL())   return;
+  Client client=getClient();
+  for (int i=0; i < 11; ++i) {
+    VoltTable vt=client.callProcedure("NOCAPPED.insert",i,i * 10,i * 10).getResults()[0];
+    validateTableOfScalarLongs(vt,new long[]{1});
+  }
+  String stmt="UPSERT INTO capped3_limit_rows_exec " + "SELECT 1, wage, dept FROM nocapped";
+  verifyStmtFails(client,stmt,"UPSERT statement manipulates data in a non-deterministic way");
+  stmt+=" ORDER BY id, wage, dept";
+  VoltTable vt=client.callProcedure("@AdHoc",stmt).getResults()[0];
+  validateTableOfScalarLongs(vt,new long[]{11});
+  validateTableOfLongs(client,"SELECT purge_me, wage, dept from CAPPED3_LIMIT_ROWS_EXEC ORDER BY wage",new long[][]{{1,90,90},{1,100,100}});
+  validateTableOfScalarLongs(client,"update nocapped set wage = wage + 50, dept = (wage + 50) * 10 + 1 ",new long[]{11});
+  validateTableOfScalarLongs(client,"select wage from nocapped order by wage",new long[]{50,60,70,80,90,100,110,120,130,140,150});
+  validateTableOfScalarLongs(client,"update capped3_limit_rows_exec set purge_me = 0",new long[]{2});
+  validateTableOfScalarLongs(client,"upsert into capped3_limit_rows_exec " + "select 1, wage, dept from nocapped " + "where wage < 110 "+ "order by id, wage, dept",new long[]{6});
+  validateTableOfLongs(client,"select purge_me, wage, dept " + "from capped3_limit_rows_exec " + "order by wage",new long[][]{{1,80,801},{1,90,901},{1,100,1001}});
+  validateTableOfLongs(client,"delete from capped3_limit_rows_exec where wage = 100",new long[][]{{1}});
+  validateTableOfLongs(client,"update capped3_limit_rows_exec set purge_me = 0",new long[][]{{2}});
+  validateTableOfScalarLongs(client,"upsert into capped3_limit_rows_exec " + "select case when wage in (80, 90) then 0 else 1 end, wage, -32 from nocapped " + "where wage >= 80 "+ "order by id, wage, dept",new long[]{8});
+  validateTableOfLongs(client,"select purge_me, wage, dept " + "from capped3_limit_rows_exec " + "order by wage",new long[][]{{0,80,-32},{0,90,-32},{1,150,-32}});
+}
