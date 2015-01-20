@@ -1,0 +1,33 @@
+{
+  ClientStats stats=fullStatsContext.fetch().getStats();
+  System.out.println("\n" + HORIZONTAL_RULE + " Unique Device ID Couting Results\n"+ HORIZONTAL_RULE);
+  System.out.printf("A total of %,9d device ids were processed and %d failed (%.2f percent).\n\n",totalVotes.get(),failedVotes.get(),failedVotes.get() * 100.0 / acceptedVotes.get());
+  long counts[]=new long[config.appcount];
+  double errors[]=new double[config.appcount];
+  int nonZeroCount=0;
+  double errorSum=0;
+  for (int appId=0; appId < config.appcount; appId++) {
+    ClientResponse cr=client.callProcedure("GetCardEstForApp",appId);
+    long estimate=cr.getResults()[0].asScalarLong();
+    long count=generator.expectedCountForApp(appId);
+    if (estimate == count) {
+      nonZeroCount++;
+    }
+    double percentError=Math.abs(estimate - count) * 100.0 / count;
+    errorSum+=percentError;
+    counts[appId]=count;
+    errors[appId]=percentError;
+  }
+  Arrays.sort(errors);
+  double maxError=errors[config.appcount - 1];
+  double medianError=errors[config.appcount / 2];
+  double meanError=errorSum / config.appcount;
+  System.out.printf("The maximum error percetange was: %.2f.\n",maxError);
+  System.out.printf("The median error percetange was: %.2f.\n",medianError);
+  System.out.printf("The mean error percetange was: %.2f.\n",meanError);
+  System.out.printf("The number of apps with perfect estimates was %d or %.2f%%.\n",nonZeroCount,nonZeroCount * 100.0 / config.appcount);
+  System.out.println("\n" + HORIZONTAL_RULE + " Client Workload Statistics\n"+ HORIZONTAL_RULE);
+  System.out.printf("Average throughput:            %,9d txns/sec\n",stats.getTxnThroughput());
+  System.out.println();
+  client.writeSummaryCSV(stats,config.statsfile);
+}
