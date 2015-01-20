@@ -2,16 +2,56 @@
   stmt=stmt.replaceAll("\n"," ");
   stmt=stmt.trim();
   compiler.addInfo("Compiling Statement: " + stmt);
-  QueryType qtype=QueryType.getFromSQL(stmt);
-  catalogStmt.setReadonly(qtype.isReadOnly());
-  catalogStmt.setQuerytype(qtype.getValue());
   if (!stmt.endsWith(";")) {
     stmt+=";";
   }
+  String keyPrefix=compiler.getKeyPrefix(partitioning,detMode,joinOrder);
+  if (keyPrefix != null) {
+    Statement previousStatement=compiler.getCachedStatement(keyPrefix,stmt);
+    if (previousStatement != null) {
+      catalogStmt.setAnnotation(previousStatement.getAnnotation());
+      catalogStmt.setAttachment(previousStatement.getAttachment());
+      catalogStmt.setCachekeyprefix(previousStatement.getCachekeyprefix());
+      catalogStmt.setCost(previousStatement.getCost());
+      catalogStmt.setExplainplan(previousStatement.getExplainplan());
+      catalogStmt.setIscontentdeterministic(previousStatement.getIscontentdeterministic());
+      catalogStmt.setIsorderdeterministic(previousStatement.getIsorderdeterministic());
+      catalogStmt.setNondeterminismdetail(previousStatement.getNondeterminismdetail());
+      catalogStmt.setQuerytype(previousStatement.getQuerytype());
+      catalogStmt.setReadonly(previousStatement.getReadonly());
+      catalogStmt.setReplicatedtabledml(previousStatement.getReplicatedtabledml());
+      catalogStmt.setSeqscancount(previousStatement.getSeqscancount());
+      catalogStmt.setSinglepartition(previousStatement.getSinglepartition());
+      catalogStmt.setSqltext(previousStatement.getSqltext());
+      catalogStmt.setTablestouched(previousStatement.getTablestouched());
+      for (      StmtParameter oldSp : previousStatement.getParameters()) {
+        StmtParameter newSp=catalogStmt.getParameters().add(oldSp.getTypeName());
+        newSp.setAnnotation(oldSp.getAnnotation());
+        newSp.setAttachment(oldSp.getAttachment());
+        newSp.setIndex(oldSp.getIndex());
+        newSp.setIsarray(oldSp.getIsarray());
+        newSp.setJavatype(oldSp.getJavatype());
+        newSp.setSqltype(oldSp.getSqltype());
+      }
+      for (      PlanFragment oldFrag : previousStatement.getFragments()) {
+        PlanFragment newFrag=catalogStmt.getFragments().add(oldFrag.getTypeName());
+        newFrag.setAnnotation(oldFrag.getAnnotation());
+        newFrag.setAttachment(oldFrag.getAttachment());
+        newFrag.setHasdependencies(oldFrag.getHasdependencies());
+        newFrag.setMultipartition(oldFrag.getMultipartition());
+        newFrag.setNontransactional(oldFrag.getNontransactional());
+        newFrag.setPlanhash(oldFrag.getPlanhash());
+        newFrag.setPlannodetree(oldFrag.getPlannodetree());
+      }
+      return true;
+    }
+  }
+  QueryType qtype=QueryType.getFromSQL(stmt);
+  catalogStmt.setReadonly(qtype.isReadOnly());
+  catalogStmt.setQuerytype(qtype.getValue());
+  catalogStmt.setCachekeyprefix(keyPrefix);
   catalogStmt.setSqltext(stmt);
   catalogStmt.setSinglepartition(partitioning.wasSpecifiedAsSingle());
-  catalogStmt.setBatched(false);
-  catalogStmt.setParamnum(0);
   String name=catalogStmt.getParent().getTypeName() + "-" + catalogStmt.getTypeName();
   String sql=catalogStmt.getSqltext();
   String stmtName=catalogStmt.getTypeName();
@@ -74,6 +114,7 @@ catch (  Exception e) {
   catalogStmt.setAnnotation(annotation);
   CatalogUtil.updateUsageAnnotations(db,catalogStmt,plan.rootPlanGraph,plan.subPlanGraph);
   catalogStmt.setExplainplan(Encoder.hexEncode(plan.explainedPlan));
+  catalogStmt.setTablestouched(StringUtils.join(plan.touchedTables,','));
   MessageDigest md=null;
   try {
     md=MessageDigest.getInstance("SHA-1");
@@ -104,4 +145,5 @@ catch (  Exception e) {
   }
   int validType=catalogStmt.getQuerytype();
   assert(validType != QueryType.INVALID.getValue());
+  return false;
 }
