@@ -1,0 +1,81 @@
+{
+  Database fakeDb=new Catalog().getClusters().add("cluster").getDatabases().add("database");
+  Table table=catProc.getPartitiontable();
+  QueryType qtype=QueryType.getFromSQL(sqlText);
+  StatementPartitioning partitioning=catProc.getSinglepartition() ? StatementPartitioning.forceSP() : StatementPartitioning.forceMP();
+  CompiledPlan plan=plannerTool.planSqlCore(sqlText,partitioning);
+  Procedure newCatProc=fakeDb.getProcedures().add(catProc.getTypeName());
+  newCatProc.setClassname(catProc.getClassname());
+  newCatProc.setDefaultproc(true);
+  newCatProc.setEverysite(false);
+  newCatProc.setHasjava(false);
+  newCatProc.setPartitioncolumn(catProc.getPartitioncolumn());
+  newCatProc.setPartitionparameter(catProc.getPartitionparameter());
+  newCatProc.setPartitiontable(catProc.getPartitiontable());
+  newCatProc.setReadonly(catProc.getReadonly());
+  newCatProc.setSinglepartition(catProc.getSinglepartition());
+  newCatProc.setSystemproc(false);
+  if (catProc.getPartitionparameter() >= 0) {
+    newCatProc.setAttachment(new ProcedurePartitionInfo(VoltType.get((byte)catProc.getPartitioncolumn().getType()),catProc.getPartitionparameter()));
+  }
+  CatalogMap<Statement> statements=newCatProc.getStatements();
+  assert(statements != null);
+  Statement stmt=statements.add(VoltDB.ANON_STMT_NAME);
+  stmt.setSqltext(sqlText);
+  stmt.setReadonly(catProc.getReadonly());
+  stmt.setQuerytype(qtype.getValue());
+  stmt.setSinglepartition(catProc.getSinglepartition());
+  stmt.setIscontentdeterministic(true);
+  stmt.setIsorderdeterministic(true);
+  stmt.setNondeterminismdetail("NO CONTENT FOR DEFAULT PROCS");
+  stmt.setSeqscancount(plan.countSeqScans());
+  stmt.setReplicatedtabledml(!catProc.getReadonly() && table.getIsreplicated());
+  for (int i=0; i < plan.parameters.length; ++i) {
+    StmtParameter catalogParam=stmt.getParameters().add(String.valueOf(i));
+    catalogParam.setJavatype(plan.parameters[i].getValueType().getValue());
+    catalogParam.setIsarray(plan.parameters[i].getParamIsVector());
+    catalogParam.setIndex(i);
+  }
+  PlanFragment frag=stmt.getFragments().add("0");
+  MessageDigest md=null;
+  try {
+    md=MessageDigest.getInstance("SHA-1");
+  }
+ catch (  NoSuchAlgorithmException e) {
+    e.printStackTrace();
+    assert(false);
+    System.exit(-1);
+  }
+  byte[] planBytes=writePlanBytes(frag,plan.rootPlanGraph);
+  md.update(planBytes,0,planBytes.length);
+  md.reset();
+  md.update(planBytes);
+  frag.setPlanhash(Encoder.hexEncode(md.digest()));
+  if (plan.subPlanGraph != null) {
+    frag.setHasdependencies(true);
+    frag.setNontransactional(true);
+    frag.setMultipartition(true);
+    frag=stmt.getFragments().add("1");
+    frag.setHasdependencies(false);
+    frag.setNontransactional(false);
+    frag.setMultipartition(true);
+    byte[] subBytes=writePlanBytes(frag,plan.subPlanGraph);
+    md.reset();
+    md.update(subBytes);
+    frag.setPlanhash(Encoder.hexEncode(md.digest()));
+  }
+ else {
+    frag.setHasdependencies(false);
+    frag.setNontransactional(false);
+    frag.setMultipartition(false);
+  }
+  int paramCount=0;
+  for (  StmtParameter stmtParam : CatalogUtil.getSortedCatalogItems(stmt.getParameters(),"index")) {
+    ProcParameter procParam=newCatProc.getParameters().add("param" + String.valueOf(paramCount));
+    procParam.setIndex(stmtParam.getIndex());
+    procParam.setIsarray(stmtParam.getIsarray());
+    procParam.setType(stmtParam.getJavatype());
+    paramCount++;
+  }
+  return newCatProc;
+}
