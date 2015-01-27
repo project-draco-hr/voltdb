@@ -1,13 +1,11 @@
 {
-  long current=0;
-  HyperLogLog hll=null;
-  byte[] hllBytes=null;
   voltQueueSQL(estimatesSelect,EXPECT_ZERO_OR_ONE_ROW,appId);
   VoltTable estimatesTable=voltExecuteSQL()[0];
+  HyperLogLog hll=null;
+  long current=0;
   if (estimatesTable.advanceRow()) {
-    estimatesTable.advanceRow();
     current=estimatesTable.getLong("devicecount");
-    hllBytes=estimatesTable.getVarbinary("hll");
+    byte[] hllBytes=estimatesTable.getVarbinary("hll");
     hll=HyperLogLog.fromBytes(hllBytes);
   }
  else {
@@ -17,7 +15,7 @@
   long newEstimate=current;
   if (current < MAX_EXACT_COUNT) {
     voltQueueSQL(exactUpsert,EXPECT_ZERO_OR_ONE_ROW,appId,hashedDeviceId);
-    voltQueueSQL(exactCardinality,EXPECT_ONE_ROW,appId);
+    voltQueueSQL(exactCardinality,EXPECT_SCALAR_LONG,appId);
     newEstimate=voltExecuteSQL()[1].asScalarLong();
     if (newEstimate == MAX_EXACT_COUNT) {
       voltQueueSQL(exactClear,EXPECT_SCALAR_MATCH(MAX_EXACT_COUNT),appId);
@@ -29,7 +27,7 @@
   }
   if ((newEstimate != current) || hll.getDirty()) {
     voltQueueSQL(estimatesUpsert,EXPECT_SCALAR_MATCH(1),appId,newEstimate,hll.toBytes());
-    voltExecuteSQL(true);
+    return voltExecuteSQL(true);
   }
-  return newEstimate;
+  return null;
 }

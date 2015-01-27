@@ -1,0 +1,80 @@
+{
+  String exportClientClassName=null;
+switch (exportType.getTarget()) {
+case FILE:
+    exportClientClassName="org.voltdb.exportclient.ExportToFileClient";
+  break;
+case JDBC:
+exportClientClassName="org.voltdb.exportclient.JDBCExportClient";
+break;
+case KAFKA:
+exportClientClassName="org.voltdb.exportclient.KafkaExportClient";
+break;
+case RABBITMQ:
+exportClientClassName="org.voltdb.exportclient.RabbitMQExportClient";
+break;
+case HTTP:
+exportClientClassName="org.voltdb.exportclient.HttpExportClient";
+break;
+case CUSTOM:
+exportClientClassName=exportType.getExportconnectorclass();
+if (exportType.isEnabled()) try {
+CatalogUtil.class.getClassLoader().loadClass(exportClientClassName);
+}
+ catch (ClassNotFoundException ex) {
+String msg="Custom Export failed to configure, failed to load " + " export plugin class: " + exportType.getExportconnectorclass() + " Disabling export.";
+hostLog.error(msg);
+throw new DeploymentCheckException(msg);
+}
+break;
+}
+Properties processorProperties=new Properties();
+if (exportClientClassName != null && exportClientClassName.trim().length() > 0) {
+String dexportClientClassName=System.getProperty(ExportDataProcessor.EXPORT_TO_TYPE,exportClientClassName);
+processorProperties.setProperty(ExportDataProcessor.EXPORT_TO_TYPE,dexportClientClassName);
+}
+ExportConfigurationType exportConfiguration=exportType.getConfiguration();
+if (exportConfiguration != null) {
+List<PropertyType> configProperties=exportConfiguration.getProperty();
+if (configProperties != null && !configProperties.isEmpty()) {
+for (PropertyType configProp : configProperties) {
+String key=configProp.getName();
+String value=configProp.getValue();
+if (!key.toLowerCase().contains("passw")) {
+processorProperties.setProperty(key,value.trim());
+}
+ else {
+processorProperties.setProperty(key,value);
+}
+}
+}
+}
+if (!exportType.isEnabled()) {
+return processorProperties;
+}
+Class<?> processorClazz=null;
+try {
+processorClazz=Class.forName(ExportManager.PROCESSOR_CLASS);
+}
+ catch (ClassNotFoundException e) {
+throw new DeploymentCheckException("Export is a PRO version only feature");
+}
+ExportDataProcessor processor=null;
+try {
+processor=(ExportDataProcessor)processorClazz.newInstance();
+}
+ catch (InstantiationException|IllegalAccessException e) {
+hostLog.error("Unable to instantiate export processor",e);
+throw new DeploymentCheckException("Unable to instantiate export processor",e);
+}
+try {
+processor.addLogger(hostLog);
+processor.setProcessorConfig(processorProperties);
+processor.shutdown();
+}
+ catch (Exception e) {
+hostLog.error("Export processor failed its configuration check",e);
+throw new DeploymentCheckException("Export processor failed its configuration check: " + e.getMessage(),e);
+}
+return processorProperties;
+}
