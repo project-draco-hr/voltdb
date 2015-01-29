@@ -1,8 +1,8 @@
 {
-  VoltTable results=constructFragmentResultsTable();
+  List<SnapshotResultRow> results=new ArrayList<SnapshotResultRow>();
   List<File> relevantFiles=retrieveRelevantFiles(path);
   if (relevantFiles == null) {
-    results.addRow(m_messenger.getHostId(),m_hostname,"","",0,0,"","FALSE",0,"","",0,"","FAILURE",m_errorString);
+    results.add(new SnapshotResultRow(m_messenger.getHostId(),m_hostname,"","",0,0,"","FALSE",0,"","",0,"","FAILURE",m_errorString));
   }
  else {
     for (    final File f : relevantFiles) {
@@ -21,7 +21,7 @@
             if (partitions.startsWith(",")) {
               partitions=partitions.substring(1);
             }
-            results.addRow(m_messenger.getHostId(),m_hostname,f.getParent(),f.getName(),savefile.getTxnId(),savefile.getTimestamp(),savefile.getTableName(),savefile.getCompleted() ? "TRUE" : "FALSE",f.length(),savefile.isReplicated() ? "TRUE" : "FALSE",partitions,savefile.getTotalPartitions(),f.canRead() ? "TRUE" : "FALSE","SUCCESS","");
+            results.add(new SnapshotResultRow(m_messenger.getHostId(),m_hostname,f.getParent(),f.getName(),savefile.getTxnId(),savefile.getTimestamp(),savefile.getTableName(),savefile.getCompleted() ? "TRUE" : "FALSE",f.length(),savefile.isReplicated() ? "TRUE" : "FALSE",partitions,savefile.getTotalPartitions(),f.canRead() ? "TRUE" : "FALSE","SUCCESS",""));
           }
  catch (          IOException e) {
             SNAP_LOG.warn(e);
@@ -35,9 +35,19 @@
         }
       }
  else {
-        results.addRow(m_messenger.getHostId(),m_hostname,f.getParent(),f.getName(),0L,f.lastModified(),"","FALSE",f.length(),"FALSE","",-1,f.canRead() ? "TRUE" : "FALSE","SUCCESS","");
+        results.add(new SnapshotResultRow(m_messenger.getHostId(),m_hostname,f.getParent(),f.getName(),0L,f.lastModified(),"","FALSE",f.length(),"FALSE","",-1,f.canRead() ? "TRUE" : "FALSE","SUCCESS",""));
       }
     }
   }
-  return results;
+  Collections.sort(results,new Comparator<SnapshotResultRow>(){
+    @Override public int compare(    SnapshotResultRow r1,    SnapshotResultRow r2){
+      return r1.compareTo(r2);
+    }
+  }
+);
+  VoltTable sortedResults=constructFragmentResultsTable();
+  for (  SnapshotResultRow row : results) {
+    sortedResults.addRow(row.hostId,row.hostName,row.path,row.name,row.txnid,row.created,row.table,row.completed,row.size,row.isReplicated,row.partitions,row.totalPartitions,row.readable,row.result,row.errMsg);
+  }
+  return sortedResults;
 }
