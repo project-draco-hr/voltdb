@@ -1,11 +1,17 @@
 {
   byte[] data=new byte[rowSize];
   byte shouldRollback=0;
-  long currentRowCount;
+  long currentRowCount=0;
   while (m_shouldContinue.get()) {
     r.nextBytes(data);
     try {
-      currentRowCount=getRowCount();
+      currentRowCount=TxnId2Utils.getRowCount(client,tableName);
+    }
+ catch (    Exception e) {
+      log.error("getrowcount exception",e);
+      System.exit(-1);
+    }
+    try {
       int tc=batchSize * r.nextInt(99);
       while ((currentRowCount < tc) && (m_shouldContinue.get())) {
         CountDownLatch latch=new CountDownLatch(batchSize);
@@ -16,7 +22,14 @@
           client.callProcedure(new InsertCallback(latch),tableName.toUpperCase() + "TableInsert",p,data);
         }
         latch.await(10,TimeUnit.SECONDS);
-        long nextRowCount=getRowCount();
+        long nextRowCount=-1;
+        try {
+          nextRowCount=TxnId2Utils.getRowCount(client,tableName);
+        }
+ catch (        Exception e) {
+          log.error("getrowcount exception",e);
+          System.exit(-1);
+        }
         if (nextRowCount == currentRowCount) {
           try {
             Thread.sleep(1000);
@@ -36,7 +49,13 @@
       }
     }
     try {
-      currentRowCount=getRowCount();
+      currentRowCount=TxnId2Utils.getRowCount(client,tableName);
+    }
+ catch (    Exception e) {
+      log.error("getrowcount exception",e);
+      System.exit(-1);
+    }
+    try {
       log.debug("TruncateTableLoader truncate table..." + tableName + " current row count is "+ currentRowCount);
       shouldRollback=(byte)(r.nextInt(10) == 0 ? 1 : 0);
       long p=Math.abs(r.nextLong());
@@ -80,7 +99,13 @@ catch (    Exception e) {
       }
     }
     try {
-      currentRowCount=getRowCount();
+      currentRowCount=TxnId2Utils.getRowCount(client,tableName);
+    }
+ catch (    Exception e) {
+      log.error("getrowcount exception",e);
+      System.exit(-1);
+    }
+    try {
       log.debug("TruncateTableLoader scan agg table..." + tableName + " current row count is "+ currentRowCount);
       shouldRollback=(byte)(r.nextInt(10) == 0 ? 1 : 0);
       long p=Math.abs(r.nextLong());
