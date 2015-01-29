@@ -1,4 +1,5 @@
 {
+  byte exitcode=0;
   log.info(HORIZONTAL_RULE);
   log.info(" Setup & Initialization");
   log.info(HORIZONTAL_RULE);
@@ -36,8 +37,9 @@
   log.info(HORIZONTAL_RULE);
   BigTableLoader partitionedLoader=new BigTableLoader(client,"bigp",(config.partfillerrowmb * 1024 * 1024) / config.fillerrowsize,config.fillerrowsize,50,permits,partitionCount);
   partitionedLoader.start();
+  BigTableLoader replicatedLoader=null;
   if (config.mpratio > 0.0) {
-    BigTableLoader replicatedLoader=new BigTableLoader(client,"bigr",(config.replfillerrowmb * 1024 * 1024) / config.fillerrowsize,config.fillerrowsize,3,permits,partitionCount);
+    replicatedLoader=new BigTableLoader(client,"bigr",(config.replfillerrowmb * 1024 * 1024) / config.fillerrowsize,config.fillerrowsize,3,permits,partitionCount);
     replicatedLoader.start();
   }
   log.info(HORIZONTAL_RULE);
@@ -55,14 +57,16 @@
   }
   TruncateTableLoader partitionedTruncater=new TruncateTableLoader(client,"trup",(config.partfillerrowmb * 1024 * 1024) / config.fillerrowsize,config.fillerrowsize,50,permits,config.mpratio);
   partitionedTruncater.start();
+  TruncateTableLoader replicatedTruncater=null;
   if (config.mpratio > 0.0) {
-    TruncateTableLoader replicatedTruncater=new TruncateTableLoader(client,"trur",(config.replfillerrowmb * 1024 * 1024) / config.fillerrowsize,config.fillerrowsize,3,permits,config.mpratio);
+    replicatedTruncater=new TruncateTableLoader(client,"trur",(config.replfillerrowmb * 1024 * 1024) / config.fillerrowsize,config.fillerrowsize,3,permits,config.mpratio);
     replicatedTruncater.start();
   }
   LoadTableLoader plt=new LoadTableLoader(client,"loadp",(config.partfillerrowmb * 1024 * 1024) / config.fillerrowsize,50,permits,false,0);
   plt.start();
+  LoadTableLoader rlt=null;
   if (config.mpratio > 0.0) {
-    LoadTableLoader rlt=new LoadTableLoader(client,"loadmp",(config.replfillerrowmb * 1024 * 1024) / config.fillerrowsize,3,permits,true,-1);
+    rlt=new LoadTableLoader(client,"loadmp",(config.replfillerrowmb * 1024 * 1024) / config.fillerrowsize,3,permits,true,-1);
     rlt.start();
   }
   ReadThread readThread=new ReadThread(client,config.threads,config.threadoffset,config.allowinprocadhoc,config.mpratio,permits);
@@ -87,9 +91,30 @@
     Thread.sleep(rt);
   }
   log.info("Duration completed shutting down...");
+  int lpcc=partitionedLoader.getPercentLoadComplete();
+  if (!partitionedLoader.isAlive() && lpcc < 100) {
+    exitcode=reportDeadThread(partitionedLoader," yet only " + Integer.toString(lpcc) + "% rows have been loaded");
+  }
+ else   log.info(partitionedLoader + " was at " + lpcc+ "% of rows loaded");
+  lpcc=replicatedLoader.getPercentLoadComplete();
+  if (!replicatedLoader.isAlive() && lpcc < 100) {
+    exitcode=reportDeadThread(replicatedLoader," yet only " + Integer.toString(lpcc) + "% rows have been loaded");
+  }
+ else   log.info(replicatedLoader + " was at " + lpcc+ "% of rows loaded");
+  if (!partitionedTruncater.isAlive())   exitcode=reportDeadThread(partitionedTruncater);
+  if (!replicatedTruncater.isAlive())   exitcode=reportDeadThread(replicatedTruncater);
+  if (!readThread.isAlive())   exitcode=reportDeadThread(readThread);
+  if (!adHocMayhemThread.isAlive())   exitcode=reportDeadThread(adHocMayhemThread);
+  if (!idpt.isAlive())   exitcode=reportDeadThread(idpt);
+  if (!ddlt.isAlive())   exitcode=reportDeadThread(ddlt);
+  for (  ClientThread ct : clientThreads) {
+    if (!ct.isAlive()) {
+      exitcode=reportDeadThread(ct);
+    }
+  }
   timer.cancel();
   checkpointTimer.cancel();
   log.info(HORIZONTAL_RULE);
   log.info("Benchmark Complete");
-  System.exit(0);
+  System.exit(exitcode);
 }
