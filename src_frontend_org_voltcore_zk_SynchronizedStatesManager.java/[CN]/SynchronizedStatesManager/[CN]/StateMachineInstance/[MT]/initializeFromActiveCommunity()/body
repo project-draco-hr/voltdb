@@ -9,14 +9,13 @@
     if (existingAndProposedStates.m_requestType == REQUEST_TYPE.LAST_CHANGE_OUTCOME_REQUEST) {
       RESULT_CONCENSUS result=resultsAgreeOnSuccess(m_knownMembers);
       if (result == RESULT_CONCENSUS.AGREE) {
-        existingAndProposedStates.m_previousState=existingAndProposedStates.m_proposal;
-        existingAndProposedStates.m_requestType=REQUEST_TYPE.INITIALIZING;
+        existingAndProposedStates=new StateChangeRequest(REQUEST_TYPE.INITIALIZING,existingAndProposedStates.m_proposal,existingAndProposedStates.m_proposal);
       }
  else       if (result == RESULT_CONCENSUS.DISAGREE) {
-        existingAndProposedStates.m_requestType=REQUEST_TYPE.INITIALIZING;
+        existingAndProposedStates=new StateChangeRequest(REQUEST_TYPE.INITIALIZING,existingAndProposedStates.m_previousState,existingAndProposedStates.m_previousState);
       }
  else {
-        existingAndProposedStates.m_requestType=REQUEST_TYPE.STATE_CHANGE_REQUEST;
+        existingAndProposedStates=new StateChangeRequest(REQUEST_TYPE.STATE_CHANGE_REQUEST,existingAndProposedStates.m_previousState,existingAndProposedStates.m_proposal);
       }
     }
     if (existingAndProposedStates.m_requestType == REQUEST_TYPE.STATE_CHANGE_REQUEST) {
@@ -29,27 +28,29 @@
       checkForBarrierResultsChanges();
     }
  else {
+      assert(existingAndProposedStates.m_requestType == REQUEST_TYPE.INITIALIZING || existingAndProposedStates.m_requestType == REQUEST_TYPE.CORRELATED_COORDINATED_TASK || existingAndProposedStates.m_requestType == REQUEST_TYPE.UNCORRELATED_COORDINATED_TASK);
       m_synchronizedState=existingAndProposedStates.m_previousState;
       m_requestedInitialState=null;
       readOnlyResult=m_synchronizedState.asReadOnlyBuffer();
       m_lastProposalVersion=lastProposal.getVersion();
+      m_pendingProposal=null;
+      m_log.debug(m_stateMachineId + ": Initialized (existing) with State " + stateToString(m_synchronizedState.asReadOnlyBuffer()));
       if (existingAndProposedStates.m_requestType != REQUEST_TYPE.INITIALIZING) {
         staleTask=existingAndProposedStates.m_proposal;
       }
       cancelDistributedLock();
       m_lockWaitingOn="bogus";
       checkForBarrierParticipantsChange();
-      m_log.debug(m_stateMachineId + " initialized (from stable community).");
     }
   }
  catch (  KeeperException.SessionExpiredException e) {
-    e.printStackTrace();
+    m_log.debug(m_stateMachineId + ": Received SessionExpiredException in initializeFromActiveCommunity");
   }
 catch (  KeeperException.ConnectionLossException e) {
-    e.printStackTrace();
+    m_log.debug(m_stateMachineId + ": Received ConnectionLossException in initializeFromActiveCommunity");
   }
 catch (  InterruptedException e) {
-    e.printStackTrace();
+    m_log.debug(m_stateMachineId + ": Received InterruptedException in initializeFromActiveCommunity");
   }
 catch (  Exception e) {
     org.voltdb.VoltDB.crashLocalVoltDB("Unexepected failure in StateMachine.",true,e);

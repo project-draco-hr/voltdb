@@ -14,7 +14,6 @@
         m_currentRequestType=existingAndProposedStates.m_requestType;
         if (m_requestedInitialState != null) {
           m_zk.create(m_myPartiticpantsPath,null,Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL);
-          assert(m_requestedInitialState == m_pendingProposal);
           addResultEntry(null);
           unlockLocalState();
         }
@@ -38,13 +37,19 @@
             m_pendingProposal=existingAndProposedStates.m_proposal;
             ByteBuffer proposedState=m_pendingProposal.asReadOnlyBuffer();
             assert(existingAndProposedStates.m_previousState.equals(m_synchronizedState));
+            if (m_log.isDebugEnabled()) {
+              if (type == REQUEST_TYPE.STATE_CHANGE_REQUEST) {
+                m_log.debug(m_stateMachineId + ": Received new State proposal " + stateToString(proposedState.asReadOnlyBuffer()));
+              }
+ else {
+                m_log.debug(m_stateMachineId + ": Received new Task request " + taskToString(proposedState.asReadOnlyBuffer()));
+              }
+            }
             unlockLocalState();
             if (type == REQUEST_TYPE.STATE_CHANGE_REQUEST) {
-              m_log.info(m_stateMachineId + " received new state proposal (" + stateToString(proposedState.asReadOnlyBuffer())+ ")");
               stateChangeProposed(proposedState);
             }
  else {
-              m_log.info(m_stateMachineId + " received new task (" + taskToString(proposedState.asReadOnlyBuffer())+ ")");
               taskRequested(proposedState);
             }
           }
@@ -55,7 +60,6 @@
         if (m_currentRequestType == REQUEST_TYPE.CORRELATED_COORDINATED_TASK || m_currentRequestType == REQUEST_TYPE.UNCORRELATED_COORDINATED_TASK) {
           ByteBuffer taskRequest=m_pendingProposal.asReadOnlyBuffer();
           unlockLocalState();
-          m_log.info(m_stateMachineId + ": task Requested (by this member)");
           taskRequested(taskRequest);
         }
  else {
@@ -74,19 +78,19 @@
     }
   }
  catch (  KeeperException.SessionExpiredException e) {
-    e.printStackTrace();
+    m_log.debug(m_stateMachineId + ": Received SessionExpiredException in checkForBarrierParticipantsChange");
     unlockLocalState();
   }
 catch (  KeeperException.ConnectionLossException e) {
-    e.printStackTrace();
+    m_log.debug(m_stateMachineId + ": Received ConnectionLossException in checkForBarrierParticipantsChange");
     unlockLocalState();
   }
 catch (  InterruptedException e) {
-    e.printStackTrace();
+    m_log.debug(m_stateMachineId + ": Received InterruptedException in checkForBarrierParticipantsChange");
     unlockLocalState();
   }
 catch (  Exception e) {
     org.voltdb.VoltDB.crashLocalVoltDB("Unexepected failure in StateMachine.",true,e);
   }
-  assert(debugIsLocalStateUnlocked());
+  assert(!debugIsLocalStateLocked());
 }

@@ -122,13 +122,6 @@ synchronized (m_startAndStopLock) {
  catch (    Exception e) {
       VoltDB.crashLocalVoltDB("Unable to start GlobalServiceElector",true,e);
     }
-    String hostIdStr="Host_" + m_messenger.getHostId();
-    try {
-      m_perHostStatesManager=new SynchronizedStatesManager(m_messenger.getZK(),"PER_HOST_STATES",hostIdStr,m_perHostStateMachines);
-    }
- catch (    KeeperException|InterruptedException e) {
-      m_perHostStatesManager=null;
-    }
     if (m_config.m_isEnterprise) {
       long elasticHSId=m_messenger.getHSIdForLocalSite(HostMessenger.REBALANCE_SITE_ID);
       m_messenger.createMailbox(elasticHSId,new SiteMailbox(m_messenger,elasticHSId));
@@ -221,9 +214,13 @@ synchronized (m_startAndStopLock) {
  else {
           drOverflowDir=new File(m_catalogContext.cluster.getVoltroot(),"dr_overflow");
           ndrgwClass=Class.forName("org.voltdb.dr.InvocationBufferServer");
+          Constructor<?> ndrgwConstructor=ndrgwClass.getConstructor(File.class,boolean.class,int.class);
+          m_nodeDRGateway=(NodeDRGateway)ndrgwConstructor.newInstance(drOverflowDir,m_replicationActive,m_configuredNumberOfPartitions);
         }
         Constructor<?> ndrgwConstructor=ndrgwClass.getConstructor(File.class,boolean.class,int.class);
         m_nodeDRGateway=(NodeDRGateway)ndrgwConstructor.newInstance(drOverflowDir,m_replicationActive,m_configuredNumberOfPartitions);
+        m_nodeDRGateway.start();
+        m_nodeDRGateway.blockOnDRStateConvergence();
       }
  catch (      Exception e) {
         VoltDB.crashLocalVoltDB("Unable to load DR system",true,e);
@@ -284,13 +281,14 @@ synchronized (m_startAndStopLock) {
     }
     if (m_config.m_isEnterprise && useDRV2 && m_config.m_replicationRole == ReplicationRole.REPLICA) {
       String drProducerHost=m_catalogContext.cluster.getDrmasterhost();
+      byte drConsumerClusterId=(byte)m_catalogContext.cluster.getDrclusterid();
       if (drProducerHost == null || drProducerHost.isEmpty()) {
         VoltDB.crashLocalVoltDB("Cannot start as DR consumer without an enabled DR data connection.");
       }
       try {
         Class<?> rdrgwClass=Class.forName("org.voltdb.dr2.ConsumerDRGatewayImpl");
-        Constructor<?> rdrgwConstructor=rdrgwClass.getConstructor(String.class,ClientInterface.class,boolean.class,String.class);
-        m_consumerDRGateway=(ConsumerDRGateway)rdrgwConstructor.newInstance(drProducerHost,m_clientInterface,usingCommandLog,clSnapshotPath);
+        Constructor<?> rdrgwConstructor=rdrgwClass.getConstructor(String.class,ClientInterface.class,byte.class,boolean.class,String.class);
+        m_consumerDRGateway=(ConsumerDRGateway)rdrgwConstructor.newInstance(drProducerHost,m_clientInterface,drConsumerClusterId,usingCommandLog,clSnapshotPath);
         m_globalServiceElector.registerService(m_consumerDRGateway);
       }
  catch (      Exception e) {
