@@ -1,5 +1,6 @@
 {
   int count=0;
+  int errcnt=0;
   while (m_shouldContinue.get()) {
     log.info(createOrDrop[count]);
     try {
@@ -13,9 +14,20 @@
         log.info("Catalog update success #" + Long.toString(progressInd.get()) + " : "+ createOrDrop[count]);
         progressInd.getAndIncrement();
         Benchmark.txnCount.incrementAndGet();
+        errcnt=0;
       }
     }
- catch (    Exception e) {
+ catch (    ProcCallException e) {
+      ClientResponse cr=e.getClientResponse();
+      if (cr.getStatusString().matches("Unexpected exception applying DDL statements to original catalog: DDL Error: \"object name already exists:.*")) {
+        if (errcnt > 1) {
+          log.error("too many catalog update errors");
+          throw new RuntimeException("stop the world");
+        }
+ else         errcnt++;
+      }
+    }
+catch (    Exception e) {
       log.error("CatalogUpdateThread threw an error:",e);
       Benchmark.printJStack();
       System.exit(-1);
