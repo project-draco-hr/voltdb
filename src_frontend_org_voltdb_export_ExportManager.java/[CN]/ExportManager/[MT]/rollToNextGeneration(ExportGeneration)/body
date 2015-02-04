@@ -1,8 +1,8 @@
 {
   ExportDataProcessor newProcessor=null;
   ExportDataProcessor oldProcessor=null;
+  boolean installNewProcessor=false;
 synchronized (ExportManager.this) {
-    boolean installNewProcessor=false;
     if (m_generations.containsValue(drainedGeneration)) {
       m_generations.remove(drainedGeneration.m_timestamp);
       m_generationGhosts.add(drainedGeneration.m_timestamp);
@@ -10,18 +10,24 @@ synchronized (ExportManager.this) {
       exportLog.info("Finished draining generation " + drainedGeneration.m_timestamp);
     }
  else {
+      installNewProcessor=false;
       exportLog.warn("Finished draining a generation that is not known to export generations.");
     }
     try {
-      if (m_loaderClass != null && !m_generations.isEmpty() && installNewProcessor) {
-        exportLog.info("Creating connector " + m_loaderClass);
-        final Class<?> loaderClass=Class.forName(m_loaderClass);
+      if (m_loaderClass != null && !m_generations.isEmpty()) {
         ExportGeneration nextGeneration=m_generations.firstEntry().getValue();
-        newProcessor=(ExportDataProcessor)loaderClass.newInstance();
-        newProcessor.addLogger(exportLog);
-        newProcessor.setExportGeneration(nextGeneration);
-        newProcessor.setProcessorConfig(m_processorConfig);
-        newProcessor.readyForData();
+        if (installNewProcessor) {
+          exportLog.info("Creating connector " + m_loaderClass);
+          final Class<?> loaderClass=Class.forName(m_loaderClass);
+          newProcessor=(ExportDataProcessor)loaderClass.newInstance();
+          newProcessor.addLogger(exportLog);
+          newProcessor.setExportGeneration(nextGeneration);
+          newProcessor.setProcessorConfig(m_processorConfig);
+          newProcessor.readyForData();
+        }
+ else {
+          m_processor.get().setExportGeneration(nextGeneration);
+        }
         if (!nextGeneration.isContinueingGeneration()) {
           nextGeneration.kickOffLeaderElection();
         }
@@ -30,14 +36,16 @@ synchronized (ExportManager.this) {
             nextGeneration.acceptMastershipTask(partitionId);
           }
         }
-        oldProcessor=m_processor.getAndSet(newProcessor);
+        if (installNewProcessor) {
+          oldProcessor=m_processor.getAndSet(newProcessor);
+        }
       }
     }
  catch (    Exception e) {
       VoltDB.crashLocalVoltDB("Error creating next export processor",true,e);
     }
   }
-  if (oldProcessor != null) {
+  if (oldProcessor != null && installNewProcessor) {
     oldProcessor.shutdown();
   }
   try {
