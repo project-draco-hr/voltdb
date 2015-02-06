@@ -1,25 +1,19 @@
 {
   System.out.println("Test initialization");
   connect(config.servers);
+  Thread thread=new Thread(new ExportThread());
+  thread.start();
+  System.out.println("Warming up...");
+  Thread.sleep(1000l * config.warmup);
+  warmupComplete.set(true);
   fullStatsContext.fetchAndResetBaseline();
   periodicStatsContext.fetchAndResetBaseline();
   schedulePeriodicStats();
-  long startTime=System.nanoTime();
-  try {
-    System.out.println("Inserting objects");
-    String sql="";
-    for (int i=0; i < config.count; i++) {
-      sql="INSERT INTO " + config.tableName + " VALUES ("+ 4+ ","+ 8+ ","+ 16+ ","+ 32+ ","+ 42.15+ ","+ 12.52+ ",'string1',"+ 4215+ ");";
-      client.callProcedure(new NullCallback(),"@AdHoc",sql);
-    }
-    client.drain();
-    System.out.println("Object insertion complete");
-  }
- catch (  Exception e) {
-    System.err.println("Couldn't insert into VoltDB\n");
-    e.printStackTrace();
-    System.exit(1);
-  }
+  System.out.println("\nRunning benchmark...");
+  Thread.sleep(1000l * config.duration);
+  System.out.println("Object insertion complete");
+  benchmarkComplete.set(true);
+  client.drain();
   try {
     waitForStreamedAllocatedMemoryZero();
   }
@@ -29,8 +23,6 @@
     System.exit(1);
   }
   timer.cancel();
-  long estimatedTime=System.nanoTime() - startTime;
-  System.out.println("Export time elapsed (ms) for " + config.count + " objects: "+ estimatedTime / 1000000);
   printResults();
   client.close();
 }
