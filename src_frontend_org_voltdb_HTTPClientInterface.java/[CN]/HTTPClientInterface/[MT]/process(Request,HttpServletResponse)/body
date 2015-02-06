@@ -1,5 +1,6 @@
 {
   AuthenticationResult authResult=null;
+  boolean suspended=false;
   Continuation continuation=ContinuationSupport.getContinuation(request);
   if (m_timeout > 0) {
     continuation.setTimeout(m_timeout);
@@ -30,7 +31,7 @@
     jsonp=request.getParameter("jsonp");
     if (request.getMethod().equalsIgnoreCase("POST")) {
       int queryParamSize=request.getContentLength();
-      if (queryParamSize > 150000) {
+      if (queryParamSize > MAX_QUERY_PARAM_SIZE) {
         throw new Exception("Query string too large: " + String.valueOf(request.getContentLength()));
       }
       if (queryParamSize == 0) {
@@ -61,6 +62,7 @@
       return;
     }
     continuation.suspend(response);
+    suspended=true;
     JSONProcCallback cb=new JSONProcCallback(request,continuation,jsonp);
     boolean success;
     if (params != null) {
@@ -103,7 +105,9 @@
     request.setHandled(true);
     try {
       response.getWriter().print(msg);
-      continuation.complete();
+      if (suspended) {
+        continuation.complete();
+      }
     }
  catch (    IOException e1) {
     }
