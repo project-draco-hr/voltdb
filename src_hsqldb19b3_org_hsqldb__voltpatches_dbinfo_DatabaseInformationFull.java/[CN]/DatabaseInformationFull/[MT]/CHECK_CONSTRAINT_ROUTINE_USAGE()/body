@@ -1,0 +1,75 @@
+{
+  Table t=sysTables[CHECK_CONSTRAINT_ROUTINE_USAGE];
+  if (t == null) {
+    t=createBlankTable(sysTableHsqlNames[CHECK_CONSTRAINT_ROUTINE_USAGE]);
+    addColumn(t,"CONSTRAINT_CATALOG",SQL_IDENTIFIER);
+    addColumn(t,"CONSTRAINT_SCHEMA",SQL_IDENTIFIER);
+    addColumn(t,"CONSTRAINT_NAME",SQL_IDENTIFIER);
+    addColumn(t,"SPECIFIC_CATALOG",SQL_IDENTIFIER);
+    addColumn(t,"SPECIFIC_SCHEMA",SQL_IDENTIFIER);
+    addColumn(t,"SPECIFIC_NAME",SQL_IDENTIFIER);
+    HsqlName name=HsqlNameManager.newInfoSchemaObjectName(sysTableHsqlNames[CHECK_CONSTRAINT_ROUTINE_USAGE].name,false,SchemaObject.INDEX);
+    t.createPrimaryKey(name,new int[]{0,1,2,3,4,5},false);
+    return t;
+  }
+  final int constraint_catalog=0;
+  final int constraint_schema=1;
+  final int constraint_name=2;
+  final int specific_catalog=3;
+  final int specific_schema=4;
+  final int specific_name=5;
+  PersistentStore store=database.persistentStoreCollection.getStore(t);
+  String constraintCatalog;
+  String constraintSchema;
+  String constraintName;
+  String specificSchema;
+  Iterator tables;
+  Table table;
+  Constraint[] constraints;
+  int constraintCount;
+  Constraint constraint;
+  OrderedHashSet collector;
+  Iterator iterator;
+  OrderedHashSet methodSet;
+  Method method;
+  Object[] row;
+  tables=database.schemaManager.databaseObjectIterator(SchemaObject.TABLE);
+  collector=new OrderedHashSet();
+  while (tables.hasNext()) {
+    collector.clear();
+    table=(Table)tables.next();
+    if (table.isView() || !session.getGrantee().isFullyAccessibleByRole(table)) {
+      continue;
+    }
+    constraints=table.getConstraints();
+    constraintCount=constraints.length;
+    constraintCatalog=database.getCatalogName().name;
+    constraintSchema=table.getSchemaName().name;
+    specificSchema=database.schemaManager.getDefaultSchemaHsqlName().name;
+    for (int i=0; i < constraintCount; i++) {
+      constraint=constraints[i];
+      if (constraint.getConstraintType() != Constraint.CHECK) {
+        continue;
+      }
+      constraintName=constraint.getName().name;
+      constraint.getCheckExpression().collectAllFunctionExpressions(collector);
+      methodSet=new OrderedHashSet();
+      iterator=collector.iterator();
+      while (iterator.hasNext()) {
+      }
+      iterator=methodSet.iterator();
+      while (iterator.hasNext()) {
+        method=(Method)iterator.next();
+        row=t.getEmptyRowData();
+        row[constraint_catalog]=constraintCatalog;
+        row[constraint_schema]=constraintSchema;
+        row[constraint_name]=constraintName;
+        row[specific_catalog]=database.getCatalogName();
+        row[specific_schema]=specificSchema;
+        row[specific_name]=DINameSpace.getMethodSpecificName(method);
+        t.insertSys(store,row);
+      }
+    }
+  }
+  return t;
+}

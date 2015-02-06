@@ -1,0 +1,64 @@
+{
+  Table t=sysTables[SYSTEM_CACHEINFO];
+  if (t == null) {
+    t=createBlankTable(sysTableHsqlNames[SYSTEM_CACHEINFO]);
+    addColumn(t,"CACHE_FILE",CHARACTER_DATA);
+    addColumn(t,"MAX_CACHE_COUNT",CARDINAL_NUMBER);
+    addColumn(t,"MAX_CACHE_BYTES",CARDINAL_NUMBER);
+    addColumn(t,"CACHE_SIZE",CARDINAL_NUMBER);
+    addColumn(t,"CACHE_BYTES",CARDINAL_NUMBER);
+    addColumn(t,"FILE_FREE_BYTES",CARDINAL_NUMBER);
+    addColumn(t,"FILE_FREE_COUNT",CARDINAL_NUMBER);
+    addColumn(t,"FILE_FREE_POS",CARDINAL_NUMBER);
+    HsqlName name=HsqlNameManager.newInfoSchemaObjectName(sysTableHsqlNames[SYSTEM_CACHEINFO].name,false,SchemaObject.INDEX);
+    t.createPrimaryKey(name,new int[]{0},true);
+    return t;
+  }
+  final int icache_file=0;
+  final int imax_cache_sz=1;
+  final int imax_cache_bytes=2;
+  final int icache_size=3;
+  final int icache_length=4;
+  final int ifree_bytes=5;
+  final int ifree_count=6;
+  final int ifree_pos=7;
+  PersistentStore store=database.persistentStoreCollection.getStore(t);
+  DataFileCache cache=null;
+  Object[] row;
+  HashSet cacheSet;
+  Iterator caches;
+  Iterator tables;
+  Table table;
+  int iFreeBytes;
+  int iLargestFreeItem;
+  long lSmallestFreeItem;
+  cacheSet=new HashSet();
+  tables=database.schemaManager.databaseObjectIterator(SchemaObject.TABLE);
+  while (tables.hasNext()) {
+    table=(Table)tables.next();
+    PersistentStore currentStore=database.persistentStoreCollection.getStore(t);
+    if (session.getGrantee().isFullyAccessibleByRole(table)) {
+      if (currentStore != null) {
+        cache=currentStore.getCache();
+      }
+      if (cache != null) {
+        cacheSet.add(cache);
+      }
+    }
+  }
+  caches=cacheSet.iterator();
+  while (caches.hasNext()) {
+    cache=(DataFileCache)caches.next();
+    row=t.getEmptyRowData();
+    row[icache_file]=FileUtil.getDefaultInstance().canonicalOrAbsolutePath(cache.getFileName());
+    row[imax_cache_sz]=ValuePool.getInt(cache.capacity());
+    row[imax_cache_bytes]=ValuePool.getLong(cache.bytesCapacity());
+    row[icache_size]=ValuePool.getInt(cache.getCachedObjectCount());
+    row[icache_length]=ValuePool.getLong(cache.getTotalCachedBlockSize());
+    row[ifree_bytes]=ValuePool.getInt(cache.getTotalFreeBlockSize());
+    row[ifree_count]=ValuePool.getInt(cache.getFreeBlockCount());
+    row[ifree_pos]=ValuePool.getLong(cache.getFileFreePos());
+    t.insertSys(store,row);
+  }
+  return t;
+}
