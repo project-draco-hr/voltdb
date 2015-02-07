@@ -1,7 +1,9 @@
 {
   CatalogMap<Index> allIndexes=srcTable.getIndexes();
-  if (groupbyExprs == null) {
-    for (    Index index : allIndexes) {
+  StmtTableScan tableScan=new StmtTargetTableScan(srcTable,srcTable.getTypeName());
+  for (  Index index : allIndexes) {
+    boolean matchedAll=true;
+    if (groupbyExprs == null) {
       String expressionjson=index.getExpressionsjson();
       if (!expressionjson.isEmpty()) {
         continue;
@@ -11,7 +13,6 @@
       if (indexedColRefs.size() != groupbyColRefs.size()) {
         continue;
       }
-      boolean matchedAll=true;
       for (int i=0; i < indexedColRefs.size(); ++i) {
         int groupbyColIndex=groupbyColRefs.get(i).getColumn().getIndex();
         int indexedColIndex=indexedColRefs.get(i).getColumn().getIndex();
@@ -20,19 +21,13 @@
           break;
         }
       }
-      if (matchedAll) {
-        return index;
-      }
     }
-  }
  else {
-    for (    Index index : allIndexes) {
       String expressionjson=index.getExpressionsjson();
       if (expressionjson.isEmpty()) {
         continue;
       }
       List<AbstractExpression> indexedExprs=null;
-      StmtTableScan tableScan=new StmtTargetTableScan(srcTable,srcTable.getTypeName());
       try {
         indexedExprs=AbstractExpression.fromJSONArrayString(expressionjson,tableScan);
       }
@@ -44,16 +39,33 @@
       if (indexedExprs.size() != groupbyExprs.size()) {
         continue;
       }
-      boolean matchedAll=true;
       for (int i=0; i < indexedExprs.size(); ++i) {
         if (!indexedExprs.get(i).equals(groupbyExprs.get(i))) {
           matchedAll=false;
           break;
         }
       }
-      if (matchedAll) {
-        return index;
+    }
+    if (matchedAll && !index.getPredicatejson().isEmpty()) {
+      List<AbstractExpression> coveringExprs=new ArrayList<AbstractExpression>();
+      List<AbstractExpression> exactMatchCoveringExprs=new ArrayList<AbstractExpression>();
+      try {
+        String encodedPredicate=matviewinfo.getPredicate();
+        if (!encodedPredicate.isEmpty()) {
+          String predicate=Encoder.hexDecodeToString(encodedPredicate);
+          AbstractExpression matViewPredicate=AbstractExpression.fromJSONString(predicate,tableScan);
+          coveringExprs.addAll(ExpressionUtil.uncombineAny(matViewPredicate));
+        }
       }
+ catch (      JSONException e) {
+        e.printStackTrace();
+        assert(false);
+        return null;
+      }
+      matchedAll=SubPlanAssembler.isPartialIndexPredicateIsCovered(tableScan,coveringExprs,index,exactMatchCoveringExprs);
+    }
+    if (matchedAll) {
+      return index;
     }
   }
   return null;
