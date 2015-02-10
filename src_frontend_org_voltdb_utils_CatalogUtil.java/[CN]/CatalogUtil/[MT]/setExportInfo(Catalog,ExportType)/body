@@ -2,35 +2,70 @@
   if (exportType == null) {
     return;
   }
-  boolean isEnabled=exportType.isEnabled();
-  Database db=catalog.getClusters().get("cluster").getDatabases().get("database");
-  org.voltdb.catalog.Connector catconn=db.getConnectors().get("0");
-  if (catconn == null) {
-    if (isEnabled) {
-      hostLog.info("Export configuration enabled in deployment file however no export " + "tables are present in the project file. Export disabled.");
+  List<String> targetList=new ArrayList<String>();
+  boolean noEmptyTarget=(exportType.getConfiguration().size() != 1);
+  for (  ExportConfigurationType exportConfiguration : exportType.getConfiguration()) {
+    boolean connectorEnabled=exportConfiguration.isEnabled();
+    String targetName=exportConfiguration.getTarget();
+    if (noEmptyTarget && (targetName == null || targetName.trim().isEmpty())) {
+      throw new RuntimeException("target must be specified along with type in export configuration.");
     }
-    return;
-  }
-  Properties processorProperties=checkExportProcessorConfiguration(exportType);
-  for (  String name : processorProperties.stringPropertyNames()) {
-    ConnectorProperty prop=catconn.getConfig().add(name);
-    prop.setName(name);
-    prop.setValue(processorProperties.getProperty(name));
-  }
-  catconn.setLoaderclass(ExportManager.PROCESSOR_CLASS);
-  catconn.setEnabled(isEnabled);
-  exportType.setExportconnectorclass(processorProperties.getProperty(ExportDataProcessor.EXPORT_TO_TYPE));
-  if (!isEnabled) {
-    hostLog.info("Export configuration is present and is " + "configured to be disabled. Export will be disabled.");
-  }
+    if (connectorEnabled) {
+      if (targetList.contains(targetName)) {
+        throw new RuntimeException("Multiple connectors can not be assigned to single export target: " + targetName + ".");
+      }
  else {
-    hostLog.info("Export is configured and enabled with type=" + exportType.getTarget());
-    ExportConfigurationType exportConfiguration=exportType.getConfiguration();
-    if (exportConfiguration != null && exportConfiguration.getProperty() != null) {
-      hostLog.info("Export configuration properties are: ");
-      for (      PropertyType configProp : exportConfiguration.getProperty()) {
-        if (!configProp.getName().toLowerCase().contains("passw")) {
-          hostLog.info("Export Configuration Property NAME=" + configProp.getName() + " VALUE="+ configProp.getValue());
+        targetList.add(targetName);
+      }
+    }
+    boolean defaultConnector=targetName.equals(Constants.DEFAULT_EXPORT_CONNECTOR_NAME);
+    Database db=catalog.getClusters().get("cluster").getDatabases().get("database");
+    org.voltdb.catalog.Connector catconn=db.getConnectors().get(targetName);
+    if (catconn == null) {
+      if (connectorEnabled) {
+        if (defaultConnector) {
+          hostLog.info("Export configuration enabled and provided for the default export " + "target in deployment file, however, no export " + "tables are assigned to the default target. "+ "Export target will be disabled.");
+        }
+ else {
+          hostLog.info("Export configuration enabled and provided for export target " + targetName + " in deployment file however no export "+ "tables are assigned to the this target. "+ "Export target "+ targetName+ " will be disabled.");
+        }
+      }
+      continue;
+    }
+    Properties processorProperties=checkExportProcessorConfiguration(exportConfiguration);
+    for (    String name : processorProperties.stringPropertyNames()) {
+      ConnectorProperty prop=catconn.getConfig().add(name);
+      prop.setName(name);
+      prop.setValue(processorProperties.getProperty(name));
+    }
+    catconn.setLoaderclass(ExportManager.PROCESSOR_CLASS);
+    catconn.setEnabled(connectorEnabled);
+    if (!connectorEnabled) {
+      if (defaultConnector) {
+        hostLog.info("Export configuration for the default export target is present and is " + "configured to be disabled. The default export target will be disabled.");
+      }
+ else {
+        hostLog.info("Export configuration for export target " + targetName + " is present and is "+ "configured to be disabled. Export target "+ targetName+ " will be disabled.");
+      }
+    }
+ else {
+      if (defaultConnector) {
+        hostLog.info("Default export target is configured and enabled with type=" + exportConfiguration.getType());
+      }
+ else {
+        hostLog.info("Export target " + targetName + " is configured and enabled with type="+ exportConfiguration.getType());
+      }
+      if (exportConfiguration.getProperty() != null) {
+        if (defaultConnector) {
+          hostLog.info("Default export target configuration properties are: ");
+        }
+ else {
+          hostLog.info("Export target " + targetName + " configuration properties are: ");
+        }
+        for (        PropertyType configProp : exportConfiguration.getProperty()) {
+          if (!configProp.getName().toLowerCase().contains("password")) {
+            hostLog.info("Export Configuration Property NAME=" + configProp.getName() + " VALUE="+ configProp.getValue());
+          }
         }
       }
     }
