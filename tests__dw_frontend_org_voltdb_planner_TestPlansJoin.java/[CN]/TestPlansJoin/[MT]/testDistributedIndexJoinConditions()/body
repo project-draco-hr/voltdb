@@ -1,0 +1,47 @@
+{
+  List<AbstractPlanNode> lpn;
+  AbstractPlanNode n;
+  lpn=compileToFragments("select * FROM P1 LEFT JOIN R3 ON P1.C = R3.A");
+  assertEquals(2,lpn.size());
+  n=lpn.get(1).getChild(0);
+  assertTrue(n instanceof NestLoopIndexPlanNode);
+  assertEquals(1,n.getChildCount());
+  assertTrue(n.getChild(0) instanceof SeqScanPlanNode);
+  lpn=compileToFragments("select *  FROM R3 LEFT JOIN P2 ON R3.A = P2.A AND P2.A < 0 AND P2.E > 3 WHERE P2.A IS NULL");
+  assertEquals(2,lpn.size());
+  for (  AbstractPlanNode apn : lpn) {
+    System.out.println(apn.toExplainPlanString());
+  }
+  n=lpn.get(0).getChild(0).getChild(0);
+  assertTrue(n instanceof NestLoopPlanNode);
+  assertEquals(JoinType.LEFT,((NestLoopPlanNode)n).getJoinType());
+  assertNotNull(((NestLoopPlanNode)n).getJoinPredicate());
+  assertNotNull(((NestLoopPlanNode)n).getWherePredicate());
+  AbstractPlanNode c=n.getChild(0);
+  assertTrue(c instanceof SeqScanPlanNode);
+  c=n.getChild(1);
+  assertTrue(c instanceof ReceivePlanNode);
+  n=lpn.get(1).getChild(0);
+  assertTrue(n instanceof IndexScanPlanNode);
+  IndexScanPlanNode in=(IndexScanPlanNode)n;
+  assertEquals(IndexLookupType.LT,in.getLookupType());
+  assertNotNull(in.getPredicate());
+  assertEquals(ExpressionType.CONJUNCTION_AND,in.getPredicate().getExpressionType());
+  assertEquals(ExpressionType.COMPARE_GREATERTHAN,in.getPredicate().getLeft().getExpressionType());
+  assertEquals(ExpressionType.OPERATOR_NOT,in.getPredicate().getRight().getExpressionType());
+  lpn=compileToFragments("select *  FROM P2 RIGHT JOIN P3 ON P3.A = P2.A AND P2.A < 0 WHERE P2.A IS NULL");
+  assertEquals(2,lpn.size());
+  n=lpn.get(1).getChild(0);
+  assertTrue(n instanceof NestLoopIndexPlanNode);
+  assertEquals(JoinType.LEFT,((NestLoopIndexPlanNode)n).getJoinType());
+  assertNull(((NestLoopIndexPlanNode)n).getJoinPredicate());
+  assertNotNull(((NestLoopIndexPlanNode)n).getWherePredicate());
+  AbstractExpression w=((NestLoopIndexPlanNode)n).getWherePredicate();
+  assertEquals(ExpressionType.OPERATOR_IS_NULL,w.getExpressionType());
+  IndexScanPlanNode indexScan=(IndexScanPlanNode)n.getInlinePlanNode(PlanNodeType.INDEXSCAN);
+  assertEquals(IndexLookupType.EQ,indexScan.getLookupType());
+  assertEquals(ExpressionType.COMPARE_EQUAL,indexScan.getEndExpression().getExpressionType());
+  w=indexScan.getPredicate();
+  assertNotNull(w);
+  assertEquals(ExpressionType.COMPARE_LESSTHAN,w.getExpressionType());
+}

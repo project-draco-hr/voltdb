@@ -1,0 +1,84 @@
+{
+  PortConnector channel=new PortConnector("localhost",port);
+  System.out.println("Testing Connect and Close");
+  for (int i=0; i < 100; i++) {
+    channel.connect();
+    channel.close();
+  }
+  System.out.println("Testing bad login message");
+  channel.connect();
+  ByteBuffer buf=ByteBuffer.allocate(Integer.SIZE);
+  buf.putInt(10);
+  buf.position(0);
+  channel.write(buf);
+  channel.close();
+  System.out.println("Testing negative length of message");
+  channel.connect();
+  buf=ByteBuffer.allocate(Integer.SIZE);
+  buf.putInt(-1);
+  buf.position(0);
+  channel.write(buf);
+  channel.close();
+  System.out.println("Testing zero length of message");
+  channel.connect();
+  buf=ByteBuffer.allocate(Integer.SIZE);
+  buf.putInt(0);
+  buf.position(0);
+  channel.write(buf);
+  channel.close();
+  System.out.println("Testing too big length of message");
+  channel.connect();
+  buf=ByteBuffer.allocate(Integer.SIZE);
+  buf.putInt(Integer.MAX_VALUE);
+  buf.position(0);
+  channel.write(buf);
+  channel.close();
+  System.out.println("Testing bad service name");
+  channel.connect();
+  buf=ByteBuffer.allocate(41);
+  buf.putInt(37);
+  buf.put((byte)'0');
+  buf.putInt(8);
+  buf.put("dataCase".getBytes("UTF-8"));
+  buf.putInt(0);
+  buf.put("".getBytes("UTF-8"));
+  buf.put(ConnectionUtil.getHashedPassword(""));
+  buf.flip();
+  channel.write(buf);
+  try {
+    ByteBuffer resp=ByteBuffer.allocate(6);
+    channel.read(resp,6);
+    resp.flip();
+    resp.getInt();
+    resp.get();
+    byte code=resp.get();
+    assertEquals(5,code);
+  }
+ catch (  Exception ioex) {
+    fail();
+  }
+  System.out.println("Testing service name with invalid length");
+  channel.connect();
+  buf=ByteBuffer.allocate(41);
+  buf.putInt(37);
+  buf.put((byte)'0');
+  buf.putInt(Integer.MAX_VALUE);
+  buf.put("database".getBytes("UTF-8"));
+  buf.putInt(0);
+  buf.put("".getBytes("UTF-8"));
+  buf.put(ConnectionUtil.getHashedPassword(""));
+  buf.flip();
+  channel.write(buf);
+  boolean mustfail=false;
+  try {
+    ByteBuffer resp=ByteBuffer.allocate(6);
+    channel.read(resp,6);
+    resp.flip();
+  }
+ catch (  Exception ioex) {
+    mustfail=true;
+  }
+  assertTrue(mustfail);
+  channel.close();
+  doLoginAndClose(port);
+}

@@ -1,0 +1,39 @@
+{
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println(" Setup & Initialization");
+  System.out.println(HORIZONTAL_RULE);
+  System.out.printf("Reading configuration file '%s'...\n",configPath);
+  List<QueryTestBase> tests=BenchmarkConfiguration.configureTests(configPath,cliConfig.test);
+  connect(cliConfig.servers);
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println("Starting Benchmark");
+  System.out.println(HORIZONTAL_RULE);
+  long queryIndex=1;
+  if (cliConfig.warmup > 0) {
+    System.out.println("Warming up...");
+    for (    String query : new QueryGenerator(tests,cliConfig.warmup)) {
+      client.callProcedure(new CallProcedureCallback(queryIndex * -1,query),"@AdHoc",query);
+      queryIndex++;
+    }
+  }
+  fullStatsContext.fetchAndResetBaseline();
+  periodicStatsContext.fetchAndResetBaseline();
+  benchmarkStartTS=System.currentTimeMillis();
+  long queryElapsedMS=0;
+  schedulePeriodicStats();
+  System.out.printf("\nRunning '%s' benchmark...\n",cliConfig.test);
+  queryIndex=1;
+  for (  String query : new QueryGenerator(tests,cliConfig.duration)) {
+    client.callProcedure(new CallProcedureCallback(queryIndex,query),"@AdHoc",query);
+    tracer.logQueryInvoked(queryIndex,query);
+    queryIndex++;
+  }
+  printStatistics();
+  System.out.println();
+  long totalElapsedMS=System.currentTimeMillis() - benchmarkStartTS;
+  timer.cancel();
+  client.drain();
+  tracer.close();
+  printResults(totalElapsedMS,queryElapsedMS);
+  client.close();
+}

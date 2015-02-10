@@ -1,0 +1,23 @@
+{
+  if (isHSQL())   return;
+  Client client=getClient();
+  client.callProcedure("CAPPED3_LIMIT_ROWS_EXEC.insert",0,10,20);
+  client.callProcedure("CAPPED3_LIMIT_ROWS_EXEC.insert",0,20,40);
+  client.callProcedure("CAPPED3_LIMIT_ROWS_EXEC.insert",0,30,60);
+  verifyProcFails(client,"CONSTRAINT VIOLATION\\s*Table CAPPED3_LIMIT_ROWS_EXEC exceeds table maximum row count 3","CAPPED3_LIMIT_ROWS_EXEC.insert",0,40,80);
+  client.callProcedure("@AdHoc","UPDATE CAPPED3_LIMIT_ROWS_EXEC SET PURGE_ME = 1 WHERE WAGE = 10");
+  client.callProcedure("CAPPED3_LIMIT_ROWS_EXEC.insert",0,40,80);
+  String selectAll="SELECT * FROM CAPPED3_LIMIT_ROWS_EXEC ORDER BY WAGE";
+  VoltTable vt=client.callProcedure("@AdHoc",selectAll).getResults()[0];
+  validateTableOfLongs(vt,new long[][]{{0,20,40},{0,30,60},{0,40,80}});
+  client.callProcedure("@AdHoc","UPDATE CAPPED3_LIMIT_ROWS_EXEC SET PURGE_ME = 1 WHERE WAGE IN (20, 40)");
+  client.callProcedure("CAPPED3_LIMIT_ROWS_EXEC.insert",0,50,100);
+  vt=client.callProcedure("@AdHoc",selectAll).getResults()[0];
+  validateTableOfLongs(vt,new long[][]{{0,30,60},{0,50,100}});
+  client.callProcedure("CAPPED3_LIMIT_ROWS_EXEC.insert",0,60,120);
+  client.callProcedure("@AdHoc","UPDATE CAPPED3_LIMIT_ROWS_EXEC SET PURGE_ME = 1");
+  client.callProcedure("CAPPED3_LIMIT_ROWS_EXEC.insert",0,70,140);
+  vt=client.callProcedure("@AdHoc",selectAll).getResults()[0];
+  validateTableOfLongs(vt,new long[][]{{0,70,140}});
+  client.callProcedure("CAPPED3_LIMIT_ROWS_EXEC.delete",70);
+}

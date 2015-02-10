@@ -1,0 +1,44 @@
+{
+  System.out.println("Running testOfferCloseReopenOfferSmall");
+  final String SMALL_TEST_NONCE="asmall_pbd_nonce";
+  PersistentBinaryDeque small_pbd=new PersistentBinaryDeque(SMALL_TEST_NONCE,TEST_DIR);
+  for (int ii=0; ii < 10; ii++) {
+    small_pbd.offer(DBBPool.wrapBB(getFilledSmallBuffer(ii)));
+  }
+  File files[]=TEST_DIR.listFiles();
+  assertEquals(2,files.length);
+  small_pbd.sync();
+  small_pbd.close();
+  System.gc();
+  System.runFinalization();
+  small_pbd=new PersistentBinaryDeque(SMALL_TEST_NONCE,TEST_DIR);
+  int cnt=small_pbd.getNumObjects();
+  assertEquals(cnt,10);
+  for (int ii=10; ii < 20; ii++) {
+    small_pbd.offer(DBBPool.wrapBB(getFilledSmallBuffer(ii)));
+  }
+  small_pbd.sync();
+  cnt=small_pbd.getNumObjects();
+  assertEquals(cnt,20);
+  small_pbd.sync();
+  small_pbd.close();
+  small_pbd=null;
+  System.gc();
+  System.runFinalization();
+  TreeSet<String> names=getSortedDirectoryListing();
+  assertEquals(3,names.size());
+  assertTrue(names.first().equals("asmall_pbd_nonce.0.pbd"));
+  small_pbd=new PersistentBinaryDeque(SMALL_TEST_NONCE,TEST_DIR);
+  for (int ii=0; ii < 10; ii++) {
+    ByteBuffer defaultBuffer=getFilledSmallBuffer(ii);
+    BBContainer retval=small_pbd.poll(PersistentBinaryDeque.UNSAFE_CONTAINER_FACTORY);
+    assertTrue(defaultBuffer.equals(retval.b()));
+    retval.discard();
+    defaultBuffer.clear();
+  }
+  small_pbd.sync();
+  small_pbd.close();
+  small_pbd=null;
+  System.gc();
+  System.runFinalization();
+}

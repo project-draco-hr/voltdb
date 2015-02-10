@@ -1,0 +1,31 @@
+{
+  final long goBackTime=400000 + 10000;
+  final long goBackQuantity=200000;
+  final AtomicLong currentTime=new AtomicLong(400000);
+  UniqueIdGenerator.Clock fakeClock=new UniqueIdGenerator.Clock(){
+    public boolean haveGoneBack=false;
+    @Override public long get(){
+      currentTime.incrementAndGet();
+      if (currentTime.get() == goBackTime && !haveGoneBack) {
+        haveGoneBack=true;
+        currentTime.addAndGet(-goBackQuantity);
+      }
+      return currentTime.get();
+    }
+    @Override public void sleep(    long millis) throws InterruptedException {
+      if (millis < 0) {
+        throw new IllegalArgumentException();
+      }
+      currentTime.addAndGet(millis);
+    }
+  }
+;
+  tim=new UniqueIdGenerator(0,0,fakeClock);
+  long last=0;
+  for (int ii=0; ii < 60000; ii++) {
+    last=tim.getNextUniqueId();
+  }
+  assertTrue(UniqueIdGenerator.getTimestampFromUniqueId(last) > goBackTime);
+  currentTime.set(UniqueIdGenerator.getTimestampFromUniqueId(last) + 1000);
+  assertTrue(UniqueIdGenerator.getTimestampFromUniqueId(tim.getNextUniqueId()) < UniqueIdGenerator.getTimestampFromUniqueId(last) + 2000);
+}

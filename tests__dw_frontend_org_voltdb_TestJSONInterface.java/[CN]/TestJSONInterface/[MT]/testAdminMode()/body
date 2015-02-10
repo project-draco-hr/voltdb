@@ -1,0 +1,72 @@
+{
+  try {
+    String simpleSchema="create table blah (" + "ival bigint default 23 not null, " + "sval varchar(200) default 'foo', "+ "dateval timestamp, "+ "fval float, "+ "decval decimal, "+ "PRIMARY KEY(ival));";
+    File schemaFile=VoltProjectBuilder.writeStringToTempFile(simpleSchema);
+    String schemaPath=schemaFile.getPath();
+    schemaPath=URLEncoder.encode(schemaPath,"UTF-8");
+    VoltDB.Configuration config=new VoltDB.Configuration();
+    VoltProjectBuilder builder=new VoltProjectBuilder();
+    builder.addSchema(schemaPath);
+    builder.addPartitionInfo("blah","ival");
+    builder.addStmtProcedure("Insert","insert into blah values (?,?,?,?,?);");
+    builder.addProcedures(CrazyBlahProc.class);
+    builder.setHTTPDPort(8095);
+    boolean success=builder.compile(Configuration.getPathToCatalogForTest("json.jar"),1,1,0,21213,true);
+    assertTrue(success);
+    config.m_pathToCatalog=config.setPathToCatalogForTest("json.jar");
+    config.m_pathToDeployment=builder.getPathToDeployment();
+    server=new ServerThread(config);
+    server.start();
+    server.waitForInitialization();
+    ParameterSet pset;
+    String responseJSON;
+    Response response;
+    pset=ParameterSet.fromArrayNoCopy(1,"hello",new TimestampType(System.currentTimeMillis()),5.0,"5.0");
+    responseJSON=callProcOverJSON("Insert",pset,null,null,false,true);
+    System.out.println(responseJSON);
+    response=responseFromJSON(responseJSON);
+    assertTrue(response.status == ClientResponse.SUCCESS);
+    pset=ParameterSet.fromArrayNoCopy(2,"hello",new TimestampType(System.currentTimeMillis()),5.0,"5.0");
+    responseJSON=callProcOverJSON("Insert",pset,null,null,false,false);
+    System.out.println(responseJSON);
+    response=responseFromJSON(responseJSON);
+    assertTrue(response.status == ClientResponse.SERVER_UNAVAILABLE);
+    pset=ParameterSet.emptyParameterSet();
+    responseJSON=callProcOverJSON("@Resume",pset,null,null,false,true);
+    System.out.println(responseJSON);
+    response=responseFromJSON(responseJSON);
+    assertTrue(response.status == ClientResponse.SUCCESS);
+    pset=ParameterSet.fromArrayNoCopy(2,"hello",new TimestampType(System.currentTimeMillis()),5.0,"5.0");
+    responseJSON=callProcOverJSON("Insert",pset,null,null,false,false);
+    System.out.println(responseJSON);
+    response=responseFromJSON(responseJSON);
+    assertTrue(response.status == ClientResponse.SUCCESS);
+    pset=ParameterSet.fromArrayNoCopy(3,"hello",new TimestampType(System.currentTimeMillis()),5.0,"5.0");
+    responseJSON=callProcOverJSON("Insert",pset,null,null,false,true);
+    System.out.println(responseJSON);
+    response=responseFromJSON(responseJSON);
+    assertTrue(response.status == ClientResponse.SUCCESS);
+    pset=ParameterSet.emptyParameterSet();
+    responseJSON=callProcOverJSON("@Pause",pset,null,null,false,true);
+    System.out.println(responseJSON);
+    response=responseFromJSON(responseJSON);
+    assertTrue(response.status == ClientResponse.SUCCESS);
+    pset=ParameterSet.fromArrayNoCopy(4,"hello",new TimestampType(System.currentTimeMillis()),5.0,"5.0");
+    responseJSON=callProcOverJSON("Insert",pset,null,null,false,true);
+    System.out.println(responseJSON);
+    response=responseFromJSON(responseJSON);
+    assertTrue(response.status == ClientResponse.SUCCESS);
+    pset=ParameterSet.fromArrayNoCopy(5,"hello",new TimestampType(System.currentTimeMillis()),5.0,"5.0");
+    responseJSON=callProcOverJSON("Insert",pset,null,null,false,false);
+    System.out.println(responseJSON);
+    response=responseFromJSON(responseJSON);
+    assertTrue(response.status == ClientResponse.SERVER_UNAVAILABLE);
+  }
+  finally {
+    if (server != null) {
+      server.shutdown();
+      server.join();
+    }
+    server=null;
+  }
+}

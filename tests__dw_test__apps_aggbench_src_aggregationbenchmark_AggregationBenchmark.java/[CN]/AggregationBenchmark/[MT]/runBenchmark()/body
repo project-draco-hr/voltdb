@@ -1,0 +1,35 @@
+{
+  connect(config.servers);
+  if (config.restore > 0) {
+    System.out.println("\nLoading data from snapshot...");
+    restoreDatabase();
+  }
+  FileWriter fw=null;
+  if ((config.statsfile != null) && (config.statsfile.length() != 0)) {
+    fw=new FileWriter(config.statsfile);
+  }
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println("\nRunning Benchmark");
+  System.out.println(HORIZONTAL_RULE);
+  long queryStartTS, queryElapse;
+  int counter=config.invocations;
+  String procName="Q" + config.proc;
+  List<Long> m=new ArrayList<Long>();
+  System.out.println(String.format("Running procedure %s for the %d times...",procName,counter));
+  queryStartTS=System.nanoTime();
+  VoltTable vt=null;
+  for (int i=1; i <= counter; i++) {
+    vt=client.callProcedure(procName).getResults()[0];
+    if (vt.getRowCount() <= 0) {
+      System.err.println("ERROR Query %d empty result set");
+      System.exit(-1);
+    }
+  }
+  double avg=(double)(System.nanoTime() - queryStartTS) / counter;
+  System.out.printf("\n\n(Returned %d rows in average %f us)\n",vt.getRowCount(),avg);
+  client.drain();
+  ClientStats stats=fullStatsContext.fetch().getStats();
+  fw.append(String.format("%s,%d,-1,0,0,0,0,%f,0,0,0,0,0,0\n","Q" + String.format("%02d",config.proc),stats.getStartTimestamp(),avg / 1000.0));
+  client.close();
+  if (fw != null)   fw.close();
+}

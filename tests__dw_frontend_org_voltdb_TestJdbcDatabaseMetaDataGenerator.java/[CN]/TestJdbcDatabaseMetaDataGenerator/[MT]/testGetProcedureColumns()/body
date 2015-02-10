@@ -1,0 +1,22 @@
+{
+  String schema="create table Table1 (Column1 varchar(200) not null, Column2 integer);" + "partition table Table1 on column Column1;" + "create procedure proc1 as select * from Table1 where Column1=?;"+ "partition procedure proc1 on table Table1 column Column1;"+ "create procedure proc2 as select * from Table1 where Column2=?;";
+  VoltCompiler c=compileForDDLTest2(schema);
+  System.out.println(c.getCatalog().serialize());
+  JdbcDatabaseMetaDataGenerator dut=new JdbcDatabaseMetaDataGenerator(c.getCatalog(),new InMemoryJarfile(testout_jar));
+  VoltTable params=dut.getMetaData("ProcedureColumns");
+  System.out.println(params);
+  assertEquals(20,params.getColumnCount());
+  assertEquals(4,params.getRowCount());
+  assertTrue(VoltTableTestHelpers.moveToMatchingRow(params,"PROCEDURE_NAME","proc1"));
+  assertEquals("param0",params.get("COLUMN_NAME",VoltType.STRING));
+  assertEquals(VoltType.MAX_VALUE_LENGTH,params.get("PRECISION",VoltType.INTEGER));
+  assertEquals(VoltType.MAX_VALUE_LENGTH,params.get("LENGTH",VoltType.INTEGER));
+  assertEquals(VoltType.MAX_VALUE_LENGTH,params.get("CHAR_OCTET_LENGTH",VoltType.INTEGER));
+  assertEquals("PARTITION_PARAMETER",params.get("REMARKS",VoltType.STRING));
+  assertTrue(VoltTableTestHelpers.moveToMatchingRow(params,"PROCEDURE_NAME","proc2"));
+  assertEquals("param0",params.get("COLUMN_NAME",VoltType.STRING));
+  assertEquals(VoltType.INTEGER.getLengthInBytesForFixedTypes() * 8 - 1,params.get("PRECISION",VoltType.INTEGER));
+  assertEquals(VoltType.INTEGER.getLengthInBytesForFixedTypes(),params.get("LENGTH",VoltType.INTEGER));
+  assertWithNullCheck(null,params.get("CHAR_OCTET_LENGTH",VoltType.INTEGER),params);
+  assertWithNullCheck(null,params.get("REMARKS",VoltType.STRING),params);
+}

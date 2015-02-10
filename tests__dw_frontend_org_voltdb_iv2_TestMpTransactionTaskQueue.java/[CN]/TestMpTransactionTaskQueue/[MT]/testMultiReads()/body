@@ -1,0 +1,25 @@
+{
+  TxnEgo txnId=TxnEgo.makeZero(MpInitiator.MP_INIT_PID);
+  List<Long> activeTxns=new ArrayList<Long>();
+  for (int i=0; i < 100; i++) {
+    txnId=txnId.makeNext();
+    activeTxns.add(txnId.getTxnId());
+    m_dut.offer(makeTransactionTask(txnId.getTxnId(),true));
+    verify(m_MPpool).doWork(eq(txnId.getTxnId()),any(TransactionTask.class));
+  }
+  verify(m_MPpool,times(100)).doWork(anyLong(),any(TransactionTask.class));
+  when(m_MPpool.canAcceptWork()).thenReturn(false);
+  List<Long> delayedTxns=new ArrayList<Long>();
+  for (int i=0; i < 10; i++) {
+    txnId=txnId.makeNext();
+    m_dut.offer(makeTransactionTask(txnId.getTxnId(),true));
+    delayedTxns.add(txnId.getTxnId());
+    verify(m_MPpool,never()).doWork(eq(txnId.getTxnId()),any(TransactionTask.class));
+  }
+  for (int i=0; i < 10; i++) {
+    when(m_MPpool.canAcceptWork()).thenReturn(true);
+    m_dut.flush(activeTxns.get(i));
+    verify(m_MPpool).completeWork(activeTxns.get(i));
+    verify(m_MPpool).doWork(eq(delayedTxns.get(i)),any(TransactionTask.class));
+  }
+}

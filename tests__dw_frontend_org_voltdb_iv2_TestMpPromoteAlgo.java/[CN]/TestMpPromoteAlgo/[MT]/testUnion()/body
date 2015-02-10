@@ -1,0 +1,32 @@
+{
+  MpPromoteAlgo algo=new MpPromoteAlgo(new ArrayList<Long>(),null,"Test");
+  final Boolean t=true;
+  final Boolean f=false;
+  long returnedHandles[]=new long[]{txnEgo(1L),txnEgo(5L),txnEgo(2L),txnEgo(5L),txnEgo(6L),txnEgo(3L),txnEgo(5L),txnEgo(1L)};
+  boolean isComplete[]=new boolean[]{t,f,t,t,f,t,f,t};
+  long expectedUnion[]=new long[]{txnEgo(1L),txnEgo(2L),txnEgo(3L),txnEgo(5L),txnEgo(6L)};
+  boolean expectComp[]=new boolean[]{t,t,t,t,f};
+  Iv2RepairLogResponseMessage makeCompleteResponse=makeCompleteResponse(returnedHandles[0]);
+  System.out.println("txnEgo: " + returnedHandles[0] + " m.handle(): "+ makeCompleteResponse.getHandle());
+  for (int ii=0; ii < isComplete.length; ii++) {
+    if (isComplete[ii]) {
+      algo.addToRepairLog(makeCompleteResponse(returnedHandles[ii]));
+    }
+ else {
+      algo.addToRepairLog(makeFragResponse(returnedHandles[ii]));
+    }
+  }
+  assertEquals(expectedUnion.length,algo.m_repairLogUnion.size());
+  int i=0;
+  for (  Iv2RepairLogResponseMessage li : algo.m_repairLogUnion) {
+    System.out.println("Comparing " + li.getHandle() + " to expected "+ expectedUnion[i]+ "SEQ 0 is: "+ TxnEgo.makeZero(0).getTxnId()+ " shifted zero: "+ (TxnEgo.makeZero(0).getTxnId() << 14));
+    assertEquals(li.getTxnId(),expectedUnion[i]);
+    if (expectComp[i]) {
+      assertTrue(li.getPayload() instanceof CompleteTransactionMessage);
+    }
+ else {
+      assertTrue(li.getPayload() instanceof FragmentTaskMessage);
+    }
+    i++;
+  }
+}

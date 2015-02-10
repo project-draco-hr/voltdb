@@ -1,0 +1,22 @@
+{
+  try {
+    String sql="SELECT contestant_number FROM contestants WHERE contestant_number = " + call.contestantNumber + ";";
+    ClientResponse resp=client.callProcedure("@AdHoc",sql);
+    VoltTable result=resp.getResults()[0];
+    if (result.getRowCount() == 0)     return ERR_INVALID_CONTESTANT;
+    sql="SELECT state FROM area_code_state WHERE area_code = " + (call.phoneNumber / 10000000l) + ";";
+    resp=client.callProcedure("@AdHoc",sql);
+    result=resp.getResults()[0];
+    String state=(result.getRowCount() > 0) ? result.fetchRow(0).getString(0) : "XX";
+    sql="SELECT num_votes FROM v_votes_by_phone_number WHERE phone_number = " + call.phoneNumber + ";";
+    resp=client.callProcedure("@AdHoc",sql);
+    result=resp.getResults()[0];
+    if ((result.getRowCount() == 1) && (result.asScalarLong() >= config.maxvotes))     return ERR_VOTER_OVER_VOTE_LIMIT;
+    sql="INSERT INTO votes (phone_number, state, contestant_number) VALUES (" + call.phoneNumber + ", '"+ state+ "', "+ call.contestantNumber+ ");";
+    resp=client.callProcedure("@AdHoc",sql);
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+  }
+  return VOTE_SUCCESSFUL;
+}

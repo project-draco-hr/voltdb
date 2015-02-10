@@ -1,0 +1,49 @@
+{
+  HashSet<ByteWrapper> mergeSet=new HashSet<ByteWrapper>();
+  ByteBuffer buf=ByteBuffer.wrap(src);
+  int nSrc=buf.getInt();
+  for (int i=0; i < nSrc; i++) {
+    int len=buf.getInt();
+    int off=buf.position();
+    mergeSet.add(new ByteWrapper(src,off,len));
+    buf.position(off + len);
+    len=buf.getInt();
+    buf.position(buf.position() + len);
+  }
+  byte[] merged=new byte[src.length + dest.length];
+  ByteBuffer out=ByteBuffer.wrap(merged);
+  buf=ByteBuffer.wrap(dest);
+  int nDest=buf.getInt();
+  int nFields=nSrc + nDest;
+  out.putInt(nFields);
+  int blockStart=4;
+  int blockEnd=4;
+  for (int i=0; i < nDest; i++) {
+    int len=buf.getInt();
+    int off=buf.position();
+    boolean flushBlock=mergeSet.contains(new ByteWrapper(dest,off,len));
+    buf.position(off + len);
+    len=buf.getInt();
+    buf.position(buf.position() + len);
+    if (flushBlock) {
+      if (blockStart < blockEnd) {
+        out.put(dest,blockStart,blockEnd - blockStart);
+      }
+      nFields--;
+      blockStart=buf.position();
+    }
+    blockEnd=buf.position();
+  }
+  if (blockStart < blockEnd) {
+    out.put(dest,blockStart,blockEnd - blockStart);
+  }
+  out.put(src,4,src.length - 4);
+  int length=out.position();
+  if (nFields != nSrc + nDest) {
+    out.position(0);
+    out.putInt(nFields);
+  }
+  byte[] res=new byte[length];
+  System.arraycopy(merged,0,res,0,length);
+  return res;
+}

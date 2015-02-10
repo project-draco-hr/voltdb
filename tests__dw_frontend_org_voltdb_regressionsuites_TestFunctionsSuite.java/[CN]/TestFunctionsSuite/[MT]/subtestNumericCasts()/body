@@ -1,0 +1,88 @@
+{
+  System.out.println("STARTING test of numeric CAST");
+  final double[] rawData=values;
+  final double[] resultIntValues=new double[values.length];
+  final Set<Double> intFilters=new HashSet<Double>();
+  final Set<Double> rawFilters=new HashSet<Double>();
+  for (int kk=0; kk < resultIntValues.length; ++kk) {
+    resultIntValues[kk]=(int)values[kk];
+    intFilters.add(resultIntValues[kk]);
+    rawFilters.add(values[kk]);
+  }
+  Client client=getClient();
+  insertNumbers(client,rawData,rawData.length);
+  FunctionTestCase[] results;
+  double[] resultValues;
+  Set<Double> filters;
+  for (int jj=0; jj < numTypeNames.length; ++jj) {
+    if (numFormatNames[jj].equals("DECIMAL") || numFormatNames[jj].equals("DOUBLE")) {
+      results=displayFunctionRun(client,numTypeNames[jj],values.length / COLUMNCOUNT,numFormatNames[jj]);
+      resultValues=rawData;
+      filters=rawFilters;
+    }
+ else {
+      results=displayFunctionRun(client,numTypeNames[jj],values.length / COLUMNCOUNT,numFormatNames[jj]);
+      resultValues=resultIntValues;
+      filters=intFilters;
+    }
+    assertEquals(results.length,values.length);
+    Map<String,Integer> valueBag=new HashMap<String,Integer>();
+    int kk=0;
+    for (    FunctionTestCase result : results) {
+      double expected=resultValues[kk++];
+      if (expected != result.m_result) {
+        complain("Failed " + result.m_case + " expected "+ expected+ " got "+ result.m_result);
+      }
+      String asExpected=String.format(formatForFuzziness,expected);
+      String asResulted=String.format(formatForFuzziness,result.m_result);
+      assertEquals(asExpected,asResulted);
+      Integer count=valueBag.get(asExpected);
+      if (count == null) {
+        count=0;
+      }
+      valueBag.put(asExpected,count + 1);
+    }
+    results=orderFunctionRun(client,numTypeNames[jj] + "_CAST",resultValues.length / COLUMNCOUNT);
+    assertEquals(results.length,resultValues.length);
+    kk=0;
+    for (    FunctionTestCase result : results) {
+      int idIndex=kk++;
+      if (kk == ROWCOUNT) {
+        kk=0;
+      }
+      double expected=orderedIds[idIndex];
+      if (expected != result.m_result) {
+        complain("Failed " + result.m_case + " expected "+ expected+ " got "+ result.m_result);
+      }
+      assertEquals(expected,result.m_result);
+    }
+    results=whereFunctionRun(client,numTypeNames[jj] + "_CAST",filters,numFormatNames[jj]);
+    assertEquals(results.length,COLUMNCOUNT * filters.size());
+    int coveringCount=resultValues.length;
+    for (    FunctionTestCase result : results) {
+      if (result.m_result == 0.0) {
+        continue;
+      }
+      Integer count=valueBag.get(String.format(formatForFuzziness,result.m_filter));
+      if (count == null) {
+        complain("CAST got unexpected result " + result.m_filter + ".");
+      }
+      assertNotNull(count);
+      if (count < result.m_result) {
+        complain(result.m_case + " value " + result.m_filter+ " not expected or previously depleted from "+ valueBag+ ".");
+      }
+      assertTrue(count >= result.m_result);
+      valueBag.put(String.format(formatForFuzziness,result.m_filter),count - (int)result.m_result);
+      coveringCount-=(int)result.m_result;
+    }
+    for (    Entry<String,Integer> entry : valueBag.entrySet()) {
+      int count=entry.getValue();
+      if (count != 0) {
+        complain("CAST expected result " + entry.getKey() + " lacks "+ count+ " matches.");
+      }
+      assertEquals(0,count);
+    }
+    assertEquals(0,coveringCount);
+  }
+  System.out.println("ENDING test of numeric CAST");
+}

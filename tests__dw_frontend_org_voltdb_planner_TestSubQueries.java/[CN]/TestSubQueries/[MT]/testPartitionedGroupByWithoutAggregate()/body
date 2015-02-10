@@ -1,0 +1,37 @@
+{
+  AbstractPlanNode pn;
+  List<AbstractPlanNode> planNodes;
+  planNodes=compileToFragments("SELECT * FROM (SELECT C FROM P1 GROUP BY C) T1");
+  assertEquals(2,planNodes.size());
+  pn=planNodes.get(0).getChild(0);
+  checkSeqScan(pn,"T1");
+  pn=pn.getChild(0);
+  assertTrue(pn instanceof HashAggregatePlanNode);
+  pn=planNodes.get(1).getChild(0);
+  checkPrimaryKeyIndexScan(pn,"P1");
+  planNodes=compileToFragments("SELECT count(*) FROM (SELECT c FROM P1 GROUP BY c) T1");
+  assertEquals(2,planNodes.size());
+  pn=planNodes.get(0).getChild(0);
+  assertTrue(pn instanceof TableCountPlanNode);
+  pn=pn.getChild(0);
+  assertTrue(pn instanceof HashAggregatePlanNode);
+  pn=planNodes.get(1).getChild(0);
+  checkPrimaryKeyIndexScan(pn,"P1");
+  planNodes=compileToFragments("SELECT * FROM (SELECT A FROM P1 GROUP BY A) T1");
+  assertEquals(2,planNodes.size());
+  pn=planNodes.get(0).getChild(0);
+  assertTrue(pn instanceof ProjectionPlanNode);
+  assertTrue(pn.getChild(0) instanceof ReceivePlanNode);
+  pn=planNodes.get(1).getChild(0);
+  checkSeqScan(pn,"T1");
+  pn=pn.getChild(0);
+  checkPrimaryKeyIndexScan(pn,"P1");
+  planNodes=compileToFragments("SELECT count(*) FROM (SELECT A FROM P1 GROUP BY A) T1");
+  assertEquals(2,planNodes.size());
+  pn=planNodes.get(0).getChild(0);
+  assertTrue(pn.getChild(0) instanceof ReceivePlanNode);
+  pn=planNodes.get(1).getChild(0);
+  assertTrue(pn instanceof TableCountPlanNode);
+  pn=pn.getChild(0);
+  checkPrimaryKeyIndexScan(pn,"P1");
+}

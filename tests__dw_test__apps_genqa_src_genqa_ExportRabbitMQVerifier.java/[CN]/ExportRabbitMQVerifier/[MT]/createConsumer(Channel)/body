@@ -1,0 +1,26 @@
+{
+  return new DefaultConsumer(channel){
+    @Override public void handleDelivery(    String consumerTag,    Envelope envelope,    AMQP.BasicProperties properties,    byte[] body) throws IOException {
+      long deliveryTag=envelope.getDeliveryTag();
+      String row[]=ExportOnServerVerifier.RoughCSVTokenizer.tokenize(new String(body,Charsets.UTF_8));
+      if (row.length != 29) {
+        return;
+      }
+      ExportOnServerVerifier.ValidationErr err=null;
+      try {
+        err=ExportOnServerVerifier.verifyRow(row);
+      }
+ catch (      ExportOnServerVerifier.ValidationErr validationErr) {
+        validationErr.printStackTrace();
+      }
+      if (err != null) {
+        System.out.println("ERROR in validation: " + err.toString());
+      }
+      if (++m_verifiedRows % VALIDATION_REPORT_INTERVAL == 0) {
+        System.out.println("Verified " + m_verifiedRows + " rows.");
+      }
+      channel.basicAck(deliveryTag,false);
+    }
+  }
+;
+}

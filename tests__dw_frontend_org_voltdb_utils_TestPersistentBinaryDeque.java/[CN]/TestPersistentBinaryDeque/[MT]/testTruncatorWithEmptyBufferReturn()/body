@@ -1,0 +1,57 @@
+{
+  System.out.println("Running testTruncatorWithEmptyBufferReturn");
+  assertNull(m_pbd.poll(PersistentBinaryDeque.UNSAFE_CONTAINER_FACTORY));
+  for (int ii=0; ii < 150; ii++) {
+    m_pbd.offer(DBBPool.wrapBB(getFilledBuffer(ii)));
+  }
+  m_pbd.close();
+  m_pbd=new PersistentBinaryDeque(TEST_NONCE,TEST_DIR);
+  TreeSet<String> listing=getSortedDirectoryListing();
+  assertEquals(listing.size(),5);
+  m_pbd.parseAndTruncate(new BinaryDequeTruncator(){
+    private long m_objectsParsed=0;
+    @Override public ByteBuffer parse(    ByteBuffer b){
+      if (b.getLong(0) != m_objectsParsed) {
+        System.out.println("asd");
+      }
+      assertEquals(b.getLong(0),m_objectsParsed);
+      assertEquals(b.remaining(),1024 * 1024 * 2);
+      if (b.getLong(0) == 45) {
+        b.limit(b.remaining() / 2);
+        return ByteBuffer.allocate(0);
+      }
+      while (b.remaining() > 15) {
+        assertEquals(b.getLong(),m_objectsParsed);
+        b.getLong();
+      }
+      m_objectsParsed++;
+      return null;
+    }
+  }
+);
+  listing=getSortedDirectoryListing();
+  assertEquals(listing.size(),2);
+  for (int ii=46; ii < 96; ii++) {
+    m_pbd.offer(DBBPool.wrapBB(getFilledBuffer(ii)));
+  }
+  long blocksFound=0;
+  BBContainer cont=null;
+  while ((cont=m_pbd.poll(PersistentBinaryDeque.UNSAFE_CONTAINER_FACTORY)) != null) {
+    try {
+      ByteBuffer buffer=cont.b();
+      if (blocksFound == 45) {
+        blocksFound++;
+      }
+      assertEquals(buffer.remaining(),1024 * 1024 * 2);
+      while (buffer.remaining() > 15) {
+        assertEquals(buffer.getLong(),blocksFound);
+        buffer.getLong();
+      }
+    }
+  finally {
+      blocksFound++;
+      cont.discard();
+    }
+  }
+  assertEquals(blocksFound,96);
+}

@@ -1,0 +1,27 @@
+{
+  final Connection connection=m_connFactory.newConnection();
+  final Channel channel=connection.createChannel();
+  try {
+    channel.exchangeDeclare("testExchange","topic",true);
+    String dataQueue=channel.queueDeclare().getQueue();
+    channel.queueBind(dataQueue,"testExchange","EXPORT_PARTITIONED_TABLE.#");
+    channel.queueBind(dataQueue,"testExchange","EXPORT_PARTITIONED_TABLE2.#");
+    channel.queueBind(dataQueue,"testExchange","EXPORT_REPLICATED_TABLE.#");
+    String doneQueue=channel.queueDeclare().getQueue();
+    channel.queueBind(doneQueue,"testExchange","EXPORT_DONE_TABLE.#");
+    channel.basicConsume(dataQueue,false,createConsumer(channel));
+    QueueingConsumer doneConsumer=new QueueingConsumer(channel);
+    channel.basicConsume(doneQueue,true,doneConsumer);
+    final QueueingConsumer.Delivery doneMsg=doneConsumer.nextDelivery();
+    final long expectedRows=Long.parseLong(ExportOnServerVerifier.RoughCSVTokenizer.tokenize(new String(doneMsg.getBody(),Charsets.UTF_8))[6]);
+    while (expectedRows != m_verifiedRows) {
+      Thread.sleep(1000);
+      System.err.println("Expected " + expectedRows + " "+ m_verifiedRows);
+    }
+  }
+  finally {
+    tearDown(channel);
+    channel.close();
+    connection.close();
+  }
+}

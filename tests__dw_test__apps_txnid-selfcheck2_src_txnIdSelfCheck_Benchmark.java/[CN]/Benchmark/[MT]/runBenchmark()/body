@@ -1,0 +1,93 @@
+{
+  log.info(HORIZONTAL_RULE);
+  log.info(" Setup & Initialization");
+  log.info(HORIZONTAL_RULE);
+  Semaphore permits=rateLimiter.addType(0,1);
+  final int cidCount=128;
+  final long[] lastRid=new long[cidCount];
+  for (int i=0; i < lastRid.length; i++) {
+    lastRid[i]=0;
+  }
+  connect();
+  int partitionCount=getUniquePartitionCount();
+  try {
+    ClientResponse cr=client.callProcedure("Summarize");
+    if (cr.getStatus() != ClientResponse.SUCCESS) {
+      log.error("Failed to call Summarize proc at startup. Exiting.");
+      log.error(((ClientResponseImpl)cr).toJSONString());
+      printJStack();
+      System.exit(-1);
+    }
+    VoltTable t=cr.getResults()[0];
+    long ts=t.fetchRow(0).getLong("ts");
+    String tsStr=ts == 0 ? "NO TIMESTAMPS" : String.valueOf(ts) + " / " + new Date(ts).toString();
+    long count=t.fetchRow(0).getLong("count");
+    log.info("STARTUP TIMESTAMP OF LAST UPDATE (GMT): " + tsStr);
+    log.info("UPDATES RUN AGAINST THIS DB TO DATE: " + count);
+  }
+ catch (  ProcCallException e) {
+    log.error("Failed to call Summarize proc at startup. Exiting.",e);
+    log.error(((ClientResponseImpl)e.getClientResponse()).toJSONString());
+    printJStack();
+    System.exit(-1);
+  }
+  log.info(HORIZONTAL_RULE);
+  log.info("Loading Filler Tables...");
+  log.info(HORIZONTAL_RULE);
+  BigTableLoader partitionedLoader=new BigTableLoader(client,"bigp",(config.partfillerrowmb * 1024 * 1024) / config.fillerrowsize,config.fillerrowsize,50,permits,partitionCount);
+  partitionedLoader.start();
+  if (config.mpratio > 0.0) {
+    BigTableLoader replicatedLoader=new BigTableLoader(client,"bigr",(config.replfillerrowmb * 1024 * 1024) / config.fillerrowsize,config.fillerrowsize,3,permits,partitionCount);
+    replicatedLoader.start();
+  }
+  log.info(HORIZONTAL_RULE);
+  log.info("Starting Benchmark");
+  log.info(HORIZONTAL_RULE);
+  benchmarkStartTS=System.currentTimeMillis();
+  lastProgressTimestamp=System.currentTimeMillis();
+  schedulePeriodicStats();
+  schedulePeriodicCheckpoint();
+  scheduleRefreshPermits();
+  log.info("Running benchmark...");
+  while (((ClientImpl)client).isHashinatorInitialized() == false) {
+    Thread.sleep(1000);
+    System.out.println("Wait for hashinator..");
+  }
+  TruncateTableLoader partitionedTruncater=new TruncateTableLoader(client,"trup",(config.partfillerrowmb * 1024 * 1024) / config.fillerrowsize,config.fillerrowsize,50,permits,config.mpratio);
+  partitionedTruncater.start();
+  if (config.mpratio > 0.0) {
+    TruncateTableLoader replicatedTruncater=new TruncateTableLoader(client,"trur",(config.replfillerrowmb * 1024 * 1024) / config.fillerrowsize,config.fillerrowsize,3,permits,config.mpratio);
+    replicatedTruncater.start();
+  }
+  LoadTableLoader plt=new LoadTableLoader(client,"loadp",(config.partfillerrowmb * 1024 * 1024) / config.fillerrowsize,50,permits,false,0);
+  plt.start();
+  if (config.mpratio > 0.0) {
+    LoadTableLoader rlt=new LoadTableLoader(client,"loadmp",(config.replfillerrowmb * 1024 * 1024) / config.fillerrowsize,3,permits,true,-1);
+    rlt.start();
+  }
+  ReadThread readThread=new ReadThread(client,config.threads,config.threadoffset,config.allowinprocadhoc,config.mpratio,permits);
+  readThread.start();
+  AdHocMayhemThread adHocMayhemThread=new AdHocMayhemThread(client,config.mpratio,permits);
+  if (!config.disableadhoc) {
+    adHocMayhemThread.start();
+  }
+  InvokeDroppedProcedureThread idpt=new InvokeDroppedProcedureThread(client);
+  idpt.start();
+  List<ClientThread> clientThreads=new ArrayList<ClientThread>();
+  for (byte cid=(byte)config.threadoffset; cid < config.threadoffset + config.threads; cid++) {
+    ClientThread clientThread=new ClientThread(cid,txnCount,client,processor,permits,config.allowinprocadhoc,config.mpratio);
+    clientThread.start();
+    clientThreads.add(clientThread);
+  }
+  log.info("All threads started...");
+  long rt=(1000l * config.duration) - (System.currentTimeMillis() - benchmarkStartTS);
+  if (rt > 0) {
+    Thread.sleep(rt);
+  }
+  log.info("Duration completed shutting down...");
+  timer.cancel();
+  checkpointTimer.cancel();
+  log.info(HORIZONTAL_RULE);
+  log.info("Benchmark Complete");
+  System.exit(0);
+}

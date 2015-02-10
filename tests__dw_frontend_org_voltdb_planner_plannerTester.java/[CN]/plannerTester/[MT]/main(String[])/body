@@ -1,0 +1,126 @@
+{
+  int numError=0;
+  for (  String str : args) {
+    if (str.startsWith("-C=")) {
+      String subStr=str.split("=")[1];
+      String[] configs=subStr.split(",");
+      for (      String config : configs) {
+        m_config.add(config.trim());
+      }
+    }
+ else     if (str.startsWith("-sp=")) {
+      m_workPath=str.split("=")[1];
+      m_workPath=m_workPath.trim();
+      if (!m_workPath.endsWith("/")) {
+        m_workPath+="/";
+      }
+    }
+ else     if (str.startsWith("-b=")) {
+      m_fixedBaselinePath=str.split("=")[1];
+      m_fixedBaselinePath=m_fixedBaselinePath.trim();
+      if (!m_fixedBaselinePath.endsWith("/")) {
+        m_fixedBaselinePath+="/";
+      }
+    }
+ else     if (str.equals("-s")) {
+      m_isCompile=true;
+      m_isSave=true;
+    }
+ else     if (str.equals("-sv")) {
+      m_isCompile=true;
+      m_isSave=true;
+      m_reportExplainedPlan=true;
+      m_reportSQLStatement=true;
+    }
+ else     if (str.equals("-d")) {
+      m_isCompile=true;
+      m_isDiff=true;
+    }
+ else     if (str.equals("-dv")) {
+      m_isCompile=true;
+      m_isDiff=true;
+      m_reportDiffExplainedPlan=true;
+      m_reportSQLStatement=true;
+    }
+ else     if (str.startsWith("-r=")) {
+      m_reportPath=str.split("=")[1];
+      m_reportPath=m_reportPath.trim();
+      if (!m_reportPath.endsWith("/")) {
+        m_reportPath+="/";
+      }
+    }
+ else     if (str.equals("-re")) {
+      m_reportExplainedPlan=true;
+      m_reportDiffExplainedPlan=true;
+    }
+ else     if (str.equals("-rs")) {
+      m_reportSQLStatement=true;
+    }
+ else     if (str.startsWith("-i=")) {
+      m_filters.add(str.split("=")[1]);
+    }
+ else     if (str.startsWith("-help") || str.startsWith("-h")) {
+      printUsage();
+      System.exit(0);
+    }
+ else {
+      System.out.println("Illegal command line argument: " + str);
+      printUsage();
+      System.exit(0);
+    }
+  }
+  if (!new File(m_workPath).exists()) {
+    new File(m_workPath).mkdirs();
+  }
+  if (m_isCompile) {
+    for (    String config : m_config) {
+      try {
+        configCompileSave(config,m_isSave);
+      }
+ catch (      Exception e) {
+        e.printStackTrace();
+        ++numError;
+      }
+    }
+  }
+  if (m_isDiff) {
+    if (!new File(m_reportPath).exists()) {
+      new File(m_reportPath).mkdirs();
+    }
+    try {
+      m_reportWriter=new BufferedWriter(new FileWriter(m_reportPath + "plannerTester.report"));
+    }
+ catch (    IOException e1) {
+      System.out.println(e1.getMessage());
+      System.exit(-1);
+    }
+    for (    String config : m_config) {
+      try {
+        configDiff(config);
+      }
+ catch (      Exception e) {
+        e.printStackTrace();
+        ++numError;
+      }
+    }
+    int numTest=m_numPass + m_numFail;
+    String summary="\nTest: " + numTest + "\nPass: "+ m_numPass+ "\nFail: "+ m_numFail+ "\nError: "+ numError+ "\n";
+    System.out.print(summary);
+    try {
+      m_reportWriter.write(summary);
+      m_reportWriter.flush();
+      m_reportWriter.close();
+    }
+ catch (    IOException e) {
+      e.printStackTrace();
+    }
+    System.out.println("Report file created at " + m_reportPath + "plannerTester.report");
+  }
+  if (numError != 0) {
+    System.exit(2);
+  }
+  if (m_numFail != 0) {
+    System.exit(1);
+  }
+  System.exit(0);
+}

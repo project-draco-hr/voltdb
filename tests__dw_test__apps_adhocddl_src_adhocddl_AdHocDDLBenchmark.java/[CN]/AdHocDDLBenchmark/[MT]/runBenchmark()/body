@@ -1,0 +1,44 @@
+{
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println(" Setup & Initialization");
+  System.out.println(HORIZONTAL_RULE);
+  connect(config.servers);
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println(" Benchmark ");
+  System.out.println(HORIZONTAL_RULE);
+  double sumBatched=0, sumScripted=0, sumIndividual=0;
+  for (int i=0; i < config.numRounds; i++) {
+    System.out.printf("Running round %d of %d.\n",i,config.numRounds);
+    System.out.print(HORIZONTAL_RULE);
+    DDLGen=new DDLGenerator(config.numCols,config.idxPercent);
+    clearServer();
+    long scriptTime=createSchema(false);
+    double perStmtLatencySec=averageLatencyTest();
+    clearServer();
+    long batchTime=createSchema(true);
+    clearServer();
+    System.out.print(HORIZONTAL_RULE);
+    System.out.printf("Batched %.3f seconds, Scripted %.3f seconds, Single create %.3f seconds\n",batchTime / 1000.0d,scriptTime / 1000d,perStmtLatencySec);
+    System.out.println(HORIZONTAL_RULE);
+    sumBatched+=batchTime / 1000.0d;
+    sumScripted+=scriptTime / 1000.0d;
+    sumIndividual+=perStmtLatencySec;
+  }
+  double avgBatched=sumBatched / config.numRounds;
+  double avgScripted=sumScripted / config.numRounds;
+  double avgIndividual=sumIndividual / config.numRounds;
+  System.out.println();
+  System.out.print(HORIZONTAL_RULE);
+  System.out.printf("FINAL AVERAGE STATS OVER %d RUNS:\n",config.numRounds);
+  System.out.printf("Batched %f seconds, Scripted %f seconds, Single create %f seconds\n",avgBatched,avgScripted,avgIndividual);
+  System.out.println(HORIZONTAL_RULE);
+  if ((config.statsfile != null) && (config.statsfile.length() != 0)) {
+    FileWriter fw=new FileWriter(config.statsfile);
+    fw.append(String.format("%d,%d,%d,%.3f,%d,%d\n",config.numTables,config.numCols,config.numProcedures,config.idxPercent,config.numRounds,config.numCreateDeleteCalls));
+    fw.append(String.format("%.3f,%.3f,%.3f\n",avgBatched,avgScripted,avgIndividual));
+    fw.close();
+  }
+  client.drain();
+  benchmarkComplete=true;
+  client.close();
+}

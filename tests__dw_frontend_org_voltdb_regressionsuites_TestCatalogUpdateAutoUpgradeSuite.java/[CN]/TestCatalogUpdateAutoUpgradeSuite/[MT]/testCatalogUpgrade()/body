@@ -1,0 +1,25 @@
+{
+  Client client=getClient();
+  loadSomeData(client,0,10);
+  client.drain();
+  assertTrue(callbackSuccess);
+  String tweakedJarPath=upgradeCatalogBasePath + "-tweaked.jar";
+  OutputWatcher watcher=new OutputWatcher("catalog was automatically upgraded",20,TimeUnit.MILLISECONDS);
+  ((LocalCluster)m_config).setOutputWatcher(watcher);
+  CatalogUpgradeTools.dorkJar(upgradeCatalogJarPath,tweakedJarPath,null);
+  File tweakedJarFile=new File(tweakedJarPath);
+  try {
+    try {
+      VoltTable[] results=client.updateApplicationCatalog(tweakedJarFile,new File(upgradeCatalogXMLPath)).getResults();
+      assertTrue(results.length == 1);
+      boolean found=watcher.waitForString();
+      assertTrue(found);
+    }
+ catch (    ProcCallException e) {
+      fail(String.format("@UpdateApplicationCatalog: ProcCallException: %s",e.getLocalizedMessage()));
+    }
+  }
+  finally {
+    tweakedJarFile.delete();
+  }
+}

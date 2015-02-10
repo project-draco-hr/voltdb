@@ -1,0 +1,69 @@
+{
+  m_treeSizeDiff=0;
+  boolean noDiff=true;
+  ArrayList<String> messages=new ArrayList<String>();
+  ArrayList<AbstractPlanNode> list1=oldpn1.getPlanNodeList();
+  ArrayList<AbstractPlanNode> list2=newpn2.getPlanNodeList();
+  int size1=list1.size();
+  int size2=list2.size();
+  m_treeSizeDiff=size1 - size2;
+  diffPair intdiffPair=new diffPair(0,0);
+  diffPair stringdiffPair=new diffPair(null,null);
+  if (size1 != size2) {
+    intdiffPair.set(size1,size2);
+    messages.add("Plan tree size diff: " + intdiffPair.toString());
+  }
+  Map<String,ArrayList<Integer>> planNodesPosMap1=new LinkedHashMap<String,ArrayList<Integer>>();
+  Map<String,ArrayList<AbstractPlanNode>> inlineNodesPosMap1=new LinkedHashMap<String,ArrayList<AbstractPlanNode>>();
+  Map<String,ArrayList<Integer>> planNodesPosMap2=new LinkedHashMap<String,ArrayList<Integer>>();
+  Map<String,ArrayList<AbstractPlanNode>> inlineNodesPosMap2=new LinkedHashMap<String,ArrayList<AbstractPlanNode>>();
+  fetchPositionInfoFromList(list1,planNodesPosMap1,inlineNodesPosMap1);
+  fetchPositionInfoFromList(list2,planNodesPosMap2,inlineNodesPosMap2);
+  planNodePositionDiff(planNodesPosMap1,planNodesPosMap2,messages);
+  inlineNodePositionDiff(inlineNodesPosMap1,inlineNodesPosMap2,messages);
+  ArrayList<AbstractPlanNode> joinNodes1=getJoinNodes(list1);
+  ArrayList<AbstractPlanNode> joinNodes2=getJoinNodes(list2);
+  size1=joinNodes1.size();
+  size2=joinNodes2.size();
+  if (size1 != size2) {
+    intdiffPair.set(size1,size2);
+    messages.add("Join Nodes Number diff:\n" + intdiffPair.toString() + "\nSQL statement might be changed.");
+    m_changedSQL=true;
+    String str1="";
+    String str2="";
+    for (    AbstractPlanNode pn : joinNodes1) {
+      str1=str1 + pn.toString() + ", ";
+    }
+    for (    AbstractPlanNode pn : joinNodes2) {
+      str2=str2 + pn.toString() + ", ";
+    }
+    if (str1.length() > 1) {
+      str1=(str1.subSequence(0,str1.length() - 2)).toString();
+    }
+    if (str2.length() > 1) {
+      str2=(str2.subSequence(0,str2.length() - 2)).toString();
+    }
+    stringdiffPair.set(str1,str2);
+    messages.add("Join Node List diff: " + "\n" + stringdiffPair.toString() + "\n");
+  }
+ else {
+    for (int i=0; i < size1; i++) {
+      AbstractPlanNode pn1=joinNodes1.get(i);
+      AbstractPlanNode pn2=joinNodes2.get(i);
+      PlanNodeType pnt1=pn1.getPlanNodeType();
+      PlanNodeType pnt2=pn2.getPlanNodeType();
+      if (!pnt1.equals(pnt2)) {
+        stringdiffPair.set(pn1.toString(),pn2.toString());
+        messages.add("Join Node Type diff:\n" + stringdiffPair.toString());
+      }
+    }
+  }
+  for (  String msg : messages) {
+    if (msg.contains("diff") || msg.contains("Diff")) {
+      noDiff=false;
+      break;
+    }
+  }
+  m_diffMessages.addAll(messages);
+  return noDiff;
+}

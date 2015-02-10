@@ -1,0 +1,57 @@
+{
+  System.out.println("Starting testSimple");
+  TestEnv env=new TestEnv(m_catalogJar,m_pathToDeployment,2,2,1);
+  try {
+    env.setUp();
+    VoltTable modCount=env.m_client.callProcedure("@AdHoc","INSERT INTO BLAH VALUES (1, 1, 1);").getResults()[0];
+    assertEquals(1,modCount.getRowCount());
+    assertEquals(1,modCount.asScalarLong());
+    VoltTable result=env.m_client.callProcedure("@AdHoc","SELECT * FROM BLAH;").getResults()[0];
+    assertEquals(1,result.getRowCount());
+    VoltTable result1=env.m_client.callProcedure("@AdHocSpForTest","SELECT * FROM BLAH;",TheHashinator.getConfiguredHashinatorType() == TheHashinator.HashinatorType.LEGACY ? 0 : 2).getResults()[0];
+    VoltTable result2=env.m_client.callProcedure("@AdHocSpForTest","SELECT * FROM BLAH;",TheHashinator.getConfiguredHashinatorType() == TheHashinator.HashinatorType.LEGACY ? 1 : 0).getResults()[0];
+    assertEquals(1,result1.getRowCount() + result2.getRowCount());
+    assertEquals(0,result1.getRowCount());
+    assertEquals(1,result2.getRowCount());
+    try {
+      env.m_client.callProcedure("@AdHocSpForTest","INSERT INTO BLAH VALUES (0, 0, 0);",TheHashinator.getConfiguredHashinatorType() == TheHashinator.HashinatorType.LEGACY ? 1 : 2);
+      fail("Badly partitioned insert failed to throw expected exception");
+    }
+ catch (    Exception e) {
+    }
+    try {
+      env.m_client.callProcedure("@AdHoc","SLEECT * FROOM NEEEW_OOORDERERER;");
+      fail("Bad SQL failed to throw expected exception");
+    }
+ catch (    Exception e) {
+    }
+    modCount=env.m_client.callProcedure("@AdHoc","INSERT INTO BLAH VALUES (974599638818488300, '2011-06-24 10:30:26.123012', 5);").getResults()[0];
+    modCount=env.m_client.callProcedure("@AdHoc","INSERT INTO BLAH VALUES (974599638818488301, '2011-06-24 10:30:28', 5);").getResults()[0];
+    assertEquals(1,modCount.getRowCount());
+    assertEquals(1,modCount.asScalarLong());
+    result=env.m_client.callProcedure("@AdHoc","SELECT * FROM BLAH WHERE IVAL = 974599638818488300;").getResults()[0];
+    assertEquals(1,result.getRowCount());
+    result=env.m_client.callProcedure("@AdHoc","SELECT * FROM BLAH WHERE TVAL = '2011-06-24 10:30:26.123012';").getResults()[0];
+    assertEquals(1,result.getRowCount());
+    result=env.m_client.callProcedure("@AdHoc","SELECT * FROM BLAH WHERE TVAL > '2011-06-24 10:30:25';").getResults()[0];
+    assertEquals(2,result.getRowCount());
+    result=env.m_client.callProcedure("@AdHoc","SELECT * FROM BLAH WHERE TVAL < '2011-06-24 10:30:27';").getResults()[0];
+    assertEquals(2,result.getRowCount());
+    try {
+      env.m_client.callProcedure("@AdHoc","select * from blah; dfvsdfgvdf select * from blah WHERE IVAL = 1;");
+      fail("Bad SQL failed to throw expected exception");
+    }
+ catch (    Exception e) {
+    }
+    env.m_client.callProcedure("@AdHoc","select\n* from blah;");
+    modCount=env.m_client.callProcedure("@AdHoc","INSERT INTO BLAH VALUES (2, '2011-06-24 10:30:26', 1.12345*1);").getResults()[0];
+    assertEquals(1,modCount.getRowCount());
+    assertEquals(1,modCount.asScalarLong());
+    result=env.m_client.callProcedure("@AdHoc","SELECT * FROM BLAH WHERE IVAL = 2;").getResults()[0];
+    assertEquals(1,result.getRowCount());
+  }
+  finally {
+    env.tearDown();
+    System.out.println("Ending testSimple");
+  }
+}

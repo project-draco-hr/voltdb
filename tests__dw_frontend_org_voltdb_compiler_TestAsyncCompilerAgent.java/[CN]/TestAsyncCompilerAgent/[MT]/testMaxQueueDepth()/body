@@ -1,0 +1,28 @@
+{
+  BlockingAnswer blockingAnswer=new BlockingAnswer();
+  doAnswer(blockingAnswer).when(m_agent).compileAdHocPlan(any(AdHocPlannerWork.class));
+  m_agent.createMailbox(mock(HostMessenger.class),100);
+  m_agent.m_mailbox=spy(m_agent.m_mailbox);
+  final AtomicInteger completedRequests=new AtomicInteger();
+  final AtomicReference<AsyncCompilerResult> result=new AtomicReference<AsyncCompilerResult>();
+  final long threadId=Thread.currentThread().getId();
+  for (int i=0; i < AsyncCompilerAgent.MAX_QUEUE_DEPTH + 2; ++i) {
+    AsyncCompilerWorkCompletionHandler handler=new AsyncCompilerWorkCompletionHandler(){
+      @Override public void onCompletion(      AsyncCompilerResult compilerResult){
+        completedRequests.incrementAndGet();
+        if (Thread.currentThread().getId() == threadId) {
+          result.set(compilerResult);
+        }
+      }
+    }
+;
+    AdHocPlannerWork work=AdHocPlannerWork.makeStoredProcAdHocPlannerWork(100,"select * from a",null,false,null,handler);
+    LocalObjectMessage msg=new LocalObjectMessage(work);
+    msg.m_sourceHSId=100;
+    m_agent.m_mailbox.deliver(msg);
+  }
+  assertNotNull(result.get().errorMsg);
+  blockingAnswer.flag.release(AsyncCompilerAgent.MAX_QUEUE_DEPTH + 5);
+  m_agent.shutdown();
+  assertEquals(AsyncCompilerAgent.MAX_QUEUE_DEPTH + 2,completedRequests.get());
+}

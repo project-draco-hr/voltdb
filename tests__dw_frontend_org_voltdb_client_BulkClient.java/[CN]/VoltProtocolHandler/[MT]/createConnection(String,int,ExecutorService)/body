@@ -1,0 +1,53 @@
+{
+  System.err.println("Creating " + connectionCount + " connections to "+ hostname);
+  for (int ii=0; ii < connectionCount; ii++) {
+    executor.execute(new Runnable(){
+      @Override public void run(){
+        try {
+          InetSocketAddress addr=new InetSocketAddress(hostname,21212);
+          SocketChannel aChannel=SocketChannel.open(addr);
+          assert(aChannel.isConnected());
+          if (!aChannel.isConnected()) {
+            throw new IOException("Failed to open host " + hostname);
+          }
+          aChannel.configureBlocking(true);
+          MessageDigest md=null;
+          try {
+            md=MessageDigest.getInstance("SHA-1");
+          }
+ catch (          NoSuchAlgorithmException e) {
+            e.printStackTrace();
+            System.exit(-1);
+          }
+          byte passwordHash[]=md.digest(m_password.getBytes());
+          ByteBuffer b=ByteBuffer.allocate(m_username.getBytes().length + passwordHash.length + 8);
+          b.putInt(m_username.getBytes().length);
+          b.put(m_username.getBytes());
+          b.putInt(passwordHash.length);
+          b.put(passwordHash);
+          b.flip();
+          aChannel.write(b);
+          ByteBuffer loginResponse=ByteBuffer.allocate(1);
+          aChannel.read(loginResponse);
+          loginResponse.flip();
+          if (loginResponse.get() != 0) {
+            aChannel.close();
+            throw new IOException("Authentication rejected");
+          }
+          aChannel.configureBlocking(false);
+          aChannel.socket().setReceiveBufferSize(262144);
+          aChannel.socket().setSendBufferSize(262144);
+          final Connection c=m_dispatcher.registerChannel(aChannel,getNewInputHandler());
+          c.m_hostname=hostname;
+synchronized (m_connections) {
+            m_connections.add(c);
+          }
+        }
+ catch (        IOException e) {
+          throw new RuntimeException(e);
+        }
+      }
+    }
+);
+  }
+}

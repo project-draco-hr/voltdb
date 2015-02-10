@@ -1,0 +1,41 @@
+{
+  MockVolt volt0=new MockVolt(20000);
+  volt0.handleConnection=false;
+  Client clientPtr=null;
+  try {
+    volt0.start();
+    ClientConfig config=new ClientConfig();
+    config.setMaxOutstandingTxns(5);
+    config.setConnectionResponseTimeout(2000);
+    final Client client=ClientFactory.createClient(config);
+    client.createConnection("localhost",20000);
+    clientPtr=client;
+    final AtomicInteger counter=new AtomicInteger(0);
+    final Thread loadThread=new Thread(){
+      @Override public void run(){
+        try {
+          for (int ii=0; ii < 6; ii++) {
+            client.callProcedure(new NullCallback(),"foo");
+            System.out.println(counter.incrementAndGet());
+          }
+        }
+ catch (        Exception e) {
+          e.printStackTrace();
+        }
+      }
+    }
+;
+    loadThread.start();
+    final long start=System.currentTimeMillis();
+    loadThread.join(300);
+    final long finish=System.currentTimeMillis();
+    assertTrue(finish - start >= 300);
+    System.out.println("Counter " + counter.get());
+    assertTrue(counter.get() == 5);
+    loadThread.join();
+  }
+  finally {
+    if (clientPtr != null)     clientPtr.close();
+    volt0.shutdown();
+  }
+}

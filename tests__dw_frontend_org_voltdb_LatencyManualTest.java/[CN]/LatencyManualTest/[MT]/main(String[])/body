@@ -1,0 +1,35 @@
+{
+  try {
+    String simpleSchema="create table blah (" + "ival bigint default 0 not null, " + "PRIMARY KEY(ival));";
+    VoltProjectBuilder builder=new VoltProjectBuilder();
+    builder.addLiteralSchema(simpleSchema);
+    builder.addStmtProcedure("Insert","insert into blah values (?);",null);
+    builder.addPartitionInfo("blah","ival");
+    builder.setTableAsExportOnly("blah");
+    LocalCluster cluster=new LocalCluster("latencycheck.jar",2,1,0,BackendTarget.NATIVE_EE_JNI);
+    cluster.setHasLocalServer(true);
+    boolean success=cluster.compile(builder);
+    assert(success);
+    cluster.startUp(true);
+    final String listener=cluster.getListenerAddresses().get(0);
+    final Client client=ClientFactory.createClient();
+    client.createConnection(listener);
+    long iterations=10000;
+    long start=System.nanoTime();
+    for (int i=0; i < iterations; i++) {
+      client.callProcedure("Insert",i);
+    }
+    long end=System.nanoTime();
+    double ms=(end - start) / 1000000.0;
+    client.close();
+    cluster.shutDown();
+    System.out.printf("Avg latency was %.3f ms.\n",ms / iterations);
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+  }
+ finally {
+    File jar=new File("latencycheck.jar");
+    jar.delete();
+  }
+}

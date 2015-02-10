@@ -1,0 +1,28 @@
+{
+  AbstractPlanNode pn=compile(sql);
+  System.out.println(pn.toExplainPlanString());
+  assertTrue(pn instanceof SendPlanNode);
+  pn=pn.getChild(0);
+  if (needOrderby) {
+    assertTrue(pn instanceof ProjectionPlanNode);
+    pn=pn.getChild(0);
+    assertTrue(pn instanceof OrderByPlanNode);
+    pn=pn.getChild(0);
+  }
+  assertTrue(pn instanceof IndexScanPlanNode);
+  IndexScanPlanNode ispn=(IndexScanPlanNode)pn;
+  assertTrue(ispn.getTargetIndexName().contains(indexName));
+  assertEquals(lookupType,ispn.getLookupType());
+  assertEquals(searchKeys,ispn.getSearchKeyExpressions().size());
+  assertEquals(endKeys,ExpressionUtil.uncombine(ispn.getEndExpression()).size());
+  assertEquals(predicates,ExpressionUtil.uncombine(ispn.getPredicate()).size());
+  assertEquals(initials,ExpressionUtil.uncombine(ispn.getInitialExpression()).size());
+  if (predicates == 1 && artificial) {
+    assertTrue(ispn.getPredicate().getExpressionType() == ExpressionType.OPERATOR_NOT);
+    assertTrue(ispn.getPredicate().getLeft().getExpressionType() == ExpressionType.OPERATOR_IS_NULL);
+  }
+ else   if (predicates > 1) {
+    assertTrue(ispn.getPredicate().getExpressionType() == ExpressionType.CONJUNCTION_AND);
+  }
+  assertEquals(sortType,ispn.getSortDirection());
+}

@@ -1,0 +1,50 @@
+{
+  File unmatchedDH=new File("unmatched");
+  unmatchedDH.mkdir();
+  if (!unmatchedDH.exists() || !unmatchedDH.isDirectory() || !unmatchedDH.canRead()|| !unmatchedDH.canExecute()|| !unmatchedDH.canWrite()) {
+    System.err.println("cannot access/create the unmatched directory");
+    return;
+  }
+  TreeMap<Integer,File> partFHs=new TreeMap<>();
+  for (  int partid : m_clientIndexes.keySet()) {
+    File partDH=new File(unmatchedDH,Integer.toString(partid));
+    partDH.mkdir();
+    partFHs.put(partid,partDH);
+  }
+  for (  int partid : m_clientIndexes.keySet()) {
+    int excnt=0;
+    int clcnt=0;
+    File clientFH=new File(partFHs.get(partid),"recorded.gz");
+    File exportFH=new File(partFHs.get(partid),"exported.gz");
+    try (PrintWriter clout=gzipWriterTo(clientFH);PrintWriter exout=gzipWriterTo(exportFH)){
+      Iterator<Map.Entry<Long,Long>> itr=m_clientTxnIds.entrySet().iterator();
+      while (itr.hasNext()) {
+        Map.Entry<Long,Long> e=itr.next();
+        if (TxnEgo.getPartitionId(e.getKey()) == partid) {
+          clout.printf("%d:%d\n",e.getKey(),e.getValue());
+          itr.remove();
+          ++clcnt;
+        }
+      }
+      itr=m_rowTxnIds.get(partid).entrySet().iterator();
+      while (itr.hasNext()) {
+        Map.Entry<Long,Long> e=itr.next();
+        exout.printf("%d:%d\n",e.getKey(),e.getValue());
+        itr.remove();
+        ++excnt;
+      }
+    }
+ catch (    IOException e) {
+      throw new RuntimeException("Failed to dump unmatched for partition " + partid,e);
+    }
+    if (clcnt == 0) {
+      clientFH.delete();
+    }
+    if (excnt == 0) {
+      exportFH.delete();
+    }
+    if (clcnt == 0 && excnt == 0) {
+      partFHs.get(partid).delete();
+    }
+  }
+}

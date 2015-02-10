@@ -1,0 +1,43 @@
+import shlex
+import sys
+import testsupport
+from datetime import datetime
+manifest = open('testrunner/manifest.txt', 'r').readlines()
+lineno = 1
+failures = 0
+testsrun = 0
+duration = 0.0
+for line in manifest:
+    lineno += 1
+    line = line.strip()
+    if (line[0] == '#'):
+        continue
+    if (len(line) == 0):
+        continue
+    line = shlex.split(line)
+    timestamp = datetime.now().strftime('%Y.%m.%d-%H.%M.%S')
+    if (len(line) != 5):
+        print "Line %d doesn't have five values. This is an error."
+        sys.exit((-1))
+    name = line[0]
+    runner = line[1]
+    task = line[2]
+    safety = line[3]
+    cores = int(line[4])
+    timeout = 400
+    if (runner == 'junit'):
+        runner = testsupport.JUnit(name, timestamp, timeout, task, safety, cores)
+        runner.run()
+        failures += runner.failures
+        testsrun += runner.testsrun
+        duration += runner.duration
+        msg = ''
+        if runner.didtimeout:
+            msg = msg = ('TIMEOUT for test %s (took %g seconds)\n' % (task, timeout))
+        elif (runner.failures > 0):
+            msg = ('Failures in test %s (took %g seconds)\n' % (task, runner.duration))
+        else:
+            msg = ('Completed test %s (took %g seconds)\n' % (task, runner.duration))
+        msg += ('  %d failures / %d tests run ' % (runner.failures, runner.testsrun))
+        msg += ('/ %d out of %d cumulative failures in %g cumulative seconds' % (failures, testsrun, duration))
+        print msg

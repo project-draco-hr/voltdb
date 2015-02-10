@@ -1,0 +1,48 @@
+{
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println(" Setup & Initialization");
+  System.out.println(HORIZONTAL_RULE);
+  connect(client,config.servers);
+  connect(mpClient,config.servers);
+  System.out.println();
+  if (config.preload) {
+    System.out.println("Preloading data store...");
+    for (int i=0; i < config.poolsize; i++) {
+      client.callProcedure(new NullCallback(),"Put",String.format(processor.KeyFormat,i),processor.generateForStore().getStoreValue());
+    }
+    client.drain();
+    System.out.println("Preloading complete.\n");
+  }
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println("Starting Benchmark");
+  System.out.println(HORIZONTAL_RULE);
+  ArrayList<Thread> kvThreads=new ArrayList<Thread>();
+  for (int i=0; i < config.threads; ++i) {
+    kvThreads.add(new Thread(new KVThread(client,true)));
+  }
+  for (int i=0; i < config.mpthreads; ++i) {
+    kvThreads.add(new Thread(new KVThread(mpClient,false)));
+  }
+  for (  Thread thread : kvThreads) {
+    thread.start();
+  }
+  System.out.println("Warming up...");
+  Thread.sleep(1000l * config.warmup);
+  warmupComplete.set(true);
+  fullStatsContext.fetchAndResetBaseline();
+  periodicStatsContext.fetchAndResetBaseline();
+  mpFullStatsContext.fetchAndResetBaseline();
+  benchmarkStartTS=System.currentTimeMillis();
+  schedulePeriodicStats();
+  System.out.println("\nRunning benchmark...");
+  Thread.sleep(1000l * config.duration);
+  benchmarkComplete.set(true);
+  timer.cancel();
+  client.drain();
+  mpClient.drain();
+  for (  Thread t : kvThreads) {
+    t.join();
+  }
+  printResults();
+  client.close();
+}

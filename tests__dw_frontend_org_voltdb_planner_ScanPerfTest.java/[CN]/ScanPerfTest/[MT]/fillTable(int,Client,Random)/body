@@ -1,0 +1,29 @@
+{
+  final AtomicInteger outstanding=new AtomicInteger(0);
+  ProcedureCallback callback=new ProcedureCallback(){
+    @Override public void clientCallback(    ClientResponse clientResponse) throws Exception {
+      outstanding.decrementAndGet();
+      if (clientResponse.getStatus() != ClientResponse.SUCCESS) {
+        System.err.printf(clientResponse.getStatusString());
+        System.err.flush();
+        System.exit(-1);
+      }
+    }
+  }
+;
+  int i=0;
+  while (MiscUtils.getMBRss(client) < mb) {
+    System.out.println("Loading 100000 rows");
+    for (int j=0; j < 100000; j++) {
+      long rvalue=rand.nextInt();
+      long absvalue=Math.abs(rvalue);
+      long shift=absvalue << 30L;
+      long id=shift + i++;
+      outstanding.incrementAndGet();
+      client.callProcedure(callback,"P.insert",id,0);
+    }
+    while (outstanding.get() > 0) {
+      Thread.yield();
+    }
+  }
+}

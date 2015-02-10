@@ -1,0 +1,41 @@
+def runtests(tests, output_dir):
+    stupidunit_out = None
+    if (output_dir is not None):
+        (fileobj, stupidunit_out) = tempfile.mkstemp()
+        os.close(fileobj)
+        os.environ['STUPIDUNIT_OUTPUT'] = stupidunit_out
+        os.unlink(stupidunit_out)
+    try:
+        failures = []
+        for test in tests:
+            start = time.time()
+            (error, stdout, stderr) = valleak.valleak(test)
+            end = time.time()
+            if error:
+                failures.append(test)
+                sys.stdout.write('F')
+            else:
+                sys.stdout.write('.')
+            sys.stdout.flush()
+            if (output_dir is not None):
+                if os.path.exists(stupidunit_out):
+                    input = open(stupidunit_out)
+                    json = input.read()
+                    input.close()
+                    os.unlink(stupidunit_out)
+                    results = parseStupidUnit(json)
+                else:
+                    results = []
+                if error:
+                    results.append(Result('Process', 'warning', ('Process exited with error code %d' % error)))
+                test_name = test.replace('/', '_')
+                out = open(('%s/TEST-%s.xml' % (output_dir, test_name)), 'w')
+                writeJUnitXml(out, test_name, (end - start), stdout, stderr, results)
+                out.close()
+        print ('\n%d/%d failed' % (len(failures), len(tests)))
+        for failure in failures:
+            print failure
+        return len(failures)
+    finally:
+        if ((stupidunit_out is not None) and os.path.exists(stupidunit_out)):
+            os.unlink(stupidunit_out)

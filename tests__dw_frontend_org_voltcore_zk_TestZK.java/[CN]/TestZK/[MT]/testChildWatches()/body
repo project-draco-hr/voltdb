@@ -1,0 +1,28 @@
+{
+  ZooKeeper zk=getClient(0);
+  ZooKeeper zk2=getClient(1);
+  final Semaphore sem=new Semaphore(0);
+  zk.exists("/foo",new Watcher(){
+    @Override public void process(    WatchedEvent event){
+      if (event.getType() == EventType.NodeCreated) {
+        sem.release();
+        System.out.println(event);
+      }
+    }
+  }
+);
+  zk2.create("/foo",new byte[0],Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+  sem.tryAcquire(5,TimeUnit.SECONDS);
+  zk.create("/foo2",new byte[0],Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+  zk2.exists("/foo2",new Watcher(){
+    @Override public void process(    WatchedEvent event){
+      if (event.getType() == EventType.NodeDeleted) {
+        sem.release();
+        System.out.println(event);
+      }
+    }
+  }
+);
+  zk.delete("/foo2",-1);
+  sem.acquire();
+}

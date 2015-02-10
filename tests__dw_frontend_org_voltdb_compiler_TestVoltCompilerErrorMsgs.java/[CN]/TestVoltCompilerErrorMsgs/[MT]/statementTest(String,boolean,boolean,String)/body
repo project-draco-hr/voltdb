@@ -1,0 +1,27 @@
+{
+  String simpleSchema="create table blah (" + "ival bigint default 0 not null, " + "sval varchar(255) not null"+ ");"+ "create table indexed_blah ("+ "ival bigint default 0 not null, "+ "sval varchar(255) not null, "+ "PRIMARY KEY(ival)"+ ");"+ "create table partitioned_blah ("+ "ival bigint default 0 not null, "+ "sval varchar(255) not null"+ ");"+ "partition table partitioned_blah on column sval;"+ "";
+  VoltProjectBuilder builder=new VoltProjectBuilder();
+  ByteArrayOutputStream capturer=new ByteArrayOutputStream();
+  PrintStream capturing=new PrintStream(capturer);
+  builder.setCompilerDebugPrintStream(capturing);
+  builder.addLiteralSchema(simpleSchema);
+  for (  String statement : statements) {
+    if (testStmtIsDdl) {
+      builder.addLiteralSchema(statement);
+    }
+ else {
+      builder.addStmtProcedure(feature,statement);
+    }
+  }
+  boolean success=builder.compile(Configuration.getPathToCatalogForTest("errors.jar"));
+  String captured=capturer.toString("UTF-8");
+  String[] lines=captured.split("\n");
+  if (expectError) {
+    assertFalse("Expected an error containing \"" + feature + "\", but compilation succeeded.",success);
+    String pattern=".*[Ee]rror.*" + feature + ".*";
+    assertTrue("Expected an error matching pattern \"" + pattern + "\" in output \""+ captured+ "\", but no matching line was found",foundLineMatching(lines,pattern));
+  }
+ else {
+    assertTrue("Expected no errors, but compilation failed with this output: \"" + captured + "\".",success);
+  }
+}

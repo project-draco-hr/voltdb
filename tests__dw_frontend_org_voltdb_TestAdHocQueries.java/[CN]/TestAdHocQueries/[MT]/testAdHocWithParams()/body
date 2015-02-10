@@ -1,0 +1,65 @@
+{
+  System.out.println("Starting testAdHocWithParams");
+  TestEnv env=new TestEnv(m_catalogJar,m_pathToDeployment,2,2,1);
+  try {
+    env.setUp();
+    VoltTable modCount=env.m_client.callProcedure("@AdHoc","INSERT INTO BLAH VALUES (?, ?, ?);",1,1,1).getResults()[0];
+    assertEquals(1,modCount.getRowCount());
+    assertEquals(1,modCount.asScalarLong());
+    VoltTable result;
+    result=env.m_client.callProcedure("@AdHoc","SELECT * FROM BLAH WHERE IVAL = ?;",1).getResults()[0];
+    assertEquals(1,result.getRowCount());
+    result=env.m_client.callProcedure("@AdHoc","SELECT * FROM BLAH WHERE IVAL = ?;",2).getResults()[0];
+    assertEquals(0,result.getRowCount());
+    VoltTable result1=env.m_client.callProcedure("@AdHocSpForTest","SELECT * FROM BLAH WHERE IVAL = ?;",(TheHashinator.getConfiguredHashinatorType() == TheHashinator.HashinatorType.LEGACY ? 0 : 2),1).getResults()[0];
+    VoltTable result2=env.m_client.callProcedure("@AdHocSpForTest","SELECT * FROM BLAH WHERE IVAL = ?;",(TheHashinator.getConfiguredHashinatorType() == TheHashinator.HashinatorType.LEGACY ? 1 : 0),1).getResults()[0];
+    assertEquals(1,result1.getRowCount() + result2.getRowCount());
+    assertEquals(0,result1.getRowCount());
+    assertEquals(1,result2.getRowCount());
+    try {
+      env.m_client.callProcedure("@AdHocSpForTest","INSERT INTO BLAH VALUES (?, ?, ?);",(TheHashinator.getConfiguredHashinatorType() == TheHashinator.HashinatorType.LEGACY ? 1 : 2),0,0,0);
+      fail("Badly partitioned insert failed to throw expected exception");
+    }
+ catch (    Exception e) {
+    }
+    try {
+      env.m_client.callProcedure("@AdHoc","SLEECT * FROOM NEEEW_OOORDERERER WHERE NONESUCH = ?;",1);
+      fail("Bad SQL failed to throw expected exception");
+    }
+ catch (    Exception e) {
+    }
+    modCount=env.m_client.callProcedure("@AdHoc","INSERT INTO BLAH VALUES (?, ?, ?)",974599638818488300L,"2011-06-24 10:30:26.123000",5).getResults()[0];
+    modCount=env.m_client.callProcedure("@AdHoc","INSERT INTO BLAH VALUES (?, ?, ?)",974599638818488301L,"2011-06-24 10:30:28.000000",5).getResults()[0];
+    assertEquals(1,modCount.getRowCount());
+    assertEquals(1,modCount.asScalarLong());
+    result=env.m_client.callProcedure("@AdHoc","SELECT * FROM BLAH WHERE IVAL = ?;",974599638818488300L).getResults()[0];
+    assertEquals(1,result.getRowCount());
+    result=env.m_client.callProcedure("@AdHoc","SELECT * FROM BLAH WHERE IVAL = ?;","974599638818488300").getResults()[0];
+    assertEquals(1,result.getRowCount());
+    SimpleDateFormat dateFormat=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
+    result=env.m_client.callProcedure("@AdHoc","SELECT * FROM BLAH WHERE TVAL = ?;",dateFormat.parse("2011-06-24 10:30:26.123")).getResults()[0];
+    assertEquals(1,result.getRowCount());
+    result=env.m_client.callProcedure("@AdHoc","SELECT * FROM BLAH WHERE TVAL > ?;",dateFormat.parse("2011-06-24 10:30:25.000")).getResults()[0];
+    assertEquals(2,result.getRowCount());
+    result=env.m_client.callProcedure("@AdHoc","SELECT * FROM BLAH WHERE TVAL < ?;",dateFormat.parse("2011-06-24 10:30:27.000000")).getResults()[0];
+    assertEquals(2,result.getRowCount());
+    try {
+      env.m_client.callProcedure("@AdHoc","select * from blah; dfvsdfgvdf select * from blah WHERE IVAL = ?;",1);
+      fail("Bad SQL failed to throw expected exception");
+    }
+ catch (    Exception e) {
+    }
+    env.m_client.callProcedure("@AdHoc","select\n* from blah;");
+    modCount=env.m_client.callProcedure("@AdHoc","INSERT INTO BLAH VALUES (?, ?, ?);",2,"2011-06-24 10:30:26",1.12345).getResults()[0];
+    assertEquals(1,modCount.getRowCount());
+    assertEquals(1,modCount.asScalarLong());
+    result=env.m_client.callProcedure("@AdHoc","SELECT * FROM BLAH WHERE IVAL = ?;",2).getResults()[0];
+    assertEquals(1,result.getRowCount());
+    result=env.m_client.callProcedure("@AdHoc","SELECT * FROM BLAH WHERE IVAL = ?;","2").getResults()[0];
+    assertEquals(1,result.getRowCount());
+  }
+  finally {
+    env.tearDown();
+    System.out.println("Ending testAdHocWithParams");
+  }
+}

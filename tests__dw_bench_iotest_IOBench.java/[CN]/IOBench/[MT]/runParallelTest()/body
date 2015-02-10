@@ -1,0 +1,31 @@
+{
+  System.out.println("Starting parallel test");
+  final ArrayList<Future<?>> futures=new ArrayList<Future<?>>();
+synchronized (readyLock) {
+    for (int ii=0; ii < 16; ii++) {
+      futures.add(m_es.submit(new Writer()));
+    }
+    while (readyThreads < 16) {
+      readyLock.wait();
+    }
+  }
+  final long startTime=System.currentTimeMillis();
+synchronized (goLock) {
+    goNow=true;
+    goLock.notifyAll();
+  }
+  for (  Future<?> f : futures) {
+    try {
+      f.get();
+    }
+ catch (    ExecutionException e) {
+      throw new RuntimeException(e);
+    }
+  }
+  final long endTime=System.currentTimeMillis();
+  final long delta=endTime - startTime;
+  final double seconds=delta / 1000.0;
+  final long written=4096;
+  final double throughput=4096 / seconds;
+  System.out.printf("Parallel test took %.1f seconds to write 4 gigs at a rate of %.2f\n",seconds,throughput);
+}

@@ -1,0 +1,70 @@
+{
+  final Client client=ClientFactory.createClient();
+  final Client adminclient=ClientFactory.createClient();
+  try {
+    client.createConnection("localhost");
+    adminclient.createConnection("localhost",32323);
+    boolean admin_start=false;
+    try {
+      client.callProcedure("InsertA",0,1000);
+    }
+ catch (    ProcCallException e) {
+      assertEquals("Server did not report itself as unavailable on production port",ClientResponse.SERVER_UNAVAILABLE,e.getClientResponse().getStatus());
+      admin_start=true;
+    }
+    assertTrue("Server did not report itself as unavailable on production port",admin_start);
+    VoltTable[] results=adminclient.callProcedure("CountA").getResults();
+    assertEquals(0,results[0].asScalarLong());
+    for (int i=0; i < 100; i++) {
+      adminclient.callProcedure("InsertA",i,1000 + i);
+    }
+    adminclient.drain();
+    results=adminclient.callProcedure("CountA").getResults();
+    assertEquals(100,results[0].asScalarLong());
+    results=adminclient.callProcedure("@SystemInformation").getResults();
+    checkSystemInformationClusterState(results[0],"Paused");
+    adminclient.callProcedure("@Resume");
+    results=client.callProcedure("CountA").getResults();
+    assertEquals(100,results[0].asScalarLong());
+    results=adminclient.callProcedure("CountA").getResults();
+    assertEquals(100,results[0].asScalarLong());
+    results=adminclient.callProcedure("@SystemInformation").getResults();
+    checkSystemInformationClusterState(results[0],"Running");
+    boolean admin_failed=false;
+    try {
+      client.callProcedure("@Pause");
+    }
+ catch (    ProcCallException e) {
+      admin_failed=true;
+      assertTrue("Server returned an unexpected error",e.getClientResponse().getStatusString().contains("is not available to this client"));
+    }
+    assertTrue("Server allowed admin mode sysproc on production port",admin_failed);
+    admin_failed=false;
+    try {
+      client.callProcedure("@Resume");
+    }
+ catch (    ProcCallException e) {
+      admin_failed=true;
+      assertTrue("Server returned an unexpected error",e.getClientResponse().getStatusString().contains("is not available to this client"));
+    }
+    assertTrue("Server allowed admin mode sysproc on production port",admin_failed);
+    adminclient.callProcedure("@Pause");
+    boolean admin_reentered=false;
+    try {
+      client.callProcedure("InsertA",0,1000);
+    }
+ catch (    ProcCallException e) {
+      assertEquals("Server did not report itself as unavailable on production port",ClientResponse.SERVER_UNAVAILABLE,e.getClientResponse().getStatus());
+      admin_reentered=true;
+    }
+    assertTrue("Server did not report itself as unavailable on production port",admin_reentered);
+    results=adminclient.callProcedure("CountA").getResults();
+    assertEquals(100,results[0].asScalarLong());
+    results=adminclient.callProcedure("@SystemInformation").getResults();
+    checkSystemInformationClusterState(results[0],"Paused");
+  }
+  finally {
+    adminclient.close();
+    client.close();
+  }
+}

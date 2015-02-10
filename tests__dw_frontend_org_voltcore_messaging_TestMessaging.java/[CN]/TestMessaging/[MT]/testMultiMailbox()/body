@@ -1,0 +1,77 @@
+{
+  HostMessenger msg1=new HostMessenger(getConfig());
+  msg1.start();
+  HostMessenger msg2=new HostMessenger(getConfig());
+  msg2.start();
+  HostMessenger msg3=new HostMessenger(getConfig());
+  msg3.start();
+  System.out.println("Waiting for socketjoiners...");
+  msg1.waitForGroupJoin(3);
+  System.out.println("Finished socket joiner for msg1");
+  msg2.waitForGroupJoin(3);
+  System.out.println("Finished socket joiner for msg2");
+  msg3.waitForGroupJoin(3);
+  System.out.println("Finished socket joiner for msg3");
+  assertTrue(msg1.getHostId() != msg2.getHostId() && msg2.getHostId() != msg3.getHostId());
+  Mailbox mb1=msg1.createMailbox();
+  Mailbox mb2=msg2.createMailbox();
+  Mailbox mb3=msg3.createMailbox();
+  Mailbox mb4=msg3.createMailbox();
+  Mailbox mb5=msg1.createMailbox();
+  long siteId5=mb5.getHSId();
+  long siteId2=mb2.getHSId();
+  long siteId3=mb3.getHSId();
+  long siteId4=mb4.getHSId();
+  MsgTest.initWithSize(16);
+  MsgTest mt=new MsgTest();
+  mt.setValues();
+  int msgCount=0;
+  mb1.send(new long[]{siteId2,siteId3,siteId5,siteId4},mt);
+  long now=System.currentTimeMillis();
+  MsgTest mt2=null, mt3=null, mt4=null, mt5=null;
+  while (msgCount < 4) {
+    assertTrue((System.currentTimeMillis() - now) < 5000);
+    if (mt2 == null) {
+      mt2=(MsgTest)mb2.recv();
+      if (mt2 != null) {
+        assertTrue(mt2.verify());
+        msgCount++;
+      }
+    }
+    if (mt3 == null) {
+      mt3=(MsgTest)mb3.recv();
+      if (mt3 != null) {
+        assertTrue(mt3.verify());
+        msgCount++;
+      }
+    }
+    if (mt4 == null) {
+      mt4=(MsgTest)mb4.recv();
+      if (mt4 != null) {
+        assertTrue(mt4.verify());
+        msgCount++;
+      }
+    }
+    if (mt5 == null) {
+      mt5=(MsgTest)mb5.recv();
+      if (mt5 != null) {
+        assertTrue(mt5.verify());
+        msgCount++;
+      }
+    }
+  }
+  mb3.send(new long[]{siteId5},mt);
+  assertEquals(((SiteMailbox)mb2).getWaitingCount(),0);
+  assertEquals(((SiteMailbox)mb3).getWaitingCount(),0);
+  assertEquals(((SiteMailbox)mb4).getWaitingCount(),0);
+  int wc=0;
+  now=System.currentTimeMillis();
+  while (wc != 1) {
+    assertTrue((System.currentTimeMillis() - now) < 5000);
+    wc=((SiteMailbox)mb5).getWaitingCount();
+    if (wc == 0)     assertTrue(wc < 2);
+  }
+  msg1.shutdown();
+  msg2.shutdown();
+  msg3.shutdown();
+}

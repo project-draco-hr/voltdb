@@ -1,0 +1,145 @@
+{
+  Date timestamp=new Date();
+  final double initialYTD=15241.45;
+  voltQueueSQL(insertDistrict,7L,3L,"A District","Street Addy","meh","westerfield","BA","99999",.0825,initialYTD,21L);
+  long resultsl=voltExecuteSQL()[0].asScalarLong();
+  assert(resultsl == 1);
+  voltQueueSQL(insertWarehouse,3L,"EZ Street WHouse","Headquarters","77 Mass. Ave.","Cambridge","AZ","12938",.1234,initialYTD);
+  resultsl=voltExecuteSQL()[0].asScalarLong();
+  assert(resultsl == 1);
+  final double initialBalance=15.75;
+  voltQueueSQL(insertCustomer,C_ID,D_ID,W_ID,"I","Be","lastname","Place","Place2","BiggerPlace","AL","91083","(193) 099 - 9082",new Date(),"BC",19298943.12,.13,initialBalance,initialYTD,0L,15L,"Some History");
+  resultsl=voltExecuteSQL()[0].asScalarLong();
+  assert(resultsl == 1);
+  voltQueueSQL(insertCustomer,C_ID + 1,D_ID,W_ID,"We","Represent","Customer","Random Department","Place2","BiggerPlace","AL","13908","(913) 909 - 0928",new Date(),"GC",19298943.12,.13,initialBalance,initialYTD,1L,15L,"Some History");
+  resultsl=voltExecuteSQL()[0].asScalarLong();
+  assert(resultsl == 1);
+  voltQueueSQL(insertCustomer,C_ID + 2,D_ID,W_ID,"Who","Is","Customer","Receiving","450 Mass F.X.","BiggerPlace","CI","91083","(541) 931 - 0928",new Date(),"GC",19899324.21,.13,initialBalance,initialYTD,2L,15L,"Some History");
+  resultsl=voltExecuteSQL()[0].asScalarLong();
+  assert(resultsl == 1);
+  voltQueueSQL(insertCustomer,C_ID + 3,D_ID,W_ID,"ICanBe","","Customer","street","place","BiggerPlace","MA","91083","(913) 909 - 0928",new Date(),"GC",19298943.12,.13,initialBalance,initialYTD,3L,15L,"Some History");
+  resultsl=voltExecuteSQL()[0].asScalarLong();
+  assert(resultsl == 1);
+  final double paymentAmount=500.25;
+  voltQueueSQL(getCustomersByLastName,"Customer",D_ID,W_ID);
+  final VoltTable customers=voltExecuteSQL()[0];
+  final int namecnt=customers.getRowCount();
+  if (namecnt == 0) {
+    throw new VoltAbortException("no customers with last name: " + "Customer" + " in warehouse: " + W_ID + " and in district "+ D_ID);
+  }
+  try {
+    System.out.println("PAYMENT FOUND CUSTOMERS: " + customers.toString());
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+  }
+  final int index=(namecnt - 1) / 2;
+  final VoltTableRow customer=customers.fetchRow(index);
+  final long c_id=customer.getLong(C_ID_IDX);
+  voltQueueSQL(getWarehouse,W_ID);
+  voltQueueSQL(getDistrict,W_ID,D_ID);
+  final VoltTable[] results=voltExecuteSQL();
+  final VoltTable warehouse=results[0];
+  final VoltTable district=results[1];
+  try {
+    System.out.println("WAREHOUSE PRE: " + warehouse.toString());
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+  }
+  voltQueueSQL(getWarehouses);
+  VoltTable warehouses=voltExecuteSQL()[0];
+  try {
+    System.out.println("WAREHOUSE PRE: " + warehouses.toString());
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+  }
+  voltQueueSQL(updateWarehouseBalance,paymentAmount,W_ID);
+  voltQueueSQL(updateDistrictBalance,paymentAmount,W_ID,D_ID);
+  voltExecuteSQL();
+  voltQueueSQL(getWarehouses);
+  warehouses=voltExecuteSQL()[0];
+  try {
+    System.out.println("WAREHOUSE PRE: " + warehouses.toString());
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+  }
+  final byte[] c_first=customer.getStringAsBytes(C_FIRST_IDX);
+  final byte[] c_middle=customer.getStringAsBytes(C_MIDDLE_IDX);
+  final byte[] c_last=customer.getStringAsBytes(C_LAST_IDX);
+  final byte[] c_street_1=customer.getStringAsBytes(C_STREET_1_IDX);
+  final byte[] c_street_2=customer.getStringAsBytes(C_STREET_2_IDX);
+  final byte[] c_city=customer.getStringAsBytes(C_CITY_IDX);
+  final byte[] c_state=customer.getStringAsBytes(C_STATE_IDX);
+  final byte[] c_zip=customer.getStringAsBytes(C_ZIP_IDX);
+  final byte[] c_phone=customer.getStringAsBytes(C_PHONE_IDX);
+  final TimestampType c_since=customer.getTimestampAsTimestamp(C_SINCE_IDX);
+  final byte[] c_credit=customer.getStringAsBytes(C_CREDIT_IDX);
+  final double c_credit_lim=customer.getDouble(C_CREDIT_LIM_IDX);
+  final double c_discount=customer.getDouble(C_DISCOUNT_IDX);
+  final double c_balance=customer.getDouble(C_BALANCE_IDX) - paymentAmount;
+  final double c_ytd_payment=customer.getDouble(C_YTD_PAYMENT_IDX) + paymentAmount;
+  final long c_payment_cnt=customer.getLong(C_PAYMENT_CNT_IDX) + 1;
+  byte[] c_data;
+  if (Arrays.equals(c_credit,Constants.BAD_CREDIT_BYTES)) {
+    c_data=customer.getStringAsBytes(C_DATA_IDX);
+    byte[] newData=(c_id + " " + D_ID+ " "+ W_ID+ " "+ D_ID+ " "+ W_ID+ " "+ paymentAmount+ "|").getBytes();
+    int newLength=newData.length + c_data.length;
+    if (newLength > Constants.MAX_C_DATA) {
+      newLength=Constants.MAX_C_DATA;
+    }
+    ByteBuilder builder=new ByteBuilder(newLength);
+    int minLength=newLength;
+    if (newData.length < minLength)     minLength=newData.length;
+    builder.append(newData,0,minLength);
+    int remaining=newLength - minLength;
+    builder.append(c_data,0,remaining);
+    c_data=builder.array();
+    voltQueueSQL(updateBCCustomer,c_balance,c_ytd_payment,c_payment_cnt,c_data,W_ID,D_ID,c_id);
+  }
+ else {
+    c_data=new byte[0];
+    voltQueueSQL(updateGCCustomer,c_balance,c_ytd_payment,c_payment_cnt,W_ID,D_ID,c_id);
+  }
+  byte[] w_name=warehouse.fetchRow(0).getStringAsBytes(W_NAME_IDX);
+  final byte[] FOUR_SPACES={' ',' ',' ',' '};
+  byte[] d_name=district.fetchRow(0).getStringAsBytes(D_NAME_IDX);
+  ByteBuilder builder=new ByteBuilder(w_name.length + FOUR_SPACES.length + d_name.length);
+  builder.append(w_name);
+  builder.append(FOUR_SPACES);
+  builder.append(d_name);
+  byte[] h_data=builder.array();
+  voltQueueSQL(insertHistory,c_id,D_ID,W_ID,D_ID,W_ID,timestamp,paymentAmount,h_data);
+  voltExecuteSQL();
+  final VoltTable misc=misc_template.clone(8192);
+  misc.addRow(c_id,c_first,c_middle,c_last,c_street_1,c_street_2,c_city,c_state,c_zip,c_phone,c_since,c_credit,c_credit_lim,c_discount,c_balance,c_data);
+  VoltTable[] resultsX=new VoltTable[]{warehouse,district,misc};
+  assert((C_ID + 1) == (resultsX[2].fetchRow(0).getLong("c_id")));
+  assert("".equals(resultsX[2].fetchRow(0).getString("c_data")));
+  voltQueueSQL(getWarehouses);
+  warehouses=voltExecuteSQL()[0];
+  try {
+    System.out.println("WAREHOUSE POST: " + warehouses.toString());
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+  }
+  assert(1 == warehouses.getRowCount());
+  double amt1=initialYTD + paymentAmount;
+  double amt2=warehouses.fetchRow(0).getDouble("W_YTD");
+  assert(amt1 == amt2);
+  voltQueueSQL(getDistricts);
+  VoltTable districts=voltExecuteSQL()[0];
+  assert(1 == districts.getRowCount());
+  assert((initialYTD + paymentAmount) == districts.fetchRow(0).getDouble("D_YTD"));
+  voltQueueSQL(getCustomers);
+  VoltTable customersX=voltExecuteSQL()[0];
+  assert(4 == customersX.getRowCount());
+  assert((C_ID + 1) == customersX.fetchRow(1).getLong("C_ID"));
+  assert((initialBalance - paymentAmount) == customersX.fetchRow(1).getDouble("C_BALANCE"));
+  assert((initialYTD + paymentAmount) == customersX.fetchRow(1).getDouble("C_YTD_PAYMENT"));
+  assert(2 == customersX.fetchRow(1).getLong("C_PAYMENT_CNT"));
+  return null;
+}
