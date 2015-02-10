@@ -1,0 +1,147 @@
+{
+  assert(m_currentRequestType != REQUEST_TYPE.INITIALIZING);
+  m_memberResults=null;
+  if (m_requestedInitialState != null) {
+    assert(m_holdingDistributedLock);
+    try {
+      assert(m_synchronizedState == null);
+      Stat versionInfo=new Stat();
+      byte oldAndProposedState[]=m_zk.getData(m_barrierResultsPath,false,versionInfo);
+      assert(versionInfo.getVersion() == m_lastProposalVersion);
+      StateChangeRequest existingAndProposedStates=getExistingAndProposedBuffersFromResultsNode(oldAndProposedState);
+      m_currentRequestType=existingAndProposedStates.m_requestType;
+      if (m_currentRequestType == REQUEST_TYPE.LAST_CHANGE_OUTCOME_REQUEST) {
+        RESULT_CONCENSUS result=resultsAgreeOnSuccess(memberList);
+        if (result == RESULT_CONCENSUS.NO_QUORUM) {
+          if (m_stateChangeInitiator) {
+            m_synchronizedState=m_requestedInitialState;
+            ByteBuffer stableState=buildProposal(REQUEST_TYPE.INITIALIZING,m_synchronizedState.asReadOnlyBuffer(),m_synchronizedState.asReadOnlyBuffer());
+            Stat newProposalStat=m_zk.setData(m_barrierResultsPath,stableState.array(),-1);
+            m_lastProposalVersion=newProposalStat.getVersion();
+          }
+        }
+ else {
+          if (result == RESULT_CONCENSUS.AGREE) {
+            m_synchronizedState=existingAndProposedStates.m_proposal;
+          }
+ else {
+            m_synchronizedState=existingAndProposedStates.m_previousState;
+          }
+        }
+      }
+ else       if (m_currentRequestType == REQUEST_TYPE.STATE_CHANGE_REQUEST) {
+        RESULT_CONCENSUS result=resultsAgreeOnSuccess(memberList);
+        if (result == RESULT_CONCENSUS.AGREE) {
+          m_synchronizedState=existingAndProposedStates.m_proposal;
+        }
+ else {
+          assert(result == RESULT_CONCENSUS.DISAGREE);
+          m_synchronizedState=existingAndProposedStates.m_previousState;
+        }
+      }
+ else {
+        m_synchronizedState=existingAndProposedStates.m_previousState;
+      }
+      m_zk.delete(m_myPartiticpantsPath,-1);
+    }
+ catch (    KeeperException.SessionExpiredException e) {
+      m_log.debug(m_stateMachineId + ": Received SessionExpiredException in processResultQuorum");
+    }
+catch (    KeeperException.ConnectionLossException e) {
+      m_log.debug(m_stateMachineId + ": Received ConnectionLossException in processResultQuorum");
+    }
+catch (    InterruptedException e) {
+      m_log.debug(m_stateMachineId + ": Received InterruptedException in processResultQuorum");
+    }
+catch (    Exception e) {
+      org.voltdb.VoltDB.crashLocalVoltDB("Unexepected failure in StateMachine.",true,e);
+    }
+    if (m_stateChangeInitiator) {
+      m_stateChangeInitiator=false;
+      cancelDistributedLock();
+    }
+    if (m_synchronizedState != null) {
+      ByteBuffer readOnlyResult=m_synchronizedState.asReadOnlyBuffer();
+      m_requestedInitialState=null;
+      m_pendingProposal=null;
+      m_log.debug(m_stateMachineId + ": Initialized (concensus) with State " + stateToString(m_synchronizedState.asReadOnlyBuffer()));
+      unlockLocalState();
+      setInitialState(readOnlyResult);
+      monitorParticipantChanges();
+    }
+ else {
+      unlockLocalState();
+    }
+  }
+ else {
+    assert(m_currentRequestType != REQUEST_TYPE.LAST_CHANGE_OUTCOME_REQUEST);
+    boolean initiator=m_stateChangeInitiator;
+    boolean success=false;
+    if (m_currentRequestType == REQUEST_TYPE.STATE_CHANGE_REQUEST) {
+      ByteBuffer attemptedChange=m_pendingProposal.asReadOnlyBuffer();
+      try {
+        RESULT_CONCENSUS result=resultsAgreeOnSuccess(memberList);
+        m_zk.delete(m_myPartiticpantsPath,-1);
+        if (result == RESULT_CONCENSUS.AGREE) {
+          success=true;
+          m_synchronizedState=m_pendingProposal;
+        }
+ else {
+          assert(result == RESULT_CONCENSUS.DISAGREE);
+        }
+        m_pendingProposal=null;
+        if (m_stateChangeInitiator) {
+          assert(m_holdingDistributedLock);
+          m_stateChangeInitiator=false;
+          cancelDistributedLock();
+        }
+      }
+ catch (      KeeperException.SessionExpiredException e) {
+        success=false;
+        m_log.debug(m_stateMachineId + ": Received SessionExpiredException in processResultQuorum");
+      }
+catch (      KeeperException.ConnectionLossException e) {
+        success=false;
+        m_log.debug(m_stateMachineId + ": Received ConnectionLossException in processResultQuorum");
+      }
+catch (      InterruptedException e) {
+        success=false;
+        m_log.debug(m_stateMachineId + ": Received InterruptedException in processResultQuorum");
+      }
+catch (      Exception e) {
+        org.voltdb.VoltDB.crashLocalVoltDB("Unexepected failure in StateMachine.",true,e);
+        success=false;
+      }
+      m_log.debug(m_stateMachineId + ": Proposed state " + (success ? "succeeded " : "failed ")+ stateToString(attemptedChange.asReadOnlyBuffer()));
+      unlockLocalState();
+      proposedStateResolved(initiator,attemptedChange,success);
+      monitorParticipantChanges();
+    }
+ else {
+      ByteBuffer taskRequest=m_pendingProposal.asReadOnlyBuffer();
+      m_pendingProposal=null;
+      m_log.debug(m_stateMachineId + ": Task results for task " + taskToString(taskRequest.asReadOnlyBuffer()));
+      if (m_currentRequestType == REQUEST_TYPE.CORRELATED_COORDINATED_TASK) {
+        Map<String,ByteBuffer> results=getCorrelatedResults(taskRequest,memberList);
+        if (m_stateChangeInitiator) {
+          assert(m_holdingDistributedLock);
+          m_stateChangeInitiator=false;
+          cancelDistributedLock();
+        }
+        unlockLocalState();
+        correlatedTaskCompleted(initiator,taskRequest,results);
+      }
+ else {
+        ArrayList<ByteBuffer> results=getUncorrelatedResults(taskRequest,memberList);
+        if (m_stateChangeInitiator) {
+          assert(m_holdingDistributedLock);
+          m_stateChangeInitiator=false;
+          cancelDistributedLock();
+        }
+        unlockLocalState();
+        uncorrelatedTaskCompleted(initiator,taskRequest,results);
+      }
+      monitorParticipantChanges();
+    }
+  }
+}

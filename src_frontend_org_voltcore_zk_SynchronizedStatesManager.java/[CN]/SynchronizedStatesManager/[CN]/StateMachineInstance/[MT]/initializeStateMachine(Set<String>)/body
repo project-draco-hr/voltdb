@@ -1,0 +1,43 @@
+{
+  addIfMissing(m_statePath,CreateMode.PERSISTENT,null);
+  addIfMissing(m_lockPath,CreateMode.PERSISTENT,null);
+  addIfMissing(m_barrierParticipantsPath,CreateMode.PERSISTENT,null);
+  lockLocalState();
+  boolean ownDistributedLock=requestDistributedLock();
+  ByteBuffer startStates=buildProposal(REQUEST_TYPE.INITIALIZING,m_requestedInitialState.asReadOnlyBuffer(),m_requestedInitialState.asReadOnlyBuffer());
+  boolean stateMachineNodeCreated=addIfMissing(m_barrierResultsPath,CreateMode.PERSISTENT,startStates.array());
+  if (m_membershipChangePending) {
+    getLatestMembership();
+  }
+ else {
+    m_knownMembers=knownMembers;
+  }
+  if (stateMachineNodeCreated) {
+    assert(ownDistributedLock);
+    m_synchronizedState=m_requestedInitialState;
+    m_requestedInitialState=null;
+    m_lastProposalVersion=getProposalVersion();
+    ByteBuffer readOnlyResult=m_synchronizedState.asReadOnlyBuffer();
+    byte result[]=new byte[1];
+    result[0]=(byte)(1);
+    addResultEntry(result);
+    m_lockWaitingOn="bogus";
+    m_log.debug(m_stateMachineId + ": Initialized (first member) with State " + stateToString(m_synchronizedState.asReadOnlyBuffer()));
+    cancelDistributedLock();
+    checkForBarrierParticipantsChange();
+    setInitialState(readOnlyResult);
+  }
+ else {
+    if (ownDistributedLock) {
+      initializeFromActiveCommunity();
+    }
+ else {
+      addResultEntry(null);
+      Stat nodeStat=new Stat();
+      m_zk.getData(m_barrierResultsPath,false,nodeStat);
+      m_lastProposalVersion=nodeStat.getVersion();
+      checkForBarrierParticipantsChange();
+    }
+    assert(!debugIsLocalStateLocked());
+  }
+}
