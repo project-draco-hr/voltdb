@@ -1,0 +1,41 @@
+{
+  String ddlString=this.ddl.toString();
+  BatchResult result=BatchResult.BATCH_SUCCEEDED;
+  try {
+    if (ddlString.length() > 0) {
+      log.info(_F("\n::: DDL Batch (BEGIN) :::\n%s\n::: DDL Batch (END) :::",ddlString));
+      String error=execLiveDDL(client,ddlString,false);
+      if (error == null) {
+        this.lastSuccessfulDDL=ddlString;
+        if (this.expectedError != null) {
+          die("Expected an error containing '%s', but the batch succeeded.",this.expectedError);
+        }
+      }
+ else {
+        if (this.expectedError != null) {
+          if (this.expectedError.length() == 0) {
+            result=BatchResult.BATCH_FAILED_AS_EXPECTED;
+            log.info("Ignored expected error.");
+          }
+ else           if (error.contains(this.expectedError)) {
+            result=BatchResult.BATCH_FAILED_AS_EXPECTED;
+            log.info(_F("Ignored expected error containing '%s'.",this.expectedError));
+          }
+ else {
+            result=BatchResult.BATCH_FAILED;
+            die("Expected an error containing '%s'.",this.expectedError);
+          }
+        }
+ else {
+          result=BatchResult.BATCH_FAILED;
+          this.lastFailureDDL=ddlString;
+          this.lastFailureError=error;
+        }
+      }
+    }
+  }
+  finally {
+    this.ddl=null;
+  }
+  return result;
+}

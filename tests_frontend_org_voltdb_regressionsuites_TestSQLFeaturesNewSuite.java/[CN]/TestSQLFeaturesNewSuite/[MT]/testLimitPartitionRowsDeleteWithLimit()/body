@@ -1,0 +1,21 @@
+{
+  if (isHSQL())   return;
+  final long partitionRowLimit=5;
+  Client client=getClient();
+  for (int j=0; j < 2; ++j) {
+    VoltTable vt;
+    for (int i=0; i < 50; ++i) {
+      String uuid=UUID.randomUUID().toString();
+      vt=client.callProcedure("@AdHoc","INSERT INTO events_capped VALUES ('" + uuid + "', NOW, "+ i+ ")").getResults()[0];
+      validateTableOfScalarLongs(vt,new long[]{1});
+      client.drain();
+      Thread.sleep(1);
+    }
+    checkMultiPartitionCappedTableContents(client,"events_capped",partitionRowLimit);
+    vt=client.callProcedure("@AdHoc","select info from events_capped order by when_occurred desc, info desc limit 5").getResults()[0];
+    validateTableOfScalarLongs(vt,new long[]{49,48,47,46,45});
+    if (j == 0) {
+      client.callProcedure("@AdHoc","delete from events_capped");
+    }
+  }
+}

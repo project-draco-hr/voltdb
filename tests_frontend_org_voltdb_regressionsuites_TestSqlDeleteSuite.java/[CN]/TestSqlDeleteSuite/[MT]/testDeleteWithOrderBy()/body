@@ -1,0 +1,19 @@
+{
+  if (isHSQL()) {
+    return;
+  }
+  Client client=getClient();
+  String[] stmtTemplates={"DELETE FROM %s ORDER BY NUM ASC LIMIT 1","DELETE FROM %s ORDER BY NUM DESC LIMIT 2","DELETE FROM %s ORDER BY NUM LIMIT 3","DELETE FROM %s ORDER BY NUM OFFSET 2","DELETE FROM %s ORDER BY NUM OFFSET 0"};
+  long[][] expectedResults={{1,2,3,4,5,6,7,8,9},{1,2,3,4,5,6,7},{4,5,6,7},{4,5},{}};
+  insertRows(client,"P3",10);
+  insertRows(client,"R3",10);
+  for (int i=0; i < stmtTemplates.length; ++i) {
+    long numRowsBefore=client.callProcedure("@AdHoc","select count(*) from R3").getResults()[0].asScalarLong();
+    String replStmt=String.format(stmtTemplates[i],"R3");
+    long expectedRows=numRowsBefore - expectedResults[i].length;
+    validateTableOfScalarLongs(client,replStmt,new long[]{expectedRows});
+    validateTableOfScalarLongs(client,"SELECT NUM FROM R3 ORDER BY NUM ASC",expectedResults[i]);
+    String partStmt=String.format(stmtTemplates[i],"P3");
+    verifyStmtFails(client,partStmt,"DELETE statements affecting partitioned tables must " + "be able to execute on one partition " + "when ORDER BY and LIMIT or OFFSET clauses "+ "are present.");
+  }
+}
