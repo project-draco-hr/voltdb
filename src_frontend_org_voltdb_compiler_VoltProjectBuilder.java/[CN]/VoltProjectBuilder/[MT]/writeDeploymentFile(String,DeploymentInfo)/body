@@ -14,7 +14,7 @@
   paths.setVoltdbroot(voltdbroot);
   voltdbroot.setPath(voltRoot);
   if (m_snapshotPath != null) {
-    PathEntry snapshotPathElement=factory.createPathEntry();
+    PathsType.Snapshots snapshotPathElement=factory.createPathsTypeSnapshots();
     snapshotPathElement.setPath(m_snapshotPath);
     paths.setSnapshots(snapshotPathElement);
   }
@@ -24,12 +24,12 @@
     deployment.setHeartbeat(heartbeat);
   }
   if (m_commandLogPath != null) {
-    PathEntry commandLogPathElement=factory.createPathEntry();
+    PathsType.Commandlog commandLogPathElement=factory.createPathsTypeCommandlog();
     commandLogPathElement.setPath(m_commandLogPath);
     paths.setCommandlog(commandLogPathElement);
   }
   if (m_internalSnapshotPath != null) {
-    PathEntry commandLogSnapshotPathElement=factory.createPathEntry();
+    PathsType.Commandlogsnapshot commandLogSnapshotPathElement=factory.createPathsTypeCommandlogsnapshot();
     commandLogSnapshotPathElement.setPath(m_internalSnapshotPath);
     paths.setCommandlogsnapshot(commandLogSnapshotPathElement);
   }
@@ -129,20 +129,27 @@
   json.setEnabled(m_jsonApiEnabled);
   ExportType export=factory.createExportType();
   deployment.setExport(export);
-  export.setEnabled(m_elenabled && m_elloader != null && !m_elloader.trim().isEmpty());
-  ServerExportEnum exportTarget=ServerExportEnum.fromValue(m_elExportTarget.toLowerCase());
-  export.setTarget(exportTarget);
-  if ((m_elConfig != null) && (m_elConfig.size() > 0)) {
+  for (  HashMap<String,Object> exportConnector : m_elExportConnectors) {
     ExportConfigurationType exportConfig=factory.createExportConfigurationType();
-    List<PropertyType> configProperties=exportConfig.getProperty();
-    for (    Object nameObj : m_elConfig.keySet()) {
-      String name=String.class.cast(nameObj);
-      PropertyType prop=factory.createPropertyType();
-      prop.setName(name);
-      prop.setValue(m_elConfig.getProperty(name));
-      configProperties.add(prop);
+    exportConfig.setEnabled((boolean)exportConnector.get("elEnabled") && exportConnector.get("elLoader") != null && !((String)exportConnector.get("elLoader")).trim().isEmpty());
+    ServerExportEnum exportTarget=ServerExportEnum.fromValue(((String)exportConnector.get("elExportTarget")).toLowerCase());
+    exportConfig.setType(exportTarget);
+    if (exportTarget.equals(ServerExportEnum.CUSTOM)) {
+      exportConfig.setExportconnectorclass(System.getProperty(ExportDataProcessor.EXPORT_TO_TYPE));
     }
-    export.setConfiguration(exportConfig);
+    exportConfig.setTarget((String)exportConnector.get("elGroup"));
+    Properties config=(Properties)exportConnector.get("elConfig");
+    if ((config != null) && (config.size() > 0)) {
+      List<PropertyType> configProperties=exportConfig.getProperty();
+      for (      Object nameObj : config.keySet()) {
+        String name=String.class.cast(nameObj);
+        PropertyType prop=factory.createPropertyType();
+        prop.setName(name);
+        prop.setValue(config.getProperty(name));
+        configProperties.add(prop);
+      }
+    }
+    export.getConfiguration().add(exportConfig);
   }
   File file=File.createTempFile("myAppDeployment",".tmp");
   JAXBContext context=JAXBContext.newInstance(DeploymentType.class);

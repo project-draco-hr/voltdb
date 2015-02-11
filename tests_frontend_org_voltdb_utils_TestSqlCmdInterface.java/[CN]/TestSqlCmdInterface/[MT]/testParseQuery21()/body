@@ -1,5 +1,49 @@
 {
   ID=21;
+  final String sqlFile="./tests/frontend/org/voltdb/utils/localQry.txt";
   String raw=SQLCommand.readScriptFile(sqlFile);
-  assertThis(raw,qryFrmFile,numOfQueries,ID);
+  int numOfQueries=-1;
+  String qryFrmFile="";
+  File fh=new File(sqlFile);
+  assert(fh.exists());
+  String contents=null;
+  try {
+    Scanner scanner=new Scanner(fh);
+    contents=scanner.useDelimiter("\\A").next();
+    scanner.close();
+  }
+ catch (  FileNotFoundException e1) {
+    e1.printStackTrace();
+  }
+  int blockCommentCount=0;
+  try {
+    Pattern regex=Pattern.compile("(?:/\\*.*?\\*/)",Pattern.DOTALL | Pattern.MULTILINE);
+    Matcher regexMatcher=regex.matcher(contents);
+    StringBuffer sb=new StringBuffer();
+    while (regexMatcher.find()) {
+      regexMatcher.appendReplacement(sb,"");
+      ++blockCommentCount;
+    }
+    regexMatcher.appendTail(sb);
+  }
+ catch (  PatternSyntaxException ex) {
+    System.err.println(ex.getDescription());
+    System.exit(1);
+  }
+  Scanner opnScanner=new Scanner(fh);
+  while (opnScanner.hasNext()) {
+    String line=opnScanner.nextLine();
+    if (line.matches("-{2,}.*")) {
+      if (line.matches("^--num=\\d+$")) {
+        numOfQueries=Integer.parseInt(line.replaceAll("\\D+",""));
+      }
+    }
+ else {
+      qryFrmFile=qryFrmFile.concat(line).concat(" ");
+    }
+  }
+  opnScanner.close();
+  qryFrmFile=qryFrmFile.replaceAll("\\;+"," ");
+  qryFrmFile=trimKeyWordsLeadingSpaces(qryFrmFile);
+  assertThis(raw,qryFrmFile,numOfQueries,ID,blockCommentCount);
 }
