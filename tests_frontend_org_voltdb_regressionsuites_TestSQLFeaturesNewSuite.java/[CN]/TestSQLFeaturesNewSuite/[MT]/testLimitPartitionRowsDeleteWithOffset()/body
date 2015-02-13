@@ -1,0 +1,23 @@
+{
+  if (isHSQL())   return;
+  final long partitionRowLimit=5;
+  final long numPartitions=getLogicalPartitionCount();
+  Client client=getClient();
+  VoltTable vt;
+  for (int i=0; i < 50; ++i) {
+    boolean deleteMustBeTriggered=false;
+    if (numPartitions == 1) {
+      long currNumRows=client.callProcedure("@AdHoc","select count(*) from events_capped_offset").getResults()[0].asScalarLong();
+      deleteMustBeTriggered=(currNumRows == partitionRowLimit);
+    }
+    String uuid=UUID.randomUUID().toString();
+    vt=client.callProcedure("@AdHoc","INSERT INTO events_capped_offset VALUES ('" + uuid + "', NOW, "+ i+ ")").getResults()[0];
+    validateTableOfScalarLongs(vt,new long[]{1});
+    client.drain();
+    Thread.sleep(1);
+    if (deleteMustBeTriggered) {
+      validateTableOfScalarLongs(client,"select info from events_capped_offset order by info",new long[]{i - 1,i});
+    }
+  }
+  checkMultiPartitionCappedTableContents(client,"events_capped_offset",partitionRowLimit);
+}
