@@ -54,20 +54,33 @@
     m_parsedSelect.m_mvFixInfo.setNeeded(false);
     root=handleAggregationOperators(root);
   }
-  if (m_parsedSelect.hasComplexAgg()) {
-    AbstractPlanNode aggNode=root.getChild(0);
-    root.clearChildren();
-    aggNode.clearParents();
-    aggNode=handleOrderBy(aggNode);
-    root.addAndLinkChild(aggNode);
-  }
- else {
-    root=handleOrderBy(root);
+  if (m_parsedSelect.hasOrderByColumns()) {
+    root=handleOrderBy(m_parsedSelect,root);
+    if (m_parsedSelect.isComplexOrderBy() && root instanceof OrderByPlanNode) {
+      AbstractPlanNode child=root.getChild(0);
+      AbstractPlanNode grandChild=child.getChild(0);
+      if (child instanceof ProjectionPlanNode) {
+        root.unlinkChild(child);
+        child.unlinkChild(grandChild);
+        child.addAndLinkChild(root);
+        root.addAndLinkChild(grandChild);
+        root=child;
+      }
+ else       if (m_parsedSelect.hasDistinctWithGroupBy() && child.getPlanNodeType() == PlanNodeType.HASHAGGREGATE && grandChild.getPlanNodeType() == PlanNodeType.PROJECTION) {
+        AbstractPlanNode grandGrandChild=grandChild.getChild(0);
+        child.clearParents();
+        root.clearChildren();
+        grandGrandChild.clearParents();
+        grandChild.clearChildren();
+        grandChild.addAndLinkChild(root);
+        root.addAndLinkChild(grandGrandChild);
+        root=child;
+      }
+    }
   }
   if (mvFixNeedsProjection || needProjectionNode(root)) {
     root=addProjection(root);
   }
-  root=handleDistinctWithGroupby(root);
   if (m_parsedSelect.hasLimitOrOffset()) {
     root=handleLimitOperator(root);
   }

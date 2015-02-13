@@ -6,28 +6,29 @@
   String password="";
   String kerberos="";
   List<String> queries=null;
+  String ddlFile="";
   for (int i=0; i < args.length; i++) {
     String arg=args[i];
     if (arg.startsWith("--servers=")) {
-      serverList=arg.split("=")[1];
+      serverList=extractArgInput(arg);
     }
  else     if (arg.startsWith("--port=")) {
-      port=Integer.valueOf(arg.split("=")[1]);
+      port=Integer.valueOf(extractArgInput(arg));
     }
  else     if (arg.startsWith("--user=")) {
-      user=arg.split("=")[1];
+      user=extractArgInput(arg);
     }
  else     if (arg.startsWith("--password=")) {
-      password=arg.split("=")[1];
+      password=extractArgInput(arg);
     }
  else     if (arg.startsWith("--kerberos=")) {
-      kerberos=arg.split("=")[1];
+      kerberos=extractArgInput(arg);
     }
  else     if (arg.startsWith("--kerberos")) {
       kerberos="VoltDBClient";
     }
  else     if (arg.startsWith("--query=")) {
-      List<String> argQueries=parseQuery(arg.substring(8));
+      List<String> argQueries=SQLParser.parseQuery(arg.substring(8));
       if (!argQueries.isEmpty()) {
         if (queries == null) {
           queries=argQueries;
@@ -38,7 +39,7 @@
       }
     }
  else     if (arg.startsWith("--output-format=")) {
-      String formatName=arg.split("=")[1].toLowerCase();
+      String formatName=extractArgInput(arg).toLowerCase();
       if (formatName.equals("fixed")) {
         m_outputFormatter=new SQLCommandOutputFormatterDefault();
       }
@@ -59,7 +60,7 @@
       m_debug=true;
     }
  else     if (arg.startsWith("--stop-on-error=")) {
-      String optionName=arg.split("=")[1].toLowerCase();
+      String optionName=extractArgInput(arg).toLowerCase();
       if (optionName.equals("true")) {
         m_stopOnError=true;
       }
@@ -68,6 +69,15 @@
       }
  else {
         printUsage("Invalid value for --stop-on-error");
+      }
+    }
+ else     if (arg.startsWith("--ddl-file=")) {
+      String ddlFilePath=extractArgInput(arg);
+      try {
+        ddlFile=new Scanner(new File(ddlFilePath)).useDelimiter("\\Z").next();
+      }
+ catch (      FileNotFoundException e) {
+        printUsage("DDL file not found at path:" + ddlFilePath);
       }
     }
  else     if (arg.equals("--help")) {
@@ -84,7 +94,6 @@
   }
   String[] servers=serverList.split(",");
   openURLAsync();
-  DateParser.setLenient(true);
   ClientConfig config=new ClientConfig(user,password);
   config.setProcedureCallTimeout(0);
   try {
@@ -98,14 +107,16 @@
     System.exit(-1);
   }
   try {
+    if (!ddlFile.equals("")) {
+      VoltDB.callProcedure("@AdHoc",ddlFile);
+      System.exit(m_exitCode);
+    }
     loadSystemProcedures();
     loadStoredProcedures(Procedures,Classlist);
     in=new FileInputStream(FileDescriptor.in);
     out=System.out;
     lineInputReader=new SQLConsoleReader(in,out);
     lineInputReader.setBellEnabled(false);
-    Completer completer=new SQLCompleter(m_commandPrefixes);
-    lineInputReader.addCompleter(completer);
     historyFile=new FileHistory(new File(System.getProperty("user.home"),".sqlcmd_history"));
     lineInputReader.setHistory(historyFile);
     KeyMap keyMap=lineInputReader.getKeys();

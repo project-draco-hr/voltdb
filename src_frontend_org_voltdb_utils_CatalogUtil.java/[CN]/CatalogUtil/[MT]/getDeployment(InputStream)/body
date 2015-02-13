@@ -1,12 +1,34 @@
 {
   try {
-    JAXBContext jc=JAXBContext.newInstance("org.voltdb.compiler.deploymentfile");
-    SchemaFactory sf=SchemaFactory.newInstance(javax.xml.XMLConstants.W3C_XML_SCHEMA_NS_URI);
-    Schema schema=sf.newSchema(VoltDB.class.getResource("compiler/DeploymentFileSchema.xsd"));
-    Unmarshaller unmarshaller=jc.createUnmarshaller();
-    unmarshaller.setSchema(schema);
+    if (m_jc == null || m_schema == null) {
+      throw new RuntimeException("Error schema validation.");
+    }
+    Unmarshaller unmarshaller=m_jc.createUnmarshaller();
+    unmarshaller.setSchema(m_schema);
     JAXBElement<DeploymentType> result=(JAXBElement<DeploymentType>)unmarshaller.unmarshal(deployIS);
     DeploymentType deployment=result.getValue();
+    ExportType export=deployment.getExport();
+    if (export != null && export.getTarget() != null) {
+      if (export.getConfiguration().size() > 1) {
+        hostLog.error("Invalid schema, cannot use deprecated export syntax with multiple configuration tags.");
+        return null;
+      }
+      if (export.getConfiguration().isEmpty()) {
+        export.getConfiguration().add(new ExportConfigurationType());
+      }
+      ExportConfigurationType exportConfig=export.getConfiguration().get(0);
+      if (export.isEnabled() != null) {
+        exportConfig.setEnabled(export.isEnabled());
+      }
+      if (export.getTarget() != null) {
+        exportConfig.setType(export.getTarget());
+      }
+      if (export.getExportconnectorclass() != null) {
+        exportConfig.setExportconnectorclass(export.getExportconnectorclass());
+      }
+      exportConfig.setStream(Constants.DEFAULT_EXPORT_CONNECTOR_NAME);
+    }
+    populateDefaultDeployment(deployment);
     return deployment;
   }
  catch (  JAXBException e) {
@@ -21,9 +43,5 @@
  else {
       throw new RuntimeException(e);
     }
-  }
-catch (  SAXException e) {
-    hostLog.error("Error schema validating deployment.xml file. " + e.getMessage());
-    return null;
   }
 }

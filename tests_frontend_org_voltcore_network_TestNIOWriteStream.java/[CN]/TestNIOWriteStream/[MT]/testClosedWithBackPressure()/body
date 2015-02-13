@@ -1,0 +1,37 @@
+{
+  MockChannel channel=new MockChannel(MockChannel.SINK,1);
+  MockPort port=new MockPort();
+  AdmissionControlGroup acg=new AdmissionControlGroup(2,1024);
+  NIOWriteStream wstream=new NIOWriteStream(port,null,null,acg);
+  ByteBuffer tmp=ByteBuffer.allocate(6);
+  tmp.put((byte)1);
+  tmp.put((byte)2);
+  tmp.put((byte)3);
+  tmp.put((byte)4);
+  tmp.put((byte)5);
+  tmp.put((byte)6);
+  tmp.flip();
+  ByteBuffer tmp2=ByteBuffer.allocate(4);
+  tmp2.put((byte)1);
+  tmp2.put((byte)2);
+  tmp2.put((byte)3);
+  tmp2.put((byte)4);
+  tmp2.flip();
+  wstream.enqueue(tmp);
+  wstream.enqueue(tmp2);
+  assertTrue(port.checkWriteSet());
+  boolean threwException=false;
+  try {
+    wstream.swapAndSerializeQueuedWrites(pool);
+    wstream.drainTo(channel);
+  }
+ catch (  IOException e) {
+    threwException=true;
+  }
+  assertTrue(threwException);
+  assertTrue(acg.hasBackPressure());
+  assertEquals(6,acg.getPendingBytes());
+  wstream.shutdown();
+  assertFalse(acg.hasBackPressure());
+  assertEquals(0,acg.getPendingBytes());
+}

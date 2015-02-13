@@ -1,0 +1,18 @@
+{
+  voltQueueSQL(estimatesSelect,EXPECT_ZERO_OR_ONE_ROW,appId);
+  VoltTable estimatesTable=voltExecuteSQL()[0];
+  HyperLogLog hll=null;
+  if (estimatesTable.advanceRow()) {
+    byte[] hllBytes=estimatesTable.getVarbinary("hll");
+    hll=HyperLogLog.fromBytes(hllBytes);
+  }
+ else {
+    hll=new HyperLogLog(12);
+  }
+  hll.offerHashed(hashedDeviceId);
+  if (hll.getDirty()) {
+    voltQueueSQL(estimatesUpsert,EXPECT_SCALAR_MATCH(1),appId,hll.cardinality(),hll.toBytes());
+    return voltExecuteSQL(true);
+  }
+  return null;
+}
