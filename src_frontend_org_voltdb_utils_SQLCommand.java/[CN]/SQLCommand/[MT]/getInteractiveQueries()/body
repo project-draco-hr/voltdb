@@ -10,27 +10,21 @@
     isRecall=false;
     String line=lineInputReader.readLine(prompt);
     assert(line != null);
-    executeImmediate=SemicolonToken.matcher(line).matches();
+    executeImmediate=SQLParser.isSemiColonTerminated(line);
     if (multiLineStatementBuffer.isEmpty()) {
-      if (ExitToken.matcher(line).matches()) {
+      if (SQLParser.isExitCommand(line)) {
         return null;
       }
-      Matcher recallMatcher=RecallToken.matcher(line);
-      if (recallMatcher.matches()) {
-        int recall=-1;
-        try {
-          recall=Integer.parseInt(recallMatcher.group(1)) - 1;
-        }
- catch (        Exception x) {
-        }
-        if (recall > -1 && recall < RecallableSessionLines.size()) {
-          line=RecallableSessionLines.get(recall);
+      ParseRecallResults recallParseResults=SQLParser.parseRecallStatement(line,RecallableSessionLines.size() - 1);
+      if (recallParseResults != null) {
+        if (recallParseResults.error == null) {
+          line=RecallableSessionLines.get(recallParseResults.line);
           lineInputReader.putString(line);
           lineInputReader.flush();
           isRecall=true;
         }
  else {
-          System.out.printf("%s> Invalid RECALL reference: '" + recallMatcher.group(1) + "'.\n",RecallableSessionLines.size());
+          System.out.printf("%d> %s\n%d",RecallableSessionLines.size(),recallParseResults.error);
         }
         executeImmediate=false;
         continue;
@@ -40,7 +34,7 @@
         executeImmediate=false;
         continue;
       }
-      if (GoToken.matcher(line).matches()) {
+      if (SQLParser.isGoCommand(line)) {
         executeImmediate=true;
         line=";";
       }
@@ -49,9 +43,9 @@
         executeImmediate=false;
         continue;
       }
-      Matcher fileMatcher=FileToken.matcher(line);
-      if (fileMatcher.matches()) {
-        line=readScriptFile(fileMatcher.group(1));
+      File file=SQLParser.parseFileStatement(line);
+      if (file != null) {
+        line=readScriptFile(file);
         if (m_returningToPromptAfterError) {
           query=new StringBuilder();
           m_returningToPromptAfterError=false;
@@ -66,6 +60,6 @@
     query.append(line);
     query.append("\n");
   }
-  parsedQueries=parseQuery(query.toString());
+  parsedQueries=SQLParser.parseQuery(query.toString());
   return parsedQueries;
 }
