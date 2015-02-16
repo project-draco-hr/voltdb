@@ -12,20 +12,44 @@
   fullStatsContext.fetchAndResetBaseline();
   periodicStatsContext.fetchAndResetBaseline();
   schedulePeriodicStats();
+  Thread running_timer=new Thread(new Runnable(){
+    @Override public void run(){
+      try {
+        for (int i=0; i < config.duration; i++) {
+          Thread.sleep(1000l);
+          if (benchmarkComplete.get() == true) {
+            return;
+          }
+        }
+synchronized (benchmarkComplete) {
+          benchmarkComplete.set(true);
+          benchmarkComplete.notify();
+        }
+      }
+ catch (      InterruptedException doNothing) {
+      }
+    }
+  }
+);
+  running_timer.start();
   System.out.println("\nRunning benchmark...");
-  Thread.sleep(1000l * config.duration);
-  System.out.println("Object insertion complete");
-  benchmarkComplete.set(true);
+synchronized (benchmarkComplete) {
+    benchmarkComplete.wait();
+  }
   client.drain();
+  System.out.println("Client flushed; waiting for export to finish");
+  boolean success=false;
   try {
-    waitForStreamedAllocatedMemoryZero();
+    success=waitForStreamedAllocatedMemoryZero();
   }
  catch (  Exception e) {
     System.err.println("Error while waiting for export: ");
     e.printStackTrace();
-    System.exit(1);
   }
   timer.cancel();
   printResults();
   client.close();
+  if (!success) {
+    System.exit(1);
+  }
 }
