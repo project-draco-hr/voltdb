@@ -1,0 +1,55 @@
+{
+  String pathToCatalog=Configuration.getPathToCatalogForTest("adhocddl.jar");
+  String pathToDeployment=Configuration.getPathToCatalogForTest("adhocddl.xml");
+  VoltProjectBuilder builder=new VoltProjectBuilder();
+  builder.addLiteralSchema("--dont care");
+  builder.setUseDDLSchema(true);
+  boolean success=builder.compile(pathToCatalog,2,1,0);
+  assertTrue("Schema compilation failed",success);
+  MiscUtils.copyFile(builder.getPathToDeployment(),pathToDeployment);
+  VoltDB.Configuration config=new VoltDB.Configuration();
+  config.m_pathToCatalog=pathToCatalog;
+  config.m_pathToDeployment=pathToDeployment;
+  try {
+    startSystem(config);
+    boolean threw=false;
+    try {
+      m_client.callProcedure("@AdHoc","-- this used to hang the server");
+    }
+ catch (    ProcCallException pce) {
+      assertTrue("wrong exception details returned",pce.getMessage().contains("no SQL statement provided"));
+      threw=true;
+    }
+    assertTrue("Adhoc with no statements should return an error",threw);
+    threw=false;
+    try {
+      m_client.callProcedure("@AdHoc","/* this never hung the server, \n but test it! */");
+    }
+ catch (    ProcCallException pce) {
+      assertTrue("wrong exception details returned",pce.getMessage().contains("unexpected end of statement"));
+      threw=true;
+    }
+    assertTrue("Adhoc with no statements should return an error",threw);
+    threw=false;
+    try {
+      m_client.callProcedure("@AdHoc","");
+    }
+ catch (    ProcCallException pce) {
+      assertTrue("wrong exception details returned",pce.getMessage().contains("no SQL statement provided"));
+      threw=true;
+    }
+    assertTrue("Adhoc with no statements should return an error",threw);
+    threw=false;
+    try {
+      m_client.callProcedure("@AdHoc","  \n   \t    ");
+    }
+ catch (    ProcCallException pce) {
+      assertTrue("wrong exception details returned",pce.getMessage().contains("no SQL statement provided"));
+      threw=true;
+    }
+    assertTrue("Adhoc with no statements should return an error",threw);
+  }
+  finally {
+    teardownSystem();
+  }
+}
