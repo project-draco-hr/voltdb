@@ -5,7 +5,10 @@
   lockLocalState();
   boolean ownDistributedLock=requestDistributedLock();
   ByteBuffer startStates=buildProposal(REQUEST_TYPE.INITIALIZING,m_requestedInitialState.asReadOnlyBuffer(),m_requestedInitialState.asReadOnlyBuffer());
-  boolean stateMachineNodeCreated=addIfMissing(m_barrierResultsPath,CreateMode.PERSISTENT,startStates.array());
+  boolean stateMachineNodeCreated=false;
+  if (ownDistributedLock) {
+    stateMachineNodeCreated=addIfMissing(m_barrierResultsPath,CreateMode.PERSISTENT,startStates.array());
+  }
   if (m_membershipChangePending) {
     getLatestMembership();
   }
@@ -22,7 +25,7 @@
     result[0]=(byte)(1);
     addResultEntry(result);
     m_lockWaitingOn="bogus";
-    m_log.debug(m_stateMachineId + ": Initialized (first member) with State " + stateToString(m_synchronizedState.asReadOnlyBuffer()));
+    m_log.info(m_stateMachineId + ": Initialized (first member) with State " + stateToString(m_synchronizedState.asReadOnlyBuffer()));
     cancelDistributedLock();
     checkForBarrierParticipantsChange();
     setInitialState(readOnlyResult);
@@ -34,7 +37,16 @@
  else {
       addResultEntry(null);
       Stat nodeStat=new Stat();
-      m_zk.getData(m_barrierResultsPath,false,nodeStat);
+      boolean resultNodeFound=false;
+{
+        try {
+          m_zk.getData(m_barrierResultsPath,false,nodeStat);
+          resultNodeFound=true;
+        }
+ catch (        NoNodeException noNode) {
+        }
+      }
+      while (!resultNodeFound)       ;
       m_lastProposalVersion=nodeStat.getVersion();
       checkForBarrierParticipantsChange();
     }
