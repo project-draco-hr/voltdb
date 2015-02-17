@@ -13,7 +13,7 @@
     }
  catch (    ProcCallException pce) {
       threw=true;
-      assertTrue(pce.getMessage().contains("Write procedure @UpdateApplicationCatalog is not allowed"));
+      assertTrue(pce.getMessage().contains("Cluster is configured to use AdHoc DDL"));
     }
     assertTrue("@UAC should have failed",threw);
     assertFalse(findTableInSystemCatalogResults("FOO"));
@@ -23,18 +23,27 @@
     }
  catch (    ProcCallException pce) {
       threw=true;
-      assertTrue(pce.getMessage().contains("Write procedure @UpdateApplicationCatalog is not allowed"));
     }
-    assertTrue("@UAC should have failed",threw);
+    assertFalse("@UAC should should succeed with just a deployment file",threw);
+    assertEquals(getHeartbeatTimeout(),6);
     assertFalse(findTableInSystemCatalogResults("BAR"));
-    threw=false;
     try {
       m_client.callProcedure("@AdHoc","create table BAR (ID integer, VAL varchar(50));");
     }
  catch (    ProcCallException pce) {
-      fail("DDL should be allowed in replica cluster: " + pce);
+      fail("@AdHoc should succeed on replica cluster");
     }
     assertTrue(findTableInSystemCatalogResults("BAR"));
+    threw=false;
+    try {
+      m_client.callProcedure("@AdHoc","insert into BAR values (100, 'ABC');");
+    }
+ catch (    ProcCallException pce) {
+      threw=true;
+      System.out.println(pce.getMessage());
+      assertTrue(pce.getMessage().contains("Write procedure @AdHoc_RW_MP is not allowed in replica cluster"));
+    }
+    assertTrue("Adhoc DDL should have failed",threw);
     assertFalse(findClassInSystemCatalog("org.voltdb_testprocs.fullddlfeatures.testImportProc"));
     threw=false;
     try {
@@ -49,7 +58,6 @@
     }
     assertTrue("@UpdateClasses should have failed",threw);
     assertFalse(findClassInSystemCatalog("org.voltdb_testprocs.fullddlfeatures.testImportProc"));
-    verifyUACfromMasterToReplica();
     ClientResponse result=m_client.callProcedure("@AdHoc","select * from baz;");
     assertEquals(ClientResponse.SUCCESS,result.getStatus());
     m_client.callProcedure("@Promote");
