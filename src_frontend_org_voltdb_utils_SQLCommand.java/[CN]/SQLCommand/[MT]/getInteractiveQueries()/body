@@ -1,7 +1,7 @@
 {
   m_returningToPromptAfterError=false;
   List<String> multiLineStatementBuffer=new ArrayList<>();
-  List<String> parsedQueries=new ArrayList<>();
+  List<QueryInfo> queryBatchList=new ArrayList<QueryInfo>();
   StringBuilder query=new StringBuilder();
   boolean isRecall=false;
   boolean executeImmediate=false;
@@ -30,7 +30,7 @@
         continue;
       }
       RecallableSessionLines.add(line);
-      if (executesAsSimpleDirective(line)) {
+      if (executesShowCmdAsSimpleDirective(line)) {
         executeImmediate=false;
         continue;
       }
@@ -43,23 +43,37 @@
         executeImmediate=false;
         continue;
       }
-      File file=SQLParser.parseFileStatement(line);
-      if (file != null) {
-        line=readScriptFile(file);
+      FileInfo fileInfo=SQLParser.parseFileStatement(line);
+      if (fileInfo != null) {
+        File file=fileInfo.file;
+        assert(file != null);
+        m_inFileBatchMode=fileInfo.batch;
+        List<QueryInfo> contentInfo=readScriptFile(file);
         if (m_returningToPromptAfterError) {
           query=new StringBuilder();
           m_returningToPromptAfterError=false;
+          m_inFileBatchMode=false;
           executeImmediate=false;
           continue;
         }
+        if (contentInfo == null || contentInfo.isEmpty()) {
+          m_inFileBatchMode=false;
+          executeImmediate=false;
+          continue;
+        }
+        query=updateQueryBatch(contentInfo,queryBatchList,query);
+        m_inFileBatchMode=false;
+        executeImmediate=false;
+        continue;
       }
     }
  else {
       RecallableSessionLines.add(line);
     }
-    query.append(line);
-    query.append("\n");
+    query.append(line + "\n");
   }
-  parsedQueries=SQLParser.parseQuery(query.toString());
-  return parsedQueries;
+  if (query.length() > 0) {
+    queryBatchList.add(new QueryInfo(query,false));
+  }
+  return queryBatchList;
 }

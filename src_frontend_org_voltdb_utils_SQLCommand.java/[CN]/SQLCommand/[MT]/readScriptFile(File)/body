@@ -9,6 +9,7 @@
     return null;
   }
   try {
+    List<QueryInfo> queryBatchList=new ArrayList<SQLCommand.QueryInfo>();
     StringBuilder query=new StringBuilder();
     String line;
     while ((line=script.readLine()) != null) {
@@ -19,20 +20,32 @@
       if (line == null) {
         continue;
       }
-      File nestedFile=SQLParser.parseFileStatement(line);
-      if (nestedFile != null) {
-        line=readScriptFile(nestedFile);
-        if (line == null) {
+      FileInfo nestedFileInfo=SQLParser.parseFileStatement(line);
+      if (nestedFileInfo != null) {
+        if (m_inFileBatchMode) {
+          stopOrContinue(new RuntimeException("Not supported nested FILE command in a batch"));
+          return null;
+        }
+        File nestedFile=nestedFileInfo.file;
+        m_inFileBatchMode=nestedFileInfo.batch;
+        List<QueryInfo> contentInfo=readScriptFile(nestedFile);
+        if (contentInfo == null || contentInfo.isEmpty()) {
+          m_inFileBatchMode=false;
           if (m_returningToPromptAfterError) {
             return null;
           }
           continue;
         }
+        query=updateQueryBatch(contentInfo,queryBatchList,query);
       }
-      query.append(line);
-      query.append("\n");
+ else {
+        query.append(line + "\n");
+      }
     }
-    return query.toString().trim();
+    if (query.length() > 0) {
+      queryBatchList.add(new QueryInfo(query,false));
+    }
+    return queryBatchList;
   }
  catch (  Exception x) {
     stopOrContinue(x);
