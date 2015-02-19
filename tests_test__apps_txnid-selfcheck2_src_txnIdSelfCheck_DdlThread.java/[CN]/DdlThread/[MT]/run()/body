@@ -1,0 +1,40 @@
+{
+  int count=0;
+  int errcnt=0;
+  while (m_shouldContinue.get()) {
+    log.info(createOrDrop[count]);
+    try {
+      ClientResponse cr=TxnId2Utils.doAdHoc(client,createOrDrop[count]);
+      if (cr.getStatus() != ClientResponse.SUCCESS) {
+        hardStop("DDL failed: " + cr.getStatusString());
+      }
+ else {
+        log.info("DDL success #" + Long.toString(progressInd.get()) + " : "+ createOrDrop[count]);
+        progressInd.getAndIncrement();
+        Benchmark.txnCount.incrementAndGet();
+        errcnt=0;
+      }
+    }
+ catch (    ProcCallException e) {
+      ClientResponse cr=e.getClientResponse();
+      String ss=cr.getStatusString();
+      if (ss.matches("(?s).*Can't do a catalog update while an elastic join or rejoin is active.*"))       errcnt=0;
+      if (errcnt > 1) {
+        hardStop("too many ddl errors",e);
+      }
+ else {
+        errcnt++;
+      }
+    }
+catch (    Exception e) {
+      hardStop("DdlThread threw an error:",e);
+    }
+    count=++count & 1;
+    try {
+      Thread.sleep(10000);
+    }
+ catch (    Exception e) {
+    }
+  }
+  log.info(getName() + " thread has stopped");
+}

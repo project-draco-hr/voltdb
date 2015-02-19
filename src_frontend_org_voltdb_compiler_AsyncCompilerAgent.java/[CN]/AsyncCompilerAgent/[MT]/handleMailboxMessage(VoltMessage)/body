@@ -1,90 +1,25 @@
 {
   final LocalObjectMessage wrapper=(LocalObjectMessage)message;
-  if (wrapper.payload instanceof AdHocPlannerWork) {
-    final AdHocPlannerWork w=(AdHocPlannerWork)(wrapper.payload);
-    Boolean hasDDL=null;
-    SortedSet<String> conflictTables=new TreeSet<String>();
-    Set<String> createdTables=new HashSet<String>();
-    for (    String stmt : w.sqlStatements) {
-      if (SQLLexer.isComment(stmt) || stmt.trim().isEmpty()) {
-        continue;
+  if (wrapper.payload instanceof AsyncCompilerWork) {
+    AsyncCompilerWork compilerWork=(AsyncCompilerWork)wrapper.payload;
+    try {
+      if (compilerWork instanceof AdHocPlannerWork) {
+        handleAdHocPlannerWork((AdHocPlannerWork)(compilerWork));
       }
-      String ddlToken=SQLLexer.extractDDLToken(stmt);
-      if (hasDDL == null) {
-        hasDDL=(ddlToken != null) ? true : false;
+ else       if (compilerWork instanceof CatalogChangeWork) {
+        handleCatalogChangeWork((CatalogChangeWork)(compilerWork));
       }
- else       if ((hasDDL && ddlToken == null) || (!hasDDL && ddlToken != null)) {
-        AsyncCompilerResult errResult=AsyncCompilerResult.makeErrorResult(w,"DDL mixed with DML and queries is unsupported.");
-        w.completionHandler.onCompletion(errResult);
-        return;
-      }
-      if (hasDDL) {
-        if (!SQLLexer.isPermitted(stmt)) {
-          AsyncCompilerResult errResult=AsyncCompilerResult.makeErrorResult(w,"AdHoc DDL contains an unsupported DDL statement: " + stmt);
-          w.completionHandler.onCompletion(errResult);
-          return;
-        }
-        if (ddlToken.equals("drop")) {
-          String tableName=SQLLexer.extractDDLTableName(stmt);
-          if (tableName != null) {
-            conflictTables.add(tableName);
-          }
-        }
- else         if (ddlToken.equals("create")) {
-          String tableName=SQLLexer.extractDDLTableName(stmt);
-          if (tableName != null) {
-            createdTables.add(tableName);
-          }
-        }
-      }
-    }
-    if (hasDDL == null) {
-      AsyncCompilerResult errResult=AsyncCompilerResult.makeErrorResult(w,"Failed to plan, no SQL statement provided.");
-      w.completionHandler.onCompletion(errResult);
-      return;
-    }
- else     if (!hasDDL) {
-      final AsyncCompilerResult result=compileAdHocPlan(w);
-      w.completionHandler.onCompletion(result);
-    }
  else {
-      conflictTables.retainAll(createdTables);
-      if (!conflictTables.isEmpty()) {
-        StringBuilder sb=new StringBuilder();
-        sb.append("AdHoc DDL contains both DROP and CREATE statements for the following table(s):");
-        for (        String tableName : conflictTables) {
-          sb.append(" ");
-          sb.append(tableName);
-        }
-        sb.append("\nYou cannot DROP and ADD a table with the same name in a single batch " + "(via @AdHoc). Issue the DROP and ADD statements as separate commands.");
-        AsyncCompilerResult errResult=AsyncCompilerResult.makeErrorResult(w,sb.toString());
-        w.completionHandler.onCompletion(errResult);
-        return;
+        AsyncCompilerResult errResult=AsyncCompilerResult.makeErrorResult(compilerWork,String.format("Unexpected compiler work class: %s %s: %s",compilerWork.getClass().getName(),"Please contact VoltDB support with this message and the contents:",message.toString()));
+        compilerWork.completionHandler.onCompletion(errResult);
       }
-      if (!w.useAdhocDDL) {
-        AsyncCompilerResult errResult=AsyncCompilerResult.makeErrorResult(w,"Cluster is configured to use @UpdateApplicationCatalog " + "to change application schema.  AdHoc DDL is forbidden.");
-        w.completionHandler.onCompletion(errResult);
-        return;
-      }
-      final CatalogChangeWork ccw=new CatalogChangeWork(w);
-      dispatchCatalogChangeWork(ccw);
+    }
+ catch (    RuntimeException e) {
+      AsyncCompilerResult errResult=AsyncCompilerResult.makeErrorResult(compilerWork,String.format("Unexpected async compiler exception for %s: %s: %s: %s",compilerWork.getClass().getName(),e.getLocalizedMessage(),"Please contact VoltDB support with this message and the contents:",message.toString()));
+      compilerWork.completionHandler.onCompletion(errResult);
     }
   }
- else   if (wrapper.payload instanceof CatalogChangeWork) {
-    final CatalogChangeWork w=(CatalogChangeWork)(wrapper.payload);
-    if (w.invocationName.equals("@UpdateApplicationCatalog") && w.operationBytes != null && w.useAdhocDDL) {
-      AsyncCompilerResult errResult=AsyncCompilerResult.makeErrorResult(w,"Cluster is configured to use AdHoc DDL to change application " + "schema.  Use of @UpdateApplicationCatalog is forbidden.");
-      w.completionHandler.onCompletion(errResult);
-      return;
-    }
- else     if (w.invocationName.equals("@UpdateClasses") && !w.useAdhocDDL) {
-      AsyncCompilerResult errResult=AsyncCompilerResult.makeErrorResult(w,"Cluster is configured to use @UpdateApplicationCatalog " + "to change application schema.  Use of @UpdateClasses is forbidden.");
-      w.completionHandler.onCompletion(errResult);
-      return;
-    }
-    dispatchCatalogChangeWork(w);
-  }
  else {
-    hostLog.warn("Unexpected message received by AsyncCompilerAgent.  " + "Please contact VoltDB support with this message and the contents: " + message.toString());
+    hostLog.error("Unexpected message received by AsyncCompilerAgent.  " + "Please contact VoltDB support with this message and the contents: " + message.toString());
   }
 }
