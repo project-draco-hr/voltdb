@@ -1,10 +1,10 @@
 {
   BufferedReader script=null;
   try {
-    script=new BufferedReader(new FileReader(file));
+    script=new BufferedReader(new FileReader(fileInfo.getFile()));
   }
  catch (  FileNotFoundException e) {
-    System.err.println("Script file '" + file + "' could not be found.");
+    System.err.println("Script file '" + fileInfo + "' could not be found.");
     stopOrContinue(e);
     return null;
   }
@@ -22,21 +22,18 @@
       }
       FileInfo nestedFileInfo=SQLParser.parseFileStatement(line);
       if (nestedFileInfo != null) {
-        if (m_inFileBatchMode) {
+        if (fileInfo.isBatch()) {
           stopOrContinue(new RuntimeException("Not supported nested FILE command in a batch"));
           return null;
         }
-        File nestedFile=nestedFileInfo.getFile();
-        m_inFileBatchMode=nestedFileInfo.isBatch();
-        List<QueryInfo> contentInfo=readScriptFile(nestedFile);
+        List<QueryInfo> contentInfo=readScriptFile(nestedFileInfo);
         if (contentInfo == null || contentInfo.isEmpty()) {
-          m_inFileBatchMode=false;
           if (m_returningToPromptAfterError) {
             return null;
           }
           continue;
         }
-        updateQueryBatch(contentInfo,queryBatchList,query);
+        updateQueryBatch(queryBatchList,query,contentInfo);
         query=new StringBuilder();
       }
  else {
@@ -44,7 +41,13 @@
       }
     }
     if (query.length() > 0) {
-      queryBatchList.add(new QueryInfo(query,false));
+      if (fileInfo.isBatch()) {
+        assert(queryBatchList.isEmpty());
+        queryBatchList.add(new QueryInfo(query,fileInfo.getFile().getName()));
+      }
+ else {
+        queryBatchList.add(new QueryInfo(query));
+      }
     }
     return queryBatchList;
   }
