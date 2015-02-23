@@ -1,0 +1,39 @@
+{
+  try {
+    DeploymentType newDeployment=CatalogUtil.getDeployment(new ByteArrayInputStream(getDeploymentBytes()));
+    User user=null;
+    String[] splitTarget=target.split("/");
+    if (splitTarget.length == 3) {
+      user=findUser(splitTarget[2],newDeployment);
+    }
+    if (user == null) {
+      response.setStatus(HttpServletResponse.SC_GONE);
+      response.getWriter().print(buildClientResponse(jsonp,ClientResponse.UNEXPECTED_FAILURE,"User not found"));
+      return;
+    }
+    if (newDeployment.getUsers().getUser().size() == 1) {
+      newDeployment.setUsers(null);
+    }
+ else {
+      newDeployment.getUsers().getUser().remove(user);
+    }
+    String dep=CatalogUtil.getDeployment(newDeployment);
+    if (dep == null || dep.trim().length() <= 0) {
+      response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+      response.getWriter().print(buildClientResponse(jsonp,ClientResponse.UNEXPECTED_FAILURE,"Failed to build deployment information."));
+      return;
+    }
+    Object[] params=new Object[2];
+    params[0]=null;
+    params[1]=dep;
+    client.callProcedure("@UpdateApplicationCatalog",params);
+    response.setStatus(HttpServletResponse.SC_NO_CONTENT);
+    response.getWriter().print(buildClientResponse(jsonp,ClientResponse.SUCCESS,"User removed"));
+    notifyOfCatalogUpdate();
+  }
+ catch (  Exception ex) {
+    logger.error("Failed to update role from API",ex);
+    response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+    response.getWriter().print(buildClientResponse(jsonp,ClientResponse.UNEXPECTED_FAILURE,ex.toString()));
+  }
+}
