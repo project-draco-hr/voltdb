@@ -1,0 +1,18 @@
+{
+  String stmtNoOffset=stmt.substring(0,stmt.indexOf("OFFSET"));
+  VoltTable expectedTable=client.callProcedure("@AdHoc",stmtNoOffset).getResults()[0];
+  int rowCountBeforeOffset=expectedTable.getRowCount();
+  int[] offsets={0,1,5,10,11,15};
+  for (  int offset : offsets) {
+    VoltTable actualTable=client.callProcedure("@AdHoc",stmt,offset).getResults()[0];
+    int expectedRowCount=Math.max(rowCountBeforeOffset - offset,0);
+    assertEquals("Actual table has wrong number of rows: ",expectedRowCount,actualTable.getRowCount());
+    if (actualTable.getRowCount() == 0)     continue;
+    actualTable.resetRowPosition();
+    for (int i=0; i < offset; ++i)     expectedTable.advanceRow();
+    while (actualTable.advanceRow() && expectedTable.advanceRow()) {
+      assertEquals(expectedTable.getLong(0),actualTable.getLong(0));
+      assertEquals(expectedTable.getLong(1),actualTable.getLong(1));
+    }
+  }
+}
