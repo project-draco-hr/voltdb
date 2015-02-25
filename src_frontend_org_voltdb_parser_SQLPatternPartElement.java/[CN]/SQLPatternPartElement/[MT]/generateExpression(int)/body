@@ -8,14 +8,16 @@
   boolean explicitNonCaptureGroup=!captureGroup && (flags & SQLPatternFactory.GROUP) != 0;
   boolean optional=((flags & SQLPatternFactory.OPTIONAL) != 0);
   boolean leadingSpace=((flags & SQLPatternFactory.LEADING_SPACE) != 0);
+  boolean leadingSpaceToChild=((flags & SQLPatternFactory.ADD_LEADING_SPACE_TO_CHILD) != 0);
+  boolean childLeadingSpace=((flags & SQLPatternFactory.CHILD_SPACE_SEPARATOR) != 0 || (leadingSpace && leadingSpaceToChild));
   boolean nonCaptureGroup=(explicitNonCaptureGroup || (optional && (!captureGroup || leadingSpace)));
   boolean innerOptional=optional && captureGroup && !nonCaptureGroup;
   boolean outerOptional=optional && nonCaptureGroup;
   if (nonCaptureGroup) {
     sb.append("(?:");
   }
-  if (leadingSpace) {
-    sb.append("\\s+");
+  if (leadingSpace && !leadingSpaceToChild) {
+    sb.append("\\s+(?:");
   }
   if (captureGroup) {
     if (m_captureLabel != null) {
@@ -31,14 +33,14 @@
       if (m_separator != null) {
         sb.append(m_separator);
       }
-      if ((flags & SQLPatternFactory.CHILD_SPACE_SEPARATOR) != 0) {
+      if (childLeadingSpace) {
         flagsAddChild|=SQLPatternFactory.LEADING_SPACE;
       }
     }
+ else     if (childLeadingSpace && leadingSpaceToChild) {
+      flagsAddChild|=SQLPatternFactory.LEADING_SPACE;
+    }
     sb.append(m_parts[i].generateExpression(flagsAddChild));
-  }
-  if (m_trailer != null) {
-    sb.append(m_trailer);
   }
   if (captureGroup) {
     sb.append(")");
@@ -46,11 +48,17 @@
   if (innerOptional) {
     sb.append("?");
   }
+  if (leadingSpace && !leadingSpaceToChild) {
+    sb.append(")");
+  }
   if (nonCaptureGroup) {
     sb.append(")");
   }
   if (outerOptional) {
     sb.append("?");
+  }
+  if (m_trailer != null) {
+    sb.append(m_trailer);
   }
   return sb.toString();
 }
