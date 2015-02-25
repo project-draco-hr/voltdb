@@ -1,56 +1,33 @@
 {
-  System.out.println("Test initialization");
-  connect(config.servers);
-  Thread threads[]=new Thread[config.threads];
-  for (int i=0; i < config.threads; ++i) {
-    threads[i]=new Thread(new ExportThread());
-    threads[i].start();
+  try {
+    System.out.println("Test initialization");
+    connect(config.servers);
   }
-  System.out.println("Warming up...");
-  Thread.sleep(1000l * config.warmup);
-  warmupComplete.set(true);
-  long benchmarkStartTS=System.currentTimeMillis();
-  fullStatsContext.fetchAndResetBaseline();
-  periodicStatsContext.fetchAndResetBaseline();
-  schedulePeriodicStats();
-  Thread running_timer=new Thread(new Runnable(){
-    @Override public void run(){
-      try {
-        for (int i=0; i < config.duration; i++) {
-          Thread.sleep(1000l);
-          if (benchmarkComplete.get() == true) {
-            return;
-          }
-        }
-synchronized (benchmarkComplete) {
-          benchmarkComplete.set(true);
-          benchmarkComplete.notify();
-        }
-      }
- catch (      InterruptedException doNothing) {
-      }
+ catch (  InterruptedException e) {
+    System.err.println("Error connecting to VoltDB");
+    e.printStackTrace();
+    System.exit(1);
+  }
+  boolean success=true;
+  try {
+    if (config.count > 0) {
+      success=runTestByCount() && success;
+    }
+    if (config.duration > 0) {
+      success=runTestByDuration() && success;
     }
   }
-);
-  running_timer.start();
-  System.out.println("\nRunning benchmark...");
-synchronized (benchmarkComplete) {
-    benchmarkComplete.wait();
-  }
-  client.drain();
-  System.out.println("Client flushed; waiting for export to finish");
-  boolean success=false;
-  try {
-    success=waitForStreamedAllocatedMemoryZero();
-  }
- catch (  Exception e) {
-    System.err.println("Error while waiting for export: ");
+ catch (  InterruptedException|NoConnectionsException e) {
+    System.err.println("Error running benchmark test");
     e.printStackTrace();
+    System.exit(1);
   }
-  long benchmarkEndTS=System.currentTimeMillis();
-  timer.cancel();
-  printResults(benchmarkEndTS - benchmarkStartTS);
-  client.close();
+  printResults(benchmarkEndTS - benchmarkStartTS,test_count);
+  try {
+    client.close();
+  }
+ catch (  InterruptedException ignore) {
+  }
   if (!success) {
     System.exit(1);
   }
