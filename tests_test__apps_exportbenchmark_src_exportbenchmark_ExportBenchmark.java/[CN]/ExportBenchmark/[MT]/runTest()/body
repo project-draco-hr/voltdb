@@ -8,26 +8,33 @@
     e.printStackTrace();
     System.exit(1);
   }
-  boolean success=true;
+  Thread thread=new Thread(new ExportThread());
+  thread.start();
+  System.out.println("Warming up...");
+  Thread.sleep(1000l * config.warmup);
+  warmupComplete.set(true);
+  benchmarkStartTS=System.currentTimeMillis();
+  fullStatsContext.fetchAndResetBaseline();
+  periodicStatsContext.fetchAndResetBaseline();
+  schedulePeriodicStats();
+  System.out.println("\nRunning benchmark...");
+  Thread.sleep(1000l * config.duration);
+  benchmarkComplete.set(true);
+  timer.cancel();
+  client.drain();
+  System.out.println("Client flushed; waiting for export to finish");
+  boolean success=false;
   try {
-    if (config.count > 0) {
-      success=runTestByCount() && success;
-    }
-    if (config.duration > 0) {
-      success=runTestByDuration() && success;
-    }
+    success=waitForStreamedAllocatedMemoryZero();
   }
- catch (  InterruptedException|NoConnectionsException e) {
-    System.err.println("Error running benchmark test");
+ catch (  Exception e) {
+    System.err.println("Error while waiting for export: ");
     e.printStackTrace();
-    System.exit(1);
   }
-  printResults(benchmarkEndTS - benchmarkStartTS,test_count);
-  try {
-    client.close();
-  }
- catch (  InterruptedException ignore) {
-  }
+  benchmarkEndTS=System.currentTimeMillis();
+  System.out.println("Finished benchmark (test by count)");
+  printResults(benchmarkEndTS - benchmarkStartTS);
+  client.close();
   if (!success) {
     System.exit(1);
   }
