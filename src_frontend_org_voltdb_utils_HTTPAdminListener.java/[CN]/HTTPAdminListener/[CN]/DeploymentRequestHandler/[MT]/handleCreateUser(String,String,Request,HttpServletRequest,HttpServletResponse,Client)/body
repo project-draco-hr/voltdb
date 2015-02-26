@@ -1,0 +1,53 @@
+{
+  String update=request.getParameter("user");
+  if (update == null || update.trim().length() == 0) {
+    response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+    response.getWriter().print(buildClientResponse(jsonp,ClientResponse.UNEXPECTED_FAILURE,"Failed to get user information."));
+    return;
+  }
+  try {
+    User newUser=m_mapper.readValue(update,User.class);
+    if (newUser == null) {
+      response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+      response.getWriter().print(buildClientResponse(jsonp,ClientResponse.UNEXPECTED_FAILURE,"Failed to parse user information."));
+      return;
+    }
+    DeploymentType newDeployment=CatalogUtil.getDeployment(new ByteArrayInputStream(getDeploymentBytes()));
+    User user=null;
+    String[] splitTarget=target.split("/");
+    if (splitTarget.length == 3) {
+      user=findUser(splitTarget[2],newDeployment);
+    }
+    String returnString="User created";
+    if (user == null) {
+      if (newDeployment.getUsers() == null) {
+        newDeployment.setUsers(new UsersType());
+      }
+      newDeployment.getUsers().getUser().add(newUser);
+      response.setStatus(HttpServletResponse.SC_CREATED);
+    }
+ else {
+      user.setName(newUser.getName());
+      user.setPassword(newUser.getPassword());
+      user.setPlaintext(newUser.isPlaintext());
+      user.setRoles(newUser.getRoles());
+      returnString="User updated";
+      response.setStatus(HttpServletResponse.SC_OK);
+    }
+    String dep=CatalogUtil.getDeployment(newDeployment);
+    if (dep == null || dep.trim().length() <= 0) {
+      response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+      response.getWriter().print(buildClientResponse(jsonp,ClientResponse.UNEXPECTED_FAILURE,"Failed to build deployment information."));
+      return;
+    }
+    Object[] params=new Object[]{null,dep};
+    client.callProcedure("@UpdateApplicationCatalog",params);
+    response.getWriter().print(buildClientResponse(jsonp,ClientResponse.SUCCESS,returnString));
+    notifyOfCatalogUpdate();
+  }
+ catch (  Exception ex) {
+    logger.error("Failed to create user from API",ex);
+    response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+    response.getWriter().print(buildClientResponse(jsonp,ClientResponse.UNEXPECTED_FAILURE,ex.toString()));
+  }
+}
