@@ -1,15 +1,33 @@
 {
-  Matcher batchMatcher=FileBatchToken.matcher(statement);
-  if (batchMatcher.matches()) {
-    return new FileInfo(FileOption.BATCH,batchMatcher.group(1));
+  Matcher fileMatcher=FileToken.matcher(statement);
+  if (!fileMatcher.lookingAt()) {
+    return null;
   }
-  Matcher inlineBatchMatcher=FileInlineBatchToken.matcher(statement);
-  if (inlineBatchMatcher.matches()) {
-    return new FileInfo(FileOption.INLINEBATCH,inlineBatchMatcher.group(1));
+  String remainder=statement.substring(fileMatcher.end(),statement.length());
+  Matcher inlineBatchMatcher=DashInlineBatchToken.matcher(remainder);
+  if (inlineBatchMatcher.lookingAt()) {
+    remainder=remainder.substring(inlineBatchMatcher.end(),remainder.length());
+    Matcher delimiterMatcher=DelimiterToken.matcher(remainder);
+    if (delimiterMatcher.matches()) {
+      String delimiter=delimiterMatcher.group(1);
+      return new FileInfo(FileOption.INLINEBATCH,delimiter);
+    }
+    throw new SQLParser.Exception("Did not find valid delimiter for \"file -inlinebatch\" command.");
   }
-  Matcher matcher=FileToken.matcher(statement);
-  if (matcher.matches()) {
-    return new FileInfo(FileOption.PLAIN,matcher.group(1));
+  FileOption option=FileOption.PLAIN;
+  Matcher batchMatcher=DashBatchToken.matcher(remainder);
+  if (batchMatcher.lookingAt()) {
+    option=FileOption.BATCH;
+    remainder=remainder.substring(batchMatcher.end(),remainder.length());
   }
-  return null;
+  Matcher filenameMatcher=FilenameToken.matcher(remainder);
+  String filename=null;
+  if (filenameMatcher.matches()) {
+    filename=filenameMatcher.group(1);
+  }
+ else {
+    String msg=String.format("Did not find valid file name in \"file%s\" command.",option == FileOption.BATCH ? " -batch" : "");
+    throw new SQLParser.Exception(msg);
+  }
+  return new FileInfo(option,filename);
 }
