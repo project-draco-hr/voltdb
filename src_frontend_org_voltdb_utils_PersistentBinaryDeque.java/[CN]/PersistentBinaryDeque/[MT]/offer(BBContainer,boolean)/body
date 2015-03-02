@@ -1,0 +1,24 @@
+{
+  assertions();
+  if (m_closed) {
+    throw new IOException("Closed");
+  }
+  PBDSegment tail=m_segments.peekLast();
+  final boolean compress=object.b().isDirect() && allowCompression && (m_segments.size() > 1 || tail.sizeInBytes() > 1024 * 512);
+  if (!tail.offer(object,compress)) {
+    if (!tail.hasMoreEntries() && tail.m_discardCount == tail.getNumEntries()) {
+      m_segments.pollLast();
+      tail.closeAndDelete();
+    }
+    Long nextIndex=tail.m_index + 1;
+    tail=new PBDSegment(nextIndex,new VoltFile(m_path,m_nonce + "." + nextIndex+ ".pbd"));
+    tail.open(true);
+    m_segments.offer(tail);
+    final boolean success=tail.offer(object,compress);
+    if (!success) {
+      throw new IOException("Failed to offer object in PBD");
+    }
+  }
+  incrementNumObjects();
+  assertions();
+}
