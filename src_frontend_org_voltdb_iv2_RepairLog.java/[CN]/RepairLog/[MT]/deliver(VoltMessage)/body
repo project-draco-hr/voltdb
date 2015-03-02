@@ -5,16 +5,29 @@
       m_lastSpHandle=m.getSpHandle();
       truncate(m.getTruncationHandle(),IS_SP);
       m_logSP.add(new Item(IS_SP,m,m.getSpHandle(),m.getTxnId()));
+      if ("@ApplyBinaryLogSP".equals(m.getStoredProcedureName())) {
+        StoredProcedureInvocation spi=m.getStoredProcedureInvocation();
+        Object[] params=spi.getParams().toArray();
+        m_maxSeenSpBinaryLogDRId=Math.max(m_maxSeenSpBinaryLogDRId,((Number)params[3]).longValue());
+        m_maxSeenSpBinaryLogUniqueId=Math.max(m_maxSeenSpBinaryLogUniqueId,((Number)params[4]).longValue());
+      }
     }
   }
  else   if (msg instanceof FragmentTaskMessage) {
-    final TransactionInfoBaseMessage m=(TransactionInfoBaseMessage)msg;
+    final FragmentTaskMessage m=(FragmentTaskMessage)msg;
     if (!m.isReadOnly()) {
       truncate(m.getTruncationHandle(),IS_MP);
       if (m.getTxnId() > m_lastMpHandle || m_lastMpHandle == Long.MAX_VALUE) {
         m_logMP.add(new Item(IS_MP,m,m.getSpHandle(),m.getTxnId()));
         m_lastMpHandle=m.getTxnId();
         m_lastSpHandle=m.getSpHandle();
+      }
+      final Iv2InitiateTaskMessage initiateTask=m.getInitiateTask();
+      if (initiateTask != null && "@ApplyBinaryLogMP".equals(initiateTask.getStoredProcedureName())) {
+        StoredProcedureInvocation spi=initiateTask.getStoredProcedureInvocation();
+        Object[] params=spi.getParams().toArray();
+        m_maxSeenMpBinaryLogDRId=Math.max(m_maxSeenMpBinaryLogDRId,((Number)params[3]).longValue());
+        m_maxSeenMpBinaryLogUniqueId=Math.max(m_maxSeenMpBinaryLogUniqueId,((Number)params[4]).longValue());
       }
     }
   }
