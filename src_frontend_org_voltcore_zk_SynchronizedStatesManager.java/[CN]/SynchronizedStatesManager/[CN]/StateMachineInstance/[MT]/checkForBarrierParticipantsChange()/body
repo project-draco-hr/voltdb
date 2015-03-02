@@ -1,0 +1,95 @@
+{
+  assert(debugIsLocalStateLocked());
+  try {
+    Set<String> children=ImmutableSet.copyOf(m_zk.getChildren(m_barrierParticipantsPath,m_barrierParticipantsWatcher));
+    Stat nodeStat=new Stat();
+    byte statePair[]=m_zk.getData(m_barrierResultsPath,false,nodeStat);
+    int proposalVersion=nodeStat.getVersion();
+    if (proposalVersion != m_lastProposalVersion) {
+      m_lastProposalVersion=proposalVersion;
+      m_currentParticipants=children.size();
+      if (!m_stateChangeInitiator) {
+        assert(m_pendingProposal == null);
+        StateChangeRequest existingAndProposedStates=getExistingAndProposedBuffersFromResultsNode(statePair);
+        m_currentRequestType=existingAndProposedStates.m_requestType;
+        if (m_requestedInitialState != null) {
+          addResultEntry(null);
+          unlockLocalState();
+        }
+ else {
+          REQUEST_TYPE type=m_currentRequestType;
+          if (type == REQUEST_TYPE.LAST_CHANGE_OUTCOME_REQUEST) {
+            byte result[]=new byte[1];
+            if (existingAndProposedStates.m_proposal.equals(m_synchronizedState)) {
+              result[0]=(byte)1;
+              addResultEntry(result);
+            }
+ else {
+              assert(existingAndProposedStates.m_previousState.equals(m_synchronizedState));
+              result[0]=(byte)0;
+              addResultEntry(result);
+            }
+            unlockLocalState();
+          }
+ else {
+            m_zk.create(m_myPartiticpantsPath,null,Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL);
+            m_pendingProposal=existingAndProposedStates.m_proposal;
+            ByteBuffer proposedState=m_pendingProposal.asReadOnlyBuffer();
+            assert(existingAndProposedStates.m_previousState.equals(m_synchronizedState));
+            if (m_log.isDebugEnabled()) {
+              if (type == REQUEST_TYPE.STATE_CHANGE_REQUEST) {
+                m_log.debug(m_stateMachineId + ": Received new State proposal " + stateToString(proposedState.asReadOnlyBuffer()));
+              }
+ else {
+                m_log.debug(m_stateMachineId + ": Received new Task request " + taskToString(proposedState.asReadOnlyBuffer()));
+              }
+            }
+            unlockLocalState();
+            if (type == REQUEST_TYPE.STATE_CHANGE_REQUEST) {
+              stateChangeProposed(proposedState);
+            }
+ else {
+              taskRequested(proposedState);
+            }
+          }
+        }
+      }
+ else {
+        assert(m_pendingProposal != null);
+        if (m_currentRequestType == REQUEST_TYPE.CORRELATED_COORDINATED_TASK || m_currentRequestType == REQUEST_TYPE.UNCORRELATED_COORDINATED_TASK) {
+          ByteBuffer taskRequest=m_pendingProposal.asReadOnlyBuffer();
+          unlockLocalState();
+          taskRequested(taskRequest);
+        }
+ else {
+          unlockLocalState();
+        }
+      }
+    }
+ else {
+      m_currentParticipants=children.size();
+      if (m_ourDistributedLockName != null && m_ourDistributedLockName == m_lockWaitingOn && children.size() == 0) {
+        notifyDistributedLockWaiter();
+      }
+ else {
+        unlockLocalState();
+      }
+    }
+  }
+ catch (  KeeperException.SessionExpiredException e) {
+    m_log.debug(m_stateMachineId + ": Received SessionExpiredException in checkForBarrierParticipantsChange");
+    unlockLocalState();
+  }
+catch (  KeeperException.ConnectionLossException e) {
+    m_log.debug(m_stateMachineId + ": Received ConnectionLossException in checkForBarrierParticipantsChange");
+    unlockLocalState();
+  }
+catch (  InterruptedException e) {
+    m_log.debug(m_stateMachineId + ": Received InterruptedException in checkForBarrierParticipantsChange");
+    unlockLocalState();
+  }
+catch (  Exception e) {
+    org.voltdb.VoltDB.crashLocalVoltDB("Unexepected failure in StateMachine.",true,e);
+  }
+  assert(!debugIsLocalStateLocked());
+}
