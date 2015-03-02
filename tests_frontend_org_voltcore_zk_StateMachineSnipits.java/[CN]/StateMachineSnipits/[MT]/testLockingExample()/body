@@ -1,0 +1,59 @@
+{
+  SynchronizedStatesManager ssm1=addStateMachineManagerFor(0,"LOCK_TESTER","manager1",1);
+  SynchronizedStatesManager ssm2=addStateMachineManagerFor(1,"LOCK_TESTER","manager2",1);
+  DistributedLock distributedLock1=new DistributedLock(ssm1,"lockingStateMachine");
+  try {
+    distributedLock1.start();
+  }
+ catch (  InterruptedException e1) {
+    fail();
+  }
+  DistributedLock distributedLock2=new DistributedLock(ssm2,"lockingStateMachine");
+  try {
+    distributedLock2.start();
+  }
+ catch (  InterruptedException e1) {
+    fail();
+  }
+  while (!distributedLock1.isInitialized()) {
+    Thread.yield();
+  }
+  while (!distributedLock2.isInitialized()) {
+    Thread.yield();
+  }
+  distributedLock1.acquireDistriutedLock();
+  Lock waiterForLock2=new ReentrantLock();
+  distributedLock2.acquireDistributedLockAsync(waiterForLock2);
+  try {
+    ssm2=null;
+    failSite(1);
+    distributedLock1.releaseDistributedLock();
+  }
+ catch (  Exception e) {
+    fail();
+  }
+  SynchronizedStatesManager ssm3=addStateMachineManagerFor(0,"LOCK_TESTER","manager3",1);
+  DistributedLock distributedLock3=new DistributedLock(ssm3,"lockingStateMachine");
+  try {
+    distributedLock3.start();
+  }
+ catch (  InterruptedException e1) {
+    fail();
+  }
+  try {
+    while (!distributedLock3.isInitialized()) {
+      Thread.yield();
+    }
+    Lock waiterForLock3=new ReentrantLock();
+    distributedLock3.acquireDistributedLockAsync(waiterForLock3);
+synchronized (waiterForLock3) {
+      while (!distributedLock3.m_locked)       waiterForLock3.wait();
+    }
+    waiterForLock3=null;
+    distributedLock3.releaseDistributedLock();
+    tearDownZK();
+  }
+ catch (  Exception e) {
+    fail();
+  }
+}
