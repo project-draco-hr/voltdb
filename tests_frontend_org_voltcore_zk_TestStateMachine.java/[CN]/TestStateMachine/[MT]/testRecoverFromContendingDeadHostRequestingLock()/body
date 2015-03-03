@@ -1,0 +1,37 @@
+{
+  log.info("Starting testRecoverFromContendingDeadHostRequestingLock");
+  try {
+    BooleanStateMachine i0=m_booleanStateMachinesForGroup1[0];
+    BooleanStateMachine i1=m_booleanStateMachinesForGroup1[1];
+    BooleanStateMachine i2=m_booleanStateMachinesForGroup1[2];
+    for (int ii=0; ii < NUM_AGREEMENT_SITES; ii++) {
+      m_booleanStateMachinesForGroup1[ii].registerStateMachineWithManager(bsm_states[0]);
+    }
+    while (!boolsInitialized(m_booleanStateMachinesForGroup1)) {
+      Thread.sleep(500);
+    }
+    assertTrue(boolsSynchronized(m_booleanStateMachinesForGroup1));
+    boolean newVal=!i0.state;
+    i0.justHoldTheLock=true;
+    i0.requestLock();
+    i1.justHoldTheLock=true;
+    assertFalse(i1.requestLock());
+    i2.switchState();
+    i1=null;
+    failSite(1);
+    Thread.sleep(1000);
+    i0.cancelLockRequest();
+    int waitLoop=0;
+    for (; waitLoop < 10; waitLoop++) {
+      if (i2.ourProposalOrTaskFinished && boolsSynchronized(m_booleanStateMachinesForGroup1)) {
+        break;
+      }
+      Thread.sleep(500);
+    }
+    assertTrue(waitLoop < 10);
+    assertTrue(i0.state == newVal);
+  }
+ catch (  Exception e) {
+    fail("Exception occured during test.");
+  }
+}
