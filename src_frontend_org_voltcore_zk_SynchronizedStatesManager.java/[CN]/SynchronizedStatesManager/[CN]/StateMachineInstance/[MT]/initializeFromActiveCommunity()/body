@@ -1,0 +1,64 @@
+{
+  ByteBuffer readOnlyResult=null;
+  ByteBuffer staleTask=null;
+  byte oldAndProposedState[];
+  try {
+    Stat lastProposal=new Stat();
+    oldAndProposedState=m_zk.getData(m_barrierResultsPath,false,lastProposal);
+    StateChangeRequest existingAndProposedStates=getExistingAndProposedBuffersFromResultsNode(oldAndProposedState);
+    if (existingAndProposedStates.m_requestType == REQUEST_TYPE.LAST_CHANGE_OUTCOME_REQUEST) {
+      RESULT_CONCENSUS result=resultsAgreeOnSuccess(m_knownMembers);
+      if (result == RESULT_CONCENSUS.AGREE) {
+        existingAndProposedStates=new StateChangeRequest(REQUEST_TYPE.INITIALIZING,existingAndProposedStates.m_proposal.asReadOnlyBuffer(),existingAndProposedStates.m_proposal.asReadOnlyBuffer());
+      }
+ else       if (result == RESULT_CONCENSUS.DISAGREE) {
+        existingAndProposedStates=new StateChangeRequest(REQUEST_TYPE.INITIALIZING,existingAndProposedStates.m_previousState.asReadOnlyBuffer(),existingAndProposedStates.m_previousState.asReadOnlyBuffer());
+      }
+ else {
+        existingAndProposedStates=new StateChangeRequest(REQUEST_TYPE.STATE_CHANGE_REQUEST,existingAndProposedStates.m_previousState.asReadOnlyBuffer(),existingAndProposedStates.m_proposal.asReadOnlyBuffer());
+      }
+    }
+    if (existingAndProposedStates.m_requestType == REQUEST_TYPE.STATE_CHANGE_REQUEST) {
+      m_stateChangeInitiator=true;
+      m_pendingProposal=m_requestedInitialState;
+      m_currentRequestType=REQUEST_TYPE.LAST_CHANGE_OUTCOME_REQUEST;
+      ByteBuffer stateChange=buildProposal(REQUEST_TYPE.LAST_CHANGE_OUTCOME_REQUEST,existingAndProposedStates.m_previousState,existingAndProposedStates.m_proposal);
+      m_lastProposalVersion=wakeCommunityWithProposal(stateChange.array());
+      addResultEntry(null);
+      checkForBarrierResultsChanges();
+    }
+ else {
+      assert(existingAndProposedStates.m_requestType == REQUEST_TYPE.INITIALIZING || existingAndProposedStates.m_requestType == REQUEST_TYPE.CORRELATED_COORDINATED_TASK || existingAndProposedStates.m_requestType == REQUEST_TYPE.UNCORRELATED_COORDINATED_TASK);
+      m_synchronizedState=existingAndProposedStates.m_previousState;
+      m_requestedInitialState=null;
+      readOnlyResult=m_synchronizedState.asReadOnlyBuffer();
+      m_lastProposalVersion=lastProposal.getVersion();
+      m_pendingProposal=null;
+      m_log.info(m_stateMachineId + ": Initialized (existing) with State " + stateToString(m_synchronizedState.asReadOnlyBuffer()));
+      if (existingAndProposedStates.m_requestType != REQUEST_TYPE.INITIALIZING) {
+        staleTask=existingAndProposedStates.m_proposal.asReadOnlyBuffer();
+      }
+      cancelDistributedLock();
+      m_lockWaitingOn="bogus";
+      checkForBarrierParticipantsChange();
+    }
+  }
+ catch (  KeeperException.SessionExpiredException e) {
+    m_log.debug(m_stateMachineId + ": Received SessionExpiredException in initializeFromActiveCommunity");
+  }
+catch (  KeeperException.ConnectionLossException e) {
+    m_log.debug(m_stateMachineId + ": Received ConnectionLossException in initializeFromActiveCommunity");
+  }
+catch (  InterruptedException e) {
+    m_log.debug(m_stateMachineId + ": Received InterruptedException in initializeFromActiveCommunity");
+  }
+catch (  Exception e) {
+    org.voltdb.VoltDB.crashLocalVoltDB("Unexepected failure in StateMachine.",true,e);
+  }
+  if (readOnlyResult != null) {
+    setInitialState(readOnlyResult);
+  }
+  if (staleTask != null) {
+    staleTaskRequestNotification(staleTask);
+  }
+}

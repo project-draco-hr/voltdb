@@ -4,12 +4,12 @@
     return false;
   }
   statement=statement.trim();
-  Matcher statementMatcher=voltdbStatementPrefixPattern.matcher(statement);
+  Matcher statementMatcher=SQLParser.matchAllVoltDBStatementPreambles(statement);
   if (!statementMatcher.find()) {
     return false;
   }
   String commandPrefix=statementMatcher.group(1).toUpperCase();
-  statementMatcher=procedureClassPattern.matcher(statement);
+  statementMatcher=SQLParser.matchCreateProcedureFromClass(statement);
   if (statementMatcher.matches()) {
     if (whichProcs != DdlProceduresToLoad.ALL_DDL_PROCEDURES) {
       return true;
@@ -33,21 +33,22 @@
     addProcedurePartitionInfo(procName,partitionData,statement);
     return true;
   }
-  statementMatcher=procedureSingleStatementPattern.matcher(statement);
-  if (statementMatcher.matches()) {
-    String clazz=checkIdentifierStart(statementMatcher.group(1),statement);
-    String sqlStatement=statementMatcher.group(3) + ";";
-    ProcedureDescriptor descriptor=m_compiler.new ProcedureDescriptor(new ArrayList<String>(),clazz,sqlStatement,null,null,false,null,null,null);
-    CreateProcedurePartitionData partitionData=parseCreateProcedureClauses(descriptor,statementMatcher.group(2));
-    m_tracker.add(descriptor);
-    addProcedurePartitionInfo(clazz,partitionData,statement);
-    return true;
-  }
-  statementMatcher=procedureWithScriptPattern.matcher(statement);
+  statementMatcher=SQLParser.matchCreateProcedureAsScript(statement);
   if (statementMatcher.matches()) {
     String className=checkIdentifierStart(statementMatcher.group(1),statement);
     String codeBlock=statementMatcher.group(3);
-    Language language=Language.valueOf(statementMatcher.group(4).toUpperCase());
+    String languageToken=statementMatcher.group(4);
+    if (languageToken == null) {
+      throw m_compiler.new VoltCompilerException("LANGUAGE clause is bad or missing.");
+    }
+    languageToken=languageToken.toUpperCase();
+    Language language;
+    try {
+      language=Language.valueOf(languageToken);
+    }
+ catch (    IllegalArgumentException e) {
+      throw m_compiler.new VoltCompilerException(String.format("Language \"%s\" is not a supported",languageToken));
+    }
     Class<?> scriptClass=null;
     if (language == Language.GROOVY) {
       try {
@@ -69,17 +70,27 @@ catch (      Exception ex) {
     addProcedurePartitionInfo(procName,partitionData,statement);
     return true;
   }
-  statementMatcher=procedureDropPattern.matcher(statement);
+  statementMatcher=SQLParser.matchCreateProcedureAsSQL(statement);
+  if (statementMatcher.matches()) {
+    String clazz=checkProcedureIdentifier(statementMatcher.group(1),statement);
+    String sqlStatement=statementMatcher.group(3) + ";";
+    ProcedureDescriptor descriptor=m_compiler.new ProcedureDescriptor(new ArrayList<String>(),clazz,sqlStatement,null,null,false,null,null,null);
+    CreateProcedurePartitionData partitionData=parseCreateProcedureClauses(descriptor,statementMatcher.group(2));
+    m_tracker.add(descriptor);
+    addProcedurePartitionInfo(clazz,partitionData,statement);
+    return true;
+  }
+  statementMatcher=SQLParser.matchDropProcedure(statement);
   if (statementMatcher.matches()) {
     String classOrProcName=checkIdentifierStart(statementMatcher.group(1),statement);
     m_tracker.removeProcedure(classOrProcName,(statementMatcher.group(2) != null));
     return true;
   }
-  statementMatcher=prePartitionPattern.matcher(statement);
+  statementMatcher=SQLParser.matchPartitionStatementPreamble(statement);
   if (statementMatcher.matches()) {
     String partitionee=statementMatcher.group(1).toUpperCase();
     if (TABLE.equals(partitionee)) {
-      statementMatcher=partitionTablePattern.matcher(statement);
+      statementMatcher=SQLParser.matchPartitionTable(statement);
       if (!statementMatcher.matches()) {
         throw m_compiler.new VoltCompilerException(String.format("Invalid PARTITION statement: \"%s\", " + "expected syntax: PARTITION TABLE <table> ON COLUMN <column>",statement.substring(0,statement.length() - 1)));
       }
@@ -99,7 +110,7 @@ catch (      Exception ex) {
       if (whichProcs != DdlProceduresToLoad.ALL_DDL_PROCEDURES) {
         return true;
       }
-      statementMatcher=partitionProcedureStatementPattern.matcher(statement);
+      statementMatcher=SQLParser.matchPartitionProcedure(statement);
       if (!statementMatcher.matches()) {
         throw m_compiler.new VoltCompilerException(String.format("Invalid PARTITION statement: \"%s\", " + "expected syntax: PARTITION PROCEDURE <procedure> ON " + "TABLE <table> COLUMN <column> [PARAMETER <parameter-index-no>]",statement.substring(0,statement.length() - 1)));
       }
@@ -114,7 +125,7 @@ catch (      Exception ex) {
       return true;
     }
   }
-  statementMatcher=replicatePattern.matcher(statement);
+  statementMatcher=SQLParser.matchReplicateTable(statement);
   if (statementMatcher.matches()) {
     String tableName=checkIdentifierStart(statementMatcher.group(1),statement);
     VoltXMLElement tableXML=m_schema.findChild("table",tableName.toUpperCase());
@@ -127,7 +138,7 @@ catch (      Exception ex) {
     }
     return true;
   }
-  statementMatcher=importClassPattern.matcher(statement);
+  statementMatcher=SQLParser.matchImportClass(statement);
   if (statementMatcher.matches()) {
     if (whichProcs == DdlProceduresToLoad.ALL_DDL_PROCEDURES) {
       if (!(m_classLoader instanceof InMemoryJarfile.JarLoader)) {
@@ -148,7 +159,7 @@ catch (      Exception ex) {
     }
     return true;
   }
-  statementMatcher=createRolePattern.matcher(statement);
+  statementMatcher=SQLParser.matchCreateRole(statement);
   if (statementMatcher.matches()) {
     String roleName=statementMatcher.group(1).toLowerCase();
     CatalogMap<Group> groupMap=db.getGroups();
@@ -167,7 +178,7 @@ catch (      Exception ex) {
     }
     return true;
   }
-  statementMatcher=dropRolePattern.matcher(statement);
+  statementMatcher=SQLParser.matchDropRole(statement);
   if (statementMatcher.matches()) {
     String roleName=statementMatcher.group(1).toUpperCase();
     boolean ifExists=(statementMatcher.group(2) != null);
@@ -188,7 +199,7 @@ catch (      Exception ex) {
     }
     return true;
   }
-  statementMatcher=exportPattern.matcher(statement);
+  statementMatcher=SQLParser.matchExportTable(statement);
   if (statementMatcher.matches()) {
     String tableName=checkIdentifierStart(statementMatcher.group(1),statement);
     String targetName=((statementMatcher.groupCount() > 1) && (statementMatcher.group(2) != null)) ? checkIdentifierStart(statementMatcher.group(2),statement) : Constants.DEFAULT_EXPORT_CONNECTOR_NAME;
@@ -198,6 +209,23 @@ catch (      Exception ex) {
     }
  else {
       throw m_compiler.new VoltCompilerException(String.format("Invalid EXPORT statement: table %s was not present in the catalog.",tableName));
+    }
+    return true;
+  }
+  statementMatcher=SQLParser.matchDRTable(statement);
+  if (statementMatcher.matches()) {
+    String tableName;
+    if (statementMatcher.group(1).equalsIgnoreCase("*")) {
+      tableName="*";
+    }
+ else {
+      tableName=checkIdentifierStart(statementMatcher.group(1),statement);
+    }
+    if (statementMatcher.group(2) != null) {
+      m_tracker.addDRedTable(tableName,"DISABLE");
+    }
+ else {
+      m_tracker.addDRedTable(tableName,"ENABLE");
     }
     return true;
   }
@@ -215,6 +243,9 @@ catch (      Exception ex) {
   }
   if (EXPORT.equals(commandPrefix)) {
     throw m_compiler.new VoltCompilerException(String.format("Invalid EXPORT TABLE statement: \"%s\", " + "expected syntax: EXPORT TABLE <table>",statement.substring(0,statement.length() - 1)));
+  }
+  if (DR.equals(commandPrefix)) {
+    throw m_compiler.new VoltCompilerException(String.format("Invalid DR TABLE statement: \"%s\", " + "expected syntax: DR TABLE <table> [DISABLE]",statement.substring(0,statement.length() - 1)));
   }
   return false;
 }

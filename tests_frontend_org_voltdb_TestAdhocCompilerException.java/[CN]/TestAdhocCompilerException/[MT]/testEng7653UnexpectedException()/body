@@ -1,0 +1,36 @@
+{
+  System.setProperty("asynccompilerdebug","true");
+  String pathToCatalog=Configuration.getPathToCatalogForTest("adhocddl.jar");
+  String pathToDeployment=Configuration.getPathToCatalogForTest("adhocddl.xml");
+  VoltProjectBuilder builder=new VoltProjectBuilder();
+  builder.setUseDDLSchema(true);
+  boolean success=builder.compile(pathToCatalog,1,1,0);
+  assertTrue("Schema compilation failed",success);
+  MiscUtils.copyFile(builder.getPathToDeployment(),pathToDeployment);
+  VoltDB.Configuration config=new VoltDB.Configuration();
+  config.m_pathToCatalog=pathToCatalog;
+  config.m_pathToDeployment=pathToDeployment;
+  try {
+    startSystem(config);
+    boolean threw=false;
+    try {
+      String toxicDDL=AsyncCompilerAgent.DEBUG_EXCEPTION_DDL + ";";
+      ((ClientImpl)m_client).callProcedureWithTimeout("@AdHoc",10,TimeUnit.SECONDS,toxicDDL);
+    }
+ catch (    ProcCallException pce) {
+      String message=pce.getLocalizedMessage();
+      if (message.startsWith("No response received in the allotted time")) {
+        tryOldClientWithValidDDL();
+        tryNewClientWithValidDDL();
+        fail("Timeout, server was probably hung. " + message);
+      }
+      String expectedMessage="Unexpected async compiler exception";
+      assertTrue(String.format("Unexpected exception message: %s...",expectedMessage),message.startsWith(expectedMessage));
+      threw=true;
+    }
+    assertTrue("Expected exception",threw);
+  }
+  finally {
+    teardownSystem();
+  }
+}

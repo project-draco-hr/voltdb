@@ -1,26 +1,30 @@
 {
+  List<QueryInfo> queryBatchList=new ArrayList<QueryInfo>();
   StringBuilder query=new StringBuilder();
   while (true) {
-    String line=lineInputReader.readLine();
+    String line=m_lineInputReader.readLine();
     if (line == null) {
-      List<String> parsedQueries=parseQuery(query.toString());
-      for (      String parsedQuery : parsedQueries) {
-        executeQuery(parsedQuery);
+      if (query.length() > 0) {
+        queryBatchList.add(new QueryInfo(query));
       }
+      executeQueryWithBatches(queryBatchList);
       return;
     }
     line=handleTranslatedCommands(line);
     if (line == null) {
       continue;
     }
-    Matcher fileMatcher=FileToken.matcher(line);
-    if (fileMatcher.matches()) {
-      line=readScriptFile(fileMatcher.group(1));
-      if (line == null) {
+    FileInfo fileInfo=SQLParser.parseFileStatement(line);
+    if (fileInfo != null) {
+      List<QueryInfo> contentInfo=readScriptFile(fileInfo,m_lineInputReader);
+      if (contentInfo == null || contentInfo.isEmpty()) {
         continue;
       }
+      updateQueryBatch(queryBatchList,query,contentInfo);
+      query=new StringBuilder();
     }
-    query.append(line);
-    query.append("\n");
+ else {
+      query.append(line + "\n");
+    }
   }
 }
