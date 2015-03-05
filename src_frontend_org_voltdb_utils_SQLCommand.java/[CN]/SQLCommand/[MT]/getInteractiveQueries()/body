@@ -1,14 +1,14 @@
 {
   m_returningToPromptAfterError=false;
   List<String> multiLineStatementBuffer=new ArrayList<>();
-  List<String> parsedQueries=new ArrayList<>();
+  List<QueryInfo> queryBatchList=new ArrayList<QueryInfo>();
   StringBuilder query=new StringBuilder();
   boolean isRecall=false;
   boolean executeImmediate=false;
   while (!executeImmediate) {
     String prompt=isRecall ? "" : ((RecallableSessionLines.size() + 1) + "> ");
     isRecall=false;
-    String line=lineInputReader.readLine(prompt);
+    String line=m_lineInputReader.readLine(prompt);
     assert(line != null);
     executeImmediate=SQLParser.isSemiColonTerminated(line);
     if (multiLineStatementBuffer.isEmpty()) {
@@ -19,12 +19,12 @@
       if (recallParseResults != null) {
         if (recallParseResults.error == null) {
           line=RecallableSessionLines.get(recallParseResults.line);
-          lineInputReader.putString(line);
-          lineInputReader.flush();
+          m_lineInputReader.putString(line);
+          m_lineInputReader.flush();
           isRecall=true;
         }
  else {
-          System.out.printf("%d> %s\n%d",RecallableSessionLines.size(),recallParseResults.error);
+          System.out.println(recallParseResults.error);
         }
         executeImmediate=false;
         continue;
@@ -43,23 +43,31 @@
         executeImmediate=false;
         continue;
       }
-      File file=SQLParser.parseFileStatement(line);
-      if (file != null) {
-        line=readScriptFile(file);
+      FileInfo fileInfo=SQLParser.parseFileStatement(line);
+      if (fileInfo != null) {
+        List<QueryInfo> contentInfo=readScriptFile(fileInfo,m_lineInputReader);
         if (m_returningToPromptAfterError) {
           query=new StringBuilder();
           m_returningToPromptAfterError=false;
-          executeImmediate=false;
           continue;
         }
+        if (contentInfo == null || contentInfo.isEmpty()) {
+          executeImmediate=true;
+          continue;
+        }
+        updateQueryBatch(queryBatchList,query,contentInfo);
+        query=new StringBuilder();
+        executeImmediate=true;
+        continue;
       }
     }
  else {
       RecallableSessionLines.add(line);
     }
-    query.append(line);
-    query.append("\n");
+    query.append(line + "\n");
   }
-  parsedQueries=SQLParser.parseQuery(query.toString());
-  return parsedQueries;
+  if (query.length() > 0) {
+    queryBatchList.add(new QueryInfo(query));
+  }
+  return queryBatchList;
 }
