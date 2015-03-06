@@ -1,0 +1,65 @@
+{
+  m_returningToPromptAfterError=false;
+  final StringBuilder query=new StringBuilder();
+  boolean isRecall=false;
+  while (true) {
+    String prompt=isRecall ? "" : ((RecallableSessionLines.size() + 1) + "> ");
+    isRecall=false;
+    String line=interactiveReader.readLine(prompt);
+    assert(line != null);
+    boolean executeImmediate=SQLParser.isSemiColonTerminated(line);
+    if (query.length() == 0) {
+      if (SQLParser.isExitCommand(line)) {
+        System.exit(m_exitCode);
+      }
+      ParseRecallResults recallParseResults=SQLParser.parseRecallStatement(line,RecallableSessionLines.size() - 1);
+      if (recallParseResults != null) {
+        if (recallParseResults.getError() == null) {
+          line=RecallableSessionLines.get(recallParseResults.getLine());
+          interactiveReader.putString(line);
+          interactiveReader.flush();
+          isRecall=true;
+        }
+ else {
+          System.out.println(recallParseResults.getError());
+        }
+        executeImmediate=false;
+        continue;
+      }
+      RecallableSessionLines.add(line);
+      if (executesAsSimpleDirective(line)) {
+        executeImmediate=false;
+        continue;
+      }
+      line=handleTranslatedCommands(line);
+      FileInfo fileInfo=SQLParser.parseFileStatement(line);
+      if (fileInfo != null) {
+        executeScriptFile(fileInfo,interactiveReader);
+        if (m_returningToPromptAfterError) {
+          m_returningToPromptAfterError=false;
+        }
+        continue;
+      }
+      if (executeImmediate) {
+        executeQuery(line + "\n");
+        if (m_testFrontEndOnly) {
+          break;
+        }
+        continue;
+      }
+    }
+ else {
+      RecallableSessionLines.add(line);
+      if (executeImmediate) {
+        query.append(line + "\n");
+        executeQuery(query.toString());
+        if (m_testFrontEndOnly) {
+          break;
+        }
+        query.setLength(0);
+        continue;
+      }
+    }
+    query.append(line + "\n");
+  }
+}
