@@ -2,50 +2,36 @@ def do_main():
     parser = OptionParser()
     parser.add_option('-s', '--scripts', dest='script_dir', default='./scripts', help='top level test case script directory')
     parser.add_option('-b', '--baselines', dest='baseline_dir', default='./baselines', help='top level test output baseline directory')
-    parser.add_option('-o', '--reportfile', dest='reportfile', default='./sqlcmdtest.report', help='report output file')
+    parser.add_option('-o', '--report_file', dest='report_file', default='./sqlcmdtest.report', help='report output file')
     parser.add_option('-r', '--refresh', dest='refresh', action='store_true', default=False, help='enable baseline refresh')
+    parser.add_option('-p', '--purge_only', dest='purge_only', action='store_true', default=False, help='instead of running tests, purge temp scratch files from prior runs')
     (options, args) = parser.parse_args()
-    reportout = open(options.reportfile, 'w+')
+    if options.purge_only:
+        purgeonly(options.script_dir)
+        sys.exit(('The -p/--purge_only option does not run tests. It purged %d scratch files.' % purge_only_count))
+    reportout = open(options.report_file, 'w+')
     launch_and_wait_on_voltdb(reportout)
+    haddiffs = False
     try:
         for (parent, dirs, files) in os.walk(options.script_dir):
-            for input in files:
-                if (not input.endswith('.in')):
+            for inpath in files:
+                if (not inpath.endswith('.in')):
                     continue
-                print 'Running ', os.path.join(parent, input)
-                prefix = input[:(-3)]
-                childin = open(os.path.join(parent, input))
+                print 'Running ', os.path.join(parent, inpath)
+                prefix = inpath[:(-3)]
+                childin = open(os.path.join(parent, inpath))
                 childout = open(os.path.join(parent, (prefix + '.out')), 'w+')
                 childerr = open(os.path.join(parent, (prefix + '.err')), 'w+')
                 subprocess.call(['../../bin/sqlcmd'], stdin=childin, stdout=childout, stderr=childerr)
-                outbackin = open(os.path.join(parent, (prefix + '.out')), 'r')
-                cleanedpath = os.path.join(parent, (prefix + '.outclean'))
-                cleanedout = open(cleanedpath, 'w+')
-                latency_matcher = re.compile('\n                        ([0-9]\\srows\\sin\\s)  # required to match a latency report line, survives as \\g<1>\n                        [0-9]+\\.[0-9]+s      # also required, replaced with #.##s\n                        ', re.VERBOSE)
-                for line in outbackin:
-                    cleanedline = latency_matcher.sub('\\g<1>#.##s', line)
-                    cleanedout.write(cleanedline)
-                cleanedout.flush()
+                clean_output(parent, (prefix + '.out'))
+                clean_output(parent, (prefix + '.err'))
                 baseparent = replace_parent_dir_prefix(parent, options.script_dir, options.baseline_dir)
-                baselinepath = os.path.join(baseparent, (prefix + '.outbaseline'))
-                gotdiffs = True
-                if os.path.isfile(baselinepath):
-                    outdiffspath = os.path.join(parent, (prefix + '.outdiffs'))
-                    diffout = open(outdiffspath, 'w+')
-                    gotdiffs = subprocess.call(['diff', cleanedpath, baselinepath], stdout=diffout)
-                    if gotdiffs:
-                        print  >> sys.stderr, 'See diffs in ', outdiffspath
-                        reportout.write((('See diffs in ' + os.path.abspath(outdiffspath)) + '\n'))
-                        reportout.write((os.path.join(parent, input) + ' failed to match its output baseline.\n'))
-                    else:
-                        reportout.write((os.path.join(parent, input) + ' matched its output baseline.\n'))
-                        subprocess.call(['rm', outdiffspath])
-                else:
-                    reportout.write((('Did not find baseline file: ' + os.path.abspath(baselinepath)) + '\n'))
-                if (gotdiffs and options.refresh):
-                    mkdir_p(baseparent)
-                    subprocess.call(['mv', cleanedpath, baselinepath])
-                    reportout.write((((os.path.join(parent, input) + ' refreshed its baseline output: ') + os.path.abspath(baselinepath)) + '\n'))
+                if compare_cleaned_to_baseline(parent, baseparent, (prefix + '.out'), inpath, options.refresh, reportout):
+                    haddiffs = True
+                if compare_cleaned_to_baseline(parent, baseparent, (prefix + '.err'), inpath, options.refresh, reportout):
+                    haddiffs = True
     finally:
         kill_voltdb()
-        print 'Summary report written to ', os.path.abspath(options.reportfile)
+        print ('Summary report written to file://' + os.path.abspath(options.report_file))
+        if haddiffs:
+            sys.exit('One or more sqlcmdtest script failures or errors was detected.')
