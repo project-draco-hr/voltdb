@@ -37,43 +37,41 @@ case DELETE:
         log.trace("Version " + version + " type DELETE table handle "+ tableHandle+ " length "+ lengthPrefix+ " checksum "+ checksum);
         break;
       }
-case UPDATE:
-    break;
 case BEGIN_TXN:
 {
-    final long txnId=buf.getLong();
-    final long spHandle=buf.getLong();
-    if (haveOpenTransaction.get() != -1) {
-      log.error("Have open transaction txnid " + txnId + " spHandle "+ spHandle+ " but already open transaction");
+      final long txnId=buf.getLong();
+      final long spHandle=buf.getLong();
+      if (haveOpenTransaction.get() != -1) {
+        log.error("Have open transaction txnid " + txnId + " spHandle "+ spHandle+ " but already open transaction");
+        break;
+      }
+      haveOpenTransaction.set(spHandle);
+      checksum=buf.getInt();
+      log.trace("Version " + version + " type BEGIN_TXN "+ " txnid "+ txnId+ " spHandle "+ spHandle+ " checksum "+ checksum);
       break;
     }
-    haveOpenTransaction.set(spHandle);
-    checksum=buf.getInt();
-    log.trace("Version " + version + " type BEGIN_TXN "+ " txnid "+ txnId+ " spHandle "+ spHandle+ " checksum "+ checksum);
-    break;
-  }
 case END_TXN:
 {
-  final long spHandle=buf.getLong();
-  if (haveOpenTransaction.get() == -1) {
-    log.error("Have end transaction spHandle " + spHandle + " but no open transaction and its less then last committed "+ lastCommittedSpHandleTL.get().get());
+    final long spHandle=buf.getLong();
+    if (haveOpenTransaction.get() == -1) {
+      log.error("Have end transaction spHandle " + spHandle + " but no open transaction and its less then last committed "+ lastCommittedSpHandleTL.get().get());
+      break;
+    }
+    haveOpenTransaction.set(-1);
+    lastCommittedSpHandleTL.get().set(spHandle);
+    checksum=buf.getInt();
+    log.trace("Version " + version + " type END_TXN "+ " spHandle "+ spHandle+ " checksum "+ checksum);
     break;
   }
-  haveOpenTransaction.set(-1);
-  lastCommittedSpHandleTL.get().set(spHandle);
-  checksum=buf.getInt();
-  log.trace("Version " + version + " type END_TXN "+ " spHandle "+ spHandle+ " checksum "+ checksum);
-  break;
-}
 case TRUNCATE_TABLE:
 {
-final long tableHandle=buf.getLong();
-final byte tableNameBytes[]=new byte[buf.getInt()];
-buf.get(tableNameBytes);
-final String tableName=new String(tableNameBytes,Charsets.UTF_8);
-checksum=buf.getInt();
-log.trace("Version " + version + " type TRUNCATE_TABLE table handle "+ tableHandle+ " table name "+ tableName);
-break;
+  final long tableHandle=buf.getLong();
+  final byte tableNameBytes[]=new byte[buf.getInt()];
+  buf.get(tableNameBytes);
+  final String tableName=new String(tableNameBytes,Charsets.UTF_8);
+  checksum=buf.getInt();
+  log.trace("Version " + version + " type TRUNCATE_TABLE table handle "+ tableHandle+ " table name "+ tableName);
+  break;
 }
 }
 int calculatedChecksum=DBBPool.getBufferCRC32C(buf,startPosition,buf.position() - startPosition - 4);
