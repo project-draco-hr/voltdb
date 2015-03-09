@@ -1,5 +1,5 @@
 {
-  StringBuilder query=new StringBuilder();
+  StringBuilder statement=new StringBuilder();
   boolean statementStarted=false;
   StringBuilder batch=fileInfo.isBatch() ? new StringBuilder() : null;
   String delimiter=(fileInfo.getOption() == FileOption.INLINEBATCH) ? fileInfo.getDelimiter() : null;
@@ -14,19 +14,28 @@
       }
     }
     if (line == null) {
-      if (query.length() > 0) {
+      if (statement.length() > 0) {
         if (batch == null) {
-          executeQuery(query.toString());
+          String statementString=statement.toString();
+          if (!statementString.trim().isEmpty()) {
+            executeStatements(statementString);
+          }
         }
  else {
-          batch.append(query);
-          executeDDLBatch(fileInfo.getFile().getPath(),batch.toString());
+          batch.append(statement);
+          executeDDLBatch(fileInfo.getFilePath(),batch.toString());
         }
       }
       return;
     }
     if (!statementStarted) {
-      FileInfo nestedFileInfo=SQLParser.parseFileStatement(line);
+      if (line.trim().equals("") || SQLParser.isWholeLineComment(line)) {
+        if (batch != null) {
+          statement.append(line).append("\n");
+        }
+        continue;
+      }
+      FileInfo nestedFileInfo=SQLParser.parseFileStatement(fileInfo,line);
       if (nestedFileInfo != null) {
         if (batch != null) {
           stopOrContinue(new RuntimeException("A FILE command is invalid in a batch."));
@@ -41,18 +50,20 @@
       if (executesAsSimpleDirective(line)) {
         continue;
       }
-      line=SQLParser.translateStatement(line);
     }
-    query.append(line).append("\n");
+    statement.append(line).append("\n");
     if (SQLParser.isSemiColonTerminated(line)) {
       if (batch == null) {
-        executeQuery(query.toString());
-        query.setLength(0);
+        String statementString=statement.toString();
+        if (!statementString.trim().isEmpty()) {
+          executeStatements(statementString);
+        }
+        statement.setLength(0);
       }
       statementStarted=false;
     }
- else     if (!statementStarted) {
-      statementStarted=(!line.trim().equals("")) && !SQLParser.parseWholeLineComment(line);
+ else {
+      statementStarted=true;
     }
   }
 }
