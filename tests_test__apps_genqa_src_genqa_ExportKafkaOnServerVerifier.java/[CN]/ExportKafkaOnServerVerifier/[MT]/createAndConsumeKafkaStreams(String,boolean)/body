@@ -1,5 +1,6 @@
 {
   final String topic=topicPrefix + "EXPORT_PARTITIONED_TABLE";
+  final String topic2=topicPrefix + "EXPORT_PARTITIONED_TABLE2";
   final String doneTopic=topicPrefix + "EXPORT_DONE_TABLE";
   List<Future<Long>> doneFutures=new ArrayList<>();
   Map<String,Integer> topicCountMap=new HashMap<>();
@@ -13,15 +14,27 @@
     ExportConsumer consumer=new ExportConsumer(stream,false,skinny,consumersLatch);
     executor.submit(consumer);
   }
+  Map<String,Integer> topicCountMap2=new HashMap<>();
+  topicCountMap2.put(topic2,1);
+  Map<String,List<KafkaStream<byte[],byte[]>>> consumerMap2=m_kafkaConfig.consumer2.createMessageStreams(topicCountMap2);
+  List<KafkaStream<byte[],byte[]>> streams2=consumerMap2.get(topic2);
+  ExecutorService executor2=Executors.newFixedThreadPool(streams2.size());
+  CountDownLatch consumersLatch2=new CountDownLatch(streams2.size());
+  for (  final KafkaStream stream : streams2) {
+    System.out.println("Creating consumer for " + topic2);
+    ExportConsumer consumer=new ExportConsumer(stream,false,skinny,consumersLatch2);
+    executor2.submit(consumer);
+  }
   Map<String,Integer> topicDoneCountMap=new HashMap<String,Integer>();
   topicDoneCountMap.put(doneTopic,1);
   Map<String,List<KafkaStream<byte[],byte[]>>> doneConsumerMap=m_kafkaConfig.doneConsumer.createMessageStreams(topicDoneCountMap);
   List<KafkaStream<byte[],byte[]>> doneStreams=doneConsumerMap.get(doneTopic);
-  ExecutorService executor2=Executors.newFixedThreadPool(doneStreams.size());
-  CompletionService<Long> ecs=new ExecutorCompletionService<>(executor2);
+  ExecutorService executord2=Executors.newFixedThreadPool(doneStreams.size());
+  CompletionService<Long> ecs=new ExecutorCompletionService<>(executord2);
+  CountDownLatch doneLatch=new CountDownLatch(doneStreams.size());
   for (  final KafkaStream stream : doneStreams) {
     System.out.println("Creating consumer for " + doneTopic);
-    ExportConsumer consumer=new ExportConsumer(stream,true,true,null);
+    ExportConsumer consumer=new ExportConsumer(stream,true,true,doneLatch);
     Future<Long> f=ecs.submit(consumer,new Long(0));
     doneFutures.add(f);
   }
@@ -31,12 +44,26 @@
   for (  Future<Long> f : doneFutures) {
     f.cancel(true);
   }
-  consumersLatch.await();
+  System.out.println("Wait for drain of consumers.");
+  long cnt=consumedRows.get();
+  long wtime=System.currentTimeMillis();
+  while (true) {
+    Thread.sleep(5000);
+    if (cnt != consumedRows.get()) {
+      wtime=System.currentTimeMillis();
+      System.out.println("Train is still running.");
+      continue;
+    }
+    if ((System.currentTimeMillis() - wtime) > 60000) {
+      System.out.println("Waited long enough looks like train has stopped.");
+      break;
+    }
+  }
   m_kafkaConfig.stop();
-  executor.shutdownNow();
-  executor.awaitTermination(1,TimeUnit.DAYS);
+  consumersLatch.await();
+  consumersLatch2.await();
   System.out.println("Seen Rows: " + consumedRows.get() + " Expected: "+ expectedRows);
-  if (consumedRows.get() != expectedRows) {
+  if (consumedRows.get() < expectedRows) {
     System.out.println("ERROR: Exported row count does not match consumed rows.");
   }
   m_kafkaConfig=null;

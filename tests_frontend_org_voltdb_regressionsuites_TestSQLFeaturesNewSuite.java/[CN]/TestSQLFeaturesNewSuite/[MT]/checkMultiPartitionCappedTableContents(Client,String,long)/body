@@ -1,0 +1,19 @@
+{
+  long numPartitions=getLogicalPartitionCount();
+  if (numPartitions > 1) {
+    VoltTable vt=null;
+    final long minRows=partitionRowLimit;
+    final long maxRows=partitionRowLimit * numPartitions;
+    vt=client.callProcedure("@AdHoc","select count(*) from " + tableName).getResults()[0];
+    long numRows=vt.asScalarLong();
+    assertTrue("Too many rows in target table: ",numRows <= maxRows);
+    assertTrue("Too few rows in target table: ",numRows >= minRows);
+    vt=client.callProcedure("@AdHoc","SELECT info FROM " + tableName + " "+ "ORDER BY when_occurred desc, info desc "+ "LIMIT 50 OFFSET 5").getResults()[0];
+    long prevValue=50;
+    while (vt.advanceRow()) {
+      long curValue=vt.getLong(0);
+      assertTrue(curValue < prevValue);
+      prevValue=curValue;
+    }
+  }
+}

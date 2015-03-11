@@ -1,0 +1,37 @@
+def do_main():
+    parser = OptionParser()
+    parser.add_option('-s', '--scripts', dest='script_dir', default='./scripts', help='top level test case script directory')
+    parser.add_option('-b', '--baselines', dest='baseline_dir', default='./baselines', help='top level test output baseline directory')
+    parser.add_option('-o', '--report_file', dest='report_file', default='./sqlcmdtest.report', help='report output file')
+    parser.add_option('-r', '--refresh', dest='refresh', action='store_true', default=False, help='enable baseline refresh')
+    parser.add_option('-p', '--purge_only', dest='purge_only', action='store_true', default=False, help='instead of running tests, purge temp scratch files from prior runs')
+    (options, args) = parser.parse_args()
+    if options.purge_only:
+        purgeonly(options.script_dir)
+        sys.exit(('The -p/--purge_only option does not run tests. It purged %d scratch files.' % purge_only_count))
+    reportout = open(options.report_file, 'w+')
+    launch_and_wait_on_voltdb(reportout)
+    haddiffs = False
+    try:
+        for (parent, dirs, files) in os.walk(options.script_dir):
+            for inpath in files:
+                if (not inpath.endswith('.in')):
+                    continue
+                print 'Running ', os.path.join(parent, inpath)
+                prefix = inpath[:(-3)]
+                childin = open(os.path.join(parent, inpath))
+                childout = open(os.path.join(parent, (prefix + '.out')), 'w+')
+                childerr = open(os.path.join(parent, (prefix + '.err')), 'w+')
+                subprocess.call(['../../bin/sqlcmd'], stdin=childin, stdout=childout, stderr=childerr)
+                clean_output(parent, (prefix + '.out'))
+                clean_output(parent, (prefix + '.err'))
+                baseparent = replace_parent_dir_prefix(parent, options.script_dir, options.baseline_dir)
+                if compare_cleaned_to_baseline(parent, baseparent, (prefix + '.out'), inpath, options.refresh, reportout):
+                    haddiffs = True
+                if compare_cleaned_to_baseline(parent, baseparent, (prefix + '.err'), inpath, options.refresh, reportout):
+                    haddiffs = True
+    finally:
+        kill_voltdb()
+        print ('Summary report written to file://' + os.path.abspath(options.report_file))
+        if haddiffs:
+            sys.exit('One or more sqlcmdtest script failures or errors was detected.')
