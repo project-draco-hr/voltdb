@@ -44,10 +44,10 @@
     }
  else     if (work.invocationName.startsWith("@AdHoc")) {
       try {
-        newCatalogBytes=addDDLToCatalog(context.getCatalogJarBytes(),work.adhocDDLStmts);
+        newCatalogBytes=addDDLToCatalog(context.catalog,context.getCatalogJarBytes(),work.adhocDDLStmts);
       }
  catch (      IOException ioe) {
-        retval.errorMsg="Unexpected exception applying DDL statements to " + " original catalog: " + ioe.getMessage();
+        retval.errorMsg="Unexpected exception applying DDL statements to " + "original catalog: " + ioe.getMessage();
         return retval;
       }
       if (newCatalogBytes == null) {
@@ -60,8 +60,6 @@
       retval.errorMsg="Unexpected work in the AsyncCompilerAgentHelper: " + work.invocationName;
       return retval;
     }
-    retval.catalogBytes=newCatalogBytes;
-    retval.catalogHash=CatalogUtil.makeCatalogOrDeploymentHash(newCatalogBytes);
     Pair<InMemoryJarfile,String> loadResults=null;
     try {
       loadResults=CatalogUtil.loadAndUpgradeCatalogFromJar(newCatalogBytes);
@@ -70,6 +68,9 @@
       retval.errorMsg=ioe.getMessage();
       return retval;
     }
+    newCatalogBytes=loadResults.getFirst().getFullJarBytes();
+    retval.catalogBytes=newCatalogBytes;
+    retval.catalogHash=loadResults.getFirst().getSha1Hash();
     String newCatalogCommands=CatalogUtil.getSerializedCatalogStringFromJar(loadResults.getFirst());
     retval.upgradedFromVersion=loadResults.getSecond();
     if (newCatalogCommands == null) {
@@ -81,7 +82,7 @@
     if (deploymentString == null) {
       byte[] deploymentBytes=context.getDeploymentBytes();
       if (deploymentBytes != null) {
-        deploymentString=new String(deploymentBytes,"UTF-8");
+        deploymentString=new String(deploymentBytes,Constants.UTF8ENCODING);
       }
       if (deploymentBytes == null || deploymentString == null) {
         retval.errorMsg="No deployment file provided and unable to recover previous " + "deployment settings.";
@@ -94,7 +95,7 @@
       return retval;
     }
     retval.deploymentString=deploymentString;
-    retval.deploymentHash=CatalogUtil.makeCatalogOrDeploymentHash(deploymentString.getBytes("UTF-8"));
+    retval.deploymentHash=CatalogUtil.makeDeploymentHash(deploymentString.getBytes(Constants.UTF8ENCODING));
     retval.expectedCatalogVersion=context.catalogVersion;
     CatalogDiffEngine diff=new CatalogDiffEngine(context.catalog,newCatalog);
     if (!diff.supported()) {

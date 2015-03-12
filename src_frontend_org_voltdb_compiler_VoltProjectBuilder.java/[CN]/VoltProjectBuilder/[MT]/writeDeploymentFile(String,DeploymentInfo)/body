@@ -129,20 +129,40 @@
   json.setEnabled(m_jsonApiEnabled);
   ExportType export=factory.createExportType();
   deployment.setExport(export);
-  export.setEnabled(m_elenabled && m_elloader != null && !m_elloader.trim().isEmpty());
-  ServerExportEnum exportTarget=ServerExportEnum.fromValue(m_elExportTarget.toLowerCase());
-  export.setTarget(exportTarget);
-  if ((m_elConfig != null) && (m_elConfig.size() > 0)) {
+  for (  HashMap<String,Object> exportConnector : m_elExportConnectors) {
     ExportConfigurationType exportConfig=factory.createExportConfigurationType();
-    List<PropertyType> configProperties=exportConfig.getProperty();
-    for (    Object nameObj : m_elConfig.keySet()) {
-      String name=String.class.cast(nameObj);
-      PropertyType prop=factory.createPropertyType();
-      prop.setName(name);
-      prop.setValue(m_elConfig.getProperty(name));
-      configProperties.add(prop);
+    exportConfig.setEnabled((boolean)exportConnector.get("elEnabled") && exportConnector.get("elLoader") != null && !((String)exportConnector.get("elLoader")).trim().isEmpty());
+    ServerExportEnum exportTarget=ServerExportEnum.fromValue(((String)exportConnector.get("elExportTarget")).toLowerCase());
+    exportConfig.setType(exportTarget);
+    if (exportTarget.equals(ServerExportEnum.CUSTOM)) {
+      exportConfig.setExportconnectorclass(System.getProperty(ExportDataProcessor.EXPORT_TO_TYPE));
     }
-    export.setConfiguration(exportConfig);
+    exportConfig.setStream((String)exportConnector.get("elGroup"));
+    Properties config=(Properties)exportConnector.get("elConfig");
+    if ((config != null) && (config.size() > 0)) {
+      List<PropertyType> configProperties=exportConfig.getProperty();
+      for (      Object nameObj : config.keySet()) {
+        String name=String.class.cast(nameObj);
+        PropertyType prop=factory.createPropertyType();
+        prop.setName(name);
+        prop.setValue(config.getProperty(name));
+        configProperties.add(prop);
+      }
+    }
+    export.getConfiguration().add(exportConfig);
+  }
+  if (m_drProducerClusterId != null || (m_drMasterHost != null && !m_drMasterHost.isEmpty())) {
+    DrType dr=factory.createDrType();
+    deployment.setDr(dr);
+    if (m_drProducerClusterId != null) {
+      dr.setListen(m_drProducerEnabled);
+      dr.setId(m_drProducerClusterId);
+    }
+    if (m_drMasterHost != null && !m_drMasterHost.isEmpty()) {
+      ConnectionType conn=factory.createConnectionType();
+      dr.setConnection(conn);
+      conn.setSource(m_drMasterHost);
+    }
   }
   File file=File.createTempFile("myAppDeployment",".tmp");
   JAXBContext context=JAXBContext.newInstance(DeploymentType.class);

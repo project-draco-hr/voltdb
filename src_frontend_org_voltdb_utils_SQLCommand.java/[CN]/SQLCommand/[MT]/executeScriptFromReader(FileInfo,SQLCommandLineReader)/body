@@ -1,0 +1,69 @@
+{
+  StringBuilder statement=new StringBuilder();
+  boolean statementStarted=false;
+  StringBuilder batch=fileInfo.isBatch() ? new StringBuilder() : null;
+  String delimiter=(fileInfo.getOption() == FileOption.INLINEBATCH) ? fileInfo.getDelimiter() : null;
+  while (true) {
+    String line=reader.readBatchLine();
+    if (delimiter != null) {
+      if (line == null) {
+        throw new Exception("ERROR: Failed to find delimiter \"" + delimiter + "\" indicating end of inline batch.  No batched statements were executed.");
+      }
+      if (delimiter.equals(line)) {
+        line=null;
+      }
+    }
+    if (line == null) {
+      if (statement.length() > 0) {
+        if (batch == null) {
+          String statementString=statement.toString();
+          if (!statementString.trim().isEmpty()) {
+            executeStatements(statementString);
+          }
+        }
+ else {
+          batch.append(statement);
+          executeDDLBatch(fileInfo.getFilePath(),batch.toString());
+        }
+      }
+      return;
+    }
+    if (!statementStarted) {
+      if (line.trim().equals("") || SQLParser.isWholeLineComment(line)) {
+        if (batch != null) {
+          statement.append(line).append("\n");
+        }
+        continue;
+      }
+      FileInfo nestedFileInfo=SQLParser.parseFileStatement(fileInfo,line);
+      if (nestedFileInfo != null) {
+        if (batch != null) {
+          stopOrContinue(new RuntimeException("A FILE command is invalid in a batch."));
+          continue;
+        }
+        executeScriptFile(nestedFileInfo,reader);
+        if (m_returningToPromptAfterError) {
+          return;
+        }
+        continue;
+      }
+      if (executesAsSimpleDirective(line)) {
+        continue;
+      }
+    }
+    statement.append(line).append("\n");
+    if (SQLParser.isSemiColonTerminated(line)) {
+      if (batch == null) {
+        String statementString=statement.toString();
+        if (!statementString.trim().isEmpty()) {
+          executeStatements(statementString);
+        }
+        statement.setLength(0);
+      }
+      statementStarted=false;
+    }
+ else {
+      statementStarted=true;
+    }
+  }
+}

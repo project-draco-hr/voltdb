@@ -1,0 +1,30 @@
+{
+  try {
+    assert(m_ourDistributedLockName == null);
+    assert(debugIsLocalStateLocked());
+    m_ourDistributedLockName=m_zk.create(ZKUtil.joinZKPath(m_lockPath,"lock_"),null,Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL_SEQUENTIAL);
+    m_lockWaitingOn=getNextLockNodeFromList();
+    if (m_lockWaitingOn.equals(m_ourDistributedLockName) && m_currentParticipants == 0) {
+      m_log.debug(m_stateMachineId + ": requestLock successful for " + m_ourDistributedLockName);
+      m_lockWaitingOn=null;
+      m_holdingDistributedLock=true;
+      if (m_membershipChangePending) {
+        getLatestMembership();
+      }
+      return true;
+    }
+  }
+ catch (  KeeperException.SessionExpiredException e) {
+    m_log.debug(m_stateMachineId + ": Received SessionExpiredException in requestDistributedLock");
+  }
+catch (  KeeperException.ConnectionLossException e) {
+    m_log.debug(m_stateMachineId + ": Received ConnectionLossException in requestDistributedLock");
+  }
+catch (  InterruptedException e) {
+    m_log.debug(m_stateMachineId + ": Received InterruptedException in requestDistributedLock");
+  }
+catch (  Exception e) {
+    org.voltdb.VoltDB.crashLocalVoltDB("Unexepected failure in StateMachine.",true,e);
+  }
+  return false;
+}

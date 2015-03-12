@@ -8,7 +8,7 @@ synchronized (m_startAndStopLock) {
     consoleLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_StartupString.name(),null);
     if (config.m_pathToDeployment == null) {
       try {
-        config.m_pathToDeployment=setupDefaultDeployment();
+        config.m_pathToDeployment=setupDefaultDeployment(hostLog);
         config.m_deploymentDefault=true;
       }
  catch (      IOException e) {
@@ -18,6 +18,7 @@ synchronized (m_startAndStopLock) {
     m_mode=OperationMode.INITIALIZING;
     m_config=config;
     m_startMode=null;
+    m_consumerDRGateway=new ConsumerDRGateway.DummyConsumerDRGateway();
     m_safeMpTxnId=Long.MAX_VALUE;
     m_lastSeenMpTxnId=Long.MIN_VALUE;
     m_clientInterface=null;
@@ -202,18 +203,16 @@ synchronized (m_startAndStopLock) {
     }
     collectLocalNetworkMetadata();
     final CatalogSpecificPlanner csp=new CatalogSpecificPlanner(m_asyncCompilerAgent,m_catalogContext);
-    File drOverflowDir=new File(m_catalogContext.cluster.getVoltroot(),"dr_overflow");
     if (m_config.m_isEnterprise) {
       try {
         Class<?> ndrgwClass=null;
-        if (Boolean.getBoolean("USE_DR_V2")) {
-          ndrgwClass=Class.forName("org.voltdb.dr2.InvocationBufferServer");
-        }
- else {
-          ndrgwClass=Class.forName("org.voltdb.dr.InvocationBufferServer");
-        }
-        Constructor<?> ndrgwConstructor=ndrgwClass.getConstructor(File.class,boolean.class);
-        m_nodeDRGateway=(NodeDRGateway)ndrgwConstructor.newInstance(drOverflowDir,m_replicationActive);
+        File drOverflowDir;
+        drOverflowDir=new File(m_catalogContext.cluster.getVoltroot(),"dr_overflow");
+        ndrgwClass=Class.forName("org.voltdb.dr2.InvocationBufferServer");
+        Constructor<?> ndrgwConstructor=ndrgwClass.getConstructor(File.class,boolean.class,int.class,int.class);
+        m_nodeDRGateway=(NodeDRGateway)ndrgwConstructor.newInstance(drOverflowDir,m_replicationActive,m_configuredNumberOfPartitions,m_catalogContext.getDeployment().getCluster().getHostcount());
+        m_nodeDRGateway.start();
+        m_nodeDRGateway.blockOnDRStateConvergence();
       }
  catch (      Exception e) {
         VoltDB.crashLocalVoltDB("Unable to load DR system",true,e);
@@ -248,22 +247,6 @@ synchronized (m_startAndStopLock) {
     if (m_commandLog != null && (isRejoin || m_joining)) {
       m_commandLog.initForRejoin(m_catalogContext,Long.MIN_VALUE,m_configuredNumberOfPartitions,true,m_config.m_commandLogBinding,m_iv2InitiatorStartingTxnIds);
     }
-    boolean usingCommandLog=false;
-    try {
-      usingCommandLog=m_config.m_isEnterprise && m_catalogContext.cluster.getLogconfig().get("log").getEnabled();
-      for (      Initiator iv2init : m_iv2Initiators) {
-        iv2init.configure(getBackendTargetType(),m_catalogContext,m_catalogContext.getDeployment().getCluster().getKfactor(),csp,m_configuredNumberOfPartitions,m_config.m_startAction,getStatsAgent(),m_memoryStats,m_commandLog,m_nodeDRGateway,m_config.m_executionCoreBindings.poll());
-      }
-      m_leaderAppointer=new LeaderAppointer(m_messenger,m_configuredNumberOfPartitions,m_catalogContext.getDeployment().getCluster().getKfactor(),m_catalogContext.cluster.getNetworkpartition(),m_catalogContext.cluster.getFaultsnapshots().get("CLUSTER_PARTITION"),usingCommandLog,topo,m_MPI,kSafetyStats);
-      m_globalServiceElector.registerService(m_leaderAppointer);
-    }
- catch (    Exception e) {
-      Throwable toLog=e;
-      if (e instanceof ExecutionException) {
-        toLog=((ExecutionException)e).getCause();
-      }
-      VoltDB.crashLocalVoltDB("Error configuring IV2 initiator.",true,toLog);
-    }
     m_opsRegistrar.setDummyMode(false);
     try {
       InetAddress clientIntf=null;
@@ -282,6 +265,46 @@ synchronized (m_startAndStopLock) {
     }
  catch (    Exception e) {
       VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
+    }
+    boolean usingCommandLog=m_config.m_isEnterprise && m_catalogContext.cluster.getLogconfig().get("log").getEnabled();
+    String clSnapshotPath=null;
+    if (m_catalogContext.cluster.getLogconfig().get("log").getEnabled()) {
+      clSnapshotPath=m_catalogContext.cluster.getLogconfig().get("log").getInternalsnapshotpath();
+    }
+    if (m_config.m_isEnterprise && m_config.m_replicationRole == ReplicationRole.REPLICA) {
+      String drProducerHost=m_catalogContext.cluster.getDrmasterhost();
+      byte drConsumerClusterId=(byte)m_catalogContext.cluster.getDrclusterid();
+      if (drProducerHost == null || drProducerHost.isEmpty()) {
+        VoltDB.crashLocalVoltDB("Cannot start as DR consumer without an enabled DR data connection.");
+      }
+      try {
+        Class<?> rdrgwClass=Class.forName("org.voltdb.dr2.ConsumerDRGatewayImpl");
+        Constructor<?> rdrgwConstructor=rdrgwClass.getConstructor(String.class,ClientInterface.class,byte.class,boolean.class,String.class);
+        m_consumerDRGateway=(ConsumerDRGateway)rdrgwConstructor.newInstance(drProducerHost,m_clientInterface,drConsumerClusterId,usingCommandLog,clSnapshotPath);
+        m_globalServiceElector.registerService(m_consumerDRGateway);
+      }
+ catch (      Exception e) {
+        VoltDB.crashLocalVoltDB("Unable to load DR system",true,e);
+      }
+    }
+    try {
+      boolean createMpDRGateway=true;
+      for (      Initiator iv2init : m_iv2Initiators) {
+        iv2init.configure(getBackendTargetType(),m_catalogContext,m_catalogContext.getDeployment().getCluster().getKfactor(),csp,m_configuredNumberOfPartitions,m_config.m_startAction,getStatsAgent(),m_memoryStats,m_commandLog,m_nodeDRGateway,m_consumerDRGateway,iv2init != m_MPI && createMpDRGateway,m_config.m_executionCoreBindings.poll());
+        if (iv2init != m_MPI) {
+          createMpDRGateway=false;
+        }
+      }
+      boolean expectSyncSnapshot=m_config.m_replicationRole == ReplicationRole.REPLICA;
+      m_leaderAppointer=new LeaderAppointer(m_messenger,m_configuredNumberOfPartitions,m_catalogContext.getDeployment().getCluster().getKfactor(),m_catalogContext.cluster.getNetworkpartition(),m_catalogContext.cluster.getFaultsnapshots().get("CLUSTER_PARTITION"),usingCommandLog,topo,m_MPI,kSafetyStats,expectSyncSnapshot);
+      m_globalServiceElector.registerService(m_leaderAppointer);
+    }
+ catch (    Exception e) {
+      Throwable toLog=e;
+      if (e instanceof ExecutionException) {
+        toLog=((ExecutionException)e).getCause();
+      }
+      VoltDB.crashLocalVoltDB("Error configuring IV2 initiator.",true,toLog);
     }
     m_statsManager=null;
     try {
@@ -347,10 +370,6 @@ synchronized (m_startAndStopLock) {
     assert(m_clientInterface != null);
     m_clientInterface.initializeSnapshotDaemon(m_messenger,m_globalServiceElector);
     try {
-      String clSnapshotPath=null;
-      if (m_catalogContext.cluster.getLogconfig().get("log").getEnabled()) {
-        clSnapshotPath=m_catalogContext.cluster.getLogconfig().get("log").getInternalsnapshotpath();
-      }
       if (m_config.m_isEnterprise && TheHashinator.getCurrentConfig().type == HashinatorType.ELASTIC) {
         Class<?> elasticServiceClass=MiscUtils.loadProClass("org.voltdb.join.ElasticJoinCoordinator","Elastic join",false);
         if (elasticServiceClass == null) {
@@ -365,56 +384,10 @@ synchronized (m_startAndStopLock) {
       VoltDB.crashLocalVoltDB("Failed to instantiate elastic join service",false,e);
     }
     if (m_restoreAgent != null) {
-      m_restoreAgent.setCatalogContext(m_catalogContext);
       m_restoreAgent.setInitiator(new Iv2TransactionCreator(m_clientInterface));
     }
     m_configLogger=new Thread(new ConfigLogging());
     m_configLogger.start();
-    DailyRollingFileAppender dailyAppender=null;
-    Enumeration<?> appenders=Logger.getRootLogger().getAllAppenders();
-    while (appenders.hasMoreElements()) {
-      Appender appender=(Appender)appenders.nextElement();
-      if (appender instanceof DailyRollingFileAppender) {
-        dailyAppender=(DailyRollingFileAppender)appender;
-      }
-    }
-    final DailyRollingFileAppender dailyRollingFileAppender=dailyAppender;
-    Field field=null;
-    if (dailyRollingFileAppender != null) {
-      try {
-        field=dailyRollingFileAppender.getClass().getDeclaredField("nextCheck");
-        field.setAccessible(true);
-      }
- catch (      NoSuchFieldException e) {
-        hostLog.error("Failed to set daily system info logging: " + e.getMessage());
-      }
-    }
-    final Field nextCheckField=field;
-class DailyLogTask implements Runnable {
-      @Override public void run(){
-        try {
-          m_myHostId=m_messenger.getHostId();
-          hostLog.info(String.format("Host id of this node is: %d",m_myHostId));
-          hostLog.info("URL of deployment info: " + m_config.m_pathToDeployment);
-          hostLog.info("Cluster uptime: " + MiscUtils.formatUptime(getClusterUptime()));
-          logDebuggingInfo(m_config.m_adminPort,m_config.m_httpPort,m_httpPortExtraLogMessage,m_jsonEnabled);
-          logSystemSettingFromCatalogContext();
-          long nextCheck=nextCheckField.getLong(dailyRollingFileAppender);
-          scheduleWork(new DailyLogTask(),nextCheck - System.currentTimeMillis() + 30 * 1000,0,TimeUnit.MILLISECONDS);
-        }
- catch (        IllegalAccessException e) {
-          hostLog.error("Failed to set daily system info logging: " + e.getMessage());
-        }
-      }
-    }
-    if (dailyRollingFileAppender != null && nextCheckField != null) {
-      try {
-        long nextCheck=nextCheckField.getLong(dailyRollingFileAppender);
-        scheduleWork(new DailyLogTask(),nextCheck - System.currentTimeMillis() + 30 * 1000,0,TimeUnit.MILLISECONDS);
-      }
- catch (      IllegalAccessException e) {
-        hostLog.error("Failed to set daily system info logging: " + e.getMessage());
-      }
-    }
+    scheduleDailyLoggingWorkInNextCheckTime();
   }
 }

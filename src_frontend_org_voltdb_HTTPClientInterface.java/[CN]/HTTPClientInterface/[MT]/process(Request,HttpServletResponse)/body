@@ -1,5 +1,7 @@
 {
   AuthenticationResult authResult=null;
+  boolean suspended=false;
+  boolean forceClose=false;
   Continuation continuation=ContinuationSupport.getContinuation(request);
   if (m_timeout > 0) {
     continuation.setTimeout(m_timeout);
@@ -30,7 +32,7 @@
     jsonp=request.getParameter("jsonp");
     if (request.getMethod().equalsIgnoreCase("POST")) {
       int queryParamSize=request.getContentLength();
-      if (queryParamSize > 150000) {
+      if (queryParamSize > MAX_QUERY_PARAM_SIZE) {
         throw new Exception("Query string too large: " + String.valueOf(request.getContentLength()));
       }
       if (queryParamSize == 0) {
@@ -61,6 +63,7 @@
       return;
     }
     continuation.suspend(response);
+    suspended=true;
     JSONProcCallback cb=new JSONProcCallback(request,continuation,jsonp);
     boolean success;
     if (params != null) {
@@ -93,6 +96,9 @@
   }
  catch (  Exception e) {
     String msg=e.getMessage();
+    if (e instanceof IOException || e instanceof NoConnectionsException) {
+      forceClose=true;
+    }
     m_rate_limited_log.log("JSON interface exception: " + msg,EstTime.currentTimeMillis());
     ClientResponseImpl rimpl=new ClientResponseImpl(ClientResponse.UNEXPECTED_FAILURE,new VoltTable[0],msg);
     msg=rimpl.toJSONString();
@@ -103,12 +109,14 @@
     request.setHandled(true);
     try {
       response.getWriter().print(msg);
-      continuation.complete();
+      if (suspended) {
+        continuation.complete();
+      }
     }
  catch (    IOException e1) {
     }
   }
  finally {
-    releaseClient(authResult);
+    releaseClient(authResult,forceClose);
   }
 }
