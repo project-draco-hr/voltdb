@@ -1,0 +1,25 @@
+@VOLT.Command(bundles=VOLT.AdminBundle(), description='Stop one host of a running VoltDB cluster.', arguments=(VOLT.StringArgument('target_host', 'the target HOST name or address', min_count=1, max_count=1),))
+def stop(runner):
+    response = runner.call_proc('@SystemInformation', [VOLT.FastSerializer.VOLTTYPE_STRING], ['OVERVIEW'])
+    hosts = Hosts()
+    for tuple in response.table(0).tuples():
+        hosts.update(tuple[0], tuple[1], tuple[2])
+    (found, unused, missing) = hosts.lookup(runner.opts.target_host)
+    if (len(missing) > 0):
+        runner.abort(('Host not found in cluster: %s' % ' '.join(missing)))
+    if (len(unused) == 0):
+        runner.abort('The entire cluster is being stopped, use "shutdown" instead.')
+    hostname = unused[0].hostname
+    port = int(unused[0].adminport)
+    username = runner.opts.username
+    password = runner.opts.password
+    if username:
+        user_info = (', user: %s' % username)
+    else:
+        user_info = ''
+    runner.info(('Connecting to host: %s:%d%s' % (hostname, port, user_info)))
+    runner.voltdb_connect(hostname, port, username, password)
+    for host in found:
+        runner.info(('Stopping host %d: %s' % (host.id, host.hostname)))
+        response = runner.call_proc('@StopNode', [VOLT.FastSerializer.VOLTTYPE_INTEGER], [host.id], check_status=False)
+        print response
