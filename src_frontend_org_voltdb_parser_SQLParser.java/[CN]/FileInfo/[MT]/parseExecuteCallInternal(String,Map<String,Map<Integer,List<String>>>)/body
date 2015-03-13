@@ -1,0 +1,33 @@
+{
+  Matcher matcher=ExecuteCallPreamble.matcher(statement);
+  if (!matcher.lookingAt()) {
+    return null;
+  }
+  String commandWordTerminator=matcher.group(1);
+  if (OneWhitespace.matcher(commandWordTerminator).matches() || commandWordTerminator.equals(",")) {
+    ExecuteCallResults results=new ExecuteCallResults();
+    results.params=parseExecParameters(statement.substring(matcher.end()));
+    results.procedure=results.params.remove(0);
+    if (procedures == null) {
+      results.paramTypes=null;
+      return results;
+    }
+    Map<Integer,List<String>> signature=procedures.get(results.procedure);
+    if (signature == null) {
+      throw new SQLParser.Exception("Undefined procedure: %s",results.procedure);
+    }
+    results.paramTypes=signature.get(results.params.size());
+    if (results.paramTypes == null || results.params.size() != results.paramTypes.size()) {
+      String expectedSizes="";
+      for (      Integer expectedSize : signature.keySet()) {
+        expectedSizes+=expectedSize + ", ";
+      }
+      throw new SQLParser.Exception("Invalid parameter count for procedure: %s (expected: %s received: %d)",results.procedure,expectedSizes,results.params.size());
+    }
+    return results;
+  }
+  if (commandWordTerminator.equals(";")) {
+    throw new SQLParser.Exception("Incomplete EXECUTE command. EXECUTE requires a procedure name argument.");
+  }
+  throw new SQLParser.Exception("Invalid EXECUTE command. unexpected input: '" + commandWordTerminator + "'.");
+}

@@ -4,6 +4,8 @@
     Boolean success=false;
     m_term=createTerm(m_messenger.getZK(),m_partitionId,getInitiatorHSId(),m_initiatorMailbox,m_whoami);
     m_term.start();
+    long binaryLogDRId=Long.MIN_VALUE;
+    long binaryLogUniqueId=Long.MIN_VALUE;
     while (!success) {
       RepairAlgo repair=m_initiatorMailbox.constructRepairAlgo(m_term.getInterestingHSIds(),m_whoami);
       if (!m_initiatorMailbox.acceptPromotion()) {
@@ -11,9 +13,12 @@
         VoltDB.crashLocalVoltDB("A rejoining site can not be promoted to leader.",false,null);
         return;
       }
-      Long txnid=Long.MIN_VALUE;
+      long txnid=Long.MIN_VALUE;
       try {
-        txnid=repair.start().get();
+        RepairResult res=repair.start().get();
+        txnid=res.m_txnId;
+        binaryLogDRId=res.m_binaryLogDRId;
+        binaryLogUniqueId=res.m_binaryLogUniqueId;
         success=true;
       }
  catch (      CancellationException e) {
@@ -30,6 +35,9 @@
       }
     }
     ExportManager.instance().acceptMastership(m_partitionId);
+    if (m_consumerDRGateway != null) {
+      m_consumerDRGateway.promotePartition(m_partitionId,binaryLogDRId,binaryLogUniqueId);
+    }
   }
  catch (  Exception e) {
     VoltDB.crashLocalVoltDB("Terminally failed leader promotion.",true,e);

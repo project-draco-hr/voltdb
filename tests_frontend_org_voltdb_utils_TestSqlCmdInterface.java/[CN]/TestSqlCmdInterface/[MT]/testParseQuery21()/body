@@ -1,14 +1,20 @@
 {
   ID=21;
-  final String sqlFile="./tests/frontend/org/voltdb/utils/localQry.txt";
-  String raw=SQLCommand.readScriptFile(sqlFile);
+  SQLCommand.testFrontEndOnly();
+  final String fileName="./tests/frontend/org/voltdb/utils/localQry.txt";
+  String fileCmd="file " + fileName;
+  final FileInfo fileInfo=SQLParser.parseFileStatement(null,fileCmd);
+  final File sqlFile=fileInfo.getFile();
+  assertTrue(sqlFile.exists());
+  File matchFile=new File(fileName);
+  assertEquals("Expected equal file objects",matchFile,sqlFile);
+  SQLCommand.executeScriptFile(fileInfo,null);
+  String raw=SQLCommand.getTestResult();
   int numOfQueries=-1;
   String qryFrmFile="";
-  File fh=new File(sqlFile);
-  assert(fh.exists());
   String contents=null;
   try {
-    Scanner scanner=new Scanner(fh);
+    Scanner scanner=new Scanner(sqlFile);
     contents=scanner.useDelimiter("\\A").next();
     scanner.close();
   }
@@ -17,7 +23,7 @@
   }
   int blockCommentCount=0;
   try {
-    Pattern regex=Pattern.compile("(?:/\\*.*?\\*/)",Pattern.DOTALL | Pattern.MULTILINE);
+    Pattern regex=Pattern.compile("(?:/\\*.*\\*/)",Pattern.DOTALL | Pattern.MULTILINE);
     Matcher regexMatcher=regex.matcher(contents);
     StringBuffer sb=new StringBuffer();
     while (regexMatcher.find()) {
@@ -30,10 +36,10 @@
     System.err.println(ex.getDescription());
     System.exit(1);
   }
-  Scanner opnScanner=new Scanner(fh);
+  Scanner opnScanner=new Scanner(sqlFile);
   while (opnScanner.hasNext()) {
     String line=opnScanner.nextLine();
-    if (line.matches("-{2,}.*")) {
+    if (line.matches("--.*")) {
       if (line.matches("^--num=\\d+$")) {
         numOfQueries=Integer.parseInt(line.replaceAll("\\D+",""));
       }
@@ -43,7 +49,6 @@
     }
   }
   opnScanner.close();
-  qryFrmFile=qryFrmFile.replaceAll("\\;+"," ");
-  qryFrmFile=trimKeyWordsLeadingSpaces(qryFrmFile);
+  qryFrmFile=qryFrmFile.replaceAll("\\s*;+\\s*",";");
   assertThis(raw,qryFrmFile,numOfQueries,ID,blockCommentCount);
 }
