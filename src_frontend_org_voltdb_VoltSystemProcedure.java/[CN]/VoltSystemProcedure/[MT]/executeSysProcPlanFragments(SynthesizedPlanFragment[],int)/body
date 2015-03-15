@@ -2,18 +2,19 @@
   TransactionState txnState=m_runner.getTxnState();
   assert(txnState != null);
   txnState.setupProcedureResume(false,new int[]{aggregatorOutputDependencyId});
-  VoltTable[] results=new VoltTable[1];
+  final ArrayList<VoltTable> results=new ArrayList<>();
   executeSysProcPlanFragmentsAsync(pfs);
   Map<Integer,List<VoltTable>> mapResults=m_site.recursableRun(txnState);
   if (mapResults != null) {
     List<VoltTable> matchingTablesForId=mapResults.get(aggregatorOutputDependencyId);
     if (matchingTablesForId == null) {
-      assert(mapResults.size() == 0);
-      results[0]=null;
+      if (mapResults.size() != 0 && log.isDebugEnabled()) {
+        log.debug("Sysproc received a stale fragment response message from before the " + "transaction restart. This is possible for sysprocs because the dependency " + "IDs are always the same for a given sysproc. The result of this cannot be "+ "trusted.");
+      }
     }
  else {
-      results[0]=matchingTablesForId.get(0);
+      results.add(matchingTablesForId.get(0));
     }
   }
-  return results;
+  return results.toArray(new VoltTable[0]);
 }
