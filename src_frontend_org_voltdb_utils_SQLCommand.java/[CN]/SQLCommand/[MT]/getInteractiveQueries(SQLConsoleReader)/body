@@ -1,0 +1,70 @@
+{
+  m_returningToPromptAfterError=false;
+  final StringBuilder statement=new StringBuilder();
+  boolean isRecall=false;
+  while (true) {
+    String prompt=isRecall ? "" : ((RecallableSessionLines.size() + 1) + "> ");
+    isRecall=false;
+    String line=interactiveReader.readLine(prompt);
+    if (line == null) {
+      statement.setLength(0);
+      line="EXIT;";
+    }
+    boolean executeImmediate=SQLParser.isSemiColonTerminated(line);
+    if (statement.length() == 0) {
+      if (line.trim().equals("") || SQLParser.isWholeLineComment(line)) {
+        continue;
+      }
+      if (SQLParser.isExitCommand(line)) {
+        return;
+      }
+      ParseRecallResults recallParseResults=SQLParser.parseRecallStatement(line,RecallableSessionLines.size() - 1);
+      if (recallParseResults != null) {
+        if (recallParseResults.getError() == null) {
+          line=RecallableSessionLines.get(recallParseResults.getLine());
+          interactiveReader.putString(line);
+          interactiveReader.flush();
+          isRecall=true;
+        }
+ else {
+          System.out.println(recallParseResults.getError());
+        }
+        executeImmediate=false;
+        continue;
+      }
+      RecallableSessionLines.add(line);
+      if (executesAsSimpleDirective(line)) {
+        executeImmediate=false;
+        continue;
+      }
+      FileInfo fileInfo=SQLParser.parseFileStatement(line);
+      if (fileInfo != null) {
+        executeScriptFile(fileInfo,interactiveReader);
+        if (m_returningToPromptAfterError) {
+          m_returningToPromptAfterError=false;
+        }
+        continue;
+      }
+      if (executeImmediate) {
+        executeStatements(line + "\n");
+        if (m_testFrontEndOnly) {
+          break;
+        }
+        continue;
+      }
+    }
+ else {
+      RecallableSessionLines.add(line);
+      if (executeImmediate) {
+        statement.append(line + "\n");
+        executeStatements(statement.toString());
+        if (m_testFrontEndOnly) {
+          break;
+        }
+        statement.setLength(0);
+        continue;
+      }
+    }
+    statement.append(line + "\n");
+  }
+}
