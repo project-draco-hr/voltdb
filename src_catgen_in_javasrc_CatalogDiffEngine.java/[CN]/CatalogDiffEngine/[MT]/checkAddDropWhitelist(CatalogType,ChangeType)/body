@@ -1,6 +1,30 @@
 {
   m_canOccurWithElasticRebalance=false;
-  if (suspect instanceof User || suspect instanceof Group || suspect instanceof Procedure|| suspect instanceof Connector|| suspect instanceof SnapshotSchedule|| suspect instanceof ConstraintRef|| suspect instanceof GroupRef|| suspect instanceof UserRef|| suspect instanceof Constraint|| suspect instanceof Table) {
+  if (suspect instanceof User || suspect instanceof Group || suspect instanceof Procedure|| suspect instanceof SnapshotSchedule|| suspect instanceof ConstraintRef|| suspect instanceof GroupRef|| suspect instanceof UserRef|| suspect instanceof Constraint) {
+    return null;
+  }
+ else   if (suspect instanceof Table) {
+    Table tbl=(Table)suspect;
+    if (ChangeType.ADDITION == changeType && CatalogUtil.isTableExportOnly((Database)tbl.getParent(),tbl)) {
+      m_newTablesForExport.add(tbl.getTypeName());
+    }
+    return null;
+  }
+ else   if (suspect instanceof Connector) {
+    if (ChangeType.ADDITION == changeType) {
+      for (      ConnectorTableInfo cti : ((Connector)suspect).getTableinfo()) {
+        trackExportOfAlreadyExistingTables(cti.getTable().getTypeName());
+      }
+    }
+    return null;
+  }
+ else   if (suspect instanceof ConnectorTableInfo) {
+    if (ChangeType.ADDITION == changeType) {
+      trackExportOfAlreadyExistingTables(((ConnectorTableInfo)suspect).getTable().getTypeName());
+    }
+    return null;
+  }
+ else   if (suspect instanceof ConnectorProperty) {
     return null;
   }
  else   if (suspect instanceof ColumnRef) {
@@ -17,8 +41,16 @@
     return null;
   }
  else   if (suspect instanceof Column) {
+    Column column=(Column)suspect;
+    Table table=(Table)column.getParent();
     if (m_inStrictMatViewDiffMode) {
       return "May not dynamically add, drop, or rename materialized view columns.";
+    }
+    if (CatalogUtil.isTableExportOnly((Database)table.getParent(),table)) {
+      return "May not dynamically add, drop, or rename export table columns.";
+    }
+    if (table.getIsdred()) {
+      return "May not dynamically add, drop, or rename DR table columns.";
     }
     if (changeType == ChangeType.ADDITION) {
       Column col=(Column)suspect;
