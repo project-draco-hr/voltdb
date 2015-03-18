@@ -1,33 +1,23 @@
 {
-  if (m_disableAsync) {
+  if (!m_logger.isEnabledFor(level)) {
+    return;
+  }
+  if (m_asynchLoggerPool == null) {
     m_logger.l7dlog(level,key,params,t);
     return;
   }
-  if (!m_logger.isEnabledFor(level))   return;
-  final Thread currentThread=Thread.currentThread();
-  final Runnable r=new Runnable(){
-    @Override public void run(){
-      Thread.currentThread().setName(currentThread.getName());
-      try {
-        m_logger.l7dlog(level,key,params,t);
-      }
-  finally {
-        Thread.currentThread().setName(m_threadName);
-      }
-    }
-  }
-;
+  final Runnable runnableLoggingTask=createRunnableL7dLoggingTask(level,key,params,t);
 switch (level) {
 case INFO:
 case WARN:
 case DEBUG:
 case TRACE:
-    m_es.execute(r);
+    m_asynchLoggerPool.execute(runnableLoggingTask);
   break;
 case FATAL:
 case ERROR:
 try {
-  m_es.submit(r).get();
+  m_asynchLoggerPool.submit(runnableLoggingTask).get();
 }
  catch (Exception e) {
   Throwables.propagate(e);

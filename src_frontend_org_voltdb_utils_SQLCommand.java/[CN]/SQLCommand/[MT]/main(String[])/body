@@ -100,7 +100,7 @@
     if (!kerberos.isEmpty()) {
       config.enableKerberosAuthentication(kerberos);
     }
-    VoltDB=getClient(config,servers,port);
+    m_client=getClient(config,servers,port);
   }
  catch (  Exception exc) {
     System.err.println(exc.getMessage());
@@ -108,42 +108,19 @@
   }
   try {
     if (!ddlFile.equals("")) {
-      VoltDB.callProcedure("@AdHoc",ddlFile);
+      m_client.callProcedure("@AdHoc",ddlFile);
       System.exit(m_exitCode);
     }
     loadSystemProcedures();
     loadStoredProcedures(Procedures,Classlist);
-    in=new FileInputStream(FileDescriptor.in);
-    out=System.out;
-    lineInputReader=new SQLConsoleReader(in,out);
-    lineInputReader.setBellEnabled(false);
-    historyFile=new FileHistory(new File(System.getProperty("user.home"),".sqlcmd_history"));
-    lineInputReader.setHistory(historyFile);
-    KeyMap keyMap=lineInputReader.getKeys();
-    keyMap.bind(new Character(KeyMap.CTRL_D).toString(),new ActionListener(){
-      @Override public void actionPerformed(      ActionEvent e){
-        CursorBuffer cursorBuffer=lineInputReader.getCursorBuffer();
-        if (cursorBuffer.length() == 0) {
-          System.exit(m_exitCode);
-        }
- else {
-          try {
-            lineInputReader.delete();
-          }
- catch (          IOException e1) {
-          }
-        }
-      }
-    }
-);
     m_interactive=true;
     if (queries != null && !queries.isEmpty()) {
       m_interactive=false;
       for (      String query : queries) {
-        executeQuery(query);
+        executeStatement(query);
       }
     }
-    if (System.in.available() > 0) {
+    if (System.console() == null) {
       m_interactive=false;
       executeNoninteractive();
     }
@@ -157,23 +134,9 @@
   }
  finally {
     try {
-      VoltDB.close();
+      m_client.close();
     }
  catch (    Exception x) {
-    }
-    if (historyFile != null) {
-      try {
-        historyFile.flush();
-      }
- catch (      IOException e) {
-        System.err.printf("* Unable to write history to \"%s\" *\n",historyFile.getFile().getPath());
-        if (m_debug) {
-          e.printStackTrace();
-        }
-      }
-    }
-    if (lineInputReader != null) {
-      lineInputReader.shutdown();
     }
   }
   System.exit(m_exitCode);

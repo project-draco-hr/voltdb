@@ -1,0 +1,77 @@
+{
+  if (m_testFrontEndOnly) {
+    m_testFrontEndResult+=statement + ";\n";
+    return;
+  }
+  if (!m_interactive) {
+    System.out.println();
+    System.out.println(statement + ";");
+  }
+  try {
+    m_startTime=System.nanoTime();
+    SQLParser.ExecuteCallResults execCallResults=SQLParser.parseExecuteCall(statement,Procedures);
+    if (execCallResults != null) {
+      Object[] objectParams=execCallResults.getParameterObjects();
+      if (execCallResults.procedure.equals("@UpdateApplicationCatalog")) {
+        File catfile=null;
+        if (objectParams[0] != null) {
+          catfile=new File((String)objectParams[0]);
+        }
+        File depfile=null;
+        if (objectParams[1] != null) {
+          depfile=new File((String)objectParams[1]);
+        }
+        printDdlResponse(m_client.updateApplicationCatalog(catfile,depfile));
+        loadStoredProcedures(Procedures,Classlist);
+      }
+ else       if (execCallResults.procedure.equals("@UpdateClasses")) {
+        File jarfile=null;
+        if (objectParams[0] != null) {
+          jarfile=new File((String)objectParams[0]);
+        }
+        printDdlResponse(m_client.updateClasses(jarfile,(String)objectParams[1]));
+        loadStoredProcedures(Procedures,Classlist);
+      }
+ else {
+        if (execCallResults.procedure.equals("@SnapshotDelete")) {
+          objectParams[0]=new String[]{(String)objectParams[0]};
+          objectParams[1]=new String[]{(String)objectParams[1]};
+        }
+        printResponse(m_client.callProcedure(execCallResults.procedure,objectParams));
+      }
+      return;
+    }
+    String explainStatement=SQLParser.parseExplainCall(statement);
+    if (explainStatement != null) {
+      printResponse(m_client.callProcedure("@Explain",explainStatement));
+      return;
+    }
+    String explainProcName=SQLParser.parseExplainProcCall(statement);
+    if (explainProcName != null) {
+      printResponse(m_client.callProcedure("@ExplainProc",explainProcName));
+      return;
+    }
+    String loadPath=SQLParser.parseLoadClasses(statement);
+    if (loadPath != null) {
+      File jarfile=new File(loadPath);
+      printDdlResponse(m_client.updateClasses(jarfile,null));
+      loadStoredProcedures(Procedures,Classlist);
+      return;
+    }
+    String classSelector=SQLParser.parseRemoveClasses(statement);
+    if (classSelector != null) {
+      printDdlResponse(m_client.updateClasses(null,classSelector));
+      loadStoredProcedures(Procedures,Classlist);
+      return;
+    }
+    if (SQLParser.queryIsDDL(statement)) {
+      printDdlResponse(m_client.callProcedure("@AdHoc",statement));
+      loadStoredProcedures(Procedures,Classlist);
+      return;
+    }
+    printResponse(m_client.callProcedure("@AdHoc",statement));
+  }
+ catch (  Exception exc) {
+    stopOrContinue(exc);
+  }
+}
