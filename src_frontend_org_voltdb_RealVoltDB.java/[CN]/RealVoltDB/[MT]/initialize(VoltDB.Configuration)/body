@@ -279,8 +279,8 @@ synchronized (m_startAndStopLock) {
       }
       try {
         Class<?> rdrgwClass=Class.forName("org.voltdb.dr2.ConsumerDRGatewayImpl");
-        Constructor<?> rdrgwConstructor=rdrgwClass.getConstructor(String.class,ClientInterface.class,byte.class,boolean.class,String.class);
-        m_consumerDRGateway=(ConsumerDRGateway)rdrgwConstructor.newInstance(drProducerHost,m_clientInterface,drConsumerClusterId,usingCommandLog,clSnapshotPath);
+        Constructor<?> rdrgwConstructor=rdrgwClass.getConstructor(int.class,String.class,ClientInterface.class,byte.class,boolean.class,String.class);
+        m_consumerDRGateway=(ConsumerDRGateway)rdrgwConstructor.newInstance(m_messenger.getHostId(),drProducerHost,m_clientInterface,drConsumerClusterId,usingCommandLog,clSnapshotPath);
         m_globalServiceElector.registerService(m_consumerDRGateway);
       }
  catch (      Exception e) {
@@ -388,51 +388,6 @@ synchronized (m_startAndStopLock) {
     }
     m_configLogger=new Thread(new ConfigLogging());
     m_configLogger.start();
-    DailyRollingFileAppender dailyAppender=null;
-    Enumeration<?> appenders=Logger.getRootLogger().getAllAppenders();
-    while (appenders.hasMoreElements()) {
-      Appender appender=(Appender)appenders.nextElement();
-      if (appender instanceof DailyRollingFileAppender) {
-        dailyAppender=(DailyRollingFileAppender)appender;
-      }
-    }
-    final DailyRollingFileAppender dailyRollingFileAppender=dailyAppender;
-    Field field=null;
-    if (dailyRollingFileAppender != null) {
-      try {
-        field=dailyRollingFileAppender.getClass().getDeclaredField("nextCheck");
-        field.setAccessible(true);
-      }
- catch (      NoSuchFieldException e) {
-        hostLog.error("Failed to set daily system info logging: " + e.getMessage());
-      }
-    }
-    final Field nextCheckField=field;
-class DailyLogTask implements Runnable {
-      @Override public void run(){
-        try {
-          m_myHostId=m_messenger.getHostId();
-          hostLog.info(String.format("Host id of this node is: %d",m_myHostId));
-          hostLog.info("URL of deployment info: " + m_config.m_pathToDeployment);
-          hostLog.info("Cluster uptime: " + MiscUtils.formatUptime(getClusterUptime()));
-          logDebuggingInfo(m_config.m_adminPort,m_config.m_httpPort,m_httpPortExtraLogMessage,m_jsonEnabled);
-          logSystemSettingFromCatalogContext();
-          long nextCheck=nextCheckField.getLong(dailyRollingFileAppender);
-          scheduleWork(new DailyLogTask(),nextCheck - System.currentTimeMillis() + 30 * 1000,0,TimeUnit.MILLISECONDS);
-        }
- catch (        IllegalAccessException e) {
-          hostLog.error("Failed to set daily system info logging: " + e.getMessage());
-        }
-      }
-    }
-    if (dailyRollingFileAppender != null && nextCheckField != null) {
-      try {
-        long nextCheck=nextCheckField.getLong(dailyRollingFileAppender);
-        scheduleWork(new DailyLogTask(),nextCheck - System.currentTimeMillis() + 30 * 1000,0,TimeUnit.MILLISECONDS);
-      }
- catch (      IllegalAccessException e) {
-        hostLog.error("Failed to set daily system info logging: " + e.getMessage());
-      }
-    }
+    scheduleDailyLoggingWorkInNextCheckTime();
   }
 }
