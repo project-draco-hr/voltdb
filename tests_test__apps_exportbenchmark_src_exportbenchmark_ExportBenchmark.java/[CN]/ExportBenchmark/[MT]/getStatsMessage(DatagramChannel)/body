@@ -21,24 +21,40 @@ catch (  BufferUnderflowException e) {
     buffer.get(localBuf,0,buffer.remaining());
     message=new String(localBuf);
   }
-  message=message.trim();
-  String[] stats=message.split(",");
-  if (stats.length < 2) {
-    System.err.println("WARN: invalid stats message. Ignoring");
-  }
-  Integer partitionId=new Integer(Integer.parseInt(stats[2].split(":")[1]));
-  Double tps=new Double(Double.parseDouble(stats[0].split(":")[1]));
-  Double decode=new Double(Double.parseDouble(stats[1].split(":")[1]));
+  JSONObject json;
   try {
-    tpsStats.get(partitionId).add(tps);
-    decodeStats.get(partitionId).add(decode);
+    json=new JSONObject(message);
   }
- catch (  NullPointerException e) {
+ catch (  JSONException e) {
+    System.err.println("Received invalid JSON: " + e.getLocalizedMessage());
+    return;
+  }
+  Integer partitionId=null;
+  Double tps=null;
+  Double decode=null;
+  try {
+    partitionId=new Integer(json.getInt("partitionId"));
+    tps=new Double(json.getDouble("tps"));
+    decode=new Double(json.getDouble("decodeTime"));
+  }
+ catch (  JSONException e) {
+    System.err.println("Unable to parse JSON " + e.getLocalizedMessage());
+    return;
+  }
+  if (tpsStats.get(partitionId) == null) {
     ArrayList<Double> newTps=new ArrayList<Double>();
-    ArrayList<Double> newDecode=new ArrayList<Double>();
     newTps.add(tps);
-    newDecode.add(decode);
     tpsStats.put(partitionId,newTps);
+  }
+ else {
+    tpsStats.get(partitionId).add(tps);
+  }
+  if (decodeStats.get(partitionId) == null) {
+    ArrayList<Double> newDecode=new ArrayList<Double>();
+    newDecode.add(decode);
     decodeStats.put(partitionId,newDecode);
+  }
+ else {
+    decodeStats.get(partitionId).add(decode);
   }
 }
