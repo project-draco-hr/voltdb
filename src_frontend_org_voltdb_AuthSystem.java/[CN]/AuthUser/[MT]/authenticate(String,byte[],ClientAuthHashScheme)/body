@@ -1,0 +1,38 @@
+{
+  if (!m_enabled) {
+    return true;
+  }
+  final AuthUser user=m_users.get(username);
+  if (user == null) {
+    authLogger.l7dlog(Level.INFO,LogKeys.auth_AuthSystem_NoSuchUser.name(),new String[]{username},null);
+    return false;
+  }
+  boolean matched=true;
+  if (user.m_sha1ShadowPassword != null || user.m_sha2ShadowPassword != null) {
+    MessageDigest md=null;
+    try {
+      md=MessageDigest.getInstance(ClientAuthHashScheme.getDigestScheme(scheme));
+    }
+ catch (    NoSuchAlgorithmException e) {
+      VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
+    }
+    byte passwordHash[]=md.digest(password);
+    for (int ii=0; ii < passwordHash.length; ii++) {
+      if (passwordHash[ii] != user.m_sha1ShadowPassword[ii]) {
+        matched=false;
+      }
+    }
+  }
+ else {
+    String pwToCheck=(scheme == ClientAuthHashScheme.HASH_SHA1 ? user.m_bcryptShadowPassword : user.m_bcryptSha2ShadowPassword);
+    matched=BCrypt.checkpw(Encoder.hexEncode(password),pwToCheck);
+  }
+  if (matched) {
+    logAuthSuccess(username);
+    return true;
+  }
+ else {
+    authLogger.l7dlog(Level.INFO,LogKeys.auth_AuthSystem_AuthFailedPasswordMistmatch.name(),new String[]{username},null);
+    return false;
+  }
+}
