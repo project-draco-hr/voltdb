@@ -1,0 +1,58 @@
+{
+  String exprsjson=catalogIndex.getExpressionsjson();
+  List<AbstractExpression> indexedExprs=null;
+  if (exprsjson.isEmpty()) {
+    indexedExprs=new ArrayList<AbstractExpression>();
+    List<ColumnRef> indexedColRefs=CatalogUtil.getSortedCatalogItems(catalogIndex.getColumns(),"index");
+    assert(nextKeyIndex < indexedColRefs.size());
+    for (int i=0; i <= nextKeyIndex; i++) {
+      ColumnRef colRef=indexedColRefs.get(i);
+      Column col=colRef.getColumn();
+      TupleValueExpression tve=new TupleValueExpression(tableScan.getTableName(),tableScan.getTableAlias(),col.getTypeName(),col.getTypeName());
+      tve.setTypeSizeBytes(col.getType(),col.getSize(),col.getInbytes());
+      indexedExprs.add(tve);
+    }
+  }
+ else {
+    try {
+      indexedExprs=AbstractExpression.fromJSONArrayString(exprsjson,tableScan);
+      assert(nextKeyIndex < indexedExprs.size());
+    }
+ catch (    JSONException e) {
+      e.printStackTrace();
+      assert(false);
+    }
+  }
+  AbstractExpression indexPredicate=null;
+  Set<TupleValueExpression> notNullTves=null;
+  String indexPredicateJson=catalogIndex.getPredicatejson();
+  if (!StringUtil.isEmpty(indexPredicateJson)) {
+    try {
+      indexPredicate=AbstractExpression.fromJSONString(indexPredicateJson,tableScan);
+      assert(indexPredicate != null);
+    }
+ catch (    JSONException e) {
+      e.printStackTrace();
+      assert(false);
+    }
+    if (ExpressionUtil.isNullRejectingExpression(indexPredicate,tableScan.getTableAlias())) {
+      notNullTves=new HashSet<TupleValueExpression>();
+      notNullTves.addAll(ExpressionUtil.getTupleValueExpressions(indexPredicate));
+    }
+  }
+  AbstractExpression nullExpr=indexedExprs.get(nextKeyIndex);
+  AbstractExpression skipNullPredicate=null;
+  if (notNullTves == null || !notNullTves.contains(nullExpr)) {
+    List<AbstractExpression> exprs=new ArrayList<AbstractExpression>();
+    for (int i=0; i < nextKeyIndex; i++) {
+      AbstractExpression idxExpr=indexedExprs.get(i);
+      AbstractExpression expr=new ComparisonExpression(ExpressionType.COMPARE_EQUAL,idxExpr,(AbstractExpression)searchkeyExpressions.get(i).clone());
+      exprs.add(expr);
+    }
+    AbstractExpression expr=new OperatorExpression(ExpressionType.OPERATOR_IS_NULL,nullExpr,null);
+    exprs.add(expr);
+    skipNullPredicate=ExpressionUtil.combine(exprs);
+    skipNullPredicate.finalizeValueTypes();
+  }
+  return skipNullPredicate;
+}
