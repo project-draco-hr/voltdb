@@ -1,0 +1,35 @@
+{
+  assert(index != null);
+  String predicatejson=index.getPredicatejson();
+  if (predicatejson.isEmpty()) {
+    return true;
+  }
+  AbstractExpression indexPredicate=null;
+  try {
+    indexPredicate=AbstractExpression.fromJSONString(predicatejson,tableScan);
+  }
+ catch (  JSONException e) {
+    e.printStackTrace();
+    assert(false);
+    return false;
+  }
+  List<AbstractExpression> exprsToCover=ExpressionUtil.uncombine(indexPredicate);
+  for (  AbstractExpression coveringExpr : coveringExprs) {
+    if (exprsToCover.isEmpty()) {
+      break;
+    }
+    AbstractExpression reversedCoveringExpr=null;
+    ExpressionType reverseCoveringType=ComparisonExpression.reverses.get(coveringExpr.getExpressionType());
+    if (reverseCoveringType != null) {
+      reversedCoveringExpr=new ComparisonExpression(reverseCoveringType,coveringExpr.getRight(),coveringExpr.getLeft());
+    }
+    if (removeExactMatchCoveredExpressions(coveringExpr,exprsToCover)) {
+      exactMatchCoveringExprs.add(coveringExpr);
+    }
+    if (reversedCoveringExpr != null && removeExactMatchCoveredExpressions(reversedCoveringExpr,exprsToCover)) {
+      exactMatchCoveringExprs.add(coveringExpr);
+    }
+  }
+  exprsToCover=removeNotNullCoveredExpressions(tableScan,coveringExprs,exprsToCover);
+  return exprsToCover.isEmpty();
+}
