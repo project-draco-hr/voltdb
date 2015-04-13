@@ -7,24 +7,36 @@
       Double decode=new Double(index.m_decode);
       for (      StatClass indexPrime : serverStats) {
         if (!indexPrime.m_partition.equals(0)) {
-          if (indexPrime.m_startTime >= index.m_startTime && indexPrime.m_startTime < index.m_endTime) {
+          if (indexPrime.m_endTime >= index.m_endTime && indexPrime.m_startTime <= index.m_startTime) {
+            Double ratio=new Double(index.m_endTime - index.m_startTime) / (indexPrime.m_endTime - indexPrime.m_startTime);
+            if (ratio <= 0 || ratio > 1) {
+              System.out.println("Bad Ratio 1 - ratio: " + ratio + " || index.endTime: "+ index.m_endTime+ " || index.startTime: "+ index.m_startTime+ " || indexPrime.endTime: "+ indexPrime.m_endTime+ " || indexPrime.startTime: "+ indexPrime.m_startTime);
+              System.exit(-1);
+            }
+            transactions+=ratio * indexPrime.m_transactions;
+            decode+=ratio * indexPrime.m_transactions;
+          }
+ else           if (indexPrime.m_endTime <= index.m_endTime && indexPrime.m_startTime >= index.m_startTime) {
+            transactions+=indexPrime.m_transactions;
+            decode+=indexPrime.m_transactions;
+          }
+ else           if (indexPrime.m_startTime >= index.m_startTime && indexPrime.m_startTime < index.m_endTime) {
             Double ratio=new Double(index.m_endTime - indexPrime.m_startTime) / (indexPrime.m_endTime - indexPrime.m_startTime);
+            if (ratio <= 0 || ratio > 1) {
+              System.out.println("Bad Ratio 2 - ratio: " + ratio + " || index.endTime: "+ index.m_endTime+ " || index.startTime: "+ index.m_startTime+ " || indexPrime.endTime: "+ indexPrime.m_endTime+ " || indexPrime.startTime: "+ indexPrime.m_startTime);
+              System.exit(-1);
+            }
             transactions+=ratio * indexPrime.m_transactions;
             decode+=ratio * indexPrime.m_transactions;
           }
  else           if (indexPrime.m_endTime <= index.m_endTime && indexPrime.m_endTime > index.m_startTime) {
             Double ratio=new Double(indexPrime.m_endTime - index.m_startTime) / (indexPrime.m_endTime - indexPrime.m_startTime);
+            if (ratio <= 0 || ratio > 1) {
+              System.out.println("Bad Ratio 3 - ratio: " + ratio + " || index.endTime: "+ index.m_endTime+ " || index.startTime: "+ index.m_startTime+ " || indexPrime.endTime: "+ indexPrime.m_endTime+ " || indexPrime.startTime: "+ indexPrime.m_startTime);
+              System.exit(-1);
+            }
             transactions+=ratio * indexPrime.m_transactions;
             decode+=ratio * indexPrime.m_transactions;
-          }
- else           if (indexPrime.m_endTime >= index.m_endTime && indexPrime.m_startTime <= index.m_startTime) {
-            Double ratio=new Double(index.m_endTime - index.m_startTime) / (indexPrime.m_endTime - indexPrime.m_startTime);
-            transactions+=ratio * indexPrime.m_transactions;
-            decode+=ratio * indexPrime.m_transactions;
-          }
- else           if (indexPrime.m_endTime < index.m_endTime && indexPrime.m_startTime > index.m_startTime) {
-            transactions+=indexPrime.m_transactions;
-            decode+=indexPrime.m_transactions;
           }
         }
       }
@@ -57,7 +69,9 @@
   System.out.print("\n" + HORIZONTAL_RULE);
   System.out.println(" System Server Statistics");
   System.out.printf("Average throughput:            %,9d txns/sec\n",tpsSum.longValue());
-  System.out.printf("Average decode time:           %,9.2f txns/sec\n",decodeSum);
+  System.out.printf("Average decode time:           %,9.2f ns\n",decodeSum);
+  Double decodePerc=(new Double(decodeTime) / (((serverEndTS - serverStartTS) * (partCount + 1)) * 1000000)) * 100;
+  System.out.printf("Percent decode row time:       %,9.2f %%\n",decodePerc);
   System.out.println(HORIZONTAL_RULE);
   System.out.printf("Reported Internal Avg Latency: %,9.2f ms\n",stats.getAverageInternalLatency());
   System.out.print("\n" + HORIZONTAL_RULE);
@@ -67,7 +81,7 @@
   try {
     if ((config.statsfile != null) && (config.statsfile.length() != 0)) {
       FileWriter fw=new FileWriter(config.statsfile);
-      fw.append(String.format("%d,%d,%d,0,0,%f,%d,0,0,0,0,0,0\n",stats.getStartTimestamp(),duration,successfulInserts.get(),decodeSum,tpsSum.longValue()));
+      fw.append(String.format("%d,%d,%d,%d,%d,%d,%d,0,0,0,0,0,0\n",stats.getStartTimestamp(),duration,successfulInserts.get(),serverStartTS - serverEndTS,decodeTime,decodeSum.longValue(),tpsSum.longValue()));
       fw.close();
     }
   }
