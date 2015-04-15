@@ -1,0 +1,55 @@
+{
+  bitwiseFunctionChecker(1,1,3);
+  bitwiseFunctionChecker(2,3,1);
+  bitwiseFunctionChecker(3,-3,1);
+  bitwiseFunctionChecker(4,1,-3);
+  bitwiseFunctionChecker(5,Long.MAX_VALUE,Long.MIN_VALUE + 10);
+  bitwiseFunctionChecker(6,Long.MIN_VALUE + 10,Long.MAX_VALUE);
+  bitwiseFunctionChecker(7,-100,Long.MIN_VALUE + 10);
+  bitwiseFunctionChecker(8,Long.MIN_VALUE + 10,-100);
+  VoltTable vt;
+  Client client=getClient();
+  long in, pk, bignum;
+  String sql;
+  try {
+    sql="select bitand(bignum, 9223372036854775809) from NUMBER_TYPES;";
+    vt=client.callProcedure("@AdHoc",sql).getResults()[0];
+    fail();
+  }
+ catch (  Exception ex) {
+    assertTrue(ex.getMessage().contains("numeric value out of range"));
+  }
+  client.callProcedure("@AdHoc",String.format("INSERT INTO NUMBER_TYPES(INTEGERNUM, BIGNUM) VALUES(%d,%d);",19,6));
+  client.callProcedure("@AdHoc",String.format("INSERT INTO NUMBER_TYPES(INTEGERNUM, BIGNUM) VALUES(%d,%d);",20,14));
+  sql="select bignum from NUMBER_TYPES where bignum > -100 and bignum < 100 and bitand(bignum,3) = 2 order by bignum;";
+  vt=client.callProcedure("@AdHoc",sql).getResults()[0];
+  validateTableOfScalarLongs(vt,new long[]{6,14});
+  vt=client.callProcedure("@Explain",sql).getResults()[0];
+  assertTrue(vt.toString().contains("NUMBER_TYPES_BITAND_IDX"));
+  if (isHSQL()) {
+    return;
+  }
+  bitwiseFunctionChecker(21,Long.MAX_VALUE,Long.MIN_VALUE);
+  try {
+    bitwiseFunctionChecker(22,Long.MIN_VALUE,Long.MAX_VALUE);
+    fail();
+  }
+ catch (  Exception ex) {
+    assertTrue(ex.getMessage().contains("Constant value underflows BIGINT type"));
+  }
+  client.callProcedure("@AdHoc","insert into NUMBER_TYPES(INTEGERNUM, bignum) values(50, ?);",Long.MIN_VALUE + 1);
+  verifyStmtFails(client,"select BITAND(bignum, -2) from NUMBER_TYPES where INTEGERNUM = 50;","would produce INT64_MIN, which is reserved for SQL NULL values");
+  verifyStmtFails(client,"select BITXOR(bignum, 1) from NUMBER_TYPES where INTEGERNUM = 50;","would produce INT64_MIN, which is reserved for SQL NULL values");
+  pk=100;
+  bignum=Long.MIN_VALUE;
+  in=Long.MAX_VALUE;
+  client.callProcedure("NUMBER_TYPES.insert",pk,1,1,null,1.0,1.0);
+  vt=client.callProcedure("BITWISE_AND_OR_XOR",in,in,in,pk).getResults()[0];
+  validateRowOfLongs(vt,new long[]{Long.MIN_VALUE,Long.MIN_VALUE,Long.MIN_VALUE});
+  pk=101;
+  bignum=Long.MAX_VALUE;
+  in=Long.MIN_VALUE;
+  client.callProcedure("NUMBER_TYPES.insert",pk,1,1,bignum,1.0,1.0);
+  vt=client.callProcedure("BITWISE_AND_OR_XOR",null,null,null,pk).getResults()[0];
+  validateRowOfLongs(vt,new long[]{Long.MIN_VALUE,Long.MIN_VALUE,Long.MIN_VALUE});
+}

@@ -86,12 +86,27 @@
   if (!timeoutFuture.cancel(false)) {
     return null;
   }
-  message.flip().position(1);
+  message.flip();
+  int aversion=message.get();
+  ClientAuthHashScheme hashScheme=ClientAuthHashScheme.HASH_SHA1;
+  if (aversion > 0) {
+    try {
+      hashScheme=ClientAuthHashScheme.get(message.get());
+    }
+ catch (    IllegalArgumentException ex) {
+      authLog.warn("Failure to authenticate connection Invalid Hash Scheme presented.");
+      responseBuffer.put(WIRE_PROTOCOL_FORMAT_ERROR).flip();
+      socket.write(responseBuffer);
+      socket.close();
+      return null;
+    }
+  }
   FastDeserializer fds=new FastDeserializer(message);
   final String service=fds.readString();
   final String username=fds.readString();
-  final byte password[]=new byte[20];
-  if (message.remaining() != 20) {
+  final int digestLen=ClientAuthHashScheme.getDigestLength(hashScheme);
+  final byte password[]=new byte[digestLen];
+  if (message.remaining() != digestLen) {
     authLog.warn("Failure to authenticate connection(" + socket.socket().getRemoteSocketAddress() + "): user "+ username+ " failed authentication.");
     responseBuffer.put(AUTHENTICATION_FAILURE).flip();
     socket.write(responseBuffer);
@@ -120,9 +135,9 @@
       arq=context.authSystem.new KerberosAuthenticationRequest(socket);
     }
  else {
-      arq=context.authSystem.new HashAuthenticationRequest(username,password);
+      arq=context.authSystem.new HashAuthenticationRequest(username,password,hashScheme);
     }
-    boolean authenticated=arq.authenticate();
+    boolean authenticated=arq.authenticate(hashScheme);
     if (!authenticated) {
       Exception faex=arq.getAuthenticationFailureException();
       boolean isItIo=false;
