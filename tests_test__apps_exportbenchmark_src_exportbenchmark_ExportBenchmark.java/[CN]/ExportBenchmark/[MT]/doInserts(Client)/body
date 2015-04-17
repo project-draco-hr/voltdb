@@ -1,17 +1,19 @@
 {
   System.out.println("Warming up...");
   long now=System.currentTimeMillis();
+  AtomicLong rowId=new AtomicLong(0);
   while (benchmarkWarmupEndTS > now) {
     try {
-      client.callProcedure(new NullCallback(),"ExportInsert",insertNumber,1,53,64,2.452,"String",48932098,"aa");
-      if (++insertNumber % 50 == 0) {
+      client.callProcedure(new NullCallback(),"InsertExport",rowId.getAndIncrement(),0);
+      if (++totalInserts % 50 == 0) {
         now=System.currentTimeMillis();
       }
     }
- catch (    IOException ignore) {
+ catch (    Exception ignore) {
     }
   }
   System.out.println("Warmup complete");
+  rowId.set(0);
   fullStatsContext.fetchAndResetBaseline();
   periodicStatsContext.fetchAndResetBaseline();
   schedulePeriodicStats();
@@ -19,12 +21,9 @@
   now=System.currentTimeMillis();
   while (benchmarkEndTS > now) {
     try {
-      boolean success=client.callProcedure(new ExportCallback(),"ExportInsert",insertNumber,1,53,64,2.452,"String",48932098,"aa");
-      if (++insertNumber % 50 == 0) {
+      client.callProcedure(new ExportCallback(),"InsertExport",rowId.getAndIncrement(),0);
+      if (++totalInserts % 50 == 0) {
         now=System.currentTimeMillis();
-      }
-      if (!success) {
-        System.err.println("Stored procedure not queuing");
       }
     }
  catch (    Exception e) {
@@ -33,7 +32,14 @@
       System.exit(1);
     }
   }
-  client.drain();
+  try {
+    client.drain();
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+  }
   System.out.println("Benchmark complete: wrote " + successfulInserts.get() + " objects");
   System.out.println("Failed to insert " + failedInserts.get() + " objects");
+  testFinished.set(true);
+  statsSocketSelector.wakeup();
 }
