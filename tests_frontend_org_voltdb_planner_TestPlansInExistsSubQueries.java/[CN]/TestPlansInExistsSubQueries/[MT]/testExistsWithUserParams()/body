@@ -1,0 +1,109 @@
+{
+{
+    AbstractPlanNode pn=compile("select r2.c from r2 where r2.c > ? and exists (select c from r1 where r1.c = r2.c)");
+    pn=pn.getChild(0);
+    assertTrue(pn instanceof AbstractScanPlanNode);
+    AbstractScanPlanNode nps=(AbstractScanPlanNode)pn;
+    AbstractExpression e=nps.getPredicate();
+    AbstractExpression le=e.getLeft();
+    assertEquals(ExpressionType.COMPARE_GREATERTHAN,le.getExpressionType());
+    AbstractExpression pve=le.getRight();
+    assertEquals(ExpressionType.VALUE_PARAMETER,pve.getExpressionType());
+    assertEquals(new Integer(0),((ParameterValueExpression)pve).getParameterIndex());
+    AbstractExpression re=e.getRight();
+    assertEquals(ExpressionType.OPERATOR_EXISTS,re.getExpressionType());
+    AbstractSubqueryExpression se=(AbstractSubqueryExpression)re.getLeft();
+    assertEquals(1,se.getArgs().size());
+    assertEquals(1,se.getParameterIdxList().size());
+    assertEquals(Integer.valueOf(1),se.getParameterIdxList().get(0));
+  }
+{
+    AbstractPlanNode pn=compile("select r1.c from r1 where  " + "exists ( select 1 from r2 where exists" + "(select 1 from r3 where r3.a = r1.c))");
+    pn=pn.getChild(0);
+    assertTrue(pn instanceof AbstractScanPlanNode);
+    AbstractScanPlanNode spn=(AbstractScanPlanNode)pn;
+    AbstractExpression e=spn.getPredicate();
+    assertEquals(ExpressionType.OPERATOR_EXISTS,e.getExpressionType());
+    AbstractSubqueryExpression se=(AbstractSubqueryExpression)e.getLeft();
+    List<AbstractExpression> args=se.getArgs();
+    assertEquals(1,args.size());
+    assertEquals(ExpressionType.VALUE_TUPLE,args.get(0).getExpressionType());
+    TupleValueExpression tve=(TupleValueExpression)args.get(0);
+    assertEquals("R1",tve.getTableName());
+    assertEquals("C",tve.getColumnName());
+    List<Integer> params=se.getParameterIdxList();
+    assertEquals(1,params.size());
+    assertEquals(new Integer(0),params.get(0));
+    pn=se.getSubqueryNode();
+    assertTrue(pn instanceof AbstractScanPlanNode);
+    spn=(AbstractScanPlanNode)pn;
+    e=spn.getPredicate();
+    assertEquals(ExpressionType.OPERATOR_EXISTS,e.getExpressionType());
+    se=(AbstractSubqueryExpression)e.getLeft();
+    pn=se.getSubqueryNode();
+    assertTrue(pn instanceof AbstractScanPlanNode);
+    spn=(AbstractScanPlanNode)pn;
+    e=spn.getPredicate();
+    assertEquals(ExpressionType.COMPARE_EQUAL,e.getExpressionType());
+    e=e.getRight();
+    assertEquals(ExpressionType.VALUE_PARAMETER,e.getExpressionType());
+    assertEquals(new Integer(0),((ParameterValueExpression)e).getParameterIndex());
+  }
+{
+    AbstractPlanNode pn=compile("select r1.c from r1 where  " + "exists ( select 1 from r2 where r1.d = r2.c and exists" + "(select 1 from r3 where r3.a = r1.c))");
+    pn=pn.getChild(0);
+    assertTrue(pn instanceof AbstractScanPlanNode);
+    AbstractScanPlanNode spn=(AbstractScanPlanNode)pn;
+    AbstractExpression e=spn.getPredicate();
+    assertEquals(ExpressionType.OPERATOR_EXISTS,e.getExpressionType());
+    AbstractSubqueryExpression se=(AbstractSubqueryExpression)e.getLeft();
+    List<AbstractExpression> args=se.getArgs();
+    assertEquals(2,args.size());
+    assertEquals(ExpressionType.VALUE_TUPLE,args.get(0).getExpressionType());
+    TupleValueExpression tve=(TupleValueExpression)args.get(0);
+    assertEquals("R1",tve.getTableName());
+    assertEquals("C",tve.getColumnName());
+    tve=(TupleValueExpression)args.get(1);
+    assertEquals("R1",tve.getTableName());
+    assertEquals("D",tve.getColumnName());
+    List<Integer> params=se.getParameterIdxList();
+    assertEquals(2,params.size());
+    assertEquals(new Integer(0),params.get(0));
+    assertEquals(new Integer(1),params.get(1));
+    pn=se.getSubqueryNode();
+    assertTrue(pn instanceof AbstractScanPlanNode);
+    spn=(AbstractScanPlanNode)pn;
+    e=spn.getPredicate();
+    assertEquals(ExpressionType.COMPARE_EQUAL,e.getRight().getExpressionType());
+    AbstractExpression ce=e.getRight().getRight();
+    assertEquals(ExpressionType.VALUE_PARAMETER,ce.getExpressionType());
+    assertEquals(new Integer(1),((ParameterValueExpression)ce).getParameterIndex());
+    AbstractExpression gce=e.getLeft();
+    assertEquals(ExpressionType.OPERATOR_EXISTS,gce.getExpressionType());
+    se=(AbstractSubqueryExpression)gce.getLeft();
+    pn=se.getSubqueryNode();
+    assertTrue(pn instanceof AbstractScanPlanNode);
+    spn=(AbstractScanPlanNode)pn;
+    e=spn.getPredicate();
+    assertEquals(ExpressionType.COMPARE_EQUAL,e.getExpressionType());
+    e=e.getRight();
+    assertEquals(ExpressionType.VALUE_PARAMETER,e.getExpressionType());
+    assertEquals(new Integer(0),((ParameterValueExpression)e).getParameterIndex());
+  }
+{
+    AbstractPlanNode pn=compile("select r2.a from r2 where exists " + "( SELECT 1 from R2 WHERE r2.c = ?)");
+    pn=pn.getChild(0);
+    assertEquals(PlanNodeType.SEQSCAN,pn.getPlanNodeType());
+    SeqScanPlanNode spl=(SeqScanPlanNode)pn;
+    AbstractExpression e=spl.getPredicate();
+    assertEquals(ExpressionType.OPERATOR_EXISTS,e.getExpressionType());
+    AbstractSubqueryExpression subExpr=(AbstractSubqueryExpression)e.getLeft();
+    assertEquals(0,subExpr.getParameterIdxList().size());
+    pn=subExpr.getSubqueryNode();
+    assertEquals(PlanNodeType.SEQSCAN,pn.getPlanNodeType());
+    spl=(SeqScanPlanNode)pn;
+    e=spl.getPredicate();
+    assertEquals(ExpressionType.COMPARE_EQUAL,e.getExpressionType());
+    assertEquals(ExpressionType.VALUE_PARAMETER,e.getRight().getExpressionType());
+  }
+}

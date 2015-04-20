@@ -1,0 +1,15 @@
+{
+  Client client=getClient();
+  loadData(false);
+  VoltTable vt;
+  for (  String tb : replicated_tbs) {
+    vt=client.callProcedure("@AdHoc","select T1.id from R1 T1, " + tb + " T2 where "+ "T1.id = T2.id and exists ( "+ " select 1 from R1 where R1.dept * 2 = T2.dept)").getResults()[0];
+    validateTableOfLongs(vt,new long[][]{{4},{5}});
+    vt=client.callProcedure("@AdHoc","select t1.id, t2.id  from r1 t1, " + tb + " t2 where "+ "t1.id IN (select id from r2 where t2.id = r2.id * 2)").getResults()[0];
+    validateTableOfLongs(vt,new long[][]{{1,2},{2,4}});
+    if (!isHSQL()) {
+      vt=client.callProcedure("@AdHoc","select id, newid  " + "FROM (SELECT id, wage FROM R1) T1 " + "   LEFT OUTER JOIN "+ "   (SELECT id as newid, dept FROM " + tb + " where dept > 1) T2 "+ "   ON T1.id = T2.dept and EXISTS( "+ "      select 1 from R1 where R1.ID =  T2.newid ) "+ "ORDER BY id, newid").getResults()[0];
+      validateTableOfLongs(vt,new long[][]{{1,Long.MIN_VALUE},{2,4},{2,5},{3,Long.MIN_VALUE},{4,Long.MIN_VALUE},{5,Long.MIN_VALUE}});
+    }
+  }
+}

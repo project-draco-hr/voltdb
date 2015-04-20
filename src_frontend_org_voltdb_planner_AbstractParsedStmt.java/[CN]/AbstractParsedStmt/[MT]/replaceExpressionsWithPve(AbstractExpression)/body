@@ -1,0 +1,37 @@
+{
+  assert(expr != null);
+  if (expr instanceof TupleValueExpression) {
+    int paramIdx=NEXT_PARAMETER_ID++;
+    ParameterValueExpression pve=new ParameterValueExpression(paramIdx,expr);
+    m_parameterTveMap.put(paramIdx,expr);
+    return pve;
+  }
+  if (expr instanceof AggregateExpression) {
+    int paramIdx=NEXT_PARAMETER_ID++;
+    ParameterValueExpression pve=new ParameterValueExpression(paramIdx,expr);
+    List<TupleValueExpression> tves=ExpressionUtil.getTupleValueExpressions(expr);
+    assert(m_parentStmt != null);
+    for (    TupleValueExpression tve : tves) {
+      int origId=tve.getOrigStmtId();
+      if (m_stmtId != origId && m_parentStmt.m_stmtId != origId) {
+        throw new PlanningErrorException("Subqueries do not support aggregation of parent statement columns");
+      }
+    }
+    m_parameterTveMap.put(paramIdx,expr);
+    return pve;
+  }
+  if (expr.getLeft() != null) {
+    expr.setLeft(replaceExpressionsWithPve(expr.getLeft()));
+  }
+  if (expr.getRight() != null) {
+    expr.setRight(replaceExpressionsWithPve(expr.getRight()));
+  }
+  if (expr.getArgs() != null) {
+    List<AbstractExpression> newArgs=new ArrayList<AbstractExpression>();
+    for (    AbstractExpression argument : expr.getArgs()) {
+      newArgs.add(replaceExpressionsWithPve(argument));
+    }
+    expr.setArgs(newArgs);
+  }
+  return expr;
+}

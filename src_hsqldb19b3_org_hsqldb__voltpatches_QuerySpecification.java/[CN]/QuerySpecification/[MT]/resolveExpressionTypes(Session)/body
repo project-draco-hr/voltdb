@@ -20,6 +20,44 @@
     if (queryCondition.getDataType() != Type.SQL_BOOLEAN) {
       throw Error.error(ErrorCode.X_42568);
     }
+    tempSet.clear();
+    Expression.collectAllExpressions(tempSet,queryCondition,Expression.aggregateFunctionSet,Expression.subqueryExpressionSet);
+    if (!tempSet.isEmpty()) {
+      if (isTopLevel) {
+        throw Error.error(ErrorCode.X_47000);
+      }
+ else {
+        HsqlList columnSet=new OrderedHashSet();
+        Iterator aggIt=tempSet.iterator();
+        while (aggIt.hasNext()) {
+          Expression nextAggr=(Expression)aggIt.next();
+          Expression.collectAllExpressions(columnSet,nextAggr,Expression.columnExpressionSet,Expression.emptyExpressionSet);
+        }
+        Iterator columnIt=columnSet.iterator();
+        while (columnIt.hasNext()) {
+          Expression nextColumn=(Expression)columnIt.next();
+          assert(nextColumn instanceof ExpressionColumn);
+          ExpressionColumn nextColumnEx=(ExpressionColumn)nextColumn;
+          String tableName=nextColumnEx.rangeVariable.rangeTable.tableName.name;
+          String tableAlias=(nextColumnEx.rangeVariable.tableAlias != null) ? nextColumnEx.rangeVariable.tableAlias.name : null;
+          boolean resolved=false;
+          for (          RangeVariable rv : rangeVariables) {
+            if (rv.rangeTable.tableName.name.equals(tableName)) {
+              if (rv.tableAlias == null && tableAlias == null) {
+                resolved=true;
+              }
+ else               if (rv.tableAlias != null && tableAlias != null) {
+                resolved=tableAlias.equals(rv.tableAlias.name);
+              }
+            }
+          }
+          if (!resolved) {
+            throw Error.error(ErrorCode.X_47001);
+          }
+        }
+        throw Error.error(ErrorCode.X_47000);
+      }
+    }
   }
   if (havingCondition != null) {
     havingCondition.resolveTypes(session,null);
