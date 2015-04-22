@@ -1,0 +1,58 @@
+{
+  String message=null;
+  try {
+    buffer.clear();
+    channel.receive(buffer);
+    buffer.flip();
+    int messageLength=buffer.get();
+    if (messageLength > buffer.capacity()) {
+      System.out.println("WARN: packet exceeds allocate size; message truncated");
+    }
+    byte[] localBuf=new byte[messageLength];
+    buffer.get(localBuf,0,messageLength);
+    message=new String(localBuf);
+  }
+ catch (  IOException e) {
+    exitWithException("Couldn't read from socket",e);
+  }
+  JSONObject json;
+  try {
+    json=new JSONObject(message);
+  }
+ catch (  JSONException e) {
+    System.err.println("Received invalid JSON: " + e.getLocalizedMessage());
+    return;
+  }
+  final Integer partitionId;
+  final Long transactions;
+  final Long decode;
+  final Long startTime;
+  final Long endTime;
+  try {
+    partitionId=new Integer(json.getInt("partitionId"));
+    transactions=new Long(json.getLong("transactions"));
+    decode=new Long(json.getLong("decodeTime"));
+    startTime=new Long(json.getLong("startTime"));
+    endTime=new Long(json.getLong("endTime"));
+  }
+ catch (  JSONException e) {
+    System.err.println("Unable to parse JSON " + e.getLocalizedMessage());
+    return;
+  }
+  if (transactions > 0 && decode > 0 && startTime > 0 && endTime > startTime) {
+    serverStats.add(new StatClass(partitionId,transactions,decode,startTime,endTime));
+    if (startTime < serverStartTS || serverStartTS == 0) {
+      serverStartTS=startTime;
+    }
+    if (endTime > serverEndTS) {
+      serverEndTS=endTime;
+    }
+    if (partitionId > partCount) {
+      partCount=partitionId;
+    }
+    decodeTime+=decode;
+  }
+ else {
+    System.out.println("WARN: invalid data received - partitionId: " + partitionId + " | transactions: "+ transactions+ " | decode: "+ decode+ " | startTime: "+ startTime+ " | endTime: "+ endTime);
+  }
+}
