@@ -1,5 +1,28 @@
 {
   ClientStats stats=fullStatsContext.fetch().getStats();
+  ArrayList<StatClass> indexStats=new ArrayList<StatClass>();
+  for (  StatClass index : serverStats) {
+    if (index.m_partition.equals(0)) {
+      Double transactions=new Double(index.m_transactions);
+      Double decode=new Double(index.m_decode);
+      for (      StatClass indexPrime : serverStats) {
+        if (!indexPrime.m_partition.equals(0)) {
+          Double ratio=calcRatio(index,indexPrime);
+          transactions+=ratio * indexPrime.m_transactions;
+          decode+=ratio * indexPrime.m_transactions;
+        }
+      }
+      indexStats.add(new StatClass(index.m_partition,transactions.longValue(),decode.longValue(),index.m_startTime,index.m_endTime));
+    }
+  }
+  Double tpsSum=new Double(0);
+  Double decodeSum=new Double(0);
+  for (  StatClass index : indexStats) {
+    tpsSum+=(new Double(index.m_transactions * 1000) / (index.m_endTime - index.m_startTime));
+    decodeSum+=(new Double(index.m_decode) / index.m_transactions);
+  }
+  tpsSum=(tpsSum / indexStats.size());
+  decodeSum=(decodeSum / indexStats.size());
   System.out.print(HORIZONTAL_RULE);
   System.out.println(" Client Workload Statistics");
   System.out.println(HORIZONTAL_RULE);
@@ -17,6 +40,10 @@
   System.out.printf("99.999th percentile latency:   %,9.2f ms\n",stats.kPercentileLatencyAsDouble(.99999));
   System.out.print("\n" + HORIZONTAL_RULE);
   System.out.println(" System Server Statistics");
+  System.out.printf("Average throughput:            %,9d txns/sec\n",tpsSum.longValue());
+  System.out.printf("Average decode time:           %,9.2f ns\n",decodeSum);
+  Double decodePerc=(new Double(decodeTime) / (((serverEndTS - serverStartTS) * (partCount + 1)) * 1000000)) * 100;
+  System.out.printf("Percent decode row time:       %,9.2f %%\n",decodePerc);
   System.out.println(HORIZONTAL_RULE);
   System.out.printf("Reported Internal Avg Latency: %,9.2f ms\n",stats.getAverageInternalLatency());
   System.out.print("\n" + HORIZONTAL_RULE);
@@ -26,7 +53,7 @@
   try {
     if ((config.statsfile != null) && (config.statsfile.length() != 0)) {
       FileWriter fw=new FileWriter(config.statsfile);
-      fw.append(String.format("%d,%d,%d,0,0,0,0,0,0,0,0,0,0\n",stats.getStartTimestamp(),duration,successfulInserts.get()));
+      fw.append(String.format("%d,%d,%d,%d,%d,%d,%d,0,0,0,0,0,0\n",stats.getStartTimestamp(),duration,successfulInserts.get(),serverEndTS - serverStartTS,decodeTime,decodeSum.longValue(),tpsSum.longValue()));
       fw.close();
     }
   }

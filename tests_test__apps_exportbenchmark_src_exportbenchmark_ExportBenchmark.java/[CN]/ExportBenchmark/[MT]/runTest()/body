@@ -11,21 +11,39 @@
   benchmarkStartTS=System.currentTimeMillis();
   benchmarkWarmupEndTS=benchmarkStartTS + (config.warmup * 1000);
   benchmarkEndTS=benchmarkWarmupEndTS + (config.duration * 1000);
-  doInserts(client);
-  timer.cancel();
+  Thread writes=new Thread(new Runnable(){
+    @Override public void run(){
+      doInserts(client);
+    }
+  }
+);
+  writes.start();
+  Thread.sleep(config.warmup * 1000);
+  setupSocketListener();
+  listenForStats();
+  writes.join();
+  periodicStatsTimer.cancel();
   System.out.println("Client flushed; waiting for export to finish");
   boolean success=false;
   try {
     success=waitForStreamedAllocatedMemoryZero();
   }
- catch (  Exception e) {
+ catch (  IOException e) {
     System.err.println("Error while waiting for export: ");
-    e.printStackTrace();
+    e.getLocalizedMessage();
+  }
+catch (  ProcCallException e) {
+    System.err.println("Error while calling procedures: ");
+    e.getLocalizedMessage();
   }
   System.out.println("Finished benchmark");
   printResults(benchmarkEndTS - benchmarkWarmupEndTS);
   client.close();
+  if (serverStats.size() == 0) {
+    System.err.println("ERROR: Never received stats from export clients");
+    success=false;
+  }
   if (!success) {
-    System.exit(1);
+    System.exit(-1);
   }
 }
