@@ -1,0 +1,37 @@
+{
+  AbstractPlanNode p;
+  pns=compileToFragments("SELECT A, count(B) from R2 where B > 2 group by A;");
+  assertEquals(1,pns.size());
+  p=pns.get(0).getChild(0);
+  assertTrue(p instanceof IndexScanPlanNode);
+  assertNotNull(p.getInlinePlanNode(PlanNodeType.HASHAGGREGATE));
+  assertTrue(p.toExplainPlanString().contains("primary key index"));
+  pns=compileToFragments("SELECT A, count(B) from R2 where B > 3 group by A;");
+  assertEquals(1,pns.size());
+  p=pns.get(0).getChild(0);
+  assertTrue(p instanceof IndexScanPlanNode);
+  assertNotNull(p.getInlinePlanNode(PlanNodeType.HASHAGGREGATE));
+  assertTrue(p.toExplainPlanString().contains("primary key index"));
+  pns=compileToFragments("SELECT A, count(B) from R2 where A > 5 and B > 3 group by A;");
+  assertEquals(1,pns.size());
+  p=pns.get(0).getChild(0);
+  assertTrue(p instanceof IndexScanPlanNode);
+  assertNotNull(p.getInlinePlanNode(PlanNodeType.HASHAGGREGATE));
+  assertTrue(p.toExplainPlanString().contains("PARTIAL_IDX_R2"));
+  pns=compileToFragments("SELECT A, count(B) from R2 where B > 3 group by A order by A;");
+  assertEquals(1,pns.size());
+  printExplainPlan(pns);
+  p=pns.get(0).getChild(0);
+  assertTrue(p instanceof IndexScanPlanNode);
+  assertNotNull(p.getInlinePlanNode(PlanNodeType.AGGREGATE));
+  assertTrue(p.toExplainPlanString().contains("PARTIAL_IDX_R2"));
+  pns=compileToFragments("SELECT A, count(B) from R2 where B > 2 group by A order by A;");
+  assertEquals(1,pns.size());
+  p=pns.get(0).getChild(0);
+  assertTrue(p instanceof ProjectionPlanNode);
+  p=p.getChild(0);
+  assertTrue(p instanceof OrderByPlanNode);
+  p=p.getChild(0);
+  assertTrue(p instanceof SeqScanPlanNode);
+  assertNotNull(p.getInlinePlanNode(PlanNodeType.HASHAGGREGATE));
+}
