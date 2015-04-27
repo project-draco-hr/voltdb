@@ -1,10 +1,26 @@
 {
   String type=stmtNode.attributes.get("uniontype");
   m_unionType=UnionType.valueOf(type);
-  assert(stmtNode.children.size() == m_children.size());
-  int i=0;
-  for (  VoltXMLElement selectSQL : stmtNode.children) {
-    AbstractParsedStmt nextSelectStmt=m_children.get(i++);
-    nextSelectStmt.parse(selectSQL);
+  int selectCounter=0;
+  VoltXMLElement limitElement=null, offsetElement=null, orderbyElement=null;
+  for (  VoltXMLElement child : stmtNode.children) {
+    if (SELECT_NODE_NAME.equals(child.name) || UNION_NODE_NAME.equals(child.name)) {
+      assert(selectCounter < m_children.size());
+      AbstractParsedStmt nextStmt=m_children.get(selectCounter++);
+      nextStmt.parse(child);
+    }
+ else     if (child.name.equalsIgnoreCase("limit")) {
+      limitElement=child;
+    }
+ else     if (child.name.equalsIgnoreCase("offset")) {
+      offsetElement=child;
+    }
+ else     if (child.name.equalsIgnoreCase("ordercolumns")) {
+      orderbyElement=child;
+    }
+  }
+  ParsedSelectStmt.parseLimitAndOffset(limitElement,offsetElement,m_limitOffset);
+  if (hasLimitOrOffset()) {
+    ParsedSelectStmt.prepareLimitPlanNode(this,m_limitOffset);
   }
 }

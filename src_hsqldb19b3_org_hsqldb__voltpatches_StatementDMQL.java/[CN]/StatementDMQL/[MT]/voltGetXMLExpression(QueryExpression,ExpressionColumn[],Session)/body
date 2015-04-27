@@ -12,8 +12,26 @@
     unionExpr.attributes.put("uniontype",queryExpr.operatorName());
     VoltXMLElement leftExpr=voltGetXMLExpression(queryExpr.getLeftQueryExpression(),parameters,session);
     VoltXMLElement rightExpr=voltGetXMLExpression(queryExpr.getRightQueryExpression(),parameters,session);
-    if (queryExpr.sortAndSlice.hasOrder() || queryExpr.sortAndSlice.hasLimit()) {
-      throw new org.hsqldb_voltpatches.HSQLInterface.HSQLParseException(queryExpr.operatorName() + " tuple set operator with ORDER BY or LIMIT/OFFSET is not supported.");
+    voltAppendParameters(session,unionExpr,parameters);
+    List<VoltXMLElement> limitOffsetXml=voltGetLimitOffsetXMLFromSortAndSlice(session,queryExpr.sortAndSlice);
+    for (    VoltXMLElement elem : limitOffsetXml) {
+      unionExpr.children.add(elem);
+    }
+    if (queryExpr.sortAndSlice.getOrderLength() > 0) {
+      List<Expression> displayCols=getDisplayColumnsForSetOp(queryExpr);
+      java.util.Set<Integer> ignoredColsIndexes=new java.util.HashSet<Integer>();
+      VoltXMLElement orderCols=new VoltXMLElement("ordercolumns");
+      unionExpr.children.add(orderCols);
+      for (int i=0; i < queryExpr.sortAndSlice.exprList.size(); ++i) {
+        Expression e=(Expression)queryExpr.sortAndSlice.exprList.get(i);
+        assert(e.getLeftNode() != null);
+        int index=e.getLeftNode().queryTableColumnIndex;
+        assert(index < displayCols.size());
+        Expression column=displayCols.get(index);
+        e.setLeftNode(column);
+        VoltXMLElement xml=e.voltGetXML(session,displayCols,ignoredColsIndexes,i);
+        orderCols.children.add(xml);
+      }
     }
     if ("union".equalsIgnoreCase(leftExpr.name) && queryExpr.operatorName().equalsIgnoreCase(leftExpr.attributes.get("uniontype"))) {
       unionExpr.children.addAll(leftExpr.children);
