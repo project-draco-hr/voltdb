@@ -3,12 +3,28 @@
   MultiConfigSuiteBuilder builder=new MultiConfigSuiteBuilder(TestHexLiteralsSuite.class);
   boolean success;
   VoltProjectBuilder project=new VoltProjectBuilder();
-  String literalSchema="CREATE TABLE T (\n" + "  PK INTEGER NOT NULL PRIMARY KEY,\n" + "  BI BIGINT\n"+ ");\n";
+  String literalSchema="CREATE TABLE T (\n" + "  PK INTEGER NOT NULL PRIMARY KEY,\n" + "  BI BIGINT,\n"+ "  TI TINYINT,\n"+ "  VB VARBINARY(8)\n"+ ");\n";
+  literalSchema+="CREATE TABLE T_DEFAULTS (\n" + "  PK INTEGER NOT NULL PRIMARY KEY,\n" + "  TI1 TINYINT DEFAULT X'00',\n"+ "  TI2 TINYINT DEFAULT X'7F',\n"+ "  TI3 TINYINT DEFAULT X'FfffFfffFfffFf81',\n"+ "  TI4 TINYINT DEFAULT -X'7F',\n"+ "  TI5 TINYINT DEFAULT -X'FfffFfffFfffFf81',\n"+ "  TI6 TINYINT DEFAULT X'6D',\n"+ "  TI7 TINYINT DEFAULT -X'6D',\n"+ "  BI1 BIGINT DEFAULT X'00',\n"+ "  BI2 BIGINT DEFAULT X'7FFFFFFFFFFFFFFF',\n"+ "  BI3 BIGINT DEFAULT X'8000000000000001',\n"+ "  BI4 BIGINT DEFAULT -X'7FFFFFFFFFFFFFFF',\n"+ "  BI5 BIGINT DEFAULT -X'8000000000000001',\n"+ "  BI6 BIGINT DEFAULT  X'0F4241',\n"+ "  BI7 BIGINT DEFAULT -X'0F4241',\n"+ ");\n";
+  literalSchema+="CREATE PROCEDURE InsertVarbinary AS " + "INSERT INTO T (PK, VB) VALUES (?, ?);";
+  literalSchema+="CREATE PROCEDURE InsertBigint AS " + "INSERT INTO T (PK, BI) VALUES (?, ?);";
+  literalSchema+="CREATE PROCEDURE InsertTinyint AS " + "INSERT INTO T (PK, TI) VALUES (?, ?);";
+  literalSchema+="CREATE PROCEDURE UpdateTinyint AS " + "UPDATE T SET TI = ? WHERE PK = ?;";
+  literalSchema+="CREATE PROCEDURE InsertTinyintConstantMax AS " + "INSERT INTO T (PK, TI) VALUES (?, X'7F');";
+  literalSchema+="CREATE PROCEDURE InsertTinyintConstantMin aS " + "INSERT INTO T (PK, TI) VALUES (?, X'FfffFfffFfffFf81');";
+  literalSchema+="CREATE PROCEDURE UpdateTinyintConstantMax AS " + "UPDATE T SET TI = X'7F' WHERE PK = ?;";
+  literalSchema+="CREATE PROCEDURE UpdateTinyintConstantMin AS " + "UPDATE T SET TI = X'FfffFfffFfffFf81' WHERE PK = ?;";
+  literalSchema+="CREATE PROCEDURE MixedTypeMath AS \n" + "SELECT\n" + "  33 + ?,\n"+ "  33.0 + ?,\n"+ "  X'21' + ?,\n"+ "  10000000000000000033 + ?"+ "FROM T;"+ "";
   for (  long val : interestingValues) {
-    literalSchema+="CREATE PROCEDURE HEX_LITERAL_PROC_" + makeEvenDigits(val) + " AS\n"+ "  SELECT HEX(BITXOR(X'"+ makeEvenDigits(val)+ "', ?)) FROM T;\n";
+    literalSchema+="CREATE PROCEDURE XQUOTE_VARBINARY_PROC_" + makeSixteenDigits(val) + " AS\n"+ "  SELECT PK FROM T WHERE VB = "+ longToEightByteHexLiteral(val)+ ";\n";
   }
   for (  long val : interestingValues) {
-    literalSchema+="CREATE PROCEDURE HEX_LITERAL_PROC_WHERE_" + makeEvenDigits(val) + " AS\n"+ "  SELECT PK FROM T WHERE BI = X'"+ makeEvenDigits(val)+ "';\n";
+    literalSchema+="CREATE PROCEDURE INT_HEX_LITERAL_PROC_" + makeEvenDigits(val) + " AS\n"+ "  SELECT HEX(BITXOR(X'"+ makeEvenDigits(val)+ "', ?)) FROM T;\n";
+  }
+  for (  long val : interestingValues) {
+    literalSchema+="CREATE PROCEDURE INT_HEX_LITERAL_PROC_WHERE_" + makeEvenDigits(val) + " AS\n"+ "  SELECT PK FROM T WHERE BI = X'"+ makeEvenDigits(val)+ "';\n";
+  }
+  for (  long val : boringValues) {
+    literalSchema+="CREATE PROCEDURE HEX_LITERAL_PROC_ARITH_" + makeEvenDigits(val) + " AS\n"+ "  SELECT \n"+ "? + X'"+ makeEvenDigits(val)+ "',\n"+ "X'"+ makeEvenDigits(val)+ "' - ?,\n"+ "? * X'"+ makeEvenDigits(val)+ "',\n"+ "X'"+ makeEvenDigits(val)+ "' / ?,\n"+ "- X'"+ makeEvenDigits(val)+ "'\n"+ "FROM T;";
   }
   try {
     project.addLiteralSchema(literalSchema);
