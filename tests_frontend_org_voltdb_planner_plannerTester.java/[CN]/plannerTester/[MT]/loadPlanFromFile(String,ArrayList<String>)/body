@@ -1,27 +1,52 @@
 {
-  PlanNodeTree pnt=new PlanNodeTree();
-  String prettyJson="";
-  String line=null;
-  BufferedReader reader=new BufferedReader(new FileReader(path));
+  BufferedReader reader;
   try {
-    getsql.add(reader.readLine());
-    while ((line=reader.readLine()) != null) {
-      line=line.trim();
-      prettyJson+=line;
+    reader=new BufferedReader(new FileReader(path));
+  }
+ catch (  FileNotFoundException e1) {
+    e1.printStackTrace();
+    String message="ERROR: Plan file " + path + " doesn't exist.\n"+ "Use -s (the Compile/Save option) or 'ant plannertestrefresh'"+ " ' to generate plans to the baseline directory.\n";
+    System.err.print(message);
+    try {
+      m_reportWriter.write(message);
+    }
+ catch (    IOException e2) {
+      e2.printStackTrace();
+    }
+    return null;
+  }
+  try {
+    String json="";
+    try {
+      String line=reader.readLine();
+      getsql.add(line);
+      while ((line=reader.readLine()) != null) {
+        json+=line;
+      }
+    }
+ catch (    IOException e2) {
+      e2.printStackTrace();
+      return null;
+    }
+    try {
+      PlanNodeTree pnt=new PlanNodeTree();
+      JSONObject jobj=new JSONObject(json);
+      Database db=s_singleton.getDatabase();
+      pnt.loadFromJSONPlan(jobj,db);
+      return pnt.getRootPlanNode();
+    }
+ catch (    JSONException e3) {
+      e3.printStackTrace();
+      System.out.println("Failed on input from file: " + path + " with JSON text: \n'"+ json+ "'");
+      return null;
     }
   }
- catch (  IOException e1) {
-    e1.printStackTrace();
+  finally {
+    try {
+      reader.close();
+    }
+ catch (    IOException e2) {
+      e2.printStackTrace();
+    }
   }
-  JSONObject jobj;
-  try {
-    jobj=new JSONObject(prettyJson);
-    JSONArray jarray=jobj.getJSONArray("PLAN_NODES");
-    Database db=s_singleton.getDatabase();
-    pnt.loadFromJSONArray(jarray,db);
-  }
- catch (  JSONException e) {
-    e.printStackTrace();
-  }
-  return pnt;
 }

@@ -1,0 +1,63 @@
+{
+  assert(expr != null);
+  SelectSubqueryExpression subqueryExpr=null;
+  if (expr.getExpressionType() == ExpressionType.COMPARE_EQUAL && expr.getRight() instanceof SelectSubqueryExpression) {
+    subqueryExpr=(SelectSubqueryExpression)expr.getRight();
+  }
+ else   if (expr.getExpressionType() == ExpressionType.OPERATOR_EXISTS && expr.getLeft() instanceof SelectSubqueryExpression) {
+    subqueryExpr=(SelectSubqueryExpression)expr.getLeft();
+  }
+  if (subqueryExpr == null) {
+    return expr;
+  }
+  AbstractParsedStmt subquery=subqueryExpr.getSubqueryStmt();
+  if (!(subquery instanceof ParsedUnionStmt)) {
+    return expr;
+  }
+  ParsedUnionStmt setOpStmt=(ParsedUnionStmt)subquery;
+  if (UnionType.EXCEPT == setOpStmt.m_unionType || UnionType.EXCEPT_ALL == setOpStmt.m_unionType) {
+    setOpStmt.m_unionType=UnionType.EXCEPT;
+    return expr;
+  }
+  if (UnionType.UNION_ALL == setOpStmt.m_unionType) {
+    setOpStmt.m_unionType=UnionType.UNION;
+  }
+ else   if (UnionType.INTERSECT_ALL == setOpStmt.m_unionType) {
+    setOpStmt.m_unionType=UnionType.INTERSECT;
+  }
+  ExpressionType conjuctionType=(setOpStmt.m_unionType == UnionType.UNION) ? ExpressionType.CONJUNCTION_OR : ExpressionType.CONJUNCTION_AND;
+  AbstractExpression retval=null;
+  AbstractParsedStmt parentStmt=subquery.m_parentStmt;
+  assert(parentStmt != null);
+  for (  AbstractParsedStmt child : setOpStmt.m_children) {
+    String withoutAlias=null;
+    StmtSubqueryScan tableCache=parentStmt.addSubqueryToStmtCache(child,withoutAlias);
+    AbstractExpression childSubqueryExpr=new SelectSubqueryExpression(subqueryExpr.getExpressionType(),tableCache);
+    AbstractExpression newExpr=null;
+    try {
+      newExpr=expr.getExpressionType().getExpressionClass().newInstance();
+    }
+ catch (    Exception e) {
+      e.printStackTrace();
+      throw new RuntimeException(e.getMessage(),e);
+    }
+    newExpr.setExpressionType(expr.getExpressionType());
+    if (ExpressionType.COMPARE_EQUAL == expr.getExpressionType()) {
+      newExpr.setLeft((AbstractExpression)expr.getLeft().clone());
+      newExpr.setRight(childSubqueryExpr);
+      assert(newExpr instanceof ComparisonExpression);
+      ((ComparisonExpression)newExpr).setQuantifier(((ComparisonExpression)expr).getQuantifier());
+    }
+ else {
+      newExpr.setLeft(childSubqueryExpr);
+    }
+    newExpr=ParsedUnionStmt.breakUpSetOpSubquery(newExpr);
+    if (retval == null) {
+      retval=newExpr;
+    }
+ else {
+      retval=new ConjunctionExpression(conjuctionType,retval,newExpr);
+    }
+  }
+  return retval;
+}
