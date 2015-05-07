@@ -33,13 +33,14 @@
     password=request.getParameter(PARAM_PASSWORD);
   }
   String admin=request.getParameter(PARAM_ADMIN);
+  AuthenticatedConnectionCache connection_cache=m_connections.get();
   if (m_shouldUpdateCatalog.compareAndSet(true,false)) {
-    if (m_connections != null) {
-      m_connections.closeAll();
-      m_connections=null;
+    if (connection_cache != null) {
+      connection_cache.closeAll();
+      connection_cache=null;
     }
   }
-  if (m_connections == null) {
+  if (connection_cache == null) {
     Configuration config=VoltDB.instance().getConfig();
     int port=config.m_port;
     int adminPort=config.m_adminPort;
@@ -56,7 +57,7 @@
     if (config.m_adminInterface.length() > 0) {
       adminInterface=config.m_adminInterface;
     }
-    m_connections=new AuthenticatedConnectionCache(10,clientInterface,port,adminInterface,adminPort);
+    m_connections.set(new AuthenticatedConnectionCache(10,clientInterface,port,adminInterface,adminPort));
   }
   if (admin != null) {
     if (admin.compareToIgnoreCase("true") == 0) {
@@ -86,7 +87,7 @@
   }
   assert((hashedPasswordBytes == null) || (hashedPasswordBytes.length == 20) || (hashedPasswordBytes.length == 32));
   try {
-    Client client=m_connections.getClient(username,password,hashedPasswordBytes,adminMode);
+    Client client=m_connections.get().getClient(username,password,hashedPasswordBytes,adminMode);
     if (client != null) {
       return new AuthenticationResult(client,adminMode,username,"");
     }
