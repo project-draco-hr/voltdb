@@ -17,6 +17,15 @@
     String valueType=exprNode.attributes.get("valuetype");
     expr.setValueType(VoltType.typeFromString(valueType));
   }
+  if (expr instanceof ComparisonExpression) {
+    String opsubtype=exprNode.attributes.get("opsubtype");
+    if (opsubtype != null) {
+      QuantifierType quantifier=QuantifierType.get(opsubtype);
+      if (quantifier != QuantifierType.NONE) {
+        ((ComparisonExpression)expr).setQuantifier(quantifier);
+      }
+    }
+  }
   VoltXMLElement leftExprNode=exprNode.children.get(0);
   assert(leftExprNode != null);
   AbstractExpression leftExpr=parseExpressionTree(leftExprNode);
@@ -41,6 +50,10 @@
       expr.setValueType(voltType);
       expr.setValueSize(voltType.getMaxLengthInBytes());
     }
+  }
+  if ((exprType == ExpressionType.COMPARE_EQUAL && QuantifierType.ANY == ((ComparisonExpression)expr).getQuantifier()) || exprType == ExpressionType.OPERATOR_EXISTS) {
+    expr=ParsedUnionStmt.breakUpSetOpSubquery(expr);
+    expr=optimizeSubqueryExpression(expr);
   }
   return expr;
 }

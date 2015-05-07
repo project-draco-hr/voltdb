@@ -1,0 +1,49 @@
+{
+  List<AbstractExpression> whereList=new ArrayList<AbstractExpression>();
+  List<AbstractExpression> havingList=new ArrayList<AbstractExpression>();
+  List<AbstractExpression> inExprList=null;
+  if (inListExpr instanceof RowSubqueryExpression) {
+    inExprList=inListExpr.getArgs();
+  }
+ else {
+    inExprList=new ArrayList<AbstractExpression>();
+    inExprList.add(inListExpr);
+  }
+  int idx=0;
+  assert(inExprList.size() == selectStmt.m_displayColumns.size());
+  selectStmt.m_aggregationList=new ArrayList<AbstractExpression>();
+  for (  AbstractExpression expr : inExprList) {
+    ParsedColInfo colInfo=selectStmt.m_displayColumns.get(idx++);
+    assert(colInfo.expression != null);
+    expr=selectStmt.replaceExpressionsWithPve(expr);
+    ExpressionUtil.finalizeValueTypes(expr);
+    AbstractExpression equalityExpr=new ComparisonExpression(ExpressionType.COMPARE_EQUAL,expr,(AbstractExpression)colInfo.expression.clone());
+    if (ExpressionUtil.containsAggregateExpression(colInfo.expression)) {
+      havingList.add(equalityExpr);
+    }
+ else {
+      whereList.add(equalityExpr);
+    }
+  }
+  if (!whereList.isEmpty()) {
+    if (selectStmt.m_joinTree.getWhereExpression() != null) {
+      whereList.add(selectStmt.m_joinTree.getWhereExpression());
+    }
+    selectStmt.m_joinTree.setWhereExpression(ExpressionUtil.combine(whereList));
+  }
+  if (!havingList.isEmpty()) {
+    if (selectStmt.m_having != null) {
+      havingList.add(selectStmt.m_having);
+    }
+    selectStmt.m_having=ExpressionUtil.combine(havingList);
+    ExpressionUtil.finalizeValueTypes(selectStmt.m_having);
+  }
+  selectStmt.m_aggregationList=null;
+  if (selectStmt.needComplexAggregation()) {
+    selectStmt.fillUpAggResultColumns();
+  }
+ else {
+    selectStmt.m_aggResultColumns=selectStmt.m_displayColumns;
+  }
+  selectStmt.placeTVEsinColumns();
+}

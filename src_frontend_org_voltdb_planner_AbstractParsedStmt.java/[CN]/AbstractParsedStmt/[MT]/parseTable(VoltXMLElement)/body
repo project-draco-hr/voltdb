@@ -6,7 +6,7 @@
     tableAlias=tableName;
   }
   m_tableAliasList.add(tableAlias);
-  AbstractParsedStmt subquery=null;
+  VoltXMLElement subqueryElement=null;
   for (  VoltXMLElement childNode : tableNode.children) {
     if (!childNode.name.equals("tablesubquery")) {
       continue;
@@ -14,17 +14,26 @@
     if (childNode.children.isEmpty()) {
       continue;
     }
-    subquery=parseSubquery(childNode.children.get(0));
+    subqueryElement=childNode.children.get(0);
     break;
   }
-  StmtTableScan tableScan=addTableToStmtCache(tableName,tableAlias,subquery);
+  StmtTableScan tableScan=null;
+  Table table=null;
+  if (subqueryElement == null) {
+    table=getTableFromDB(tableName);
+    m_tableList.add(table);
+    assert(table != null);
+    tableScan=addTableToStmtCache(table,tableAlias);
+  }
+ else {
+    AbstractParsedStmt subquery=parseFromSubQuery(subqueryElement);
+    tableScan=addSubqueryToStmtCache(subquery,tableAlias);
+  }
   AbstractExpression joinExpr=parseJoinCondition(tableNode);
   AbstractExpression whereExpr=parseWhereCondition(tableNode);
   int nodeId=(m_joinTree == null) ? 0 : m_joinTree.getId() + 1;
   JoinNode leafNode;
-  if (tableScan instanceof StmtTargetTableScan) {
-    Table table=((StmtTargetTableScan)tableScan).getTargetTable();
-    m_tableList.add(table);
+  if (table != null) {
     leafNode=new TableLeafNode(nodeId,joinExpr,whereExpr,(StmtTargetTableScan)tableScan);
   }
  else {

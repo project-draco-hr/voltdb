@@ -1,0 +1,54 @@
+{
+{
+    AbstractPlanNode pn=compile("select r1.d from r1, r2 where r1.a IN " + "(select a from r3 where r3.c = r2.d);");
+    pn=pn.getChild(0).getChild(0);
+    assertTrue(pn instanceof NestLoopPlanNode);
+    AbstractExpression pred=((NestLoopPlanNode)pn).getJoinPredicate();
+    assertTrue(pred != null);
+    assertEquals(ExpressionType.OPERATOR_EXISTS,pred.getExpressionType());
+    AbstractSubqueryExpression se=(AbstractSubqueryExpression)pred.getLeft();
+    List<AbstractExpression> args=se.getArgs();
+    assertEquals(2,args.size());
+    TupleValueExpression tve=(TupleValueExpression)args.get(0);
+    assertEquals("R2",tve.getTableName());
+    assertEquals("D",tve.getColumnName());
+    tve=(TupleValueExpression)args.get(1);
+    assertEquals("R1",tve.getTableName());
+    assertEquals("A",tve.getColumnName());
+    assertEquals(2,se.getParameterIdxList().size());
+    pn=se.getSubqueryNode();
+    pred=((AbstractScanPlanNode)pn).getPredicate();
+    AbstractExpression le=pred.getLeft();
+    assertEquals(ExpressionType.VALUE_PARAMETER,le.getRight().getExpressionType());
+    AbstractExpression re=pred.getRight();
+    assertEquals(ExpressionType.VALUE_PARAMETER,re.getLeft().getExpressionType());
+  }
+{
+    AbstractPlanNode pn=compile("select r1.d from r1, r2 where r1.a IN " + "(select a from r3 where r3.c = r2.d limit 1 offset 2);");
+    System.out.println(pn.toExplainPlanString());
+    pn=pn.getChild(0).getChild(0);
+    assertTrue(pn instanceof NestLoopPlanNode);
+    AbstractExpression pred=((NestLoopPlanNode)pn).getJoinPredicate();
+    assertTrue(pred != null);
+    assertEquals(ExpressionType.COMPARE_EQUAL,pred.getExpressionType());
+    assertEquals(QuantifierType.ANY,((ComparisonExpression)pred).getQuantifier());
+    TupleValueExpression tve=(TupleValueExpression)pred.getLeft();
+    assertEquals("R1",tve.getTableName());
+    assertEquals("A",tve.getColumnName());
+    AbstractSubqueryExpression se=(AbstractSubqueryExpression)pred.getRight();
+    assertEquals(1,se.getParameterIdxList().size());
+    List<AbstractExpression> args=se.getArgs();
+    assertEquals(1,args.size());
+    tve=(TupleValueExpression)args.get(0);
+    assertEquals("R2",tve.getTableName());
+    assertEquals("D",tve.getColumnName());
+    pn=se.getSubqueryNode();
+    assertEquals(PlanNodeType.SEQSCAN,pn.getPlanNodeType());
+    pred=((AbstractScanPlanNode)pn).getPredicate();
+    tve=(TupleValueExpression)pred.getLeft();
+    assertEquals("R3",tve.getTableName());
+    assertEquals("C",tve.getColumnName());
+    ParameterValueExpression pve=(ParameterValueExpression)pred.getRight();
+    assertEquals(new Integer(0),pve.getParameterIndex());
+  }
+}
