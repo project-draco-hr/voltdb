@@ -1,0 +1,31 @@
+{
+  Client client=getClient();
+  VoltTable vt;
+  client.callProcedure("R1.insert",100,1000,2,"2013-07-18 02:00:00.123457");
+  client.callProcedure("R2.insert",100,null,2,"2013-07-18 02:00:00.123457");
+  client.callProcedure("R2.insert",101,null,2,"2013-07-18 02:00:00.123457");
+  client.callProcedure("R2.insert",102,1001,2,"2013-07-18 02:00:00.123457");
+  client.callProcedure("R2.insert",103,1003,2,"2013-07-18 02:00:00.123457");
+  client.callProcedure("R2.insert",104,1000,2,"2013-07-18 02:00:00.123457");
+  client.callProcedure("R2.insert",105,1000,2,"2013-07-18 02:00:00.123457");
+  vt=client.callProcedure("@AdHoc","select ID from R2 where not (WAGE in " + "( select WAGE from R1 ORDER BY WAGE limit 4 offset 1)) order by ID").getResults()[0];
+  validateTableOfLongs(vt,new long[][]{{100},{101},{102},{103},{104},{105}});
+  vt=client.callProcedure("@AdHoc","select ID from R1 where (WAGE, DEPT) = ALL " + "( select WAGE, DEPT from R2 where ID = 1000);").getResults()[0];
+  validateTableOfLongs(vt,new long[][]{{100}});
+  vt=client.callProcedure("@AdHoc","select ID from R1 where (select WAGE from R1) = ALL " + "( select WAGE from R2 where ID = 1000);").getResults()[0];
+  validateTableOfLongs(vt,new long[][]{{100}});
+  vt=client.callProcedure("@AdHoc","select ID from R1 where WAGE = ALL " + "( select WAGE from R2 where ID in (104, 105));").getResults()[0];
+  validateTableOfLongs(vt,new long[][]{{100}});
+  vt=client.callProcedure("@AdHoc","select ID from R1 where (WAGE,DEPT) = ALL " + "( select WAGE, DEPT from R2 where ID in (104, 105));").getResults()[0];
+  validateTableOfLongs(vt,new long[][]{{100}});
+  vt=client.callProcedure("@AdHoc","select ID from R1 where (WAGE = ALL " + "( select WAGE from R2 where ID in (100, 104, 105))) is NULL;").getResults()[0];
+  validateTableOfLongs(vt,new long[][]{{100}});
+  if (!isHSQL()) {
+    vt=client.callProcedure("@AdHoc","select ID from R1 where ((WAGE, DEPT) = ALL " + "( select WAGE, DEPT from R2 where ID in (100, 104, 105))) is NULL;").getResults()[0];
+    validateTableOfLongs(vt,new long[][]{{100}});
+  }
+  if (!isHSQL()) {
+    vt=client.callProcedure("@AdHoc","select ID from R1 where not (WAGE = ALL ( select WAGE from R2));").getResults()[0];
+    validateTableOfLongs(vt,new long[][]{{100}});
+  }
+}
