@@ -1,0 +1,48 @@
+{
+  System.out.println("testAdHocBadParameters...");
+  resetStatistics();
+  Client client=getClient();
+  String sql;
+  VoltTable vt;
+  client.callProcedure("R1.insert",1,"foo1",0,1.1);
+  client.callProcedure("R1.insert",2,"foo2",0,2.2);
+  client.callProcedure("R1.insert",3,"foo3",1,3.3);
+  sql="SELECT ID FROM R1 B WHERE B.ID > 1.8 order by ID;";
+  vt=client.callProcedure("@AdHoc",sql).getResults()[0];
+  validateTableOfScalarLongs(vt,new long[]{2,3});
+  checkPlannerCache(client,CACHE_MISS1);
+  vt=client.callProcedure("@AdHoc",sql).getResults()[0];
+  validateTableOfScalarLongs(vt,new long[]{2,3});
+  checkPlannerCache(client,CACHE_HIT1);
+  sql="SELECT ID FROM R1 B WHERE B.ID > 1 order by ID;";
+  vt=client.callProcedure("@AdHoc",sql).getResults()[0];
+  validateTableOfScalarLongs(vt,new long[]{2,3});
+  checkPlannerCache(client,CACHE_MISS2);
+  vt=client.callProcedure("@AdHoc",sql).getResults()[0];
+  validateTableOfScalarLongs(vt,new long[]{2,3});
+  checkPlannerCache(client,CACHE_HIT1);
+  sql="SELECT ID FROM R1 B WHERE B.ID > 2 order by ID;";
+  vt=client.callProcedure("@AdHoc",sql).getResults()[0];
+  validateTableOfScalarLongs(vt,new long[]{3});
+  checkPlannerCache(client,CACHE_HIT2);
+  sql="SELECT ID FROM R1 B WHERE B.ID > ? order by ID;";
+  try {
+    vt=client.callProcedure("@AdHoc",sql,1.8).getResults()[0];
+    fail();
+  }
+ catch (  Exception ex) {
+    assertTrue(ex.getMessage().contains("tryToMakeCompatible: The provided value: (1.8) of type: " + "java.lang.Double is not a match or is out of range for the target parameter type: long"));
+  }
+  sql="SELECT ID FROM R1 B WHERE B.NUM > 0 order by ID;";
+  vt=client.callProcedure("@AdHoc",sql).getResults()[0];
+  validateTableOfScalarLongs(vt,new long[]{3});
+  checkPlannerCache(client,CACHE_MISS2);
+  sql="SELECT ID FROM R1 B WHERE B.NUM > 0.8 order by ID;";
+  vt=client.callProcedure("@AdHoc",sql).getResults()[0];
+  validateTableOfScalarLongs(vt,new long[]{3});
+  checkPlannerCache(client,CACHE_MISS1);
+  sql="SELECT ID FROM R1 B WHERE B.NUM > 0.9 order by ID;";
+  vt=client.callProcedure("@AdHoc",sql).getResults()[0];
+  validateTableOfScalarLongs(vt,new long[]{3});
+  checkPlannerCache(client,CACHE_MISS1);
+}

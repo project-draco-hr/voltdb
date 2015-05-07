@@ -3,6 +3,7 @@
   if (m_plannerStats != null) {
     m_plannerStats.startStatsCollection();
   }
+  boolean hasUserQuestionMark=userParams != null;
   try {
     if ((sqlIn == null) || (sqlIn.length() == 0)) {
       throw new RuntimeException("Can't plan empty or null SQL.");
@@ -43,10 +44,19 @@
           }
           if (matched != null) {
             CorePlan core=matched.m_core;
-            ParameterSet params=planner.extractedParamValues(core.parameterTypes);
+            ParameterSet params=null;
+            if (planner.compiledAsParameterizedPlan()) {
+              params=planner.extractedParamValues(core.parameterTypes);
+            }
+ else             if (hasUserQuestionMark) {
+              params=ParameterSet.fromArrayNoCopy(userParams);
+            }
+ else {
+              params=ParameterSet.emptyParameterSet();
+            }
             AdHocPlannedStatement ahps=new AdHocPlannedStatement(sql.getBytes(Constants.UTF8ENCODING),core,params,null);
             ahps.setBoundConstants(matched.m_constants);
-            m_cache.put(sql,parsedToken,ahps,extractedLiterals);
+            m_cache.put(sql,parsedToken,ahps,extractedLiterals,hasUserQuestionMark,false);
             cacheUse=CacheUse.HIT2;
             return ahps;
           }
@@ -69,10 +79,8 @@
     if (partitioning.isInferred()) {
       core.setPartitioningParamIndex(partitioning.getInferredParameterIndex());
       core.setPartitioningParamValue(partitioning.getInferredPartitioningValue());
-      if (planner.compiledAsParameterizedPlan()) {
-        assert(parsedToken != null);
-        m_cache.put(sqlIn,parsedToken,ahps,extractedLiterals);
-      }
+      assert(parsedToken != null);
+      m_cache.put(sqlIn,parsedToken,ahps,extractedLiterals,hasUserQuestionMark,planner.wasBadPameterized());
     }
     return ahps;
   }
