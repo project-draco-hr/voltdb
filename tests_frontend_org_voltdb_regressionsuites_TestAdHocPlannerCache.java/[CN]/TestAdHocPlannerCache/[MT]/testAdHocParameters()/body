@@ -3,11 +3,11 @@
   resetStatistics();
   Client client=getClient();
   String sql;
-  String errorMsg="~abcdefg~";
+  String errorMsg;
   client.callProcedure("R1.insert",1,"foo1",0,1.1);
   client.callProcedure("R1.insert",2,"foo2",0,2.2);
   client.callProcedure("R1.insert",3,"foo3",1,3.3);
-  errorMsg="Multiple AdHoc queries with question marks in a procedure call are not supported";
+  errorMsg=AsyncCompilerAgent.AdHocErrorResponseMessage;
   sql="SELECT ID FROM R1 B WHERE num = 0 and B.ID > ? order by ID;";
   try {
     client.callProcedure("@AdHoc",sql + sql,0,0);
@@ -16,6 +16,15 @@
  catch (  Exception ex) {
     assertTrue(ex.getMessage().contains(errorMsg));
   }
+  checkPlannerCache(client,QUERY_EXCEPTION);
+  try {
+    client.callProcedure("@AdHoc",sql + sql,0);
+    fail();
+  }
+ catch (  Exception ex) {
+    assertTrue(ex.getMessage().contains(errorMsg));
+  }
+  checkPlannerCache(client,QUERY_EXCEPTION);
   try {
     client.callProcedure("@AdHoc","select * from r1;" + sql,0,0);
     fail();
@@ -23,31 +32,30 @@
  catch (  Exception ex) {
     assertTrue(ex.getMessage().contains(errorMsg));
   }
+  checkPlannerCache(client,QUERY_EXCEPTION);
+  verifyAdHocFails(client,String.format(pattern,1,0),sql + sql);
+  checkPlannerCache(client,CACHE_MISS1);
   sql="SELECT ID FROM R1 B order by ID;";
   VoltTable[] vts=client.callProcedure("@AdHoc",sql + sql).getResults();
   validateTableOfScalarLongs(vts[0],new long[]{1,2,3});
   validateTableOfScalarLongs(vts[1],new long[]{1,2,3});
   checkPlannerCache(client,CACHE_MISS2,CACHE_HIT1);
-  try {
-    client.callProcedure("@AdHoc",sql,1);
-    fail();
-  }
- catch (  Exception ex) {
-    assertTrue(ex.getMessage().contains("Incorrect number of parameters passed: expected 0, passed 1"));
-  }
+  verifyAdHocFails(client,String.format(pattern,0,1),sql,1);
+  checkPlannerCache(client,CACHE_MISS1);
   sql="SELECT ID FROM R1 B WHERE num = 0 and B.ID > ? order by ID;";
-  try {
-    client.callProcedure("@AdHoc",sql,1,500);
-    fail();
-  }
- catch (  Exception ex) {
-    assertTrue(ex.getMessage().contains("Incorrect number of parameters passed: expected 1, passed 2"));
-  }
-  try {
-    client.callProcedure("@AdHoc",sql);
-    fail();
-  }
- catch (  Exception ex) {
-    assertTrue(ex.getMessage().contains("Number of arguments provided was 0 where 1 was expected"));
-  }
+  verifyAdHocFails(client,String.format(pattern,1,2),sql,1,500);
+  checkPlannerCache(client,CACHE_MISS1);
+  verifyAdHocFails(client,String.format(pattern,1,0),sql);
+  checkPlannerCache(client,CACHE_MISS1);
+  VoltTable vt;
+  sql="SELECT ID FROM R1 TB WHERE TB.ID > ? order by ID;";
+  vt=client.callProcedure("@AdHoc",sql,1).getResults()[0];
+  validateTableOfScalarLongs(vt,new long[]{2,3});
+  checkPlannerCache(client,CACHE_MISS2);
+  verifyAdHocFails(client,String.format(pattern,1,2),sql,1,500);
+  checkPlannerCache(client,CACHE_MISS1);
+  verifyAdHocFails(client,String.format(pattern,1,0),sql);
+  checkPlannerCache(client,CACHE_MISS1);
+  verifyAdHocFails(client,String.format(pattern,1,0),sql + sql);
+  checkPlannerCache(client,CACHE_MISS1);
 }
