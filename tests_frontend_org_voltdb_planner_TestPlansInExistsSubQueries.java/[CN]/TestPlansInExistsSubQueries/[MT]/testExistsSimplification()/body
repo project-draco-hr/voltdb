@@ -2,22 +2,34 @@
 {
     AbstractPlanNode pn=compile("select a from r1 where exists " + " (select a, c  from r2 limit 0) ");
     assertEquals(true,pn.getChild(0) instanceof SeqScanPlanNode);
-    verifyCVEPredicate(((SeqScanPlanNode)pn.getChild(0)).getPredicate(),"0");
+    verifyCVEPredicate(((SeqScanPlanNode)pn.getChild(0)).getPredicate(),false);
   }
 {
     AbstractPlanNode pn=compile("select a from r1 where exists " + " (select count(*)  from r2 limit 0) ");
     assertEquals(true,pn.getChild(0) instanceof SeqScanPlanNode);
-    verifyCVEPredicate(((SeqScanPlanNode)pn.getChild(0)).getPredicate(),"0");
+    verifyCVEPredicate(((SeqScanPlanNode)pn.getChild(0)).getPredicate(),false);
+  }
+{
+    AbstractPlanNode pn=compile("select a from r1 join r2 on (exists " + " (select max(a)  from r2) or r2.a > 0)");
+    assertEquals(true,pn.getChild(0).getChild(0) instanceof AbstractJoinPlanNode);
+    AbstractJoinPlanNode jpn=(AbstractJoinPlanNode)pn.getChild(0).getChild(0);
+    assertEquals(true,jpn.getWherePredicate() == null);
+  }
+{
+    AbstractPlanNode pn=compile("select a from r1 join r2 on exists " + " (select max(a)  from r2 offset 1) ");
+    assertEquals(true,pn.getChild(0).getChild(0) instanceof NestLoopPlanNode);
+    NestLoopPlanNode jpn=(NestLoopPlanNode)pn.getChild(0).getChild(0);
+    verifyCVEPredicate(jpn.getJoinPredicate(),false);
   }
 {
     AbstractPlanNode pn=compile("select a from r1 where exists " + " (select count(*)  from r2 offset 1) ");
     assertEquals(true,pn.getChild(0) instanceof SeqScanPlanNode);
-    verifyCVEPredicate(((SeqScanPlanNode)pn.getChild(0)).getPredicate(),"0");
+    verifyCVEPredicate(((SeqScanPlanNode)pn.getChild(0)).getPredicate(),false);
   }
 {
     AbstractPlanNode pn=compile("select a from r1 where exists " + " (select max(a)  from r2) ");
     assertEquals(true,pn.getChild(0) instanceof SeqScanPlanNode);
-    verifyCVEPredicate(((SeqScanPlanNode)pn.getChild(0)).getPredicate(),"1");
+    assertEquals(true,((SeqScanPlanNode)pn.getChild(0)).getPredicate() == null);
   }
 {
     AbstractPlanNode pn=compile("select a from r1 where exists " + " (select max(a)  from r2 limit ?) ");

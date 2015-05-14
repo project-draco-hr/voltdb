@@ -1,21 +1,44 @@
 {
-  AbstractPlanNode pn=compile("select a from r1 " + " group by a having max(c) in (select c from r2 )");
-  pn=pn.getChild(0);
-  assertTrue(pn instanceof ProjectionPlanNode);
-  pn=pn.getChild(0);
-  assertTrue(pn instanceof SeqScanPlanNode);
-  AggregatePlanNode aggNode=AggregatePlanNode.getInlineAggregationNode(pn);
-  assertNotNull(aggNode);
-  NodeSchema ns=aggNode.getOutputSchema();
-  assertEquals(2,ns.size());
-  SchemaColumn aggColumn=ns.getColumns().get(1);
-  assertEquals("$$_MAX_$$_1",aggColumn.getColumnAlias());
-  AbstractExpression having=aggNode.getPostPredicate();
-  assertEquals(ExpressionType.OPERATOR_EXISTS,having.getExpressionType());
-  AbstractExpression se=having.getLeft();
-  assertEquals(1,se.getArgs().size());
-  assertTrue(se.getArgs().get(0) instanceof TupleValueExpression);
-  TupleValueExpression argTve=(TupleValueExpression)se.getArgs().get(0);
-  assertEquals(1,argTve.getColumnIndex());
-  assertEquals("$$_MAX_$$_1",argTve.getColumnAlias());
+{
+    AbstractPlanNode pn=compile("select a from r1 " + " group by a having max(c) in (select c from r2 )");
+    pn=pn.getChild(0);
+    assertTrue(pn instanceof ProjectionPlanNode);
+    pn=pn.getChild(0);
+    assertTrue(pn instanceof SeqScanPlanNode);
+    AggregatePlanNode aggNode=AggregatePlanNode.getInlineAggregationNode(pn);
+    assertNotNull(aggNode);
+    NodeSchema ns=aggNode.getOutputSchema();
+    assertEquals(2,ns.size());
+    SchemaColumn aggColumn=ns.getColumns().get(1);
+    assertEquals("$$_MAX_$$_1",aggColumn.getColumnAlias());
+    AbstractExpression having=aggNode.getPostPredicate();
+    assertEquals(ExpressionType.OPERATOR_EXISTS,having.getExpressionType());
+    AbstractExpression se=having.getLeft();
+    assertEquals(1,se.getArgs().size());
+    assertTrue(se.getArgs().get(0) instanceof TupleValueExpression);
+    TupleValueExpression argTve=(TupleValueExpression)se.getArgs().get(0);
+    assertEquals(1,argTve.getColumnIndex());
+    assertEquals("$$_MAX_$$_1",argTve.getColumnAlias());
+  }
+{
+    AbstractPlanNode pn=compile("select a from r1 " + " group by a having exists (select max(a) from r2) or max(c) > 0");
+    pn=pn.getChild(0);
+    assertTrue(pn instanceof ProjectionPlanNode);
+    pn=pn.getChild(0);
+    assertTrue(pn instanceof SeqScanPlanNode);
+    AggregatePlanNode aggNode=AggregatePlanNode.getInlineAggregationNode(pn);
+    assertNotNull(aggNode);
+    assertEquals(true,aggNode.getPostPredicate() == null);
+  }
+{
+    AbstractPlanNode pn=compile("select a from r1 " + " group by a having exists (select max(a) from r2 limit 0) and max(c) > 0");
+    pn=pn.getChild(0);
+    assertTrue(pn instanceof ProjectionPlanNode);
+    pn=pn.getChild(0);
+    assertTrue(pn instanceof SeqScanPlanNode);
+    AggregatePlanNode aggNode=AggregatePlanNode.getInlineAggregationNode(pn);
+    assertNotNull(aggNode);
+    AbstractExpression having=aggNode.getPostPredicate();
+    assertEquals(true,ConstantValueExpression.isBooleanFalse(having));
+  }
 }
