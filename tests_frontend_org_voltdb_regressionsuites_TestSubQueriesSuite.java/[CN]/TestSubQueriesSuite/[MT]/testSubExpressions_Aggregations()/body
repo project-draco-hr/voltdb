@@ -13,17 +13,16 @@
   for (  String tb : replicated_tbs) {
     vt=client.callProcedure("@AdHoc","select dept, sum(wage) as sw1 from " + tb + " where (id, dept + 2) in "+ "        ( select dept, count(dept) from "+ tb+ "          group by dept "+ "        ) "+ "group by dept;").getResults()[0];
     validateTableOfLongs(vt,new long[][]{{1,10}});
-    sql="select dept from " + tb + " group by dept "+ " having max(wage) in (select wage from R1) order by dept desc";
     assertFalse(vt.toString().toLowerCase().contains("subquery: null"));
-    vt=client.callProcedure("@AdHoc",sql).getResults()[0];
-    System.out.println(vt);
-    validateTableOfLongs(vt,new long[][]{{2},{1}});
+    sql="select dept from " + tb + " group by dept "+ " having max(wage) in (select wage from R1) order by dept desc";
+    verifyStmtFails(client,sql,TestPlansInExistsSubQueries.HavingErrorMsg);
     sql="select dept from " + tb + " group by dept "+ " having max(wage) + 1 - 1 in (select wage from R1) order by dept desc";
+    verifyStmtFails(client,sql,TestPlansInExistsSubQueries.HavingErrorMsg);
+    sql="select id from " + tb + " TBA where exists "+ " (select dept from R1 "+ "  group by dept "+ "  having max(wage) = TBA.wage or min(wage) = TBA.wage) order by id;";
     vt=client.callProcedure("@AdHoc",sql).getResults()[0];
-    validateTableOfLongs(vt,new long[][]{{2},{1}});
-    vt=client.callProcedure("@AdHoc","select id from " + tb + " TBA where exists "+ " (select dept from R1 "+ "  group by dept "+ "  having max(wage) = TBA.wage or min(wage) = TBA.wage) order by id;").getResults()[0];
     validateTableOfLongs(vt,new long[][]{{1},{3},{5},{6}});
-    vt=client.callProcedure("@AdHoc","select id from " + tb + " TBA where exists "+ " (select 1 from R2 where exists "+ "         (select dept from R1 "+ "          group by dept "+ "          having max(wage) = TBA.wage) ) order by id;").getResults()[0];
+    sql="select id from " + tb + " TBA where exists "+ " (select 1 from R2 where exists "+ "         (select dept from R1 "+ "          group by dept "+ "          having max(wage) = TBA.wage) ) order by id;";
+    vt=client.callProcedure("@AdHoc",sql).getResults()[0];
     validateTableOfLongs(vt,new long[][]{{3},{5}});
     vt=client.callProcedure("@AdHoc","select id from " + tb + " TBA where exists "+ " (select dept from R1 "+ "  group by dept "+ "  having max(wage) = ?)",3).getResults()[0];
     validateTableOfLongs(vt,new long[][]{});
