@@ -2,11 +2,15 @@
   result.resetRowPosition();
   Set<Long> hostsSeen=new HashSet<Long>();
   while (result.advanceRow()) {
-    String colValFromRow=result.getString(columnName);
-    if (targetValue.equalsIgnoreCase(colValFromRow)) {
+    if (checkRowForMultipleTargets(result,columnTargets)) {
       Long thisHostId=result.getLong("HOST_ID");
       if (enforceUnique) {
-        assertFalse("HOST_ID: " + thisHostId + " seen twice in table looking for "+ targetValue+ " in column "+ columnName,hostsSeen.contains(thisHostId));
+        StringBuilder message=new StringBuilder();
+        message.append("HOST_ID: " + thisHostId + " seen twice in table looking for ");
+        for (        Entry<String,String> entry : columnTargets.entrySet()) {
+          message.append(entry.getValue() + " in column " + entry.getKey()+ ";");
+        }
+        assertFalse(message.toString(),hostsSeen.contains(thisHostId));
       }
       hostsSeen.add(thisHostId);
     }
@@ -18,10 +22,9 @@
     Set<Long> seenAgain=new HashSet<Long>();
     result.resetRowPosition();
     while (result.advanceRow()) {
-      String colValFromRow=result.getString(columnName);
       Long thisHostId=result.getLong("HOST_ID");
       String rowStatus="Found a non-match";
-      if (targetValue.equalsIgnoreCase(colValFromRow)) {
+      if (checkRowForMultipleTargets(result,columnTargets)) {
         if (seenAgain.add(thisHostId)) {
           rowStatus="Added a match";
         }
@@ -29,7 +32,11 @@
           rowStatus="Duplicated a match";
         }
       }
-      m_recentAnalysis.append(rowStatus + " at host " + thisHostId+ " for "+ columnName+ " "+ colValFromRow+ "\n");
+      m_recentAnalysis.append(rowStatus + " at host " + thisHostId+ " for ");
+      for (      String key : columnTargets.keySet()) {
+        m_recentAnalysis.append(key + " " + result.getString(key)+ ";");
+      }
+      m_recentAnalysis.append("\n");
     }
   }
   return hostsSeen.size();
