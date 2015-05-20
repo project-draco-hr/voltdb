@@ -1,0 +1,35 @@
+{
+  String schemaDDL=givenSchema + StringUtils.join(ddl," ");
+  File schemaFile=VoltProjectBuilder.writeStringToTempFile(schemaDDL.toString());
+  String schemaPath=schemaFile.getPath();
+  String projectXML="<?xml version=\"1.0\"?>\n" + "<project>" + "<database name='database'>"+ "<schemas><schema path='" + schemaPath + "' /></schemas>"+ "</database>"+ "</project>";
+  File projectFile=VoltProjectBuilder.writeStringToTempFile(projectXML);
+  String projectPath=projectFile.getPath();
+  VoltCompiler compiler=new VoltCompiler();
+  boolean success;
+  String error;
+  try {
+    success=compiler.compileWithProjectXML(projectPath,testout_jar);
+    error=(success || compiler.m_errors.size() == 0 ? "" : compiler.m_errors.get(compiler.m_errors.size() - 1).message);
+  }
+ catch (  HsqlException hex) {
+    success=false;
+    error=hex.getMessage();
+  }
+catch (  PlanningErrorException plex) {
+    success=false;
+    error=plex.getMessage();
+  }
+  if (errorRegex == null) {
+    assertTrue(String.format("Expected success\nDDL: %s\n%s",StringUtils.join(ddl," "),error),success);
+    Catalog cat=compiler.getCatalog();
+    return cat.getClusters().get("cluster").getDatabases().get("database");
+  }
+ else {
+    assertFalse(String.format("Expected error (\"%s\")\nDDL: %s",errorRegex,StringUtils.join(ddl," ")),success);
+    assertFalse("Expected at least one error message.",error.isEmpty());
+    Matcher m=Pattern.compile(errorRegex).matcher(error);
+    assertTrue(String.format("%s\nEXPECTED: %s",error,errorRegex),m.matches());
+    return null;
+  }
+}
