@@ -1,0 +1,18 @@
+{
+  String sql="select franchise_id, count(*) as stores_in_category_AdHoc " + " from stores group by franchise_id, (select category from store_types where type_id = stores.type_id);";
+  AbstractPlanNode pn=compile(sql);
+  pn=pn.getChild(0);
+  assertTrue(pn instanceof ProjectionPlanNode);
+  NodeSchema schema=pn.getOutputSchema();
+  assertEquals(2,schema.size());
+  pn=pn.getChild(0);
+  assertTrue(pn instanceof AbstractScanPlanNode);
+  assertNotNull(pn.getInlinePlanNode(PlanNodeType.HASHAGGREGATE));
+  HashAggregatePlanNode aggNode=(HashAggregatePlanNode)pn.getInlinePlanNode(PlanNodeType.HASHAGGREGATE);
+  assertEquals(2,aggNode.getGroupByExpressionsSize());
+  AbstractExpression tveExpr=aggNode.getGroupByExpressions().get(0);
+  assertTrue(tveExpr instanceof TupleValueExpression);
+  AbstractExpression gbExpr=aggNode.getGroupByExpressions().get(1);
+  assertTrue(gbExpr instanceof ScalarValueExpression);
+  assertTrue(gbExpr.getLeft() instanceof SelectSubqueryExpression);
+}
