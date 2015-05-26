@@ -1,0 +1,54 @@
+{
+  Set<String> havingColumnNamesSet=new HashSet<String>();
+  Set<String> groupByColumnNamesSet=new HashSet<String>();
+  if (m_having != null) {
+    List<TupleValueExpression> havingTves=ExpressionUtil.getTupleValueExpressions(m_having);
+    for (    TupleValueExpression tve : havingTves) {
+      havingColumnNamesSet.add(tve.getColumnAlias());
+    }
+  }
+  for (  ParsedColInfo colInfo : m_groupByColumns) {
+    groupByColumnNamesSet.add(colInfo.alias);
+  }
+  ArrayList<ParsedColInfo> aggrExpressions=new ArrayList<ParsedColInfo>();
+  aggrExpressions.addAll(m_aggResultColumns);
+  m_aggResultColumns=aggrExpressions;
+  m_displayColumns.clear();
+  ParsedColInfo col=new ParsedColInfo();
+  ConstantValueExpression colExpr=new ConstantValueExpression();
+  colExpr.setValueType(VoltType.NUMERIC);
+  colExpr.setValue("1");
+  col.expression=colExpr;
+  ExpressionUtil.finalizeValueTypes(col.expression);
+  col.tableName="VOLT_TEMP_TABLE";
+  col.tableAlias="VOLT_TEMP_TABLE";
+  col.columnName="$$_EXISTS_$$";
+  col.alias="$$_EXISTS_$$";
+  col.index=0;
+  m_projectSchema=null;
+  m_displayColumns.add(col);
+  placeTVEsinColumns();
+  if (m_having == null) {
+    m_aggResultColumns.clear();
+    m_orderColumns.clear();
+    m_groupByColumns.clear();
+  }
+ else {
+    Iterator<ParsedColInfo> aggColumnIt=m_aggResultColumns.iterator();
+    while (aggColumnIt.hasNext()) {
+      ParsedColInfo aggrColumn=aggColumnIt.next();
+      boolean canDropColumn=!havingColumnNamesSet.contains(aggrColumn.alias) && !groupByColumnNamesSet.contains(aggrColumn.alias);
+      if (canDropColumn) {
+        aggColumnIt.remove();
+      }
+    }
+  }
+  if (m_aggResultColumns.isEmpty()) {
+    m_hasAggregateExpression=false;
+    m_hasAverage=false;
+  }
+  needComplexAggregation();
+  m_distinct=false;
+  m_limitOffset.setLimit(1);
+  prepareLimitPlanNode(this,m_limitOffset);
+}

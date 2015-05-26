@@ -1,0 +1,17 @@
+{
+  AbstractPlanNode pn=compile("select a, sum(c) as sc1 from r1 where (a, c) in " + "( SELECT a, count(c) as sc2 " + "from  r1  GROUP BY a ORDER BY a DESC) GROUP BY A;");
+  pn=pn.getChild(0);
+  assertTrue(pn instanceof AbstractScanPlanNode);
+  AbstractExpression e=((AbstractScanPlanNode)pn).getPredicate();
+  assertEquals(ExpressionType.OPERATOR_EXISTS,e.getExpressionType());
+  AbstractSubqueryExpression subExpr=(AbstractSubqueryExpression)e.getLeft();
+  AbstractPlanNode sn=subExpr.getSubqueryNode();
+  assertTrue(sn instanceof OrderByPlanNode);
+  assertNotNull(sn.getInlinePlanNode(PlanNodeType.LIMIT));
+  sn=sn.getChild(0);
+  assertTrue(sn instanceof ProjectionPlanNode);
+  sn=sn.getChild(0);
+  assertTrue(sn instanceof SeqScanPlanNode);
+  AggregatePlanNode aggNode=AggregatePlanNode.getInlineAggregationNode(sn);
+  assertNotNull(aggNode.getPostPredicate());
+}
