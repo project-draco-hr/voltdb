@@ -13,7 +13,7 @@
   if ((plan instanceof AggregatePlanNode) == false)   return plan;
   assert(plan.getChildCount() == 1);
   AggregatePlanNode aggplan=(AggregatePlanNode)plan;
-  if (aggplan.isTableCountStar() == false) {
+  if (!(aggplan.isTableCountStar() || aggplan.isTableNonDistinctCountConstant() || aggplan.isTableCountNonDistinctNullableColumn())) {
     return plan;
   }
   AbstractPlanNode child=plan.getChild(0);
@@ -35,6 +35,9 @@
         return plan;
       }
     }
+    if (hasInlineLimit(aggplan)) {
+      return plan;
+    }
     return new TableCountPlanNode((AbstractScanPlanNode)child,aggplan);
   }
   if ((child instanceof IndexScanPlanNode) == false)   return plan;
@@ -46,6 +49,9 @@
     return plan;
   }
   if (isp.getEndExpression() == null && isp.getSearchKeyExpressions().size() == 0) {
+    if (hasInlineLimit(aggplan)) {
+      return plan;
+    }
     return new TableCountPlanNode(isp,aggplan);
   }
   Index idx=isp.getCatalogIndex();
