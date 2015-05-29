@@ -1,0 +1,19 @@
+{
+  List<AbstractPlanNode> pn;
+  pn=compileToFragments("select approx_count_distinct(num) " + "from (select approx_count_distinct(points) from t1) as repl_subquery," + "  p1");
+  assertEquals(2,pn.size());
+  assertFragContainsAggWithFunctions(pn.get(COORDINATOR_FRAG),AGGREGATE_HYPERLOGLOGS_TO_CARD);
+  assertFragContainsTwoAggsWithFunctions(pn.get(PARTITION_FRAG),new ExpressionType[]{AGGREGATE_APPROX_COUNT_DISTINCT},new ExpressionType[]{AGGREGATE_VALS_TO_HYPERLOGLOG});
+  pn=compileToFragments("select approx_count_distinct(num), sum(distinct num) " + "from (select approx_count_distinct(points) from t1) as repl_subquery," + "  p1");
+  assertEquals(2,pn.size());
+  assertFragContainsAggWithFunctions(pn.get(COORDINATOR_FRAG),AGGREGATE_APPROX_COUNT_DISTINCT,AGGREGATE_SUM);
+  assertFragContainsAggWithFunctions(pn.get(PARTITION_FRAG),AGGREGATE_APPROX_COUNT_DISTINCT);
+  pn=compileToFragments("select approx_count_distinct(points) " + "from (select approx_count_distinct(num) from p1) as repl_subquery," + "  t1");
+  assertEquals(2,pn.size());
+  assertFragContainsTwoAggsWithFunctions(pn.get(COORDINATOR_FRAG),new ExpressionType[]{AGGREGATE_HYPERLOGLOGS_TO_CARD},new ExpressionType[]{AGGREGATE_APPROX_COUNT_DISTINCT});
+  assertFragContainsAggWithFunctions(pn.get(PARTITION_FRAG),AGGREGATE_VALS_TO_HYPERLOGLOG);
+  pn=compileToFragments("select approx_count_distinct(points) " + "from (select approx_count_distinct(num), sum(distinct num) from p1) as repl_subquery," + "  t1");
+  assertEquals(2,pn.size());
+  assertFragContainsTwoAggsWithFunctions(pn.get(COORDINATOR_FRAG),new ExpressionType[]{AGGREGATE_APPROX_COUNT_DISTINCT,AGGREGATE_SUM},new ExpressionType[]{AGGREGATE_APPROX_COUNT_DISTINCT});
+  assertFragContainsNoAggPlanNodes(pn.get(PARTITION_FRAG));
+}

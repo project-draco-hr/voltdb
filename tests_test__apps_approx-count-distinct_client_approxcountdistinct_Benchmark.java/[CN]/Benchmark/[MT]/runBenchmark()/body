@@ -1,0 +1,38 @@
+{
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println(" Setup & Initialization");
+  System.out.println(HORIZONTAL_RULE);
+  connect(config.servers);
+  System.out.println("\nPopulating table with data\n");
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println(" Starting Benchmark");
+  System.out.println(HORIZONTAL_RULE);
+  benchmarkStartTS=System.currentTimeMillis();
+  schedulePeriodicStats();
+  System.out.println("\nRunning benchmark...");
+  while (nextPk < config.numTotalVals) {
+    insertRow();
+  }
+  timer.cancel();
+  client.drain();
+  printResults();
+  System.out.println(HORIZONTAL_RULE);
+  VoltTable result=client.callProcedure("DoCount").getResults()[0];
+  result.advanceRow();
+  try (PrintWriter out=new PrintWriter(new BufferedWriter(new FileWriter("bench_perf.dat",true)))){
+    double exactTime=result.getDouble(3);
+    double approxTime=result.getDouble(1);
+    out.printf("\"%s\"        %3.3f        %3.3f\n",toHumanReadable(config.numTotalVals),exactTime,approxTime);
+  }
+ catch (  IOException e) {
+  }
+  try (PrintWriter out=new PrintWriter(new BufferedWriter(new FileWriter("bench_accuracy.dat",true)))){
+    long exactAnswer=result.getLong(2);
+    long approxAnswer=result.getLong(0);
+    double percentError=Math.abs(exactAnswer - (double)approxAnswer) / exactAnswer * 100.0;
+    out.printf("\"%s\"        %d        %d      %f\n",toHumanReadable(config.numTotalVals),exactAnswer,approxAnswer,percentError);
+  }
+ catch (  IOException e) {
+  }
+  client.close();
+}

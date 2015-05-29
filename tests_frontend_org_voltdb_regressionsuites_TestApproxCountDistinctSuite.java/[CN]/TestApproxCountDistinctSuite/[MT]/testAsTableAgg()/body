@@ -1,0 +1,43 @@
+{
+  Client client=getClient();
+  long expectedEstimates[]={879,872,873,244,1003,983};
+  for (int colIdx=0; colIdx < COLUMN_NAMES.length; ++colIdx) {
+    for (int tblIdx=0; tblIdx < TABLE_NAMES.length; ++tblIdx) {
+      String tbl=TABLE_NAMES[tblIdx];
+      String col=COLUMN_NAMES[colIdx];
+      String approxStmt=String.format("select approx_count_distinct(%s) from %s",col,tbl);
+      VoltTable vt=client.callProcedure("@AdHoc",approxStmt).getResults()[0];
+      assertTrue(vt.advanceRow());
+      assertEquals(0,vt.getLong(0));
+      assertFalse(vt.advanceRow());
+    }
+  }
+  fillTable(client,"p");
+  fillTable(client,"r");
+  for (int tblIdx=0; tblIdx < TABLE_NAMES.length; ++tblIdx) {
+    for (int colIdx=0; colIdx < COLUMN_NAMES.length; ++colIdx) {
+      String tbl=TABLE_NAMES[tblIdx];
+      String col=COLUMN_NAMES[colIdx];
+      String approxStmt=String.format("select approx_count_distinct(%s) from %s",col,tbl);
+      VoltTable vt=client.callProcedure("@AdHoc",approxStmt).getResults()[0];
+      assertTrue(vt.advanceRow());
+      long actualEstimate=vt.getLong(0);
+      if (!isValgrind()) {
+        assertEquals("Actual estimate not expected for column " + col,expectedEstimates[colIdx],actualEstimate);
+      }
+      assertFalse(vt.advanceRow());
+      String approxStmtNoNulls=String.format("select approx_count_distinct(%s) " + "from %s " + "where %s is not null",col,tbl,col);
+      vt=client.callProcedure("@AdHoc",approxStmtNoNulls).getResults()[0];
+      assertTrue(vt.advanceRow());
+      long actualEstimateNoNulls=vt.getLong(0);
+      assertEquals(actualEstimate,actualEstimateNoNulls);
+      assertFalse(vt.advanceRow());
+      String exactStmt=String.format("select count(distinct %s) from %s",col,tbl);
+      vt=client.callProcedure("@AdHoc",exactStmt).getResults()[0];
+      assertTrue(vt.advanceRow());
+      long exact=vt.getLong(0);
+      assertEstimateWithin(col,exact,actualEstimate);
+      assertFalse(vt.advanceRow());
+    }
+  }
+}
