@@ -1,0 +1,57 @@
+{
+  boolean canReplaceWithCVE=(m_having == null && m_groupByColumns.isEmpty() && !hasLimitOrOffsetParameters()) || m_limitOffset.getLimit() == 0;
+  if (canReplaceWithCVE) {
+    if (m_limitOffset.getLimit() == 0) {
+      return ConstantValueExpression.getFalse();
+    }
+    for (    ParsedColInfo displayColumn : m_displayColumns) {
+      assert(displayColumn.expression != null);
+      if (displayColumn.expression.hasAnySubexpressionOfClass(AggregateExpression.class)) {
+        if (m_limitOffset.getOffset() == 0) {
+          return ConstantValueExpression.getTrue();
+        }
+ else {
+          return ConstantValueExpression.getFalse();
+        }
+      }
+    }
+  }
+  m_orderColumns.clear();
+  if (m_having == null && !hasOffset()) {
+    m_groupByColumns.clear();
+    m_groupByExpressions.clear();
+  }
+  if (m_groupByColumns.isEmpty()) {
+    Iterator<ParsedColInfo> iter=m_displayColumns.iterator();
+    while (iter.hasNext()) {
+      ParsedColInfo col=iter.next();
+      if (!col.expression.hasAnySubexpressionOfClass(AggregateExpression.class)) {
+        iter.remove();
+      }
+    }
+  }
+  if (m_displayColumns.isEmpty()) {
+    ParsedColInfo col=new ParsedColInfo();
+    col.expression=ConstantValueExpression.makeExpression(VoltType.NUMERIC,"1");
+    ExpressionUtil.finalizeValueTypes(col.expression);
+    col.tableName="VOLT_TEMP_TABLE";
+    col.tableAlias="VOLT_TEMP_TABLE";
+    col.columnName="$$_EXISTS_$$";
+    col.alias="$$_EXISTS_$$";
+    col.index=0;
+    m_projectSchema=null;
+    m_displayColumns.add(col);
+  }
+  if (m_aggResultColumns.isEmpty()) {
+    m_hasAggregateExpression=false;
+    m_hasAverage=false;
+  }
+  placeTVEsinColumns();
+  needComplexAggregation();
+  m_distinct=false;
+  if (m_limitOffset.getLimitParameterId() == -1) {
+    m_limitOffset.setLimit(1);
+  }
+  prepareLimitPlanNode(this,m_limitOffset);
+  return originalExistExpr;
+}
