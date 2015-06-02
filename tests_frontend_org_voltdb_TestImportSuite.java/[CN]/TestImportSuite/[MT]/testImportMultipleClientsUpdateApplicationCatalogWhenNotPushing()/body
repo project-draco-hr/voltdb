@@ -1,0 +1,28 @@
+{
+  System.out.println("testImportMultipleClientsUpdateApplicationCatalogWhenNotPushing");
+  Client client=getClient();
+  while (!((ClientImpl)client).isHashinatorInitialized()) {
+    Thread.sleep(1000);
+    System.out.println("Waiting for hashinator to be initialized...");
+  }
+  CountDownLatch latch=new CountDownLatch(3);
+  (new DataPusher("localhost",7001,1000,latch)).start();
+  (new DataPusher("localhost",7001,1000,latch)).start();
+  (new DataPusher("localhost",7001,1000,latch)).start();
+  latch.await();
+  ClientResponse response=client.callProcedure("@AdHoc","select count(*) from importTable");
+  assertEquals(ClientResponse.SUCCESS,response.getStatus());
+  assertEquals(3000,response.getResults()[0].asScalarLong());
+  response=client.callProcedure("@AdHoc","create table nudge(id integer);");
+  assertEquals(ClientResponse.SUCCESS,response.getStatus());
+  latch=new CountDownLatch(4);
+  (new DataPusher("localhost",7001,1000,latch)).start();
+  (new DataPusher("localhost",7001,1000,latch)).start();
+  (new DataPusher("localhost",7001,1000,latch)).start();
+  (new DataPusher("localhost",7001,1000,latch)).start();
+  latch.await();
+  response=client.callProcedure("@AdHoc","select count(*) from importTable");
+  assertEquals(ClientResponse.SUCCESS,response.getStatus());
+  assertEquals(7000,response.getResults()[0].asScalarLong());
+  client.close();
+}

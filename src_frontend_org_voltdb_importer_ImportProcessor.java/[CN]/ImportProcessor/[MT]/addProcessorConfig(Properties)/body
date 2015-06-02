@@ -1,0 +1,49 @@
+{
+  String module=properties.getProperty(ImportDataProcessor.IMPORT_MODULE);
+  String moduleAttrs[]=module.split("\\|");
+  String bundleJar=moduleAttrs[1];
+  String moduleType=moduleAttrs[0];
+  Preconditions.checkState(!m_bundles.containsKey(bundleJar),"Import to source is already defined.");
+  try {
+    ImportHandlerProxy importHandlerProxy=null;
+    BundleWrapper wrapper=null;
+    if (moduleType.equalsIgnoreCase("osgi")) {
+      Framework framework=m_frameworkFactory.newFramework(m_frameworkProps);
+      framework.start();
+      Bundle bundle=framework.getBundleContext().installBundle(bundleJar);
+      bundle.start();
+      ServiceReference reference=framework.getBundleContext().getServiceReference(ImportDataProcessor.IMPORTER_SERVICE_CLASS);
+      if (reference == null) {
+        m_logger.error("Failed to initialize importer from: " + bundleJar);
+        bundle.stop();
+        framework.stop();
+        return;
+      }
+      Object o=framework.getBundleContext().getService(reference);
+      importHandlerProxy=(ImportHandlerProxy)o;
+      wrapper=new BundleWrapper(bundle,framework,importHandlerProxy,properties);
+    }
+ else {
+      Class reference=this.getClass().getClassLoader().loadClass(bundleJar);
+      if (reference == null) {
+        m_logger.error("Failed to initialize importer from: " + bundleJar);
+        return;
+      }
+      Object o=reference.newInstance();
+      importHandlerProxy=(ImportHandlerProxy)o;
+      wrapper=new BundleWrapper(null,null,importHandlerProxy,properties);
+    }
+    importHandlerProxy.configure(properties);
+    String name=importHandlerProxy.getName();
+    if (name == null || name.trim().length() == 0) {
+      throw new RuntimeException("Importer must implement and return a valid unique name.");
+    }
+    Preconditions.checkState(!m_bundlesByName.containsKey(name),"Importer must implement and return a valid unique name.");
+    m_bundlesByName.put(name,wrapper);
+    m_bundles.put(bundleJar,wrapper);
+  }
+ catch (  Throwable t) {
+    m_logger.error("Failed to configure import handler for " + bundleJar,t);
+    Throwables.propagate(t);
+  }
+}
