@@ -1,0 +1,68 @@
+{
+  String importBundleUrl=importConfiguration.getModule();
+  if (!importConfiguration.isEnabled()) {
+    return null;
+  }
+switch (importConfiguration.getType()) {
+case CUSTOM:
+    break;
+default :
+  throw new DeploymentCheckException("Import Configuration type must be specified.");
+}
+Properties processorProperties=new Properties();
+String modulePrefix="osgi|";
+InputStream is;
+try {
+is=(new URL(importBundleUrl)).openStream();
+}
+ catch (Exception ex) {
+is=null;
+}
+if (is == null) {
+try {
+  String rpath=CatalogUtil.class.getProtectionDomain().getCodeSource().getLocation().toURI().getPath();
+  System.out.println("Module base is: " + rpath);
+  String bpath=(new File(rpath)).getParent() + "/../bundles/" + importBundleUrl;
+  is=new FileInputStream(new File(bpath));
+  importBundleUrl="file:" + bpath;
+}
+ catch (URISyntaxException|FileNotFoundException ex) {
+  is=null;
+}
+}
+if (is != null) {
+try {
+  is.close();
+}
+ catch (IOException ex) {
+}
+}
+ else {
+try {
+  CatalogUtil.class.getClassLoader().loadClass(importBundleUrl);
+  modulePrefix="class|";
+}
+ catch (ClassNotFoundException ex2) {
+  String msg="Import failed to configure, failed to load module by URL or classname provided" + " import module: " + importBundleUrl;
+  hostLog.error(msg);
+  throw new DeploymentCheckException(msg);
+}
+}
+if (importBundleUrl != null && importBundleUrl.trim().length() > 0) {
+processorProperties.setProperty(ImportDataProcessor.IMPORT_MODULE,modulePrefix + importBundleUrl);
+}
+List<PropertyType> configProperties=importConfiguration.getProperty();
+if (configProperties != null && !configProperties.isEmpty()) {
+for (PropertyType configProp : configProperties) {
+  String key=configProp.getName();
+  String value=configProp.getValue();
+  if (!key.toLowerCase().contains("passw")) {
+    processorProperties.setProperty(key,value.trim());
+  }
+ else {
+    processorProperties.setProperty(key,value);
+  }
+}
+}
+return processorProperties;
+}
