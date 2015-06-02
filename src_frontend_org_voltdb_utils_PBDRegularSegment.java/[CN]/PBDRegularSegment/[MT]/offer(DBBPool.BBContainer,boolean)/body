@@ -1,0 +1,40 @@
+{
+  if (m_closed)   throw new IOException("Segment closed");
+  final ByteBuffer buf=cont.b();
+  final int remaining=buf.remaining();
+  if (remaining < 32 || !buf.isDirect())   compress=false;
+  final int maxCompressedSize=(compress ? CompressionService.maxCompressedLength(remaining) : remaining) + OBJECT_HEADER_BYTES;
+  if (remaining() < maxCompressedSize)   return false;
+  m_syncedSinceLastEdit=false;
+  DBBPool.BBContainer destBuf=cont;
+  try {
+    m_tmpHeaderBuf.b().clear();
+    if (compress) {
+      destBuf=DBBPool.allocateDirectAndPool(maxCompressedSize);
+      final int compressedSize=CompressionService.compressBuffer(buf,destBuf.b());
+      destBuf.b().limit(compressedSize);
+      m_tmpHeaderBuf.b().putInt(compressedSize);
+      m_tmpHeaderBuf.b().putInt(FLAG_COMPRESSED);
+    }
+ else {
+      destBuf=cont;
+      m_tmpHeaderBuf.b().putInt(remaining);
+      m_tmpHeaderBuf.b().putInt(NO_FLAGS);
+    }
+    m_tmpHeaderBuf.b().flip();
+    while (m_tmpHeaderBuf.b().hasRemaining()) {
+      m_fc.write(m_tmpHeaderBuf.b());
+    }
+    while (destBuf.b().hasRemaining()) {
+      m_fc.write(destBuf.b());
+    }
+    incrementNumEntries(remaining);
+  }
+  finally {
+    destBuf.discard();
+    if (compress) {
+      cont.discard();
+    }
+  }
+  return true;
+}
