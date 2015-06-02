@@ -1,0 +1,66 @@
+{
+{
+    AbstractPlanNode pn=compile("select a from r1 where exists " + " (select a, c  from r2 limit 0) ");
+    assertEquals(true,pn.getChild(0) instanceof SeqScanPlanNode);
+    verifyCVEPredicate(((SeqScanPlanNode)pn.getChild(0)).getPredicate(),false);
+  }
+{
+    AbstractPlanNode pn=compile("select a from r1 where exists " + " (select count(*)  from r2 limit 0) ");
+    assertEquals(true,pn.getChild(0) instanceof SeqScanPlanNode);
+    verifyCVEPredicate(((SeqScanPlanNode)pn.getChild(0)).getPredicate(),false);
+  }
+{
+    AbstractPlanNode pn=compile("select a from r1 join r2 on (exists " + " (select max(a)  from r2) or r2.a > 0)");
+    assertEquals(true,pn.getChild(0).getChild(0) instanceof AbstractJoinPlanNode);
+    AbstractJoinPlanNode jpn=(AbstractJoinPlanNode)pn.getChild(0).getChild(0);
+    assertEquals(true,jpn.getWherePredicate() == null);
+  }
+{
+    AbstractPlanNode pn=compile("select a from r1 join r2 on exists " + " (select max(a)  from r2 offset 1) ");
+    assertEquals(true,pn.getChild(0).getChild(0) instanceof NestLoopPlanNode);
+    NestLoopPlanNode jpn=(NestLoopPlanNode)pn.getChild(0).getChild(0);
+    verifyCVEPredicate(jpn.getJoinPredicate(),false);
+  }
+{
+    AbstractPlanNode pn=compile("select a from r1 where exists " + " (select count(*)  from r2 offset 1) ");
+    assertEquals(true,pn.getChild(0) instanceof SeqScanPlanNode);
+    verifyCVEPredicate(((SeqScanPlanNode)pn.getChild(0)).getPredicate(),false);
+  }
+{
+    AbstractPlanNode pn=compile("select a from r1 where exists " + " (select max(a)  from r2) ");
+    assertEquals(true,pn.getChild(0) instanceof SeqScanPlanNode);
+    assertEquals(true,((SeqScanPlanNode)pn.getChild(0)).getPredicate() == null);
+  }
+{
+    AbstractPlanNode pn=compile("select a from r1 where exists " + " (select max(a)  from r2 limit ?) ");
+    assertEquals(true,pn.getChild(0) instanceof SeqScanPlanNode);
+    AbstractExpression p=((SeqScanPlanNode)pn.getChild(0)).getPredicate();
+    assertEquals(true,p != null);
+    assertEquals(ExpressionType.OPERATOR_EXISTS,p.getExpressionType());
+  }
+{
+    AbstractPlanNode pn=compile("select a from r1 where exists " + " (select a, c  from r2 order by a offset 2) ");
+    assertEquals(true,pn.getChild(0) instanceof SeqScanPlanNode);
+    verifyTrivialSchemaLimitOffset(((SeqScanPlanNode)pn.getChild(0)).getPredicate(),1,2);
+  }
+{
+    AbstractPlanNode pn=compile("select a from r1 where exists " + " (select a, c  from r2 order by a limit ?) ");
+    assertEquals(true,pn.getChild(0) instanceof SeqScanPlanNode);
+    verifyTrivialSchemaLimitOffset(((SeqScanPlanNode)pn.getChild(0)).getPredicate(),-1,0);
+  }
+{
+    AbstractPlanNode pn=compile("select a from r1 where exists " + " (select a, max(c) from r2 group by a order by max(c))");
+    assertEquals(true,pn.getChild(0) instanceof SeqScanPlanNode);
+    verifyAggregateSubquery(((SeqScanPlanNode)pn.getChild(0)).getPredicate(),1,0,false);
+  }
+{
+    AbstractPlanNode pn=compile("select a from r1 where exists " + " (select a, max(c) from r2 group by a order by max(c) offset 2)");
+    assertEquals(true,pn.getChild(0) instanceof SeqScanPlanNode);
+    verifyAggregateSubquery(((SeqScanPlanNode)pn.getChild(0)).getPredicate(),2,1,false);
+  }
+{
+    AbstractPlanNode pn=compile("select a from r1 where exists " + " (select a, max(c) from r2 group by a having max(c) > 2 order by max(c))");
+    assertEquals(true,pn.getChild(0) instanceof SeqScanPlanNode);
+    verifyAggregateSubquery(((SeqScanPlanNode)pn.getChild(0)).getPredicate(),2,1,true);
+  }
+}

@@ -1,0 +1,36 @@
+{
+  LimitPlanNode topLimit=m_parsedSelect.getLimitNodeTop();
+  assert(topLimit != null);
+  AbstractPlanNode sendNode=null;
+  boolean canPushDown=!m_parsedSelect.hasDistinctWithGroupBy();
+  if (canPushDown) {
+    sendNode=checkLimitPushDownViability(root);
+    if (sendNode == null) {
+      canPushDown=false;
+    }
+ else {
+      canPushDown=m_parsedSelect.getCanPushdownLimit();
+    }
+  }
+  if (m_parsedSelect.m_mvFixInfo.needed()) {
+    canPushDown=false;
+  }
+  if (canPushDown) {
+    LimitPlanNode distLimit=m_parsedSelect.getLimitNodeDist();
+    AbstractPlanNode distributedPlan=sendNode.getChild(0);
+    distributedPlan.clearParents();
+    sendNode.clearChildren();
+    if (m_parsedSelect.hasOrderByColumns()) {
+      distributedPlan=handleOrderBy(m_parsedSelect,distributedPlan);
+    }
+    if (isInlineLimitPlanNodePossible(distributedPlan)) {
+      distributedPlan.addInlinePlanNode(distLimit);
+      sendNode.addAndLinkChild(distributedPlan);
+    }
+ else {
+      distLimit.addAndLinkChild(distributedPlan);
+      sendNode.addAndLinkChild(distLimit);
+    }
+  }
+  return inlineLimitOperator(root,topLimit);
+}
