@@ -39,7 +39,9 @@
   System.out.println("Test procedures table: " + results[0].toString());
   assertEquals(1,results.length);
   validateSchema(results[0],expectedTable);
-  validateRowSeenAtAllHosts(results[0],"PROCEDURE","NEW_ORDER.insert",false);
+  Map<String,String> columnTargets=new HashMap<String,String>();
+  columnTargets.put("PROCEDURE","NEW_ORDER.insert");
+  validateRowSeenAtAllHosts(results[0],columnTargets,false);
   validateRowSeenAtAllPartitions(results[0],"PROCEDURE","NEW_ORDER.insert",false);
   results[0].resetRowPosition();
   VoltTable stats=results[0];
@@ -77,5 +79,13 @@
   assertTrue("Failed AVG_PARAMETER_SET_SIZE < 1,000,000, value was: " + avg_parameter_set_size,avg_parameter_set_size < 1000000L);
   results=client.callProcedure("@Statistics","procedureprofile",0).getResults();
   System.out.println("\n\n\n" + results[0].toString() + "\n\n\n");
-  assertEquals("Validate site filtering for PROCEDUREPROFILE",2,results[0].getRowCount());
+  List<String> possibleProcs=new ArrayList<String>();
+  possibleProcs.add("org.voltdb_testprocs.regressionsuites.malicious.GoSleep");
+  possibleProcs.add("NEW_ORDER.insert");
+  if (MiscUtils.isPro()) {
+    possibleProcs.add("org.voltdb.sysprocs.SnapshotSave");
+  }
+  while (results[0].advanceRow()) {
+    assertTrue("Unexpected stored procedure executed: " + results[0].getString("PROCEDURE"),possibleProcs.contains(results[0].getString("PROCEDURE")));
+  }
 }
