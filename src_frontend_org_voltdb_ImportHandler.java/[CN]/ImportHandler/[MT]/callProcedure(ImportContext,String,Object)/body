@@ -1,0 +1,79 @@
+{
+  if (VoltDB.instance().getMode() == OperationMode.PAUSED || m_stopped) {
+    m_logger.warn("Server is paused and is currently unavailable - please try again later.");
+    m_failedCount.incrementAndGet();
+    return false;
+  }
+  Procedure catProc=m_catalogContext.procedures.get(proc);
+  if (catProc == null) {
+    catProc=m_catalogContext.m_defaultProcs.checkForDefaultProcedure(proc);
+  }
+  if (catProc == null) {
+    m_logger.error("Can not invoke procedure from streaming interface procedure not found.");
+    m_failedCount.incrementAndGet();
+    return false;
+  }
+  int counter=1;
+  int maxSleepNano=100000;
+  long start=System.nanoTime();
+  while (m_adapter.getPendingCount() > MAX_PENDING_TRANSACTIONS) {
+    try {
+      int nanos=500 * counter++;
+      Thread.sleep(0,nanos > maxSleepNano ? maxSleepNano : nanos);
+      if (m_stopped) {
+        return false;
+      }
+      if (System.nanoTime() - start > ic.getBackpressureTimeout()) {
+        return false;
+      }
+    }
+ catch (    InterruptedException ex) {
+    }
+  }
+  final long nowNanos=System.nanoTime();
+  StoredProcedureInvocation task=new StoredProcedureInvocation();
+  ParameterSet pset=ParameterSet.fromArrayWithCopy(fieldList);
+  int sz=1 + 4 + proc.length()+ 8+ pset.getSerializedSize();
+  final BBContainer tcont=getBuffer(sz);
+  final ByteBuffer taskbuf=tcont.b();
+  try {
+    taskbuf.put((byte)ProcedureInvocationType.ORIGINAL.getValue());
+    taskbuf.putInt((int)proc.length());
+    taskbuf.put(proc.getBytes());
+    taskbuf.putLong(m_adapter.connectionId());
+    pset.flattenToBuffer(taskbuf);
+    taskbuf.flip();
+    task.initFromBuffer(taskbuf);
+  }
+ catch (  IOException ex) {
+    m_failedCount.incrementAndGet();
+    m_logger.error("Failed to serialize parameters for stream: " + proc,ex);
+    tcont.discard();
+    return false;
+  }
+  final CatalogContext.ProcedurePartitionInfo ppi=(CatalogContext.ProcedurePartitionInfo)catProc.getAttachment();
+  int partition=-1;
+  if (catProc.getSinglepartition()) {
+    try {
+      partition=getPartitionForProcedure(ppi.index,ppi.type,task);
+    }
+ catch (    Exception e) {
+      m_logger.error("Can not invoke SP procedure from streaming interface partition not found.");
+      m_failedCount.incrementAndGet();
+      tcont.discard();
+      return false;
+    }
+  }
+  boolean success;
+synchronized (ImportHandler.class) {
+    success=m_adapter.createTransaction(catProc,task,tcont,partition,nowNanos);
+  }
+  if (!success) {
+    tcont.discard();
+    m_failedCount.incrementAndGet();
+  }
+ else {
+    m_submitSuccessCount.incrementAndGet();
+  }
+  return success;
+}
