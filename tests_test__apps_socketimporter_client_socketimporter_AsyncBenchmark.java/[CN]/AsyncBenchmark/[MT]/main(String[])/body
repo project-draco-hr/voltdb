@@ -1,13 +1,45 @@
 {
+  final long WAIT_FOR_A_WHILE=100 * 1000;
   Config config=new Config();
   config.parse(AsyncBenchmark.class.getName(),args);
-  connect(config.servers);
+  connect(config.sockservers);
+  dbconnect(config.servers);
   CountDownLatch cdl=new CountDownLatch(haplist.size());
   for (  HostAndPort hap : haplist.keySet()) {
     AsyncBenchmark benchmark=new AsyncBenchmark(config);
     BenchmarkRunner runner=new BenchmarkRunner(benchmark,cdl,hap);
     runner.start();
   }
+  System.out.println("Starting CheckData methods. Queue size: " + queue.size());
+  CheckData checkDB=new CheckData(queue,client);
+  while (queue.size() == 0) {
+    try {
+      Thread.sleep(1000);
+    }
+ catch (    InterruptedException ex) {
+      Thread.currentThread().interrupt();
+    }
+  }
+  System.out.println("Starting CheckData methods. Queue size: " + queue.size());
+  checkDB.processQueue();
   cdl.await();
-  System.out.println("Total: " + finalInsertCount.get());
+  for (  HostAndPort hap : haplist.keySet()) {
+    OutputStream writer=haplist.get(hap);
+    writer.flush();
+    writer.close();
+  }
+  System.out.println("...starting timed check looping... " + queue.size());
+  final long queueEndTime=System.currentTimeMillis() + WAIT_FOR_A_WHILE;
+  System.out.println("Continue checking for " + (queueEndTime - System.currentTimeMillis()) / 1000 + " seconds.");
+  while (queueEndTime > System.currentTimeMillis()) {
+    checkDB.processQueue();
+  }
+  client.drain();
+  System.out.println("Queued tuples remaining: " + queue.size());
+  System.out.println("Total rows added by Socket Injester: " + finalInsertCount.get());
+  System.out.println("Socket write count: " + socketWrites.get());
+  System.out.println("Socket write exception count: " + socketWriteExceptions.get());
+  System.out.println("Rows checked against database: " + rowsChecked.get());
+  System.out.println("Mismatch rows (value imported <> value in DB): " + rowsMismatch.get());
+  System.exit(0);
 }
