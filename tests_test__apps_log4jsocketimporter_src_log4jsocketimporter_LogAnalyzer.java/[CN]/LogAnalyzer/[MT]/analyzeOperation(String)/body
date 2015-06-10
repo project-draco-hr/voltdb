@@ -1,0 +1,43 @@
+{
+  int seconds=10;
+  long minuteBeforeNow=System.currentTimeMillis() - seconds * 1000;
+  ClientResponse response=null;
+  try {
+    response=m_voltClient.callProcedure("FetchLogRowsProcedure",minuteBeforeNow,name);
+  }
+ catch (  ProcCallException|IOException e) {
+    System.out.println("Error executing analyzer stmt: " + e.getMessage());
+    e.printStackTrace();
+    return;
+  }
+  if (response.getStatus() != ClientResponse.SUCCESS) {
+    System.out.println("Procedure execution failed with status " + response.getStatus());
+    return;
+  }
+  VoltTable[] results=response.getResults();
+  if (results.length == 0 || results[0].getRowCount() == 0) {
+    System.out.println("No entries found for " + name + " in the last "+ seconds+ " seconds");
+    return;
+  }
+  int count=0;
+  long totalTime=0;
+  int min=0;
+  int max=0;
+  System.out.println("rowCount=" + results[0].getRowCount());
+  for (int i=0; i < results[0].getRowCount(); i++) {
+    VoltTableRow row=results[0].fetchRow(i);
+    int time=getTimeFromLogMesg((String)row.get(0,VoltType.STRING));
+    if (time >= 0) {
+      min=Math.min(min,time);
+      max=Math.max(max,time);
+      totalTime+=time;
+      count++;
+    }
+  }
+  if (count == 0) {
+    System.out.println("No good log entries found for " + name + " in the last "+ seconds+ " seconds");
+  }
+ else {
+    System.out.println(String.format("Operation time for %s in the last %d seconds: min=%d, max=%d, avg=%f",name,seconds,min,max,totalTime * 1.0 / count));
+  }
+}
