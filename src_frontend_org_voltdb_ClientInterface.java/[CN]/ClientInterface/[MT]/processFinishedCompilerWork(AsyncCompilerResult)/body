@@ -23,11 +23,7 @@
  catch (            VoltTypeException vte) {
               String msg="Unable to execute adhoc sql statement(s): " + vte.getMessage();
               ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.GRACEFUL_FAILURE,new VoltTable[0],msg,result.clientHandle);
-              ByteBuffer buf=ByteBuffer.allocate(errorResponse.getSerializedSize() + 4);
-              buf.putInt(buf.capacity() - 4);
-              errorResponse.flattenToBuffer(buf);
-              buf.flip();
-              c.writeStream().enqueue(buf);
+              writeResponseToConnection(errorResponse);
             }
           }
         }
@@ -35,11 +31,7 @@
           final CatalogChangeResult changeResult=(CatalogChangeResult)result;
           if (changeResult.encodedDiffCommands.trim().length() == 0) {
             ClientResponseImpl shortcutResponse=new ClientResponseImpl(ClientResponseImpl.SUCCESS,new VoltTable[0],"Catalog update with no changes was skipped.",result.clientHandle);
-            ByteBuffer buf=ByteBuffer.allocate(shortcutResponse.getSerializedSize() + 4);
-            buf.putInt(buf.capacity() - 4);
-            shortcutResponse.flattenToBuffer(buf);
-            buf.flip();
-            c.writeStream().enqueue(buf);
+            writeResponseToConnection(shortcutResponse);
           }
  else {
             StoredProcedureInvocation task=new StoredProcedureInvocation();
@@ -51,10 +43,7 @@
             task.originalUniqueId=changeResult.originalUniqueId;
             ClientResponseImpl error=null;
             if ((error=m_permissionValidator.shouldAccept(task.procName,result.user,task,SystemProcedureCatalog.listing.get(task.procName).asCatalogProcedure())) != null) {
-              ByteBuffer buffer=ByteBuffer.allocate(error.getSerializedSize() + 4);
-              buffer.putInt(buffer.capacity() - 4);
-              error.flattenToBuffer(buffer).flip();
-              c.writeStream().enqueue(buffer);
+              writeResponseToConnection(error);
             }
  else {
               try {
@@ -74,12 +63,15 @@
       }
  else {
         ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.GRACEFUL_FAILURE,new VoltTable[0],result.errorMsg,result.clientHandle);
-        ByteBuffer buf=ByteBuffer.allocate(errorResponse.getSerializedSize() + 4);
-        buf.putInt(buf.capacity() - 4);
-        errorResponse.flattenToBuffer(buf);
-        buf.flip();
-        c.writeStream().enqueue(buf);
+        writeResponseToConnection(errorResponse);
       }
+    }
+    private final void writeResponseToConnection(    ClientResponseImpl response){
+      ByteBuffer buf=ByteBuffer.allocate(response.getSerializedSize() + 4);
+      buf.putInt(buf.capacity() - 4);
+      response.flattenToBuffer(buf);
+      buf.flip();
+      c.writeStream().enqueue(buf);
     }
   }
 ,null);
