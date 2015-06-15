@@ -1,44 +1,66 @@
 {
   Client client=this.getClient();
+  VoltTable vt;
   client.callProcedure("InsertA",0,1);
   client.callProcedure("InsertB",1,1);
   client.callProcedure("InsertB",2,1);
   client.callProcedure("InsertC",1,2);
   client.callProcedure("InsertC",2,3);
-  VoltTable result=client.callProcedure("@AdHoc","SELECT PKEY FROM A WHERE PKEY = 0 UNION ALL SELECT I FROM B WHERE I = 1 UNION ALL SELECT I FROM C WHERE PKEY > 0;").getResults()[0];
-  assertEquals(5,result.getRowCount());
-  result=client.callProcedure("@AdHoc","SELECT PKEY FROM A WHERE PKEY = 0 UNION ALL SELECT I FROM B WHERE I = 1 UNION ALL SELECT I FROM C WHERE PKEY > 0 ORDER BY PKEY DESC;").getResults()[0];
-  assertEquals(5,result.getRowCount());
-  assertEquals(3,result.fetchRow(0).getLong(0));
-  assertEquals(0,result.fetchRow(4).getLong(0));
-  if (!isHSQL()) {
-    result=client.callProcedure("@AdHoc","(SELECT PKEY FROM A WHERE PKEY = 0 UNION ALL SELECT I FROM B WHERE I = 1 UNION ALL SELECT I FROM C WHERE PKEY > 0) LIMIT 3;").getResults()[0];
-    assertEquals(3,result.getRowCount());
-    result=client.callProcedure("@AdHoc","SELECT PKEY FROM A UNION ALL SELECT I FROM B UNION ALL SELECT I FROM C LIMIT ?;",3).getResults()[0];
-    assertEquals(3,result.getRowCount());
-    result=client.callProcedure("@AdHoc","SELECT PKEY FROM A UNION ALL SELECT I FROM B UNION ALL SELECT I FROM C ORDER BY PKEY OFFSET 3;").getResults()[0];
-    assertEquals(2,result.getRowCount());
-    assertEquals(2,result.fetchRow(0).getLong(0));
-    assertEquals(3,result.fetchRow(1).getLong(0));
-    result=client.callProcedure("@AdHoc","SELECT PKEY FROM A WHERE PKEY = 0 UNION ALL SELECT I FROM B WHERE I = 1 UNION ALL SELECT I FROM C WHERE PKEY > 0 ORDER BY PKEY LIMIT 2 OFFSET 2;").getResults()[0];
-    assertEquals(2,result.getRowCount());
-    assertEquals(1,result.fetchRow(0).getLong(0));
-    assertEquals(2,result.fetchRow(1).getLong(0));
-    result=client.callProcedure("@AdHoc","SELECT PKEY FROM A UNION ALL SELECT I FROM B UNION ALL SELECT I FROM C LIMIT ? OFFSET ?;",2,2).getResults()[0];
-    assertEquals(2,result.getRowCount());
-    result=client.callProcedure("@AdHoc","(SELECT PKEY FROM A UNION ALL SELECT I FROM B LIMIT 1) UNION ALL SELECT I FROM C;").getResults()[0];
-    assertEquals(3,result.getRowCount());
-    result=client.callProcedure("@AdHoc","SELECT PKEY FROM A UNION ALL (SELECT I FROM B UNION ALL SELECT I FROM C LIMIT 1);").getResults()[0];
-    assertEquals(2,result.getRowCount());
-    result=client.callProcedure("@AdHoc","(SELECT PKEY FROM A UNION ALL SELECT I FROM B ORDER BY PKEY) UNION ALL SELECT I FROM C;").getResults()[0];
-    assertEquals(5,result.getRowCount());
-    result=client.callProcedure("@AdHoc","SELECT PKEY FROM A UNION ALL (SELECT I FROM B UNION ALL SELECT I FROM C ORDER BY I);").getResults()[0];
-    assertEquals(5,result.getRowCount());
+  vt=client.callProcedure("@AdHoc","SELECT PKEY FROM A WHERE PKEY = 0 UNION ALL SELECT I FROM B WHERE I = 1 " + "UNION ALL SELECT I FROM C WHERE PKEY > 0 order by pkey;").getResults()[0];
+  validateTableOfScalarLongs(vt,new long[]{0,1,1,2,3});
+  vt=client.callProcedure("@AdHoc","SELECT PKEY FROM A WHERE PKEY = 0 UNION ALL SELECT I FROM B WHERE I = 1 " + "UNION ALL SELECT I FROM C WHERE PKEY > 0 ORDER BY PKEY DESC;").getResults()[0];
+  validateTableOfScalarLongs(vt,new long[]{3,2,1,1,0});
+  vt=client.callProcedure("@AdHoc","SELECT PKEY FROM A WHERE PKEY = 0 UNION ALL SELECT I FROM B WHERE I = 1 " + "UNION ALL SELECT I FROM C WHERE PKEY > 0 ORDER BY 1 DESC;").getResults()[0];
+  validateTableOfScalarLongs(vt,new long[]{3,2,1,1,0});
+  try {
+    client.callProcedure("@AdHoc","SELECT PKEY FROM A WHERE PKEY = 0 UNION ALL SELECT I FROM B WHERE I = 1 " + "UNION ALL SELECT I FROM C WHERE PKEY > 0 ORDER BY ? DESC;",1);
+    fail();
   }
-  result=client.callProcedure("@Explain","SELECT PKEY FROM A WHERE PKEY = 0 UNION ALL SELECT I FROM B WHERE I = 1 UNION ALL SELECT I FROM C WHERE PKEY > 0 LIMIT 2 OFFSET 2;").getResults()[0];
-  String explainPlan=result.toString();
+ catch (  Exception ex) {
+    assertTrue(ex.getMessage().contains("invalid ORDER BY expression"));
+  }
+  vt=client.callProcedure("@Explain","SELECT PKEY FROM A WHERE PKEY = 0 UNION ALL SELECT I FROM B WHERE I = 1 " + "UNION ALL SELECT I FROM C WHERE PKEY > 0 LIMIT 2 OFFSET 2;").getResults()[0];
+  String explainPlan=vt.toString();
   assertTrue(explainPlan.contains("LIMIT with parameter"));
   assertTrue(explainPlan.contains("uniquely match (PKEY = ?0)"));
   assertTrue(explainPlan.contains("filter by (column#1 = ?1)"));
   assertTrue(explainPlan.contains("range-scan covering from (PKEY > ?2)"));
+  vt=client.callProcedure("@AdHoc","SELECT ABS(PKEY) as AP FROM A WHERE PKEY = 0 UNION ALL " + "SELECT I FROM B WHERE I = 1 UNION ALL SELECT I FROM C WHERE PKEY > 0 ORDER BY AP DESC;").getResults()[0];
+  validateTableOfScalarLongs(vt,new long[]{3,2,1,1,0});
+  vt=client.callProcedure("@AdHoc","SELECT cast ((PKEY+1) as INTEGER) as AP FROM A WHERE PKEY = 0 UNION ALL " + "SELECT I FROM B WHERE I = 1 UNION ALL SELECT I FROM C WHERE PKEY > 0 ORDER BY AP DESC;").getResults()[0];
+  validateTableOfScalarLongs(vt,new long[]{3,2,1,1,1});
+  vt=client.callProcedure("@AdHoc","(SELECT PKEY FROM A WHERE PKEY = 0 UNION ALL SELECT I FROM B WHERE I = 1 " + "UNION ALL SELECT I FROM C WHERE PKEY > 0) order by pkey LIMIT 3;").getResults()[0];
+  validateTableOfScalarLongs(vt,new long[]{0,1,1});
+  vt=client.callProcedure("@AdHoc","SELECT PKEY FROM A UNION ALL SELECT I FROM B " + "UNION ALL SELECT I FROM C order by pkey LIMIT ?;",3).getResults()[0];
+  validateTableOfScalarLongs(vt,new long[]{0,1,1});
+  vt=client.callProcedure("@AdHoc","SELECT PKEY FROM A WHERE PKEY = 0 UNION ALL SELECT I FROM B WHERE I = 1 " + " UNION ALL SELECT I FROM C WHERE PKEY > 0 ORDER BY PKEY LIMIT 2 OFFSET 2;").getResults()[0];
+  validateTableOfScalarLongs(vt,new long[]{1,2});
+  vt=client.callProcedure("@AdHoc","SELECT PKEY FROM A UNION ALL SELECT I FROM B UNION ALL " + "SELECT I FROM C order by pkey LIMIT ? OFFSET ?;",2,2).getResults()[0];
+  validateTableOfScalarLongs(vt,new long[]{1,2});
+  vt=client.callProcedure("@AdHoc","(SELECT PKEY FROM A UNION ALL SELECT I FROM B order by pkey LIMIT 1) " + "UNION ALL SELECT I FROM C order by pkey;").getResults()[0];
+  assertEquals(3,vt.getRowCount());
+  validateTableOfScalarLongs(vt,new long[]{0,2,3});
+  vt=client.callProcedure("@AdHoc","SELECT PKEY FROM A UNION ALL (SELECT I FROM B UNION ALL " + "SELECT I FROM C order by I LIMIT 1) order by pkey;").getResults()[0];
+  assertEquals(2,vt.getRowCount());
+  validateTableOfScalarLongs(vt,new long[]{0,1});
+  vt=client.callProcedure("@AdHoc","(SELECT PKEY FROM A UNION ALL SELECT I FROM B ORDER BY PKEY) UNION ALL " + "SELECT I FROM C order by pkey;").getResults()[0];
+  assertEquals(5,vt.getRowCount());
+  validateTableOfScalarLongs(vt,new long[]{0,1,1,2,3});
+  vt=client.callProcedure("@AdHoc","SELECT PKEY FROM A UNION ALL (SELECT I FROM B UNION ALL " + "SELECT I FROM C ORDER BY I) order by pkey;").getResults()[0];
+  assertEquals(5,vt.getRowCount());
+  validateTableOfScalarLongs(vt,new long[]{0,1,1,2,3});
+  vt=client.callProcedure("@AdHoc","SELECT PKEY FROM A UNION ALL SELECT I FROM B UNION ALL " + "SELECT I FROM C ORDER BY PKEY LIMIT 2 OFFSET 3;").getResults()[0];
+  assertEquals(2,vt.getRowCount());
+  validateTableOfScalarLongs(vt,new long[]{2,3});
+  if (!isHSQL()) {
+    vt=client.callProcedure("@AdHoc","(SELECT PKEY FROM A WHERE PKEY = 0 UNION ALL SELECT I FROM B WHERE I = 1 " + "UNION ALL SELECT I FROM C WHERE PKEY > 0) LIMIT 3;").getResults()[0];
+    assertEquals(3,vt.getRowCount());
+    vt=client.callProcedure("@AdHoc","SELECT PKEY FROM A UNION ALL SELECT I FROM B " + "UNION ALL SELECT I FROM C LIMIT ?;",3).getResults()[0];
+    assertEquals(3,vt.getRowCount());
+    vt=client.callProcedure("@AdHoc","SELECT PKEY FROM A UNION ALL SELECT I FROM B UNION ALL " + "SELECT I FROM C LIMIT ? OFFSET ?;",2,2).getResults()[0];
+    assertEquals(2,vt.getRowCount());
+    vt=client.callProcedure("@AdHoc","SELECT PKEY FROM A UNION ALL SELECT I FROM B UNION ALL " + "SELECT I FROM C ORDER BY PKEY OFFSET 3;").getResults()[0];
+    assertEquals(2,vt.getRowCount());
+    validateTableOfScalarLongs(vt,new long[]{2,3});
+  }
 }
