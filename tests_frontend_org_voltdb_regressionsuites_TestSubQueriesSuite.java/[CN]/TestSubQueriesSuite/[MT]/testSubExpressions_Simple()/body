@@ -1,31 +1,32 @@
 {
   Client client=getClient();
   loadData(false);
+  String sql;
   VoltTable vt;
   for (  String tb : replicated_tbs) {
-    vt=client.callProcedure("@AdHoc","select ID, DEPT FROM " + tb + " where ID in "+ " (select ID from "+ tb+ " WHERE ID > 3) order by ID;").getResults()[0];
-    validateTableOfLongs(vt,new long[][]{{4,2},{5,2}});
-    vt=client.callProcedure("@AdHoc","select ID, DEPT FROM " + tb + " where abs(ID) in "+ " (select ID from "+ tb+ " WHERE DEPT = 2 limit 1 offset 1);").getResults()[0];
-    validateTableOfLongs(vt,new long[][]{{5,2}});
-    vt=client.callProcedure("@AdHoc","select ID, DEPT FROM " + tb + " where ID in "+ " (select ID from "+ tb+ " WHERE ID > 2 order by ID limit 3 offset 1) order by ID;").getResults()[0];
-    validateTableOfLongs(vt,new long[][]{{4,2},{5,2}});
-    vt=client.callProcedure("@AdHoc","select ID, DEPT FROM " + tb + " T1 where abs(ID) in "+ " (select ID from "+ tb+ " WHERE ID > 4) "+ "and exists (select 1 from "+ tb+ " where ID * T1.DEPT  = 10) order by ID;").getResults()[0];
-    validateTableOfLongs(vt,new long[][]{{5,2}});
-    vt=client.callProcedure("@AdHoc","select ID, DEPT FROM " + tb + " T1 where "+ "not exists (select 1 from "+ tb+ " where ID * T1.DEPT  = 10) "+ "and T1.ID < 3 order by ID;").getResults()[0];
-    validateTableOfLongs(vt,new long[][]{{1,1},{2,1}});
-    vt=client.callProcedure("@AdHoc","select ID, DEPT FROM " + tb + " T1 where "+ "(abs(ID) + 1 - 1, DEPT) IN (select DEPT, WAGE/10 from "+ tb+ ") ").getResults()[0];
-    validateTableOfLongs(vt,new long[][]{{1,1}});
+    sql="select ID, DEPT from " + tb + " where ID in "+ "       (select ID from "+ tb+ " where ID > 3) "+ "order by ID;";
+    validateTableOfLongs(client,sql,new long[][]{{4,2},{5,2}});
+    sql="select ID, DEPT from " + tb + " where abs(ID) in "+ "       (select ID from "+ tb+ " where DEPT = 2 "+ "        order by 1 limit 1 offset 1);";
+    validateTableOfLongs(client,sql,new long[][]{{5,2}});
+    sql="select ID, DEPT from " + tb + " where ID in "+ "       (select ID from "+ tb+ " where ID > 2 "+ "        order by ID limit 3 offset 1) "+ "order by ID;";
+    validateTableOfLongs(client,sql,new long[][]{{4,2},{5,2}});
+    sql="select ID, DEPT from " + tb + " T1 "+ "where abs(ID) in "+ "      (select ID from "+ tb+ " where ID > 4) "+ "and exists "+ "      (select 1 from "+ tb+ " where ID * T1.DEPT = 10) "+ "order by ID;";
+    validateTableOfLongs(client,sql,new long[][]{{5,2}});
+    sql="select ID, DEPT from " + tb + " T1 where "+ "not exists "+ "      (select 1 from "+ tb+ " where ID * T1.DEPT = 10) "+ "and T1.ID < 3 "+ "order by ID;";
+    validateTableOfLongs(client,sql,new long[][]{{1,1},{2,1}});
+    sql="select ID, DEPT from " + tb + " T1 "+ "where (abs(ID) + 1 - 1, DEPT) in "+ "      (select DEPT, WAGE/10 from "+ tb+ ");";
+    validateTableOfLongs(client,sql,new long[][]{{1,1}});
   }
-  vt=client.callProcedure("@AdHoc","select ID from R1 T1 where exists " + "(SELECT 1 FROM R2 T2 where T1.ID * T2.ID  = ?) ",9).getResults()[0];
+  vt=client.callProcedure("@AdHoc","select ID from R1 T1 " + "where exists " + "      (select 1 from R2 T2 where T1.ID * T2.ID = ?);",9).getResults()[0];
   validateTableOfLongs(vt,new long[][]{{3}});
-  vt=client.callProcedure("@AdHoc","select ID from R1 T1 where exists " + "(SELECT 1 FROM R2 T2 where T1.ID * T2.ID  = 9) ").getResults()[0];
+  vt=client.callProcedure("@AdHoc","select ID from R1 T1 " + "where exists " + "      (select 1 from R2 T2 "+ "       where T1.ID * T2.ID = 9);").getResults()[0];
   validateTableOfLongs(vt,new long[][]{{3}});
-  vt=client.callProcedure("@AdHoc","select ID from " + tbs[0] + " T1 where exists "+ "(SELECT 1 FROM "+ tbs[1]+ " T2 where exists "+ "(SELECT ID FROM "+ tbs[1]+ " T3 WHERE T1.ID * T3.ID  = 9))").getResults()[0];
+  vt=client.callProcedure("@AdHoc","select ID from " + tbs[0] + " T1 "+ "where exists "+ "      (select 1 from "+ tbs[1]+ " T2 "+ "       where exists "+ "             (select ID from "+ tbs[1]+ " T3 "+ "              where T1.ID * T3.ID = 9));").getResults()[0];
   validateTableOfLongs(vt,new long[][]{{3}});
-  vt=client.callProcedure("@AdHoc","select ID from R1 T1 where (select ID from R2 T2 where ID = 3) IN " + "(SELECT ID FROM R2 T3 where T3.ID  = 3) order by ID;").getResults()[0];
+  vt=client.callProcedure("@AdHoc","select ID from R1 T1 " + "where (select ID from R2 T2 where ID = 3) in " + "      (select ID from R2 T3 where T3.ID = 3) "+ "order by ID;").getResults()[0];
   validateTableOfLongs(vt,new long[][]{{1},{2},{3},{4},{5}});
   try {
-    vt=client.callProcedure("@AdHoc","select ID from R1 T1 where (select ID from R2 T2) IN " + "(SELECT 1 FROM R2 T3 where T1.ID * T3.ID  = ? order by ID limit 1 offset 1) ",9).getResults()[0];
+    vt=client.callProcedure("@AdHoc","select ID from R1 T1 " + "where (select ID from R2 T2) in " + "      (select 1 from R2 T3"+ "       where T1.ID * T3.ID = ? "+ "       order by ID limit 1 offset 1);",9).getResults()[0];
     validateTableOfLongs(vt,new long[][]{{3}});
   }
  catch (  ProcCallException ex) {
