@@ -1,0 +1,36 @@
+{
+  ClientConfig.setRoundingConfig(roundingEnabled,mode);
+  validateInsertStmt(true,"insert into decimaltable values 0.9;",roundDecimalValue("0.900000000000",roundingEnabled,mode));
+  validateInsertStmt(roundingEnabled,"insert into decimaltable values 0.999999999999999;",roundDecimalValue("0.999999999999999",roundingEnabled,mode));
+  validateInsertStmt(roundingEnabled,"insert into decimaltable values 0.999999999999500;",roundDecimalValue("0.999999999999500",roundingEnabled,mode));
+  validateInsertStmt(roundingEnabled,"insert into decimaltable values 0.9999999999994000;",roundDecimalValue("0.9999999999994000",roundingEnabled,mode));
+  validateInsertStmt(roundingEnabled,"insert into decimaltable values 9.9999999999999999;",roundDecimalValue("9.9999999999999999",roundingEnabled,mode));
+  validateInsertStmt(roundingEnabled,"insert into decimaltable values 9.4999999999999999;",roundDecimalValue("9.4999999999999999",roundingEnabled,mode));
+  validateInsertStmt(roundingEnabled,"insert into decimaltable values -9.9999999999999999;",roundDecimalValue("-9.9999999999999999",roundingEnabled,mode));
+  validateInsertStmt(roundingEnabled,"insert into decimaltable values -9.4999999999999999;",roundDecimalValue("-9.4999999999999999",roundingEnabled,mode));
+  validateInsertStmt(true,"insert into decimaltable values null;",(BigDecimal)null);
+  validateDecimalInsertStmt(roundingEnabled,"INSERT_DECIMAL","insert into decimaltable values ?",new BigDecimal("9.9999999999999999"),"FETCH_DECIMAL","select dec from decimaltable;",roundDecimalValue("9.9999999999999999",roundingEnabled,mode),"TRUNCATE TABLE DECIMALTABLE;");
+  validateDecimalInsertStmt(roundingEnabled,"INSERT_DECIMAL","insert into decimaltable values ?",new BigDecimal("9.9999999999995"),"FETCH_DECIMAL","select dec from decimaltable;",roundDecimalValue("9.9999999999995",roundingEnabled,mode),"TRUNCATE TABLE DECIMALTABLE;");
+  validateDecimalInsertStmt(roundingEnabled,"INSERT_DECIMAL","insert into decimaltable values ?",new BigDecimal("9.9999999999994"),"FETCH_DECIMAL","select dec from decimaltable;",roundDecimalValue("9.9999999999994",roundingEnabled,mode),"TRUNCATE TABLE DECIMALTABLE;");
+  validateDecimalInsertStmt(roundingEnabled,"INSERT_DECIMAL","insert into decimaltable values ?",new BigDecimal("9.9999999999993"),"FETCH_DECIMAL","select dec from decimaltable;",roundDecimalValue("9.9999999999993",roundingEnabled,mode),"TRUNCATE TABLE DECIMALTABLE;");
+  validateDecimalInsertStmtAdHoc(roundingEnabled,"insert into decimaltable values ?",new BigDecimal("9.9999999999994"),"select dec from decimaltable where dec < 9.999999999999;",null,"TRUNCATE TABLE DECIMALTABLE;");
+  validateDecimalInsertStmtAdHoc(roundingEnabled,"insert into decimaltable values ?",new BigDecimal("9.9999999999994"),"select dec from decimaltable where dec = 9.999999999999;",roundDecimalValue("9.9999999999994",roundingEnabled,mode),"TRUNCATE TABLE DECIMALTABLE;");
+  validateDecimalInsertStmtAdHoc(roundingEnabled,"insert into decimaltable values ?",new BigDecimal("9.9999999999992"),"select dec from decimaltable where dec = 9.9999999999992;",roundDecimalValue("9.9999999999992",roundingEnabled,mode),"TRUNCATE TABLE DECIMALTABLE;");
+  validateDecimalInsertStmtAdHoc(roundingEnabled,"insert into decimaltable values ?",new BigDecimal("9.9999999999992"),"select dec from decimaltable where dec < 9.9999999999992;",null,"TRUNCATE TABLE DECIMALTABLE;");
+  validateDecimalInsertStmtAdHoc(roundingEnabled,"insert into decimaltable values ?",new BigDecimal("9.9999999999993"),"select dec from decimaltable where dec = 9.999999999999;",roundDecimalValue("9.9999999999993",roundingEnabled,mode),"TRUNCATE TABLE DECIMALTABLE;");
+  validateDecimalQuery(roundingEnabled,"insert into decimaltable values 9.9999999999999999;","select dec from decimaltable where dec < 9.9999999999999999;","truncate table decimaltable;");
+  validateDecimalQuery(roundingEnabled,"insert into decimaltable values 9.9999999999999999;","select dec from decimaltable where dec = 9.9999999999999999;","truncate table decimaltable;",roundDecimalValue("9.9999999999999999",roundingEnabled,mode));
+  if (roundingEnabled) {
+    Client client=getClient();
+    ClientResponse cr=client.callProcedure("@AdHoc","insert into decimaltable values 99999999999999999999999999.999999999999;");
+    assertEquals(getRoundingString("Insert statement failure"),ClientResponse.SUCCESS,cr.getStatus());
+    verifyStmtFails(client,"select dec+0.000000000001 from decimaltable;","Attempted to add 99999999999999999999999999.999999999999 with 0.000000000001 causing overflow/underflow");
+    cr=client.callProcedure("@AdHoc","truncate table decimaltable;");
+    assertEquals(getRoundingString("Table Cleanup failure"),ClientResponse.SUCCESS,cr.getStatus());
+    cr=client.callProcedure("@AdHoc","insert into decimaltable values -99999999999999999999999999.999999999999;");
+    assertEquals(getRoundingString("insert statement failure"),ClientResponse.SUCCESS,cr.getStatus());
+    verifyStmtFails(client,"select dec-0.000000000001 from decimaltable;","Attempted to subtract 0.000000000001 from -99999999999999999999999999.999999999999 causing overflow/underflow");
+    cr=client.callProcedure("@AdHoc","truncate table decimaltable;");
+    assertEquals(getRoundingString("Table Cleanup failure"),ClientResponse.SUCCESS,cr.getStatus());
+  }
+}
