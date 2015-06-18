@@ -97,7 +97,6 @@
     List<AbstractExpression> aggregationExprs=new ArrayList<AbstractExpression>();
     boolean hasAggregationExprs=false;
     boolean hasMinOrMaxAgg=false;
-    boolean hasOnlyOneDistinctMinOrMaxAggExpr=false;
     ArrayList<AbstractExpression> minMaxAggs=new ArrayList<AbstractExpression>();
     for (int i=stmt.m_groupByColumns.size() + 1; i < stmt.m_displayColumns.size(); i++) {
       ParsedColInfo col=stmt.m_displayColumns.get(i);
@@ -109,7 +108,16 @@
       if (col.expression.getExpressionType() == ExpressionType.AGGREGATE_MIN || col.expression.getExpressionType() == ExpressionType.AGGREGATE_MAX) {
         hasMinOrMaxAgg=true;
         minMaxAggs.add(aggExpr);
-        hasOnlyOneDistinctMinOrMaxAggExpr=aggExpr.equals(minMaxAggs.get(0));
+      }
+    }
+    AbstractExpression singleUniqueMinMaxAggExpr=null;
+    if (hasMinOrMaxAgg) {
+      singleUniqueMinMaxAggExpr=minMaxAggs.get(0);
+      for (int i=1; i < minMaxAggs.size(); ++i) {
+        if (!minMaxAggs.get(i).equals(singleUniqueMinMaxAggExpr)) {
+          singleUniqueMinMaxAggExpr=null;
+          break;
+        }
       }
     }
     if (hasAggregationExprs) {
@@ -123,8 +131,7 @@
       matviewinfo.setAggregationexpressionsjson(aggregationExprsJson);
     }
     if (hasMinOrMaxAgg) {
-      AbstractExpression singleDistinctMinMaxAggExpr=hasOnlyOneDistinctMinOrMaxAggExpr ? minMaxAggs.get(0) : null;
-      Index found=findBestMatchIndexForMatviewMinOrMax(matviewinfo,srcTable,groupbyExprs,singleDistinctMinMaxAggExpr);
+      Index found=findBestMatchIndexForMatviewMinOrMax(matviewinfo,srcTable,groupbyExprs,singleUniqueMinMaxAggExpr);
       if (found != null) {
         matviewinfo.setIndexforminmax(found.getTypeName());
       }
