@@ -1,2 +1,42 @@
 {
+  assertions();
+  if (m_segments.isEmpty()) {
+    m_usageSpecificLog.debug("PBD " + m_nonce + " has no finished segments");
+    return;
+  }
+  m_segments.getLast().close();
+  Long lastSegmentIndex=null;
+  for (  PBDSegment segment : m_segments) {
+    final long segmentIndex=segment.segmentId();
+    final int truncatedEntries=segment.parseAndTruncate(truncator);
+    if (truncatedEntries == -1) {
+      lastSegmentIndex=segmentIndex - 1;
+      break;
+    }
+ else     if (truncatedEntries > 0) {
+      addToNumObjects(-truncatedEntries);
+      lastSegmentIndex=segmentIndex;
+      break;
+    }
+  }
+  if (lastSegmentIndex == null) {
+    m_segments.getLast().open(true);
+    return;
+  }
+  Iterator<PBDSegment> iterator=m_segments.descendingIterator();
+  while (iterator.hasNext()) {
+    PBDSegment segment=iterator.next();
+    if (segment.segmentId() <= lastSegmentIndex) {
+      break;
+    }
+    addToNumObjects(-segment.getNumEntries());
+    iterator.remove();
+    segment.closeAndDelete();
+  }
+  Long newSegmentIndex=0L;
+  if (m_segments.peekLast() != null)   newSegmentIndex=m_segments.peekLast().segmentId() + 1;
+  PBDSegment newSegment=newSegment(newSegmentIndex,new VoltFile(m_path,m_nonce + "." + newSegmentIndex+ ".pbd"));
+  newSegment.open(true);
+  m_segments.offer(newSegment);
+  assertions();
 }
