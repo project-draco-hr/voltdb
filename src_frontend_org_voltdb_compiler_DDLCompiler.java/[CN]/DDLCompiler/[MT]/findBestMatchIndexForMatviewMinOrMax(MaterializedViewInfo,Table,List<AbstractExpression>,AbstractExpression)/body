@@ -1,0 +1,134 @@
+{
+  CatalogMap<Index> allIndexes=srcTable.getIndexes();
+  StmtTableScan tableScan=new StmtTargetTableScan(srcTable,srcTable.getTypeName());
+  Index candidate=null;
+  for (  Index index : allIndexes) {
+    boolean matchedAll=true;
+    boolean optimal=false;
+    int diffAllowance=singleUniqueMinMaxAggExpr == null ? 0 : 1;
+    String expressionjson=index.getExpressionsjson();
+    List<AbstractExpression> indexedExprs=null;
+    if (!expressionjson.isEmpty()) {
+      try {
+        indexedExprs=AbstractExpression.fromJSONArrayString(expressionjson,tableScan);
+      }
+ catch (      JSONException e) {
+        e.printStackTrace();
+        assert(false);
+        return null;
+      }
+    }
+    List<Column> srcColumnArray=CatalogUtil.getSortedCatalogItems(srcTable.getColumns(),"index");
+    if (groupbyExprs == null) {
+      List<ColumnRef> groupbyColRefs=CatalogUtil.getSortedCatalogItems(matviewinfo.getGroupbycols(),"index");
+      if (indexedExprs == null) {
+        List<ColumnRef> indexedColRefs=CatalogUtil.getSortedCatalogItems(index.getColumns(),"index");
+        if (indexedColRefs.size() < groupbyColRefs.size() || indexedColRefs.size() > groupbyColRefs.size() + diffAllowance) {
+          continue;
+        }
+        for (int i=0; i < groupbyColRefs.size(); ++i) {
+          int groupbyColIndex=groupbyColRefs.get(i).getColumn().getIndex();
+          int indexedColIndex=indexedColRefs.get(i).getColumn().getIndex();
+          if (groupbyColIndex != indexedColIndex) {
+            matchedAll=false;
+            break;
+          }
+        }
+        if (!matchedAll) {
+          continue;
+        }
+        if (singleUniqueMinMaxAggExpr != null && indexedColRefs.size() == groupbyColRefs.size() + diffAllowance) {
+          if (!(singleUniqueMinMaxAggExpr instanceof TupleValueExpression)) {
+            continue;
+          }
+          int aggSrcColIdx=((TupleValueExpression)singleUniqueMinMaxAggExpr).getColumnIndex();
+          Column aggSrcCol=srcColumnArray.get(aggSrcColIdx);
+          Column lastIndexCol=indexedColRefs.get(indexedColRefs.size() - 1).getColumn();
+          if (!aggSrcCol.equals(lastIndexCol)) {
+            continue;
+          }
+          optimal=true;
+        }
+      }
+ else {
+        if (indexedExprs.size() < groupbyColRefs.size() || indexedExprs.size() > groupbyColRefs.size() + diffAllowance) {
+          continue;
+        }
+        for (int i=0; i < groupbyColRefs.size(); ++i) {
+          AbstractExpression indexedExpr=indexedExprs.get(i);
+          if (!(indexedExpr instanceof TupleValueExpression)) {
+            matchedAll=false;
+            break;
+          }
+          int indexedColIdx=((TupleValueExpression)indexedExpr).getColumnIndex();
+          Column indexedColumn=srcColumnArray.get(indexedColIdx);
+          Column groupbyColumn=groupbyColRefs.get(i).getColumn();
+          if (!indexedColumn.equals(groupbyColumn)) {
+            continue;
+          }
+        }
+        if (!matchedAll) {
+          continue;
+        }
+        if (singleUniqueMinMaxAggExpr != null && indexedExprs.size() == groupbyColRefs.size() + diffAllowance) {
+          if (!indexedExprs.get(indexedExprs.size() - 1).equals(singleUniqueMinMaxAggExpr)) {
+            continue;
+          }
+          optimal=true;
+        }
+      }
+    }
+ else {
+      if (indexedExprs == null) {
+        continue;
+      }
+      if (indexedExprs.size() < groupbyExprs.size() || indexedExprs.size() > groupbyExprs.size() + diffAllowance) {
+        continue;
+      }
+      for (int i=0; i < groupbyExprs.size(); ++i) {
+        if (!indexedExprs.get(i).equals(groupbyExprs.get(i))) {
+          matchedAll=false;
+          break;
+        }
+      }
+      if (!matchedAll) {
+        continue;
+      }
+      if (singleUniqueMinMaxAggExpr != null && indexedExprs.size() == groupbyExprs.size() + diffAllowance) {
+        if (indexedExprs.get(indexedExprs.size() - 1).equals(singleUniqueMinMaxAggExpr)) {
+          optimal=true;
+        }
+ else {
+          continue;
+        }
+      }
+    }
+    if (matchedAll && !index.getPredicatejson().isEmpty()) {
+      List<AbstractExpression> coveringExprs=new ArrayList<AbstractExpression>();
+      List<AbstractExpression> exactMatchCoveringExprs=new ArrayList<AbstractExpression>();
+      try {
+        String encodedPredicate=matviewinfo.getPredicate();
+        if (!encodedPredicate.isEmpty()) {
+          String predicate=Encoder.hexDecodeToString(encodedPredicate);
+          AbstractExpression matViewPredicate=AbstractExpression.fromJSONString(predicate,tableScan);
+          coveringExprs.addAll(ExpressionUtil.uncombineAny(matViewPredicate));
+        }
+      }
+ catch (      JSONException e) {
+        e.printStackTrace();
+        assert(false);
+        return null;
+      }
+      matchedAll=SubPlanAssembler.isPartialIndexPredicateIsCovered(tableScan,coveringExprs,index,exactMatchCoveringExprs);
+    }
+    if (matchedAll) {
+      if (optimal) {
+        return index;
+      }
+ else {
+        candidate=index;
+      }
+    }
+  }
+  return candidate;
+}
