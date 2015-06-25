@@ -1,0 +1,40 @@
+{
+  ExpressionType exprType=expr.getExpressionType();
+  if (ExpressionType.CONJUNCTION_AND == exprType || ExpressionType.CONJUNCTION_OR == exprType) {
+    AbstractExpression optimizedLeft=optimizeInExpressions(expr.getLeft());
+    expr.setLeft(optimizedLeft);
+    AbstractExpression optimizedRight=optimizeInExpressions(expr.getRight());
+    expr.setRight(optimizedRight);
+    return expr;
+  }
+  if (ExpressionType.COMPARE_EQUAL != expr.getExpressionType()) {
+    return expr;
+  }
+  assert(expr instanceof ComparisonExpression);
+  if (((ComparisonExpression)expr).getQuantifier() != QuantifierType.ANY) {
+    return expr;
+  }
+  AbstractExpression inColumns=expr.getLeft();
+  if (inColumns instanceof SelectSubqueryExpression) {
+    return expr;
+  }
+  AbstractExpression rightExpr=expr.getRight();
+  if (!(rightExpr instanceof SelectSubqueryExpression)) {
+    return expr;
+  }
+  SelectSubqueryExpression subqueryExpr=(SelectSubqueryExpression)expr.getRight();
+  AbstractParsedStmt subquery=subqueryExpr.getSubqueryStmt();
+  if (!(subquery instanceof ParsedSelectStmt)) {
+    return expr;
+  }
+  ParsedSelectStmt selectStmt=(ParsedSelectStmt)subquery;
+  if (selectStmt.hasLimitOrOffset()) {
+    return expr;
+  }
+  ParsedSelectStmt.rewriteInSubqueryAsExists(selectStmt,inColumns);
+  subqueryExpr.resolveCorrelations();
+  AbstractExpression existsExpr=new OperatorExpression();
+  existsExpr.setExpressionType(ExpressionType.OPERATOR_EXISTS);
+  existsExpr.setLeft(subqueryExpr);
+  return optimizeExistsExpression(existsExpr);
+}
