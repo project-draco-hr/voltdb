@@ -1,4 +1,4 @@
-def generate_html_reports(suite, seed, statements_path, hsql_path, jni_path, output_dir, report_all, cntonly=False):
+def generate_html_reports(suite, seed, statements_path, hsql_path, jni_path, output_dir, report_all, extra_stats='', cntonly=False):
     if ((output_dir != None) and (not os.path.exists(output_dir))):
         os.makedirs(output_dir)
     statements_file = open(statements_path, 'rb')
@@ -7,6 +7,8 @@ def generate_html_reports(suite, seed, statements_path, hsql_path, jni_path, out
     failures = 0
     count = 0
     mismatches = []
+    voltdb_npes = []
+    hsqldb_npes = []
     all_results = []
     try:
         while True:
@@ -23,6 +25,14 @@ def generate_html_reports(suite, seed, statements_path, hsql_path, jni_path, out
             statement['hsqldb'] = hsql
             if is_different(statement, cntonly):
                 mismatches.append(statement)
+            if ('NullPointerException' in str(jni)):
+                voltdb_npes.append(statement)
+                print 'statement:', statement
+                print 'jni:', jni
+            if ('NullPointerException' in str(hsql)):
+                hsqldb_npes.append(statement)
+                print 'statement:', statement
+                print 'hsql:', hsql
             if report_all:
                 all_results.append(statement)
     except EOFError as e:
@@ -30,10 +40,10 @@ def generate_html_reports(suite, seed, statements_path, hsql_path, jni_path, out
     statements_file.close()
     hsql_file.close()
     jni_file.close()
-    topLine = getTopSummaryLine()
+    topLines = getTopSummaryLines(False)
     currentTime = datetime.datetime.now().strftime('%A, %B %d, %I:%M:%S %p')
-    keyStats = createSummaryInHTML(count, failures, len(mismatches), seed)
-    report = ('\n<html>\n<head>\n<title>SQL Coverage Test Report</title>\n<style>\nh2 {text-transform: uppercase}\n</style>\n</head>\n\n<body>\n    <h2>Test Suite Name: %s</h2>\n    <h4>Random Seed: <b>%d</b></h4>\n    <p>This report was generated on <b>%s</b></p>\n    <table border=1><tr>%s</tr>\n' % (suite, seed, currentTime, topLine))
+    keyStats = createSummaryInHTML(count, failures, len(mismatches), len(voltdb_npes), len(hsqldb_npes), extra_stats, seed)
+    report = ('\n<html>\n<head>\n<title>SQL Coverage Test Report</title>\n<style>\nh2 {text-transform: uppercase}\n</style>\n</head>\n\n<body>\n    <h2>Test Suite Name: %s</h2>\n    <h4>Random Seed: <b>%d</b></h4>\n    <p>This report was generated on <b>%s</b></p>\n    <table border=1>\n    %s\n' % (suite, seed, currentTime, topLines))
     report += ('\n<tr>%s</tr>\n</table>\n' % keyStats)
 
     def key(x):
@@ -41,6 +51,12 @@ def generate_html_reports(suite, seed, statements_path, hsql_path, jni_path, out
     if (len(mismatches) > 0):
         sorted(mismatches, cmp=cmp, key=key)
         report += print_section('Mismatched Statements', mismatches, output_dir)
+    if (len(voltdb_npes) > 0):
+        sorted(voltdb_npes, cmp=cmp, key=key)
+        report += print_section('Statements That Cause a NullPointerException (NPE) in VoltDB', voltdb_npes, output_dir)
+    if (len(hsqldb_npes) > 0):
+        sorted(hsqldb_npes, cmp=cmp, key=key)
+        report += print_section('Statements That Cause a NullPointerException (NPE) in HSqlDB', hsqldb_npes, output_dir)
     if report_all:
         report += print_section('Total Statements', all_results, output_dir)
     report += '\n</body>\n</html>\n'
