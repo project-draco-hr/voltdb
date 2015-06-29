@@ -1,0 +1,46 @@
+def sort(rows, sorted_cols, desc, sort_nulls=SortNulls.never):
+    'Three steps:\n        1. Find the subset of rows which have the same values in the ORDER BY\n        columns.\n        2. Sort them on the rest of the columns.\n        3. Optionally, re-sort SQL NULL (Python None) values in the ORDER BY\n        columns to be first or last (or first when ASC, last when DESC, or\n        vice versa), as specified.\n    '
+    if (not sorted_cols):
+        rows.sort(cmp=safecmp)
+        return
+    begin = 0
+    prev = None
+    unsorteds = (lambda row: project_unsorted(row, sorted_cols))
+    for i in xrange(len(rows)):
+        tmp = project_sorted(rows[i], sorted_cols)
+        if (prev != tmp):
+            if prev:
+                rows[begin:i] = sorted(rows[begin:i], cmp=safecmp, key=unsorteds)
+            prev = tmp
+            begin = i
+    rows[begin:] = sorted(rows[begin:], cmp=safecmp, key=unsorteds)
+    if (sort_nulls != SortNulls.never):
+        for i in xrange(len(sorted_cols)):
+            begin = 0
+            prev = None
+            for j in xrange((len(rows) + 1)):
+                tmp = []
+                if (j < len(rows)):
+                    tmp = project_sorted(rows[j], sorted_cols[0:(i + 1)])
+                if (prev != tmp):
+                    if (prev and (prev[i] is None)):
+                        if ((sort_nulls == SortNulls.first) or ((sort_nulls == SortNulls.highest) and desc[i]) or ((sort_nulls == SortNulls.lowest) and (not desc[i]))):
+                            if (i == 0):
+                                move_rows(rows, begin, j, 0)
+                                break
+                            ref = project_sorted(rows[begin], sorted_cols[0:i])
+                            for k in range((begin - 1), (-2), (-1)):
+                                if ((k < 0) or (ref != project_sorted(rows[k], sorted_cols[0:i]))):
+                                    move_rows(rows, begin, j, (k + 1))
+                                    break
+                        elif ((sort_nulls == SortNulls.last) or ((sort_nulls == SortNulls.lowest) and desc[i]) or ((sort_nulls == SortNulls.highest) and (not desc[i]))):
+                            if (i == 0):
+                                move_rows(rows, begin, j, len(rows))
+                                break
+                            ref = project_sorted(rows[begin], sorted_cols[0:i])
+                            for k in range(j, (len(rows) + 1)):
+                                if ((k >= len(rows)) or (ref != project_sorted(rows[k], sorted_cols[0:i]))):
+                                    move_rows(rows, begin, j, k)
+                                    break
+                    prev = tmp
+                    begin = j
