@@ -1,0 +1,53 @@
+{
+  try {
+    internalProcessResults(rc,path,ctx,children,stat);
+    if (Code.get(rc) != Code.OK) {
+      return;
+    }
+    int[] hstamp=new int[]{0};
+    NavigableMap<String,AtomicInteger> oldgen=m_hosts.get(hstamp);
+    if (hstamp[0] >= stat.getCversion()) {
+      return;
+    }
+    final Set<String> added=Sets.difference(this.children.get(),oldgen.navigableKeySet());
+    final Set<String> removed=Sets.difference(oldgen.navigableKeySet(),this.children.get());
+    ImmutableSortedMap.Builder<String,AtomicInteger> hbldr=ImmutableSortedMap.naturalOrder();
+    hbldr.putAll(Maps.filterEntries(oldgen,not(hostKeyIn(removed,AtomicInteger.class))));
+    for (    String add : added) {
+      hbldr.put(add,new AtomicInteger(0));
+    }
+    NavigableMap<String,AtomicInteger> newgen=hbldr.build();
+    if (!m_hosts.compareAndSet(oldgen,newgen,hstamp[0],stat.getCversion())) {
+      return;
+    }
+    if (!removed.isEmpty()) {
+      final Predicate<Map.Entry<ChannelSpec,String>> inRemoved=hostValueIn(removed,ChannelSpec.class);
+      int[] sstamp=new int[]{0};
+      NavigableMap<ChannelSpec,String> prev=null;
+      NavigableMap<ChannelSpec,String> next=null;
+      do {
+        prev=m_specs.get(sstamp);
+        next=Maps.filterEntries(prev,not(inRemoved));
+      }
+ while (!m_specs.compareAndSet(prev,next,sstamp[0],sstamp[0] + 1));
+      LOG.info("(" + m_hostId + ") hosts "+ removed+ " no longer servicing importer channels");
+      if (m_isLeader && !m_done.get()) {
+        m_es.submit(new AssignChannels());
+      }
+    }
+    if (!added.isEmpty() && !m_done.get()) {
+      m_es.submit(new DistributerRunnable(){
+        @Override public void susceptibleRun() throws Exception {
+          for (          String host : added) {
+            LOG.info("(" + m_hostId + ") starting to monitor host node "+ host);
+            new GetHostChannels(joinZKPath(HOST_DN,host));
+          }
+        }
+      }
+);
+    }
+  }
+  finally {
+    lock.release();
+  }
+}

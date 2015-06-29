@@ -1,0 +1,30 @@
+{
+  try {
+    internalProcessResults(rc,path,ctx,data,stat);
+    if (Code.get(rc) != Code.OK) {
+      return;
+    }
+    try {
+      channels=Optional.of(asChannelSet(data));
+    }
+ catch (    IllegalArgumentException|JSONException e) {
+      fault=Optional.of(loggedDistributerException(e,"failed to parse json in %s",path));
+      return;
+    }
+    int[] stamp=new int[]{0};
+    NavigableSet<ChannelSpec> oldspecs=m_channels.get(stamp);
+    if (stamp[0] >= stat.getVersion()) {
+      return;
+    }
+    if (!m_channels.compareAndSet(oldspecs,channels.get(),stamp[0],stat.getVersion())) {
+      return;
+    }
+    LOG.info("(" + m_hostId + ") succesfully received channel assignment master copy");
+    if (m_isLeader && !m_done.get()) {
+      m_es.submit(new AssignChannels());
+    }
+  }
+  finally {
+    lock.release();
+  }
+}
