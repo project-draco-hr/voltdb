@@ -1,0 +1,20 @@
+{
+  Client client=getClient();
+  loadData(false);
+  String sql;
+  sql="select ID from R1 T1 " + "where (select ID from R2 T2 " + "       where ID = 5) "+ "      IN "+ "      (select ID from R2 T3 "+ "       where T3.ID = 5) "+ "order by ID;";
+  validateTableOfLongs(client,sql,new long[][]{{1},{2},{3},{4},{5}});
+  sql="select ID from R1 T1 " + "where (select ID from R2 T2 " + "       where ID = 5) "+ "      IN "+ "      (select ID from R2 T3 "+ "       where T3.ID > T1.ID) "+ "order by ID;";
+  validateTableOfLongs(client,sql,new long[][]{{1},{2},{3},{4}});
+  sql="select ID from R1 T1 " + "where (select ID from R2 T2 " + "       where T2.ID = T1.ID) "+ "      IN "+ "      (select ID from R2 T3 "+ "       where T3.ID <> 5 and T3.ID >= T1.ID) "+ "order by ID;";
+  validateTableOfLongs(client,sql,new long[][]{{1},{2},{3},{4}});
+  try {
+    sql="select ID from R1 T1 " + "where (select ID from R2 T2" + "       where T2.ID <= T1.ID)"+ "      IN "+ "      (select ID from R2 T2"+ "       where T2.ID <= T1.ID);";
+    client.callProcedure("@AdHoc",sql);
+    fail("Did not get the expected scalar subquery cardinality error");
+  }
+ catch (  ProcCallException ex) {
+    String errMsg=(isHSQL()) ? "cardinality violation" : "More than one row returned by a scalar/row subquery";
+    assertTrue(ex.getMessage().contains(errMsg));
+  }
+}

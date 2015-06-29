@@ -1,0 +1,28 @@
+{
+  String sql;
+  sql="select R1.DEPT, count(*) as ct from R1 " + "group by dept, " + "         (select count(dept) from R2 "+ "          where R2.wage = R1.wage) "+ "order by dept, ct;";
+  validateTableOfLongs(client,sql,new long[][]{{1,1},{1,2},{2,1},{2,3}});
+  sql="select R1.DEPT, count(*) as ct from R1 " + "group by dept, " + "         (select count(dept) from R2 "+ "          where R2.wage > 15) "+ "order by dept, ct;";
+  validateTableOfLongs(client,sql,new long[][]{{1,3},{2,4}});
+  sql="select R1.DEPT, " + "       abs((select count(dept) from R2 " + "            where R2.wage > R1.wage) / 2 - 3) as tag,"+ "       count(*) as ct from R1 "+ "group by dept, tag "+ "order by dept, ct;";
+  validateTableOfLongs(client,sql,new long[][]{{1,2,1},{1,1,2},{2,1,1},{2,3,3}});
+  sql="select R1.DEPT, count(*) as ct from R1 " + "group by dept, " + "         (select count(dept) from R2 where R2.wage > 15), "+ "         (select count(dept) from R2 where R2.wage > 15) "+ "order by dept, ct;";
+  validateTableOfLongs(client,sql,new long[][]{{1,3},{2,4}});
+  sql="select R1.DEPT, count(*) as ct from R1 " + "group by dept, " + "         (select count(dept) from R2 where R2.wage > 15), "+ "         (select count(dept) from R2 where R2.wage > 14) "+ "order by dept, ct;";
+  validateTableOfLongs(client,sql,new long[][]{{1,3},{2,4}});
+  sql="select R1.DEPT, count(*) as ct from R1 " + "group by dept," + "       (select count(dept) from R2 where R2.wage > 15), "+ "         (1 + (select count(dept) from R2 where R2.wage > 14) ) "+ "order by dept, ct;";
+  validateTableOfLongs(client,sql,new long[][]{{1,3},{2,4}});
+  sql="select R1.DEPT, " + "       abs((select count(dept) from R2 where R2.wage > R1.wage) / 2 - 3) as tag1, " + "       abs((select count(dept) from R2 where R2.wage > R1.wage) / 2 - 3) as tag2, "+ "       count(*) as ct "+ "from R1 "+ "group by dept, tag1 "+ "order by dept, ct;";
+  validateTableOfLongs(client,sql,new long[][]{{1,2,2,1},{1,1,1,2},{2,1,1,1},{2,3,3,3}});
+  sql="select R1.DEPT, " + "abs((select count(dept) from R2 where R2.wage > R1.wage) / 2 - 3) as tag1, " + "(5 + abs((select count(dept) from R2 where R2.wage > R1.wage) / 2 - 3)) as tag2, "+ "count(*) as ct from R1 "+ "group by dept, tag1 "+ "order by dept, ct;";
+  validateTableOfLongs(client,sql,new long[][]{{1,2,7,1},{1,1,6,2},{2,1,6,1},{2,3,8,3}});
+  try {
+    sql="select max(R1.ID), R1.DEPT " + "from R1 where R1.ID > 3 " + "group by DEPT, (select ID from R2 where R2.ID < R1.ID)"+ "order by R1.DEPT desc;";
+    client.callProcedure("@AdHoc",sql);
+    fail("Did not get expected cardinality error from :" + sql);
+  }
+ catch (  ProcCallException ex) {
+    String errMsg=(isHSQL()) ? "cardinality violation" : "More than one row returned by a scalar/row subquery";
+    assertTrue(ex.getMessage().contains(errMsg));
+  }
+}
