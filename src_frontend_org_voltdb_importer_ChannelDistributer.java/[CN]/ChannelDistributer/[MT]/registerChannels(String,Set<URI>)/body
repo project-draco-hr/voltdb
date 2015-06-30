@@ -1,0 +1,33 @@
+{
+  Preconditions.checkArgument(importer != null && !importer.trim().isEmpty(),"importer is null or empty");
+  Preconditions.checkArgument(uris != null,"uris set is null");
+  Preconditions.checkArgument(!FluentIterable.from(uris).anyMatch(isNull()),"uris set %s contains null elements",uris);
+  Predicate<ChannelSpec> forImporter=ChannelSpec.importerIs(importer);
+  Function<URI,ChannelSpec> asSpec=ChannelSpec.fromUri(importer);
+  NavigableSet<ChannelSpec> proposed=ImmutableSortedSet.copyOf(FluentIterable.from(uris).transform(asSpec));
+  LOG.info("(" + m_hostId + ") proposing channels "+ proposed);
+  int[] stamp=new int[]{0};
+  ImmutableSortedSet.Builder<ChannelSpec> sbldr=null;
+  NavigableSet<ChannelSpec> prev=null;
+  SetData setter=null;
+  do {
+    prev=m_channels.get(stamp);
+    NavigableSet<ChannelSpec> current=Sets.filter(prev,forImporter);
+    if (current.equals(proposed)) {
+      return;
+    }
+    sbldr=ImmutableSortedSet.naturalOrder();
+    sbldr.addAll(Sets.filter(prev,not(forImporter)));
+    sbldr.addAll(proposed);
+    byte[] data=null;
+    try {
+      data=asHostData(sbldr.build());
+    }
+ catch (    JSONException|IllegalArgumentException e) {
+      throw loggedDistributerException(e,"failed to serialize the registration as json");
+    }
+    setter=new SetData(MASTER_DN,stamp[0],data);
+  }
+ while (setter.getCallbackCode() == Code.BADVERSION);
+  setter.getStat();
+}
