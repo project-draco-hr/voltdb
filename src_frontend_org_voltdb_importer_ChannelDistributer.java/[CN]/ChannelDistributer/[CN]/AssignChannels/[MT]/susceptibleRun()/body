@@ -1,0 +1,54 @@
+{
+  NavigableSet<ChannelSpec> assigned=specs.navigableKeySet();
+  Set<ChannelSpec> added=Sets.difference(channels,assigned);
+  Set<ChannelSpec> removed=Sets.difference(assigned,channels);
+  if (added.isEmpty() && removed.isEmpty()) {
+    return;
+  }
+  Predicate<Map.Entry<ChannelSpec,String>> withoutRemoved=not(ChannelSpec.specKeyIn(removed,String.class));
+  NavigableMap<ChannelSpec,String> pruned=Maps.filterEntries(specs,withoutRemoved);
+  if (!removed.isEmpty()) {
+    LOG.info("LEADER (" + m_hostId + ") removing channels "+ removed);
+  }
+  TreeMultimap<String,ChannelSpec> byhost=TreeMultimap.create();
+  for (  Map.Entry<ChannelSpec,String> e : pruned.entrySet()) {
+    byhost.put(e.getValue(),e.getKey());
+  }
+  int fair=new Double(Math.ceil(channels.size() / (double)hosts.size())).intValue();
+  List<String> hostassoc=new ArrayList<>(added.size());
+  for (  String host : hosts.navigableKeySet()) {
+    int room=fair - byhost.get(host).size();
+    for (int i=0; i < room; ++i) {
+      hostassoc.add(host);
+    }
+  }
+  Collections.shuffle(hostassoc,new Random(System.identityHashCode(this)));
+  Iterator<String> hitr=hostassoc.iterator();
+  Iterator<ChannelSpec> citr=added.iterator();
+  while (citr.hasNext()) {
+    String host=hitr.next();
+    ChannelSpec spec=citr.next();
+    byhost.put(host,spec);
+    LOG.info("LEADER (" + m_hostId + ") assingning "+ spec+ " to host "+ host);
+  }
+  try {
+    NavigableSet<ChannelSpec> previous=null;
+    NavigableSet<ChannelSpec> needed=null;
+    SetNodeChannels setter=null;
+    for (    String host : hosts.navigableKeySet()) {
+      previous=Maps.filterValues(specs,equalTo(host)).navigableKeySet();
+      needed=byhost.get(host);
+      if (!needed.equals(previous)) {
+        int version=hosts.get(host).get();
+        byte[] nodedata=asHostData(needed);
+        setter=new SetNodeChannels(joinZKPath(HOST_DN,host),version,nodedata);
+      }
+    }
+    if (setter != null) {
+      setter.getCallbackCode();
+    }
+  }
+ catch (  JSONException|IllegalArgumentException e) {
+    LOG.fatal("unable to create json document to assign imported channels to nodes",e);
+  }
+}
