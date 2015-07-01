@@ -15,31 +15,32 @@ def sort(rows, sorted_cols, desc, sort_nulls=SortNulls.never):
             begin = i
     rows[begin:] = sorted(rows[begin:], cmp=StandardNormalizer.safecmp, key=unsorteds)
     if (sort_nulls != SortNulls.never):
+        sorted_col_values = (lambda row, last_sorted_col: project_sorted(rows[row], sorted_cols[0:last_sorted_col]))
         for i in xrange(len(sorted_cols)):
             begin = 0
             prev = None
             for j in xrange((len(rows) + 1)):
                 tmp = []
                 if (j < len(rows)):
-                    tmp = project_sorted(rows[j], sorted_cols[0:(i + 1)])
+                    tmp = sorted_col_values(j, (i + 1))
                 if (prev != tmp):
                     if (prev and (prev[i] is None)):
                         if ((sort_nulls == SortNulls.first) or ((sort_nulls == SortNulls.highest) and desc[i]) or ((sort_nulls == SortNulls.lowest) and (not desc[i]))):
                             if (i == 0):
                                 move_rows(rows, begin, j, 0)
                                 break
-                            ref = project_sorted(rows[begin], sorted_cols[0:i])
+                            ref = sorted_col_values(begin, i)
                             for k in range((begin - 1), (-2), (-1)):
-                                if ((k < 0) or (ref != project_sorted(rows[k], sorted_cols[0:i]))):
+                                if ((k < 0) or (ref != sorted_col_values(k, i))):
                                     move_rows(rows, begin, j, (k + 1))
                                     break
-                        elif ((sort_nulls == SortNulls.last) or ((sort_nulls == SortNulls.lowest) and desc[i]) or ((sort_nulls == SortNulls.highest) and (not desc[i]))):
+                        else:
                             if (i == 0):
                                 move_rows(rows, begin, j, len(rows))
                                 break
-                            ref = project_sorted(rows[begin], sorted_cols[0:i])
+                            ref = sorted_col_values(begin, i)
                             for k in range(j, (len(rows) + 1)):
-                                if ((k >= len(rows)) or (ref != project_sorted(rows[k], sorted_cols[0:i]))):
+                                if ((k >= len(rows)) or (ref != sorted_col_values(k, i))):
                                     move_rows(rows, begin, j, k)
                                     break
                     prev = tmp
