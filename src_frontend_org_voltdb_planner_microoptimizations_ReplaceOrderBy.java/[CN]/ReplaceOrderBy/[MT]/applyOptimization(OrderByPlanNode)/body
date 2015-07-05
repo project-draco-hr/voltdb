@@ -1,0 +1,46 @@
+{
+  List<AbstractPlanNode> receives=orderbyNode.findAllNodesOfType(PlanNodeType.RECEIVE);
+  if (receives.isEmpty()) {
+    return orderbyNode;
+  }
+  assert(receives.size() == 1);
+  ReceivePlanNode receive=(ReceivePlanNode)receives.get(0);
+  AbstractPlanNode nextParent=receive.getParent(0);
+  while (orderbyNode != nextParent) {
+    if (nextParent instanceof AbstractScanPlanNode) {
+      return orderbyNode;
+    }
+    nextParent=nextParent.getParent(0);
+  }
+  assert(receive.getChildCount() == 1);
+  assert(receive.getChild(0).getChildCount() == 1);
+  AbstractPlanNode partitionRoot=receive.getChild(0).getChild(0);
+  if (partitionRoot.isOutputOrdered()) {
+    List<AbstractPlanNode> aggs=orderbyNode.findAllNodesOfClass(AggregatePlanNode.class);
+    for (    AbstractPlanNode agg : aggs) {
+      if (((AggregatePlanNode)agg).m_isCoordinatingAggregator) {
+        return orderbyNode;
+      }
+    }
+  }
+ else {
+    return orderbyNode;
+  }
+  assert(orderbyNode.getChildCount() == 1);
+  AbstractPlanNode newRoot=orderbyNode.getChild(0);
+  assert(orderbyNode.getParentCount() <= 1);
+  AbstractPlanNode parent=(orderbyNode.getParentCount() == 1) ? orderbyNode.getParent(0) : null;
+  orderbyNode.disconnectParents();
+  orderbyNode.disconnectChildren();
+  receive.setMergeReceive(true);
+  receive.addInlinePlanNode(orderbyNode);
+  AbstractPlanNode limit=orderbyNode.getInlinePlanNode(PlanNodeType.LIMIT);
+  if (limit != null) {
+    receive.addInlinePlanNode(limit);
+    orderbyNode.removeInlinePlanNode(PlanNodeType.LIMIT);
+  }
+  if (parent != null) {
+    parent.addAndLinkChild(receive);
+  }
+  return newRoot;
+}

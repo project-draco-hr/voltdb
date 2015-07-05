@@ -3,35 +3,7 @@
   if (!isOrderByNodeRequired(parsedStmt,root)) {
     return root;
   }
-  List<AbstractPlanNode> receives=root.findAllNodesOfType(PlanNodeType.RECEIVE);
-  boolean isMPPlan=!receives.isEmpty();
-  boolean isPartitionSorted=false;
-  boolean noCoordinatorAggregation=true;
-  if (isMPPlan) {
-    AbstractPlanNode receive=receives.get(0);
-    assert(receive.getChildCount() == 1);
-    assert(receive.getChild(0).getChildCount() == 1);
-    AbstractPlanNode partitionRoot=receive.getChild(0).getChild(0);
-    isPartitionSorted=!isOrderByNodeRequired(parsedStmt,partitionRoot);
-    if (isPartitionSorted) {
-      List<AbstractPlanNode> aggs=root.findAllNodesOfClass(AggregatePlanNode.class);
-      for (      AbstractPlanNode agg : aggs) {
-        if (((AggregatePlanNode)agg).m_isCoordinatingAggregator) {
-          noCoordinatorAggregation=false;
-          break;
-        }
-      }
-    }
-  }
   OrderByPlanNode orderByNode=buildOrderByPlanNode(parsedStmt.orderByColumns());
-  if (isMPPlan && isPartitionSorted && noCoordinatorAggregation) {
-    ReceivePlanNode receive=(ReceivePlanNode)receives.get(0);
-    receive.setNeedMerge(true);
-    receive.addInlinePlanNode(orderByNode);
-    return root;
-  }
- else {
-    orderByNode.addAndLinkChild(root);
-    return orderByNode;
-  }
+  orderByNode.addAndLinkChild(root);
+  return orderByNode;
 }
