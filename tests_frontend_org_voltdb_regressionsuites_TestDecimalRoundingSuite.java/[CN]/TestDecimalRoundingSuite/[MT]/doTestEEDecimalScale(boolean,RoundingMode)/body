@@ -1,0 +1,38 @@
+{
+  if (roundEnabled && roundMode == RoundingMode.HALF_UP) {
+    Client client=getClient();
+    ClientResponse cr;
+    String[] values=new String[]{"0.8999999999994","0.8999999999995","0.9999999999995","1.9999999999995","99.9999999999995","98.9999999999995","99999999999999999999999999.9999999999994999999","-0.8999999999994","-0.8999999999995","-0.9999999999995","-1.9999999999995","-99.9999999999995","-98.9999999999995","-99999999999999999999999999.9999999999994999999"};
+    String[] badValues=new String[]{"999999999999999999999999999999.0","99999999999999999999999999.9999999999995999999","-99999999999999999999999999.9999999999995999999"};
+    for (    String val : values) {
+      cr=client.callProcedure("EEDecimal.Insert",val);
+      assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+    }
+    for (int idx=0; idx < badValues.length; idx+=1) {
+      String val=badValues[idx];
+      cr=client.callProcedure("EEBadDecimal.Insert",idx,val);
+      assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+    }
+    cr=client.callProcedure("EEDecimalFetch");
+    assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+    VoltTable tbl=cr.getResults()[0];
+    while (tbl.advanceRow()) {
+      String expectedStr=tbl.getString(0);
+      BigDecimal rounded=tbl.getDecimalAsBigDecimal(1);
+      BigDecimal expected=roundDecimalValue(expectedStr,roundEnabled,roundMode);
+      assertEquals(expected,rounded);
+    }
+    for (int idx=0; idx < badValues.length; idx+=1) {
+      try {
+        cr=client.callProcedure("EEBadDecimalFetch",idx);
+        fail(String.format("Unexpected success, case %d, decimal string \"%s\"",idx,badValues[idx]));
+      }
+ catch (      ProcCallException ex) {
+        assertTrue(true);
+      }
+    }
+  }
+ else {
+    assertTrue(true);
+  }
+}
