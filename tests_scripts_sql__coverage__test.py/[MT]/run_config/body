@@ -42,32 +42,73 @@ def run_config(suite_name, config, basedir, output_dir, random_seed, report_all,
         cPickle.dump({'id': counter, 'SQL': i, }, statements_file)
         counter += 1
     statements_file.close()
+    min_statements_per_pattern = generator.min_statements_per_pattern()
+    max_statements_per_pattern = generator.max_statements_per_pattern()
+    num_inserts = generator.num_insert_statements()
+    num_patterns = generator.num_patterns()
     if (generate_only or submit_verbosely):
         print ('Generated %d statements.' % counter)
     if generate_only:
         return {'keyStats': None, 'mis': 0, }
-    global gensql_time
-    gensql_time += print_elapsed_seconds((('for generating statements (' + suite_name) + ')'), time0)
-    if (run_once('jni', command, statements_path, jni_path, submit_verbosely, testConfigKit) != 0):
-        print  >> sys.stderr, 'Test with the JNI backend had errors.'
+    global total_gensql_time
+    gensql_time = print_elapsed_seconds((('for generating statements (' + suite_name) + ')'), time0)
+    total_gensql_time += gensql_time
+    num_crashes = 0
+    failed = False
+    try:
+        if (run_once('jni', command, statements_path, jni_path, submit_verbosely, testConfigKit) != 0):
+            print  >> sys.stderr, 'Test with the JNI (VoltDB) backend had errors.'
+            failed = True
+    except:
+        print  >> sys.stderr, 'JNI (VoltDB) backend crashed!!!'
+        traceback.print_exc()
+        failed = True
+    if failed:
         print  >> sys.stderr, ('  jni_path: %s' % jni_path)
         sys.stderr.flush()
-        exit(1)
-    global voltdb_time
-    voltdb_time += print_elapsed_seconds((('for running VoltDB (JNI) statements (' + suite_name) + ')'))
+        num_crashes += 1
+    global total_voltdb_time
+    voltdb_time = print_elapsed_seconds((('for running VoltDB (JNI) statements (' + suite_name) + ')'))
+    total_voltdb_time += voltdb_time
     random.seed(random_seed)
     random.setstate(random_state)
-    if (run_once('hsqldb', command, statements_path, hsql_path, submit_verbosely, testConfigKit) != 0):
-        print  >> sys.stderr, 'Test with the HSQLDB backend had errors.'
-        exit(1)
-    global hsqldb_time
-    hsqldb_time += print_elapsed_seconds((('for running HSqlDB statements (' + suite_name) + ')'))
+    failed = False
+    try:
+        if (run_once('hsqldb', command, statements_path, hsql_path, submit_verbosely, testConfigKit) != 0):
+            print  >> sys.stderr, 'Test with the HSqlDB backend had errors.'
+            failed = True
+    except:
+        print  >> sys.stderr, 'HSqlDB backend crashed!!'
+        traceback.print_exc()
+        failed = True
+    if failed:
+        print  >> sys.stderr, ('  hsql_path: %s' % hsql_path)
+        sys.stderr.flush()
+        num_crashes += 1
+    global total_hsqldb_time
+    hsqldb_time = print_elapsed_seconds((('for running HSqlDB statements (' + suite_name) + ')'))
+    total_hsqldb_time += hsqldb_time
+    someStats = ((((((get_numerical_html_table_element(min_statements_per_pattern, strong_warn_below=1) + get_numerical_html_table_element(max_statements_per_pattern, strong_warn_below=1, warn_above=100000)) + get_numerical_html_table_element(num_inserts, warn_below=4, strong_warn_below=1, warn_above=1000)) + get_numerical_html_table_element(num_patterns, warn_below=4, strong_warn_below=1, warn_above=10000)) + get_time_html_table_element(gensql_time)) + get_time_html_table_element(voltdb_time)) + get_time_html_table_element(hsqldb_time))
+    extraStats = (get_numerical_html_table_element(num_crashes, error_above=0) + someStats)
     global compare_results
-    compare_results = imp.load_source('normalizer', config['normalizer']).compare_results
-    success = compare_results(suite_name, random_seed, statements_path, hsql_path, jni_path, output_dir, report_all)
-    global compar_time
-    compar_time += print_elapsed_seconds((('for comparing DB results (' + suite_name) + ')'))
+    try:
+        compare_results = imp.load_source('normalizer', config['normalizer']).compare_results
+        success = compare_results(suite_name, random_seed, statements_path, hsql_path, jni_path, output_dir, report_all, extraStats)
+    except:
+        print  >> sys.stderr, 'Compare (VoltDB & HSqlDB) results crashed!'
+        traceback.print_exc()
+        print  >> sys.stderr, ('  jni_path: %s' % jni_path)
+        print  >> sys.stderr, ('  hsql_path: %s' % hsql_path)
+        sys.stderr.flush()
+        num_crashes += 1
+        gray_zero_html_table_element = get_numerical_html_table_element(0, use_gray=True)
+        errorStats = ((((((((((gray_zero_html_table_element + gray_zero_html_table_element) + gray_zero_html_table_element) + gray_zero_html_table_element) + gray_zero_html_table_element) + gray_zero_html_table_element) + gray_zero_html_table_element) + gray_zero_html_table_element) + get_numerical_html_table_element(num_crashes, error_above=0)) + someStats) + '</tr>')
+        success = {'keyStats': errorStats, 'mis': (-1), }
+    global total_compar_time
+    compar_time = print_elapsed_seconds((('for comparing DB results (' + suite_name) + ')'))
+    total_compar_time += compar_time
     suite_secs = print_elapsed_seconds((("for run_config of '" + suite_name) + "'"), time0, 'Sub-tot time: ')
+    sys.stdout.flush()
     global total_statements
 
     def next_keyStats_column_value():
@@ -85,7 +126,7 @@ def run_config(suite_name, config, basedir, output_dir, random_seed, report_all,
             keyStats_start_index = (end_index + len(suffix))
         except:
             print 'Caught exception:\n', sys.exc_info()[0]
-            print ('success[keyStats]:\n' + success['keyStats'])
+            print 'success[keyStats]:\n', success['keyStats']
             print 'keyStats_start_index:', keyStats_start_index
             print 'start_index :', start_index
             print 'end_index   :', end_index
@@ -95,6 +136,12 @@ def run_config(suite_name, config, basedir, output_dir, random_seed, report_all,
     global invalid_statements
     global mismatched_statements
     global keyStats_start_index
+    global total_num_npes
+    global total_num_crashes
+    global total_num_inserts
+    global total_num_patterns
+    global min_all_statements_per_pattern
+    global max_all_statements_per_pattern
     keyStats_start_index = 0
     valid_statements += int(next_keyStats_column_value())
     next_keyStats_column_value()
@@ -102,5 +149,13 @@ def run_config(suite_name, config, basedir, output_dir, random_seed, report_all,
     next_keyStats_column_value()
     total_statements += int(next_keyStats_column_value())
     mismatched_statements += int(next_keyStats_column_value())
-    success['keyStats'] = success['keyStats'].replace('</tr>', ('\n<td align=right>%s</td></tr>' % minutes_colon_seconds(suite_secs)))
+    next_keyStats_column_value()
+    total_num_npes += int(next_keyStats_column_value())
+    total_num_crashes += num_crashes
+    total_num_inserts += num_inserts
+    total_num_patterns += num_patterns
+    min_all_statements_per_pattern = min(min_all_statements_per_pattern, min_statements_per_pattern)
+    max_all_statements_per_pattern = max(max_all_statements_per_pattern, max_statements_per_pattern)
+    finalStats = (get_time_html_table_element(compar_time) + get_time_html_table_element(suite_secs))
+    success['keyStats'] = success['keyStats'].replace('</tr>', (finalStats + '</tr>'))
     return success
