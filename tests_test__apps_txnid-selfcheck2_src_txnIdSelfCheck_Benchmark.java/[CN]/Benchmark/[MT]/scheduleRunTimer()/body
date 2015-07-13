@@ -1,0 +1,41 @@
+{
+  runTimer=new Timer("Run Timer",true);
+  TimerTask runEndTask=new TimerTask(){
+    @Override public void run(){
+      log.info(HORIZONTAL_RULE);
+      log.info("Benchmark Complete");
+      int exitcode=0;
+      int lpcc=partitionedLoader.getPercentLoadComplete();
+      if (!partitionedLoader.isAlive() && lpcc < 100) {
+        exitcode=reportDeadThread(partitionedLoader," yet only " + Integer.toString(lpcc) + "% rows have been loaded");
+      }
+ else       log.info(partitionedLoader + " was at " + lpcc+ "% of rows loaded");
+      lpcc=replicatedLoader.getPercentLoadComplete();
+      if (!replicatedLoader.isAlive() && lpcc < 100) {
+        exitcode=reportDeadThread(replicatedLoader," yet only " + Integer.toString(lpcc) + "% rows have been loaded");
+      }
+ else       log.info(replicatedLoader + " was at " + lpcc+ "% of rows loaded");
+      if (!partitionedTruncater.isAlive())       exitcode=reportDeadThread(partitionedTruncater);
+      if (!replicatedTruncater.isAlive())       exitcode=reportDeadThread(replicatedTruncater);
+      if (!readThread.isAlive())       exitcode=reportDeadThread(readThread);
+      if (!config.disableadhoc && !adHocMayhemThread.isAlive())       exitcode=reportDeadThread(adHocMayhemThread);
+      if (!idpt.isAlive())       exitcode=reportDeadThread(idpt);
+      for (      ClientThread ct : clientThreads) {
+        if (!ct.isAlive()) {
+          exitcode=reportDeadThread(ct);
+        }
+      }
+      timer.cancel();
+      checkpointTimer.cancel();
+      long count=txnCount.get();
+      log.info("Client thread transaction count: " + count + "\n");
+      if (exitcode > 0 && txnCount.get() == 0) {
+        System.err.println("Shutting down, but found that no work was done.");
+        exitcode=2;
+      }
+      System.exit(exitcode);
+    }
+  }
+;
+  runTimer.schedule(runEndTask,config.duration * 1000);
+}
