@@ -32,5 +32,35 @@
     verifyStmtFails(client,"select dec-0.000000000001 from decimaltable;","Attempted to subtract 0.000000000001 from -99999999999999999999999999.999999999999 causing overflow/underflow");
     cr=client.callProcedure("@AdHoc","truncate table decimaltable;");
     assertEquals(getRoundingString("Table Cleanup failure"),ClientResponse.SUCCESS,cr.getStatus());
-  }
+    String positiveTest="insert into decimaltable values 99999999999999999999999999.9999999999995;";
+    String positiveTestMsg="Unexpected Ad Hoc Planning Error: java.lang.RuntimeException: " + "Error compiling query: java.lang.RuntimeException: " + "Decimal 100000000000000000000000000.000000000000 has more than 38 digits of precision.";
+    String negativeTest="insert into decimaltable values -99999999999999999999999999.9999999999995;";
+    String negativeTestMsg="Unexpected Ad Hoc Planning Error: java.lang.RuntimeException: " + "Error compiling query: java.lang.RuntimeException: " + "Decimal -100000000000000000000000000.000000000000 has more than 38 digits of precision.";
+switch (mode) {
+case HALF_DOWN:
+case DOWN:
+      cr=client.callProcedure("@AdHoc",positiveTest);
+    assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+  cr=client.callProcedure("@AdHoc",negativeTest);
+assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+break;
+case FLOOR:
+cr=client.callProcedure("@AdHoc",positiveTest);
+assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+verifyStmtFails(client,negativeTest,negativeTestMsg);
+break;
+case CEILING:
+cr=client.callProcedure("@AdHoc",negativeTest);
+assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+verifyStmtFails(client,positiveTest,positiveTestMsg);
+break;
+case HALF_UP:
+case UP:
+verifyStmtFails(client,positiveTest,positiveTestMsg);
+verifyStmtFails(client,negativeTest,negativeTestMsg);
+break;
+default :
+fail("Missed Rounding Case");
+}
+}
 }

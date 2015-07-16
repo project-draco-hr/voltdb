@@ -1,0 +1,26 @@
+{
+  VoltTable vt;
+  String sql;
+  final String MPErrorMessage="attempted to execute new batch " + "after hitting EE exception in a previous batch";
+  String[] procs={"MPInsertOnReplicatedTable","MPInsertOnPartitionTable"};
+  String[] tables={"R1","P1"};
+  int[] followingBatchHasExceptions={0,1};
+  for (int i=0; i < procs.length; i++) {
+    String proc=procs[i];
+    String tb=tables[i];
+    for (    int followingBatchHasException : followingBatchHasExceptions) {
+      try {
+        vt=client.callProcedure(proc,hasPreviousBatch,tryCatchContains1Batch,hasFollowingBatch,followingBatchHasException).getResults()[0];
+        validateRowOfLongs(vt,new long[]{-1});
+      }
+ catch (      Exception e) {
+        assertTrue(e.getMessage().contains(MPErrorMessage));
+      }
+      sql="select ratio from " + tb + " order by 1;";
+      validateTableColumnOfScalarFloat(client,sql,new double[]{});
+      sql="select count(*) from " + tb;
+      validateTableOfScalarLongs(client,sql,new long[]{0});
+      client.callProcedure("@AdHoc","truncate table " + tb);
+    }
+  }
+}
