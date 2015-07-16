@@ -1,0 +1,22 @@
+{
+  VoltTable vt;
+  String sql;
+  try {
+    vt=client.callProcedure("SPBigBatchOnPartitionTable",0,hasPreviousBatch,duplicatedID,hasFollowingBatch,followingBatchHasException).getResults()[0];
+    if (isTrue(followingBatchHasException)) {
+      assertTrue(isTrue(hasFollowingBatch));
+      fail("Expected failure but succeeded.");
+    }
+    validateRowOfLongs(vt,new long[]{duplicatedID > BIGBATCHTESTSIZE ? 0 : -1});
+  }
+ catch (  Exception e) {
+    assertTrue(e.getMessage().contains("CONSTRAINT VIOLATION"));
+    assertTrue(e.getMessage().contains("500.2"));
+    assertTrue(isTrue(hasFollowingBatch) && isTrue(followingBatchHasException));
+  }
+  sql="select distinct ratio from P1 order by 1; ";
+  validateTableColumnOfScalarFloat(client,sql,expected);
+  sql="select count(*) from P1; ";
+  validateTableOfScalarLongs(client,sql,new long[]{tableCount});
+  client.callProcedure("@AdHoc","truncate table P1");
+}
