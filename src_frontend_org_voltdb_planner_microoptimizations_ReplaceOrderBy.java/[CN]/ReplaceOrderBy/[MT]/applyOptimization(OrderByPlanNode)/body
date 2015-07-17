@@ -5,42 +5,71 @@
   }
   assert(receives.size() == 1);
   ReceivePlanNode receive=(ReceivePlanNode)receives.get(0);
-  AbstractPlanNode nextParent=receive.getParent(0);
-  while (orderbyNode != nextParent) {
-    if (nextParent instanceof AbstractScanPlanNode) {
+  Map<PlanNodeType,AbstractPlanNode> inlineCandidates=new HashMap<PlanNodeType,AbstractPlanNode>();
+  AbstractPlanNode inlineCandidate=receive.getParent(0);
+  inlineCandidates.put(orderbyNode.getPlanNodeType(),orderbyNode);
+  while (orderbyNode != inlineCandidate) {
+    if (inlineCandidate instanceof AbstractScanPlanNode) {
       return orderbyNode;
     }
-    nextParent=nextParent.getParent(0);
+    PlanNodeType nodeType=inlineCandidate.getPlanNodeType();
+    if (nodeType == PlanNodeType.HASHAGGREGATE) {
+      AbstractPlanNode newAggr=convertToSerialAggregation(inlineCandidate,orderbyNode);
+      if (newAggr.getPlanNodeType() == PlanNodeType.HASHAGGREGATE) {
+        return orderbyNode;
+      }
+      inlineCandidates.put(newAggr.getPlanNodeType(),newAggr);
+      assert(inlineCandidate.getParentCount() == 1);
+      inlineCandidate=inlineCandidate.getParent(0);
+    }
+ else     if ((nodeType == PlanNodeType.AGGREGATE || nodeType == PlanNodeType.PARTIALAGGREGATE || nodeType == PlanNodeType.LIMIT) && !inlineCandidates.containsKey(nodeType)) {
+      inlineCandidates.put(nodeType,inlineCandidate);
+      assert(inlineCandidate.getParentCount() == 1);
+      inlineCandidate=inlineCandidate.getParent(0);
+    }
+ else {
+      return orderbyNode;
+    }
   }
   assert(receive.getChildCount() == 1);
   assert(receive.getChild(0).getChildCount() == 1);
   AbstractPlanNode partitionRoot=receive.getChild(0).getChild(0);
-  if (partitionRoot.isOutputOrdered()) {
-    List<AbstractPlanNode> aggs=orderbyNode.findAllNodesOfClass(AggregatePlanNode.class);
-    for (    AbstractPlanNode agg : aggs) {
-      if (((AggregatePlanNode)agg).m_isCoordinatingAggregator) {
-        return orderbyNode;
-      }
-    }
-  }
- else {
+  if (!partitionRoot.isOutputOrdered()) {
     return orderbyNode;
   }
-  assert(orderbyNode.getChildCount() == 1);
-  AbstractPlanNode newRoot=orderbyNode.getChild(0);
   assert(orderbyNode.getParentCount() <= 1);
-  AbstractPlanNode parent=(orderbyNode.getParentCount() == 1) ? orderbyNode.getParent(0) : null;
-  orderbyNode.disconnectParents();
-  orderbyNode.disconnectChildren();
+  AbstractPlanNode rootNode=(orderbyNode.getParentCount() == 1) ? orderbyNode.getParent(0) : null;
+  receive.clearParents();
+  if (rootNode == null) {
+    rootNode=receive;
+  }
+ else {
+    rootNode.clearChildren();
+    rootNode.addAndLinkChild(receive);
+  }
+  AbstractPlanNode orderByNode=inlineCandidates.get(PlanNodeType.ORDERBY);
+  assert(orderByNode != null);
+  receive.addInlinePlanNode(orderByNode);
+  AbstractPlanNode limitNode=orderByNode.getInlinePlanNode(PlanNodeType.LIMIT);
+  if (limitNode != null) {
+    orderByNode.removeInlinePlanNode(PlanNodeType.LIMIT);
+  }
+ else {
+    limitNode=inlineCandidates.get(PlanNodeType.LIMIT);
+  }
+  AbstractPlanNode aggrNode=inlineCandidates.get(PlanNodeType.AGGREGATE);
+  if (aggrNode == null) {
+    aggrNode=inlineCandidates.get(PlanNodeType.PARTIALAGGREGATE);
+  }
+  if (aggrNode != null) {
+    if (limitNode != null) {
+      aggrNode.addInlinePlanNode(limitNode);
+    }
+    receive.addInlinePlanNode(aggrNode);
+  }
+  if (limitNode != null && aggrNode == null) {
+    receive.addInlinePlanNode(limitNode);
+  }
   receive.setMergeReceive(true);
-  receive.addInlinePlanNode(orderbyNode);
-  AbstractPlanNode limit=orderbyNode.getInlinePlanNode(PlanNodeType.LIMIT);
-  if (limit != null) {
-    receive.addInlinePlanNode(limit);
-    orderbyNode.removeInlinePlanNode(PlanNodeType.LIMIT);
-  }
-  if (parent != null) {
-    parent.addAndLinkChild(receive);
-  }
-  return newRoot;
+  return rootNode;
 }
