@@ -2,29 +2,6 @@
   super(partitionId,taskQueue);
   m_pendingTasks=new TransactionTaskQueue(m_tasks,getCurrentTxnId());
   m_snapMonitor=snapMonitor;
-  m_durabilityListener=new DurabilityListener(){
-    @Override public void onDurability(    final ArrayList<Object> durableThings){
-      final SiteTaskerRunnable r=new SiteTasker.SiteTaskerRunnable(){
-        @Override void run(){
-synchronized (m_lock) {
-            for (            Object o : durableThings) {
-              m_pendingTasks.offer((TransactionTask)o);
-              if (!((TransactionTask)o).getTransactionState().isSinglePartition()) {
-                offerPendingMPTasks(((TransactionTask)o).getTxnId());
-              }
-            }
-          }
-        }
-      }
-;
-      if (InitiatorMailbox.SCHEDULE_IN_SITE_THREAD) {
-        m_tasks.offer(r);
-      }
- else {
-        r.run();
-      }
-    }
-  }
-;
+  m_durabilityListener=new SpDurabilityListener(this,m_pendingTasks);
   m_uniqueIdGenerator=new UniqueIdGenerator(partitionId,0);
 }

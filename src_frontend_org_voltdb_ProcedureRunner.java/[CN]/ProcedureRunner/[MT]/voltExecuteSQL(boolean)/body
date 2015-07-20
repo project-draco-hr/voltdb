@@ -4,13 +4,20 @@
       throw new RuntimeException("Procedure " + m_procedureName + " attempted to execute a batch "+ "after claiming a previous batch was final "+ "and will be aborted.\n  Examine calls to "+ "voltExecuteSQL() and verify that the call "+ "with the argument value 'true' is actually "+ "the final one");
     }
     m_seenFinalBatch=isFinalSQL;
+    if (!m_isSinglePartition && m_txnState.needsRollback()) {
+      throw new VoltAbortException("Multi-partition procedure " + m_procedureName + " attempted to execute new batch after hitting EE exception in a previous batch");
+    }
     int batchSize=m_batch.size();
     m_batchIndex++;
     m_site.setBatch(m_batchIndex);
     if (batchSize <= MAX_BATCH_SIZE) {
+      m_spBigBatchBeginToken=-1;
       return executeQueriesInABatch(m_batch,isFinalSQL);
     }
  else {
+      if (!m_isReadOnly) {
+        m_spBigBatchBeginToken=m_site.getLatestUndoToken() + 1;
+      }
       List<VoltTable[]> results=new ArrayList<VoltTable[]>();
       while (m_batch.size() > 0) {
         int subSize=Math.min(MAX_BATCH_SIZE,m_batch.size());
