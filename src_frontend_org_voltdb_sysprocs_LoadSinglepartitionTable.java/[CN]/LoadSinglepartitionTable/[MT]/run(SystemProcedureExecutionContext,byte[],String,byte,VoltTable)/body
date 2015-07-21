@@ -6,12 +6,26 @@
   if (catTable.getIsreplicated()) {
     throw new VoltAbortException(String.format("LoadSinglepartitionTable incompatible with replicated table %s.",tableName));
   }
+  boolean isUpsert=(upsertMode != 0);
+  if (isUpsert) {
+    boolean hasPkey=false;
+    for (    Constraint c : catTable.getConstraints()) {
+      if (c.getType() == ConstraintType.PRIMARY_KEY.getValue()) {
+        hasPkey=true;
+        break;
+      }
+    }
+    if (!hasPkey) {
+      throw new VoltAbortException(String.format("The --update argument cannot be used for LoadingSinglePartionTable because the table %s does not have a primary key. " + "Either remove the --update argument or add a primary key to the table.",tableName));
+    }
+  }
+  final String action=(isUpsert ? "upsert" : "insert");
   tableName=catTable.getTypeName();
   int columnCount=table.getColumnCount();
-  String insertProcName=String.format("%s.insert",tableName);
-  Procedure p=ctx.ensureDefaultProcLoaded(insertProcName);
+  String crudProcName=String.format("%s.%s",tableName,action);
+  Procedure p=ctx.ensureDefaultProcLoaded(crudProcName);
   if (p == null) {
-    throw new VoltAbortException(String.format("Unable to locate auto-generated CRUD insert statement for table %s",tableName));
+    throw new VoltAbortException(String.format("Unable to locate auto-generated CRUD %s statement for table %s",action,tableName));
   }
   Statement catStmt=p.getStatements().get("sql");
   if (catStmt == null) {

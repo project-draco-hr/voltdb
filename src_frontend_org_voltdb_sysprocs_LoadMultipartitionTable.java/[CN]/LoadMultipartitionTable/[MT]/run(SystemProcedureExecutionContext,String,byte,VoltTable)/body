@@ -3,14 +3,28 @@
   if (catTable == null) {
     throw new VoltAbortException("Table not present in catalog.");
   }
+  boolean isUpsert=(upsertMode != 0);
+  if (isUpsert) {
+    boolean hasPkey=false;
+    for (    Constraint c : catTable.getConstraints()) {
+      if (c.getType() == ConstraintType.PRIMARY_KEY.getValue()) {
+        hasPkey=true;
+        break;
+      }
+    }
+    if (!hasPkey) {
+      throw new VoltAbortException(String.format("The --update argument cannot be used for LoadMultipartitionTable because the table %s does not have a primary key. " + "Either remove the --update argument or add a primary key to the table.",tableName));
+    }
+  }
+  final String action=(isUpsert ? "upsert" : "insert");
   tableName=catTable.getTypeName();
   int columnCount=table.getColumnCount();
-  String insertProcName=String.format("%s.insert",tableName.toUpperCase());
-  Procedure proc=ctx.ensureDefaultProcLoaded(insertProcName);
+  String crudProcName=String.format("%s.%s",tableName.toUpperCase(),action);
+  Procedure proc=ctx.ensureDefaultProcLoaded(crudProcName);
   if (proc == null) {
-    throw new VoltAbortException(String.format("Unable to locate auto-generated CRUD insert statement for table %s",tableName));
+    throw new VoltAbortException(String.format("Unable to locate auto-generated CRUD %s statement for table %s",action,tableName));
   }
-  m_runner.setProcNameToLoadForFragmentTasks(insertProcName);
+  m_runner.setProcNameToLoadForFragmentTasks(crudProcName);
   Statement catStmt=proc.getStatements().get(VoltDB.ANON_STMT_NAME);
   if (catStmt == null) {
     throw new VoltAbortException(String.format("Unable to find SQL statement for found table %s: BAD",tableName));
