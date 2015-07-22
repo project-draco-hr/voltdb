@@ -1,18 +1,37 @@
 {
-synchronized (this) {
-    try {
-      for (      BundleWrapper bw : m_bundles.values()) {
-        try {
-          bw.stop();
+  Future<?> task=m_es.submit(new Runnable(){
+    @Override public void run(){
+      try {
+        for (        BundleWrapper bw : m_bundles.values()) {
+          try {
+            bw.stop();
+          }
+ catch (          Exception ex) {
+            m_logger.error("Failed to stop the import handler: " + bw.m_handlerProxy.getName(),ex);
+          }
         }
- catch (        Exception ex) {
-          m_logger.error("Failed to stop the import handler: " + bw.m_handlerProxy.getName(),ex);
-        }
+        m_bundles.clear();
       }
-      m_bundles.clear();
+ catch (      Exception ex) {
+        m_logger.error("Failed to stop the import bundles.",ex);
+        Throwables.propagate(ex);
+      }
     }
- catch (    Exception ex) {
-      m_logger.error("Failed to stop the import bundles.",ex);
-    }
+  }
+);
+  try {
+    task.get();
+  }
+ catch (  Exception ex) {
+    m_logger.error("Failed to stop import processor.",ex);
+    ex.printStackTrace();
+  }
+  try {
+    m_es.shutdown();
+    m_es.awaitTermination(365,TimeUnit.DAYS);
+  }
+ catch (  Exception ex) {
+    m_logger.error("Failed to stop import processor executor.",ex);
+    ex.printStackTrace();
   }
 }

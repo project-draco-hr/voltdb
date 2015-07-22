@@ -1,0 +1,32 @@
+{
+  BlockingChannel channel=null;
+  int correlationId=0;
+  for (int i=0; i < 3; i++) {
+    try {
+      channel=new BlockingChannel(m_coordinator.getHost(),m_coordinator.getPort(),BlockingChannel.UseDefaultBufferSize(),BlockingChannel.UseDefaultBufferSize(),m_consumerSocketTimeout);
+      channel.connect();
+      channel.send(new ConsumerMetadataRequest(m_groupId,ConsumerMetadataRequest.CurrentVersion(),correlationId++,CLIENT_ID));
+      ConsumerMetadataResponse metadataResponse=ConsumerMetadataResponse.readFrom(channel.receive().buffer());
+      if (metadataResponse.errorCode() == ErrorMapping.NoError()) {
+        Broker offsetManager=metadataResponse.coordinator();
+        m_coordinator=new HostAndPort(offsetManager.host(),offsetManager.port());
+        SimpleConsumer consumer=m_offsetManager.getAndSet(new SimpleConsumer(m_coordinator.getHost(),m_coordinator.getPort(),m_consumerSocketTimeout,m_fetchSize,CLIENT_ID));
+        closeConsumer(consumer);
+        consumer=null;
+        break;
+      }
+      final String msg="Failed to get Offset Coordinator for " + m_topicAndPartition + " Code: %d";
+      error(null,msg,metadataResponse.errorCode());
+    }
+ catch (    Exception e) {
+      error(e,"Failed to get Offset Coordinator for " + m_topicAndPartition);
+      backoffSleep(i + 1);
+    }
+ finally {
+      if (channel != null) {
+        channel.disconnect();
+      }
+    }
+  }
+  info("Coordinator for " + m_topicAndPartition + " consumer is: "+ m_coordinator);
+}

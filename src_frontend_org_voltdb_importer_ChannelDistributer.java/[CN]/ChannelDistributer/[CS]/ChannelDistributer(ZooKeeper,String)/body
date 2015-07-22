@@ -1,0 +1,25 @@
+{
+  Preconditions.checkArgument(hostId != null && !hostId.trim().isEmpty(),"hostId is null or empty");
+  m_hostId=hostId;
+  m_zk=Preconditions.checkNotNull(zk,"zookeeper is null");
+  m_es=CoreUtils.getCachedSingleThreadExecutor("Import Channel Distributer for Host " + hostId,15000);
+  m_buses=CoreUtils.getCachedSingleThreadExecutor("Import Channel Distributer Event Bus Dispatcher for Host " + hostId,15000);
+  m_eb=new AsyncEventBus(m_buses,eventBusFaultHandler);
+  m_eb.register(this);
+  m_mode=new AtomicStampedReference<>(OperationMode.RUNNING,0);
+  m_undispatched=new LinkedList<>();
+  mkdirs(zk,VoltZK.operationMode,OperationMode.RUNNING.getBytes());
+  mkdirs(zk,HOST_DN,EMPTY_ARRAY);
+  mkdirs(zk,MASTER_DN,EMPTY_ARRAY);
+  GetOperationalMode opMode=new GetOperationalMode(VoltZK.operationMode);
+  MonitorHostNodes monitor=new MonitorHostNodes(HOST_DN);
+  CreateNode createHostNode=new CreateNode(joinZKPath(HOST_DN,hostId),EMPTY_ARRAY,CreateMode.EPHEMERAL);
+  CreateNode electionCandidate=new CreateNode(CANDIDATE_PN,EMPTY_ARRAY,CreateMode.EPHEMERAL_SEQUENTIAL);
+  ElectLeader elector=new ElectLeader(MASTER_DN,electionCandidate);
+  opMode.getMode();
+  monitor.getChildren();
+  createHostNode.getNode();
+  elector.elect();
+  m_candidate=electionCandidate.getNode();
+  new GetChannels(MASTER_DN).getChannels();
+}
