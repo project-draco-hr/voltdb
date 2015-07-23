@@ -7,10 +7,16 @@
   InMemoryJarfile autoGenJarOutput=new InMemoryJarfile();
   autoGenCompiler.m_currentFilename=AUTOGEN_DDL_FILE_NAME;
   Catalog autoGenCatalog=autoGenCompiler.compileCatalogInternal(autoGenDatabase,null,null,autogenReaderList,autoGenJarOutput);
-  FilteredCatalogDiffEngine diffEng=new FilteredCatalogDiffEngine(origCatalog,autoGenCatalog);
+  FilteredCatalogDiffEngine diffEng=new FilteredCatalogDiffEngine(origCatalog,autoGenCatalog,false);
   String diffCmds=diffEng.commands();
   if (diffCmds != null && !diffCmds.equals("")) {
-    VoltDB.crashLocalVoltDB("Catalog Verification from Generated DDL failed! " + "The offending diffcmds were: " + diffCmds);
+    if (RETRY_FAILED_CATALOG_REBUILD_UNDER_DEBUG) {
+      autoGenCatalog=replayFailedCatalogRebuildUnderDebug(autoGenCompiler,autogenReaderList,autoGenDatabase,autoGenJarOutput);
+    }
+    diffEng=new FilteredCatalogDiffEngine(origCatalog,autoGenCatalog,true);
+    diffCmds=diffEng.commands();
+    String crashAdvice="Catalog Verification from Generated DDL failed! " + "VoltDB dev: Consider" + (RETRY_FAILED_CATALOG_REBUILD_UNDER_DEBUG ? "" : " setting VoltCompiler.RETRY_FAILED_CATALOG_REBUILD_UNDER_DEBUG = true and") + " setting a breakpoint in VoltCompiler.replayFailedCatalogRebuildUnderDebug"+ " to debug a replay of the faulty catalog rebuild roundtrip. ";
+    VoltDB.crashLocalVoltDB(crashAdvice + "The offending diffcmds were: " + diffCmds);
   }
  else {
     Log.info("Catalog verification completed successfuly.");
