@@ -1,0 +1,41 @@
+{
+  if (m_stopping) {
+    info("Importer is stopping, ignoring the change notification.");
+    return;
+  }
+  if (m_es == null) {
+    VoltDB.crashLocalVoltDB("buildTopicLeaderMetadata must be called before getting an onChange",false,null);
+  }
+  for (  URI nuri : assignment.getAdded()) {
+    Map<String,List<Integer>> topicMap=new HashMap<String,List<Integer>>();
+    for (    String topic : m_topicList) {
+      topicMap.put(topic,Collections.singletonList(0));
+    }
+    for (    String topic : m_topicList) {
+      List<Integer> topicPartitions=m_topicPartitions.get(topic);
+      if (topicPartitions == null) {
+        VoltDB.crashLocalVoltDB("Unknown kafka topic added for this node",false,null);
+      }
+      for (      int partition : topicPartitions) {
+        String leaderKey=topic + "-" + partition;
+        URI assignedKey=URI.create("kafka:/" + topic + "/partition/"+ partition);
+        if (!m_fetchers.containsKey(nuri) && nuri.equals(assignedKey)) {
+          info("Channel " + assignedKey + " mastership is assigned to this node.");
+          HostAndPort hap=m_topicPartitionLeader.get(leaderKey);
+          TopicPartitionFetcher fetcher=new TopicPartitionFetcher(m_brokerList,assignedKey,topic,partition,hap,m_fetchSize,m_consumerSocketTimeout);
+          m_fetchers.put(assignedKey.toString(),fetcher);
+          m_es.submit(fetcher);
+          info("KafkaImporter is fetching for resource: " + nuri);
+        }
+      }
+    }
+  }
+  for (  URI r : assignment.getRemoved()) {
+    TopicPartitionFetcher fetcher=m_fetchers.get(r.toString());
+    if (fetcher != null) {
+      fetcher.shutdown();
+      info("KafkaImporter is NOT fetching for resource: " + r);
+      m_fetchers.remove(r.toString());
+    }
+  }
+}

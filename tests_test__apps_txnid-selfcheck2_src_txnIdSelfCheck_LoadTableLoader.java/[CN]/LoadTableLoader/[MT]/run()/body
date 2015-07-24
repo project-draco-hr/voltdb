@@ -1,9 +1,13 @@
 {
+  final float upsertratio=0.50F;
+  final float upserthitratio=0.20F;
   CopyAndDeleteDataTask cdtask=new CopyAndDeleteDataTask();
   cdtask.start();
   try {
     while (m_shouldContinue.get()) {
       byte shouldCopy=(byte)(m_random.nextInt(3) == 0 ? 1 : 0);
+      byte upsertMode=(byte)(m_random.nextFloat() < upsertratio ? 1 : 0);
+      byte upsertHitMode=(byte)((upsertMode != 0) && (m_random.nextFloat() < upserthitratio) ? 1 : 0);
       CountDownLatch latch=new CountDownLatch(batchSize);
       final ArrayList<Long> lcpDelQueue=new ArrayList<Long>();
       for (int i=0; i < batchSize; i++) {
@@ -14,10 +18,16 @@
         boolean success=false;
         if (!m_isMP) {
           Object rpartitionParam=TheHashinator.valueToBytes(m_table.fetchRow(0).get(m_partitionedColumnIndex,VoltType.BIGINT));
-          success=client.callProcedure(new InsertCallback(latch,p,shouldCopy),m_procName,rpartitionParam,m_tableName,m_table);
+          if (upsertHitMode != 0) {
+            success=client.callProcedure(new InsertCallback(latch,p,shouldCopy),m_procName,rpartitionParam,m_tableName,(byte)1,m_table);
+          }
+          success=client.callProcedure(new InsertCallback(latch,p,shouldCopy),m_procName,rpartitionParam,m_tableName,(byte)1,m_table);
         }
  else {
-          success=client.callProcedure(new InsertCallback(latch,p,shouldCopy),m_procName,m_tableName,m_table);
+          if (upsertHitMode != 0) {
+            success=client.callProcedure(new InsertCallback(latch,p,shouldCopy),m_procName,m_tableName,(byte)1,m_table);
+          }
+          success=client.callProcedure(new InsertCallback(latch,p,shouldCopy),m_procName,m_tableName,(byte)1,m_table);
         }
         if (success) {
           if (shouldCopy != 0) {

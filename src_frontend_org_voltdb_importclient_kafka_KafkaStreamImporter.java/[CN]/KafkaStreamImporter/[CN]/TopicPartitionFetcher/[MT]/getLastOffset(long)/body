@@ -1,0 +1,33 @@
+{
+  if (m_offsetManager.get() == null) {
+    return -1;
+  }
+  SimpleConsumer consumer=m_offsetManager.get();
+  try {
+    Map<TopicAndPartition,PartitionOffsetRequestInfo> requestInfo=new HashMap<TopicAndPartition,PartitionOffsetRequestInfo>();
+    requestInfo.put(m_topicAndPartition,new PartitionOffsetRequestInfo(whichTime,1));
+    kafka.javaapi.OffsetRequest request=new kafka.javaapi.OffsetRequest(requestInfo,kafka.api.OffsetRequest.CurrentVersion(),CLIENT_ID);
+    OffsetResponse response=consumer.getOffsetsBefore(request);
+    if (response.hasError()) {
+      short code=response.errorCode(m_topicAndPartition.topic(),m_topicAndPartition.partition());
+      if (code == ErrorMapping.NotLeaderForPartitionCode() || code == ErrorMapping.UnknownTopicOrPartitionCode()) {
+        HostAndPort leaderBroker=findNewLeader();
+        if (leaderBroker != null) {
+          info("Found new leader for " + m_topicAndPartition + " Coordinator will be updated.");
+          SimpleConsumer oconsumer=m_offsetManager.getAndSet(new SimpleConsumer(leaderBroker.getHost(),leaderBroker.getPort(),m_consumerSocketTimeout,m_fetchSize,CLIENT_ID));
+          closeConsumer(oconsumer);
+          oconsumer=null;
+          m_coordinator=leaderBroker;
+        }
+      }
+      info("Error fetching Offset Data from Broker " + m_topicAndPartition.toString() + " Reason: "+ response.errorCode(m_topicAndPartition.topic(),m_topicAndPartition.partition()));
+      return -1;
+    }
+    long[] offsets=response.offsets(m_topicAndPartition.topic(),m_topicAndPartition.partition());
+    return offsets[0];
+  }
+ catch (  Exception ex) {
+    error(ex,"Failed to get last Offset for " + m_topicAndPartition);
+  }
+  return -1;
+}
