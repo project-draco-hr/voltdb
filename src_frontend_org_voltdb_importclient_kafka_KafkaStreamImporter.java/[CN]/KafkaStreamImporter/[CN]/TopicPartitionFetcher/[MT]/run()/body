@@ -1,0 +1,108 @@
+{
+  SimpleConsumer consumer=null;
+  info("Starting partition fetcher for " + m_topicAndPartition);
+  try {
+    HostAndPort leaderBroker=m_leader;
+    int fetchFailedCount=1;
+    while (!m_shutdown) {
+      if (consumer == null) {
+        consumer=new SimpleConsumer(leaderBroker.getHost(),leaderBroker.getPort(),m_consumerSocketTimeout,m_fetchSize,CLIENT_ID);
+      }
+      if (m_currentOffset.get() < 0) {
+        getOffsetCoordinator();
+        m_currentOffset.set(getLastOffset(kafka.api.OffsetRequest.LatestTime()));
+        if (m_currentOffset.get() < 0) {
+          fetchFailedCount=backoffSleep(fetchFailedCount);
+          info("Latest offset not found for " + m_topicAndPartition + " using earliest offset.");
+          m_currentOffset.set(getLastOffset(kafka.api.OffsetRequest.EarliestTime()));
+        }
+        info("Starting offset for " + m_topicAndPartition + " is set to: "+ m_currentOffset.get());
+        continue;
+      }
+      long currentFetchCount=0;
+      if (m_pendingOffsets.size() < m_perTopicPendingLimit) {
+        FetchRequest req=new FetchRequestBuilder().clientId(CLIENT_ID).addFetch(m_topicAndPartition.topic(),m_topicAndPartition.partition(),m_currentOffset.get(),m_fetchSize).build();
+        FetchResponse fetchResponse=null;
+        try {
+          fetchResponse=consumer.fetch(req);
+          if (fetchResponse == null) {
+            fetchFailedCount=backoffSleep(fetchFailedCount);
+            continue;
+          }
+        }
+ catch (        Exception ex) {
+          error(ex,"Failed to fetch from %s",m_topicAndPartition);
+          fetchFailedCount=backoffSleep(fetchFailedCount);
+          continue;
+        }
+        if (fetchResponse.hasError()) {
+          short code=fetchResponse.errorCode(m_topicAndPartition.topic(),m_topicAndPartition.partition());
+          error(null,"Failed to fetch messages for %s Code: %d",m_topicAndPartition,code);
+          fetchFailedCount=backoffSleep(fetchFailedCount);
+          if (code == ErrorMapping.OffsetOutOfRangeCode()) {
+            info("Invalid offset requested for " + m_topicAndPartition);
+            getOffsetCoordinator();
+            m_currentOffset.set(getLastOffset(kafka.api.OffsetRequest.LatestTime()));
+            continue;
+          }
+          closeConsumer(consumer);
+          consumer=null;
+          leaderBroker=findNewLeader();
+          if (leaderBroker == null) {
+            error(null,"Failed to find leader continue with old leader: %s",m_leader);
+            leaderBroker=m_leader;
+          }
+ else {
+            if (!leaderBroker.equals(m_leader)) {
+              info("Found new leader for " + m_topicAndPartition + " New Leader: "+ leaderBroker);
+            }
+          }
+          continue;
+        }
+        fetchFailedCount=1;
+        for (        MessageAndOffset messageAndOffset : fetchResponse.messageSet(m_topicAndPartition.topic(),m_topicAndPartition.partition())) {
+          long currentOffset=messageAndOffset.offset();
+          if (currentOffset < m_currentOffset.get()) {
+            continue;
+          }
+          ByteBuffer payload=messageAndOffset.message().payload();
+          currentFetchCount++;
+          String line=new String(payload.array(),payload.arrayOffset(),payload.limit(),"UTF-8");
+          CSVInvocation invocation=new CSVInvocation(m_procedure,line);
+          TopicPartitionInvocationCallback cb=new TopicPartitionInvocationCallback(currentOffset,messageAndOffset.nextOffset(),m_topicAndPartition);
+          m_pendingOffsets.add(currentOffset);
+          if (!callProcedure(cb,invocation)) {
+            if (isDebugEnabled()) {
+              debug("Failed to process Invocation possibly bad data: " + line);
+            }
+synchronized (m_seenOffset) {
+              m_seenOffset.add(messageAndOffset.nextOffset());
+            }
+            m_pendingOffsets.remove(currentOffset);
+          }
+          m_currentOffset.set(messageAndOffset.nextOffset());
+        }
+      }
+      if (currentFetchCount == 0) {
+        try {
+          Thread.sleep(1000);
+        }
+ catch (        InterruptedException ie) {
+        }
+      }
+    }
+    info("Partition fecher stopping for " + m_topicAndPartition);
+    int cnt=1;
+    while (m_pendingOffsets.size() > 0) {
+      cnt=backoffSleep(cnt);
+    }
+    info("Partition fecher stopped for " + m_topicAndPartition + " Last commit point is: "+ m_currentOffset.get());
+  }
+ catch (  Exception ex) {
+    error("Failed to start topic partition fetcher for " + m_topicAndPartition,ex);
+  }
+ finally {
+    closeConsumer(consumer);
+    consumer=null;
+  }
+}

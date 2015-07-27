@@ -1,0 +1,34 @@
+{
+  Preconditions.checkArgument(importer != null && !importer.trim().isEmpty(),"importer is null or empty");
+  callback=checkNotNull(callback,"callback is null");
+  if (m_done.get())   return;
+  int[] stamp=new int[]{0};
+  NavigableMap<String,ChannelChangeCallback> prev=null;
+  NavigableMap<String,ChannelChangeCallback> next=null;
+  ImmutableSortedMap.Builder<String,ChannelChangeCallback> mbldr=null;
+synchronized (m_undispatched) {
+    do {
+      prev=m_callbacks.get(stamp);
+      mbldr=ImmutableSortedMap.naturalOrder();
+      mbldr.putAll(Maps.filterKeys(prev,not(equalTo(importer))));
+      mbldr.put(importer,callback);
+      next=mbldr.build();
+    }
+ while (!m_callbacks.compareAndSet(prev,next,stamp[0],stamp[0] + 1));
+    NavigableSet<String> registered=next.navigableKeySet();
+    Iterator<ImporterChannelAssignment> itr=m_undispatched.iterator();
+    while (itr.hasNext()) {
+      final ImporterChannelAssignment assignment=itr.next();
+      if (registered.contains(assignment.getImporter())) {
+        final ChannelChangeCallback dispatch=next.get(assignment.getImporter());
+        m_buses.submit(new DistributerRunnable(){
+          @Override public void susceptibleRun() throws Exception {
+            dispatch.onChange(assignment);
+          }
+        }
+);
+        itr.remove();
+      }
+    }
+  }
+}
