@@ -1,0 +1,19 @@
+{
+  boolean ret=false;
+  VoltTable partitions=client.callProcedure("@GetPartitionKeys","INTEGER").getResults()[0];
+  long count=TxnId2Utils.doAdHoc(client,"SELECT COUNT(*) FROM capr;").getResults()[0].fetchRow(0).getLong(0);
+  if (count > 10) {
+    log.error("Replicated table CAPR has more rows (" + count + ") than the limit set by capped collections (10)");
+    ret=true;
+  }
+  while (partitions.advanceRow()) {
+    long id=partitions.getLong(0);
+    long key=partitions.getLong(1);
+    count=client.callProcedure("CAPPCountPartitionRows",key).getResults()[0].fetchRow(0).getLong(0);
+    if (count > 10) {
+      log.error("Replicated table CAPP has more rows (" + count + ") than the limit set by capped collections (10) on partition "+ id);
+      ret=true;
+    }
+  }
+  return ret;
+}
