@@ -1,0 +1,38 @@
+{
+  final int hostCount=new ClusterConfig(topo).getHostCount();
+  final int sitesPerHost=new ClusterConfig(topo).getSitesPerHost();
+  final int partitionCount=new ClusterConfig(topo).getPartitionCount();
+  final int minMasterCount=partitionCount / hostCount;
+  final int maxMasterCount=minMasterCount + 1;
+  final int nodesWithMaxMasterCount=partitionCount % hostCount;
+  Multimap<Integer,Integer> masterCountToHost=HashMultimap.create();
+  Multimap<String,Integer> groupHosts=HashMultimap.create();
+  Multimap<String,Integer> groupPartitions=HashMultimap.create();
+  for (  Map.Entry<Integer,String> entry : hostGroups.entrySet()) {
+    final List<Integer> hostPartitions=ClusterConfig.partitionsForHost(topo,entry.getKey());
+    final List<Integer> hostMasters=ClusterConfig.partitionsForHost(topo,entry.getKey(),true);
+    assertEquals(sitesPerHost,hostPartitions.size());
+    assertEquals(hostPartitions.size(),Sets.newHashSet(hostPartitions).size());
+    masterCountToHost.put(hostMasters.size(),entry.getKey());
+    groupHosts.put(entry.getValue(),entry.getKey());
+    groupPartitions.putAll(entry.getValue(),hostPartitions);
+  }
+  if (nodesWithMaxMasterCount == 0) {
+    assertEquals(1,masterCountToHost.keySet().size());
+    assertTrue(masterCountToHost.containsKey(minMasterCount));
+  }
+ else {
+    assertEquals(2,masterCountToHost.keySet().size());
+    assertTrue(masterCountToHost.containsKey(minMasterCount));
+    assertEquals(nodesWithMaxMasterCount,masterCountToHost.get(maxMasterCount).size());
+  }
+  for (  Map.Entry<String,Collection<Integer>> ghEntry : groupHosts.asMap().entrySet()) {
+    if (ghEntry.getValue().size() * sitesPerHost < partitionCount) {
+      System.out.println("Group " + ghEntry.getKey() + " only has "+ ghEntry.getValue().size()+ " hosts");
+      return;
+    }
+  }
+  for (  Collection<Integer> partitions : groupPartitions.asMap().values()) {
+    assertEquals(partitionCount,Sets.newHashSet(partitions).size());
+  }
+}
