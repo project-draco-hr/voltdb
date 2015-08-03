@@ -1,6 +1,8 @@
 {
   SimpleConsumer consumer=null;
   info("Starting partition fetcher for " + m_topicAndPartition);
+  long submitCount=0;
+  AtomicLong cbcnt=new AtomicLong(0);
   try {
     HostAndPort leaderBroker=m_leader;
     int fetchFailedCount=1;
@@ -32,12 +34,27 @@
         }
  catch (        Exception ex) {
           error(ex,"Failed to fetch from %s",m_topicAndPartition);
+          if (ex instanceof ClosedChannelException) {
+            closeConsumer(consumer);
+            consumer=null;
+            leaderBroker=findNewLeader();
+            if (leaderBroker == null) {
+              error(null,"Fetch Failed to find leader continue with old leader: %s",m_leader);
+              leaderBroker=m_leader;
+            }
+ else {
+              if (!leaderBroker.equals(m_leader)) {
+                info("Fetch Found new leader for " + m_topicAndPartition + " New Leader: "+ leaderBroker);
+              }
+            }
+            continue;
+          }
           fetchFailedCount=backoffSleep(fetchFailedCount);
           continue;
         }
         if (fetchResponse.hasError()) {
           short code=fetchResponse.errorCode(m_topicAndPartition.topic(),m_topicAndPartition.partition());
-          error(null,"Failed to fetch messages for %s Code: %d",m_topicAndPartition,code);
+          warn(null,"Failed to fetch messages for %s Code: %d",m_topicAndPartition,code);
           fetchFailedCount=backoffSleep(fetchFailedCount);
           if (code == ErrorMapping.OffsetOutOfRangeCode()) {
             info("Invalid offset requested for " + m_topicAndPartition);
@@ -69,7 +86,7 @@
           currentFetchCount++;
           String line=new String(payload.array(),payload.arrayOffset(),payload.limit(),"UTF-8");
           CSVInvocation invocation=new CSVInvocation(m_procedure,line);
-          TopicPartitionInvocationCallback cb=new TopicPartitionInvocationCallback(currentOffset,messageAndOffset.nextOffset(),m_topicAndPartition);
+          TopicPartitionInvocationCallback cb=new TopicPartitionInvocationCallback(currentOffset,messageAndOffset.nextOffset(),m_topicAndPartition,cbcnt);
           m_pendingOffsets.add(currentOffset);
           if (!callProcedure(cb,invocation)) {
             if (isDebugEnabled()) {
@@ -80,8 +97,15 @@ synchronized (m_seenOffset) {
             }
             m_pendingOffsets.remove(currentOffset);
           }
+          submitCount++;
           m_currentOffset.set(messageAndOffset.nextOffset());
+          if (m_shutdown) {
+            break;
+          }
         }
+      }
+      if (m_shutdown) {
+        break;
       }
       if (currentFetchCount == 0) {
         try {
@@ -91,12 +115,7 @@ synchronized (m_seenOffset) {
         }
       }
     }
-    info("Partition fecher stopping for " + m_topicAndPartition);
-    int cnt=1;
-    while (m_pendingOffsets.size() > 0) {
-      cnt=backoffSleep(cnt);
-    }
-    info("Partition fecher stopped for " + m_topicAndPartition + " Last commit point is: "+ m_currentOffset.get());
+    info("Partition fecher stopped for " + m_topicAndPartition + " Last commit point is: "+ m_currentOffset.get()+ " Callback Rcvd: "+ cbcnt.get()+ " Submitted: "+ submitCount);
   }
  catch (  Exception ex) {
     error("Failed to start topic partition fetcher for " + m_topicAndPartition,ex);
@@ -104,5 +123,6 @@ synchronized (m_seenOffset) {
  finally {
     closeConsumer(consumer);
     consumer=null;
+    closeConsumer(m_offsetManager.getAndSet(null));
   }
 }

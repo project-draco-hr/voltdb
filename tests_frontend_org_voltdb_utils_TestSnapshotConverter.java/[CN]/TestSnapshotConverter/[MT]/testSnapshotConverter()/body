@@ -1,0 +1,53 @@
+{
+  if (!MiscUtils.isPro()) {
+    return;
+  }
+  Client client=getClient();
+  int expectedLines=10;
+  Random r=new Random(Calendar.getInstance().getTimeInMillis());
+  for (int i=0; i < expectedLines; i++) {
+    int id=r.nextInt();
+    client.callProcedure("T_SP.insert",String.format("Test String %s:%d","SP",i),id,"blab","blab");
+    client.callProcedure("T_MP.insert",String.format("Test String %s:%d","MP",i),id,"blab","blab");
+  }
+  VoltTable[] results=null;
+  try {
+    results=client.callProcedure("@SnapshotSave",TMPDIR,TESTNONCE,1).getResults();
+  }
+ catch (  Exception ex) {
+    ex.printStackTrace();
+    fail();
+  }
+  System.out.println(results[0]);
+  try {
+    results=client.callProcedure("@SnapshotStatus").getResults();
+  }
+ catch (  NoConnectionsException e) {
+    e.printStackTrace();
+  }
+catch (  Exception ex) {
+    fail();
+  }
+  System.out.println(results[0]);
+  assertEquals(2,results[0].getRowCount());
+  String[] argsMP={"--table","T_MP","--type","CSV","--dir",TMPDIR,"--outdir",TMPDIR,TESTNONCE};
+  try {
+    SnapshotConverter.main(argsMP);
+  }
+ catch (  Exception ex) {
+    fail();
+  }
+  File mpFile=new File(TMPDIR + "/T_MP.csv");
+  assertEquals(expectedLines,countLines(mpFile));
+  mpFile.deleteOnExit();
+  String[] argsSP={"--table","T_SP","--type","CSV","--dir",TMPDIR,"--outdir",TMPDIR,TESTNONCE};
+  try {
+    SnapshotConverter.main(argsSP);
+  }
+ catch (  Exception ex) {
+    fail();
+  }
+  File spFile=new File(TMPDIR + "/T_SP.csv");
+  assertEquals(expectedLines,countLines(spFile));
+  spFile.deleteOnExit();
+}

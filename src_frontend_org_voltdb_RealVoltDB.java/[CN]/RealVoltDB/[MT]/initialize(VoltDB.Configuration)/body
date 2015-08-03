@@ -87,9 +87,10 @@ synchronized (m_startAndStopLock) {
     m_messenger.getZK().create(VoltZK.start_action,null,Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT,new ZKUtil.StringCallback(),null);
     VoltZK.createStartActionNode(m_messenger.getZK(),m_messenger.getHostId(),m_config.m_startAction);
     validateStartAction();
+    Map<Integer,String> hostGroups=null;
     final int numberOfNodes=readDeploymentAndCreateStarterCatalogContext();
     if (!isRejoin && !m_joining) {
-      m_messenger.waitForGroupJoin(numberOfNodes);
+      hostGroups=m_messenger.waitForGroupJoin(numberOfNodes);
     }
     m_periodicWorkThread=CoreUtils.getScheduledThreadPoolExecutor("Periodic Work",1,CoreUtils.SMALL_STACK_SIZE);
     m_periodicPriorityWorkThread=CoreUtils.getScheduledThreadPoolExecutor("Periodic Priority Work",1,CoreUtils.SMALL_STACK_SIZE);
@@ -155,7 +156,7 @@ synchronized (m_startAndStopLock) {
         VoltDB.crashLocalVoltDB("Failed to instantiate join coordinator",true,e);
       }
     }
-    JSONObject topo=getTopology(config.m_startAction,m_joinCoordinator);
+    JSONObject topo=getTopology(config.m_startAction,hostGroups,m_joinCoordinator);
     m_partitionsToSitesAtStartupForExportInit=new ArrayList<Integer>();
     try {
       ClusterConfig clusterConfig=new ClusterConfig(topo);
@@ -262,7 +263,7 @@ synchronized (m_startAndStopLock) {
       consoleLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_StayTunedForNoLogging.name(),null);
     }
     if (m_commandLog != null && (isRejoin || m_joining)) {
-      m_commandLog.initForRejoin(m_catalogContext,Long.MIN_VALUE,m_configuredNumberOfPartitions,true,m_config.m_commandLogBinding,m_iv2InitiatorStartingTxnIds);
+      m_commandLog.initForRejoin(m_catalogContext.cluster.getLogconfig().get("log").getLogsize(),Long.MIN_VALUE,m_configuredNumberOfPartitions,true,m_config.m_commandLogBinding,m_iv2InitiatorStartingTxnIds);
     }
     try {
       InetAddress clientIntf=null;
