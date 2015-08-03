@@ -3,6 +3,9 @@
   final float upserthitratio=0.20F;
   CopyAndDeleteDataTask cdtask=new CopyAndDeleteDataTask();
   cdtask.start();
+  long p=0;
+  List<Long> cidList=new ArrayList<Long>(batchSize);
+  List<Long> timeList=new ArrayList<Long>(batchSize);
   try {
     while (m_shouldContinue.get()) {
       byte shouldCopy=(byte)(m_random.nextInt(3) == 0 ? 1 : 0);
@@ -10,24 +13,33 @@
       byte upsertHitMode=(byte)((upsertMode != 0) && (m_random.nextFloat() < upserthitratio) ? 1 : 0);
       CountDownLatch latch=new CountDownLatch(batchSize);
       final ArrayList<Long> lcpDelQueue=new ArrayList<Long>();
+      cidList.clear();
+      timeList.clear();
       for (int i=0; i < batchSize; i++) {
         m_table.clearRowData();
         m_permits.acquire();
-        long p=Math.abs(r.nextLong());
-        m_table.addRow(p,p,Calendar.getInstance().getTimeInMillis());
+        p++;
+        long nanotime=System.nanoTime();
+        m_table.addRow(p,p + nanotime,nanotime);
+        cidList.add(p);
+        timeList.add(nanotime);
         boolean success=false;
         if (!m_isMP) {
           Object rpartitionParam=TheHashinator.valueToBytes(m_table.fetchRow(0).get(m_partitionedColumnIndex,VoltType.BIGINT));
           if (upsertHitMode != 0) {
-            success=client.callProcedure(new InsertCallback(latch,p,shouldCopy),m_procName,rpartitionParam,m_tableName,(byte)1,m_table);
+            success=client.callProcedure(new InsertCallback(latch,p,shouldCopy),m_procName,rpartitionParam,m_tableName,(byte)0,m_table);
           }
-          success=client.callProcedure(new InsertCallback(latch,p,shouldCopy),m_procName,rpartitionParam,m_tableName,(byte)1,m_table);
+ else {
+            success=client.callProcedure(new InsertCallback(latch,p,shouldCopy),m_procName,rpartitionParam,m_tableName,upsertMode,m_table);
+          }
         }
  else {
           if (upsertHitMode != 0) {
-            success=client.callProcedure(new InsertCallback(latch,p,shouldCopy),m_procName,m_tableName,(byte)1,m_table);
+            success=client.callProcedure(new InsertCallback(latch,p,shouldCopy),m_procName,m_tableName,(byte)0,m_table);
           }
-          success=client.callProcedure(new InsertCallback(latch,p,shouldCopy),m_procName,m_tableName,(byte)1,m_table);
+ else {
+            success=client.callProcedure(new InsertCallback(latch,p,shouldCopy),m_procName,m_tableName,upsertMode,m_table);
+          }
         }
         if (success) {
           if (shouldCopy != 0) {
@@ -38,7 +50,31 @@
           }
         }
       }
+      log.debug("Waiting for all inserts for @Load* done.");
       latch.await();
+      log.debug("Done Waiting for all inserts for @Load* done.");
+      if (upsertHitMode != 0) {
+        CountDownLatch upserHitLatch=new CountDownLatch(batchSize * upsertHitMode);
+        for (int i=0; i < batchSize; i++) {
+          m_table.clearRowData();
+          m_permits.acquire();
+          m_table.addRow(cidList.get(i),cidList.get(i) + timeList.get(i),timeList.get(i));
+          boolean success;
+          if (!m_isMP) {
+            Object rpartitionParam=TheHashinator.valueToBytes(m_table.fetchRow(0).get(m_partitionedColumnIndex,VoltType.BIGINT));
+            success=client.callProcedure(new InsertCallback(upserHitLatch,p,shouldCopy),m_procName,rpartitionParam,m_tableName,(byte)1,m_table);
+          }
+ else {
+            success=client.callProcedure(new InsertCallback(upserHitLatch,p,shouldCopy),m_procName,m_tableName,(byte)1,m_table);
+          }
+          if (!success) {
+            log.error("Failed to invoke upsert for: " + cidList.get(i));
+          }
+        }
+        log.debug("Waiting for all upsert for @Load* done.");
+        upserHitLatch.await();
+        log.debug("Done Waiting for all upsert for @Load* done.");
+      }
       cpDelQueue.addAll(lcpDelQueue);
       long nextRowCount=0;
       try {
