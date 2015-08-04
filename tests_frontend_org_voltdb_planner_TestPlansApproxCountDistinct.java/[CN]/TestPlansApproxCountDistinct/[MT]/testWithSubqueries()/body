@@ -1,0 +1,21 @@
+{
+  List<AbstractPlanNode> pn=compileToFragments("select * " + "from " + "  T1, "+ "  (select approx_count_distinct(age) from t1) as subq");
+  assertEquals(1,pn.size());
+  assertFragContainsAggWithFunctions(pn.get(COORDINATOR_FRAG),AGGREGATE_APPROX_COUNT_DISTINCT);
+  pn=compileToFragments("select * " + "from " + "  (select username, approx_count_distinct(age), avg(distinct points) "+ "   from t2 "+ "   group by username) as subq"+ "  inner join t2 "+ "  on t2.username = subq.username;");
+  assertEquals(1,pn.size());
+  assertFragContainsAggWithFunctions(pn.get(COORDINATOR_FRAG),AGGREGATE_APPROX_COUNT_DISTINCT,AGGREGATE_AVG);
+  pn=compileToFragments("select * " + "from " + "t1, "+ "(SELECT sum(distinct ratio), approx_count_distinct(num) from P1) as subq");
+  assertFragContainsAggWithFunctions(pn.get(COORDINATOR_FRAG),AGGREGATE_SUM,AGGREGATE_APPROX_COUNT_DISTINCT);
+  assertFragContainsNoAggPlanNodes(pn.get(PARTITION_FRAG));
+  pn=compileToFragments("select * " + "from p1 " + "inner join "+ "(SELECT id, sum(distinct ratio), approx_count_distinct(num) "+ "from P1 "+ "where id = 10 "+ "group by id) as subq "+ "on subq.id = p1.id");
+  assertEquals(1,pn.size());
+  assertFragContainsAggWithFunctions(pn.get(COORDINATOR_FRAG),AGGREGATE_SUM,AGGREGATE_APPROX_COUNT_DISTINCT);
+  pn=compileToFragments("select * " + "from t1 " + "inner join "+ "(SELECT id, approx_count_distinct(num) "+ "from P1 "+ "group by id) as subq "+ "on subq.id = t1.id");
+  for (  AbstractPlanNode n : pn) {
+    System.out.println(n.toExplainPlanString());
+  }
+  assertEquals(2,pn.size());
+  assertFragContainsNoAggPlanNodes(pn.get(COORDINATOR_FRAG));
+  assertFragContainsAggWithFunctions(pn.get(PARTITION_FRAG),AGGREGATE_APPROX_COUNT_DISTINCT);
+}
