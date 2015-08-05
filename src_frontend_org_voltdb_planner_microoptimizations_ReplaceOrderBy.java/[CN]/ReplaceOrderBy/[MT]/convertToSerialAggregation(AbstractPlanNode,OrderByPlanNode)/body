@@ -1,24 +1,33 @@
 {
   assert(aggregateNode instanceof HashAggregatePlanNode);
   HashAggregatePlanNode hashAggr=(HashAggregatePlanNode)aggregateNode;
-  Set<AbstractExpression> groupbys=new HashSet<AbstractExpression>(hashAggr.getGroupByExpressions());
-  Set<AbstractExpression> orderbys=new HashSet<AbstractExpression>(orderbyNode.getSortExpressions());
-  boolean result=groupbys.removeAll(orderbys);
-  if (!result) {
-    return aggregateNode;
-  }
- else   if (groupbys.isEmpty()) {
-    return AggregatePlanNode.convertToSerialAggregatePlanNode(hashAggr);
-  }
- else {
-    List<Integer> coveredGroupByColumns=new ArrayList<Integer>();
+  List<AbstractExpression> groupbys=new ArrayList<AbstractExpression>(hashAggr.getGroupByExpressions());
+  List<AbstractExpression> orderbys=new ArrayList<AbstractExpression>(orderbyNode.getSortExpressions());
+  Set<Integer> coveredGroupByColumns=new HashSet<Integer>();
+  Iterator<AbstractExpression> orderbyIt=orderbys.iterator();
+  while (orderbyIt.hasNext()) {
+    AbstractExpression orderby=orderbyIt.next();
     int idx=0;
-    for (    AbstractExpression groupByExpr : hashAggr.getGroupByExpressions()) {
-      if (!groupbys.contains(groupByExpr)) {
-        coveredGroupByColumns.add(idx);
+    for (    AbstractExpression groupby : groupbys) {
+      if (!coveredGroupByColumns.contains(idx)) {
+        if (orderby.bindingToIndexedExpression(groupby) != null) {
+          orderbyIt.remove();
+          coveredGroupByColumns.add(idx);
+          break;
+        }
       }
       ++idx;
     }
-    return AggregatePlanNode.convertToPartialAggregatePlanNode(hashAggr,coveredGroupByColumns);
+  }
+  if (orderbys.isEmpty() && groupbys.size() == coveredGroupByColumns.size()) {
+    return AggregatePlanNode.convertToSerialAggregatePlanNode(hashAggr);
+  }
+ else   if (orderbys.isEmpty() && !coveredGroupByColumns.isEmpty()) {
+    List<Integer> coveredGroupByColumnList=new ArrayList<Integer>();
+    coveredGroupByColumnList.addAll(coveredGroupByColumns);
+    return AggregatePlanNode.convertToPartialAggregatePlanNode(hashAggr,coveredGroupByColumnList);
+  }
+ else {
+    return aggregateNode;
   }
 }

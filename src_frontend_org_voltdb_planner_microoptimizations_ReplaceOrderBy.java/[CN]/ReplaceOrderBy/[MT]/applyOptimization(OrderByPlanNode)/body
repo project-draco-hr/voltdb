@@ -13,28 +13,28 @@
       return orderbyNode;
     }
     PlanNodeType nodeType=inlineCandidate.getPlanNodeType();
+    if (inlineCandidate instanceof AggregatePlanNode && (inlineCandidates.containsKey(PlanNodeType.AGGREGATE) || inlineCandidates.containsKey(PlanNodeType.PARTIALAGGREGATE))) {
+      return orderbyNode;
+    }
     if (nodeType == PlanNodeType.HASHAGGREGATE) {
       AbstractPlanNode newAggr=convertToSerialAggregation(inlineCandidate,orderbyNode);
       if (newAggr.getPlanNodeType() == PlanNodeType.HASHAGGREGATE) {
         return orderbyNode;
       }
       inlineCandidates.put(newAggr.getPlanNodeType(),newAggr);
-      assert(inlineCandidate.getParentCount() == 1);
-      inlineCandidate=inlineCandidate.getParent(0);
     }
  else     if ((nodeType == PlanNodeType.AGGREGATE || nodeType == PlanNodeType.PARTIALAGGREGATE || nodeType == PlanNodeType.LIMIT) && !inlineCandidates.containsKey(nodeType)) {
       inlineCandidates.put(nodeType,inlineCandidate);
-      assert(inlineCandidate.getParentCount() == 1);
-      inlineCandidate=inlineCandidate.getParent(0);
     }
  else {
       return orderbyNode;
     }
+    assert(inlineCandidate.getParentCount() == 1);
+    inlineCandidate=inlineCandidate.getParent(0);
   }
   assert(receive.getChildCount() == 1);
-  assert(receive.getChild(0).getChildCount() == 1);
-  AbstractPlanNode partitionRoot=receive.getChild(0).getChild(0);
-  if (!partitionRoot.isOutputOrdered()) {
+  AbstractPlanNode partitionRoot=receive.getChild(0);
+  if (!partitionRoot.isOutputOrdered(orderbyNode.getSortExpressions(),orderbyNode.getSortDirections())) {
     return orderbyNode;
   }
   assert(orderbyNode.getParentCount() <= 1);
