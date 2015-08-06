@@ -2,7 +2,7 @@
   VoltLogger log=new VoltLogger("Benchmark.main");
   Config config=new Config();
   config.parse(KafkaImportBenchmark.class.getName(),args);
-  dbconnect(config.servers);
+  dbconnect(config.servers,config.ratelimit);
   exportProc=new InsertExport(client);
   exportMon=new TableChangeMonitor(client,"StreamedTable","KAFKAEXPORTTABLE1");
   importMon=new TableChangeMonitor(client,"PersistentTable","KAFKAIMPORTTABLE1");
@@ -11,8 +11,19 @@
   BenchmarkRunner runner=new BenchmarkRunner(benchmark);
   runner.start();
   runner.join();
+  long count=0;
+  long prev=0;
+  do {
+    count=MatchChecks.getMirrorTableRowCount(client);
+    log.info("Mirror table count: " + count);
+    if (prev != 0) {
+      log.info("Import rate: " + (prev - count) / END_WAIT + " tps");
+    }
+    Thread.sleep(END_WAIT * 1000);
+    prev=count;
+  }
+ while (count > 0);
   boolean testResult=FinalCheck.check(client);
-  checkTimer.cancel();
   client.drain();
   client.close();
   if (testResult == true) {
