@@ -1,8 +1,26 @@
 {
-  ImportCallback cb=new ImportCallback(tcont,proccb);
-  long cbhandle=registerCallback(cb);
-  cb.setId(cbhandle);
-  task.setClientHandle(cbhandle);
-  m_pendingCallbacks.put(cbhandle,cb);
-  return VoltDB.instance().getClientInterface().createTransaction(connectionId(),task,catProc.getReadonly(),catProc.getSinglepartition(),catProc.getEverysite(),partition,task.getSerializedSize(),nowNanos);
+  if (m_stopped) {
+    return false;
+  }
+  if (!m_partitionExecutor.containsKey(partition)) {
+    m_partitionExecutor.putIfAbsent(partition,CoreUtils.getSingleThreadExecutor("ImportHandlerExecutor - " + partition));
+  }
+  ExecutorService executor=m_partitionExecutor.get(partition);
+  try {
+    executor.submit(new Runnable(){
+      @Override public void run(){
+        final long handle=nextHandle();
+        task.setClientHandle(handle);
+        final ImportCallback cb=new ImportCallback(tcont,proccb,handle);
+        m_callbacks.put(handle,cb);
+        VoltDB.instance().getClientInterface().createTransaction(connectionId(),task,catProc.getReadonly(),catProc.getSinglepartition(),catProc.getEverysite(),partition,task.getSerializedSize(),nowNanos);
+      }
+    }
+);
+  }
+ catch (  RejectedExecutionException ex) {
+    m_logger.error("Failed to submit transaction to the partition queue.",ex);
+    return false;
+  }
+  return true;
 }
