@@ -1,0 +1,29 @@
+{
+  final int partition=m_topicAndPartition.partition();
+  final String topic=m_topicAndPartition.topic();
+  kafka.javaapi.OffsetRequest earlyRq=new kafka.javaapi.OffsetRequest(singletonMap(m_topicAndPartition,pori),kafka.api.OffsetRequest.CurrentVersion(),CLIENT_ID);
+  OffsetResponse response=null;
+  Throwable fault=null;
+  for (int attempts=0; attempts < 3; ++attempts)   try {
+    response=m_consumer.getOffsetsBefore(earlyRq);
+    if (response.hasError()) {
+      short code=response.errorCode(topic,partition);
+      fault=ErrorMapping.exceptionFor(code);
+      resetLeader();
+    }
+ else {
+      return response;
+    }
+  }
+ catch (  Exception e) {
+    if (e instanceof IOException) {
+      resetLeader();
+    }
+    fault=e;
+  }
+  if (fault != null) {
+    error(fault,"unable to fetch earliest offset for " + m_topicAndPartition);
+    response=null;
+  }
+  return response;
+}
