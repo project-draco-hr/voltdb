@@ -1,0 +1,43 @@
+{
+  VoltLogger log=new VoltLogger("Benchmark.main");
+  Config config=new Config();
+  config.parse(KafkaImportBenchmark.class.getName(),args);
+  dbconnect(config.servers,config.ratelimit);
+  exportProc=new InsertExport(client);
+  exportMon=new TableChangeMonitor(client,"StreamedTable","KAFKAEXPORTTABLE1");
+  importMon=new TableChangeMonitor(client,"PersistentTable","KAFKAIMPORTTABLE1");
+  log.info("starting KafkaImportBenchmark...");
+  KafkaImportBenchmark benchmark=new KafkaImportBenchmark(config);
+  BenchmarkRunner runner=new BenchmarkRunner(benchmark);
+  runner.start();
+  Thread.sleep(END_WAIT * 1000);
+  long count=0;
+  long prev=0;
+  long rate=0;
+  do {
+    count=MatchChecks.getMirrorTableRowCount(client);
+    log.info("Mirror table count: " + count);
+    if (prev != 0) {
+      rate=prev - count;
+      log.info("Import rate: " + Math.abs(rate / END_WAIT) + " tps");
+      if (rate < 0) {
+        log.info("Export added " + -rate + " more rows than import deleted");
+      }
+    }
+    Thread.sleep(END_WAIT * 1000);
+    prev=count;
+  }
+ while (count > 0);
+  runner.join();
+  boolean testResult=FinalCheck.check(client);
+  client.drain();
+  client.close();
+  if (testResult == true) {
+    log.info("Test passed!");
+    System.exit(0);
+  }
+ else {
+    log.info("Test failed!");
+    System.exit(1);
+  }
+}
