@@ -1,33 +1,38 @@
 {
-  BlockingChannel channel=null;
+  KafkaStreamImporterException probeException=null;
   int correlationId=0;
-  for (int i=0; i < 3; i++) {
-    try {
-      channel=new BlockingChannel(m_coordinator.getHost(),m_coordinator.getPort(),BlockingChannel.UseDefaultBufferSize(),BlockingChannel.UseDefaultBufferSize(),m_consumerSocketTimeout);
-      channel.connect();
-      channel.send(new ConsumerMetadataRequest(m_groupId,ConsumerMetadataRequest.CurrentVersion(),correlationId++,CLIENT_ID));
-      ConsumerMetadataResponse metadataResponse=ConsumerMetadataResponse.readFrom(channel.receive().buffer());
-      if (metadataResponse.errorCode() == ErrorMapping.NoError()) {
-        Broker offsetManager=metadataResponse.coordinator();
-        m_coordinator=new HostAndPort(offsetManager.host(),offsetManager.port());
-        SimpleConsumer consumer=m_offsetManager.getAndSet(new SimpleConsumer(m_coordinator.getHost(),m_coordinator.getPort(),m_consumerSocketTimeout,m_fetchSize,CLIENT_ID));
-        closeConsumer(consumer);
-        consumer=null;
-        break;
+  OUTER:   for (int attempts=0; attempts < 3; ++attempts) {
+    for (    HostAndPort hp : m_brokerList) {
+      BlockingChannel channel=null;
+      try {
+        channel=new BlockingChannel(hp.getHost(),hp.getPort(),BlockingChannel.UseDefaultBufferSize(),BlockingChannel.UseDefaultBufferSize(),m_consumerSocketTimeout);
+        channel.connect();
+        channel.send(new ConsumerMetadataRequest(m_groupId,ConsumerMetadataRequest.CurrentVersion(),correlationId++,CLIENT_ID));
+        ConsumerMetadataResponse metadataResponse=ConsumerMetadataResponse.readFrom(channel.receive().buffer());
+        if (metadataResponse.errorCode() == ErrorMapping.NoError()) {
+          Broker offsetManager=metadataResponse.coordinator();
+          m_coordinator=new HostAndPort(offsetManager.host(),offsetManager.port());
+          SimpleConsumer consumer=m_offsetManager.getAndSet(new SimpleConsumer(m_coordinator.getHost(),m_coordinator.getPort(),m_consumerSocketTimeout,m_fetchSize,CLIENT_ID));
+          info("Offset Coordinator for " + m_topicAndPartition + " is "+ offsetManager);
+          closeConsumer(consumer);
+          probeException=null;
+          consumer=null;
+          break OUTER;
+        }
+        probeException=new KafkaStreamImporterException("Failed to get Offset Coordinator for %s",ErrorMapping.exceptionFor(metadataResponse.errorCode()),m_topicAndPartition);
       }
-      final String msg="Failed to get Offset Coordinator for " + m_topicAndPartition + " Code: %d";
-      warn(null,msg,metadataResponse.errorCode());
-      backoffSleep(i + 1);
-    }
- catch (    Exception e) {
-      error(e,"Failed to get Offset Coordinator for " + m_topicAndPartition);
-      backoffSleep(i + 1);
-    }
+ catch (      Exception e) {
+        probeException=new KafkaStreamImporterException("Failed to get Offset Coordinator for %s",e,m_topicAndPartition);
+      }
  finally {
-      if (channel != null) {
-        channel.disconnect();
+        if (channel != null) {
+          channel.disconnect();
+        }
       }
     }
+    if (probeException != null) {
+      error(probeException,"Failed to query all brokers for the offeset coordinator for " + m_topicAndPartition);
+    }
+    backoffSleep(attempts + 1);
   }
-  info("Coordinator for " + m_topicAndPartition + " consumer is: "+ m_coordinator);
 }
