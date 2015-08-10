@@ -8,6 +8,10 @@
     while (!m_shutdown) {
       if (m_currentOffset.get() < 0) {
         getOffsetCoordinator();
+        if (m_offsetManager.get() == null) {
+          sleepCounter=backoffSleep(sleepCounter);
+          continue;
+        }
         long lastOffset=getLastOffset();
         m_currentOffset.set(lastOffset);
         if (m_currentOffset.get() < 0) {
@@ -59,8 +63,7 @@
         ByteBuffer payload=messageAndOffset.message().payload();
         String line=new String(payload.array(),payload.arrayOffset(),payload.limit(),StandardCharsets.UTF_8);
         CSVInvocation invocation=new CSVInvocation(m_procedure,line);
-        TopicPartitionInvocationCallback cb=new TopicPartitionInvocationCallback(currentOffset,messageAndOffset.nextOffset(),cbcnt);
-        m_pendingOffsets.add(currentOffset);
+        TopicPartitionInvocationCallback cb=new TopicPartitionInvocationCallback(this,messageAndOffset.nextOffset(),cbcnt);
         if (!callProcedure(cb,invocation)) {
           if (isDebugEnabled()) {
             debug("Failed to process Invocation possibly bad data: " + line);
@@ -68,7 +71,6 @@
 synchronized (m_seenOffset) {
             m_seenOffset.add(messageAndOffset.nextOffset());
           }
-          m_pendingOffsets.remove(currentOffset);
         }
         submitCount++;
         m_currentOffset.set(messageAndOffset.nextOffset());
@@ -88,7 +90,6 @@ synchronized (m_seenOffset) {
       }
       commitOffset();
     }
-    info("Partition fecher stopped for " + m_topicAndPartition + " Last commit point is: "+ m_currentOffset.get()+ " Callback Rcvd: "+ cbcnt.get()+ " Submitted: "+ submitCount);
   }
  catch (  Exception ex) {
     error("Failed to start topic partition fetcher for " + m_topicAndPartition,ex);
@@ -99,4 +100,6 @@ synchronized (m_seenOffset) {
     m_consumer=null;
     closeConsumer(m_offsetManager.getAndSet(null));
   }
+  m_dead=true;
+  info("Partition fecher stopped for " + m_topicAndPartition + " Last commit point is: "+ m_lastCommittedOffset+ " Callback Rcvd: "+ cbcnt.get()+ " Submitted: "+ submitCount);
 }
