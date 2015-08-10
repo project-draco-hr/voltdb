@@ -1,0 +1,35 @@
+{
+  final short version=1;
+  final OffsetFetchRequest rq=new OffsetFetchRequest(m_groupId,singletonList(m_topicAndPartition),version,1,CLIENT_ID);
+  OffsetFetchResponse rsp=null;
+  Throwable fault=null;
+  for (int attempts=0; attempts < 3; ++attempts)   try {
+    rsp=m_offsetManager.get().fetchOffsets(rq);
+    short code=rsp.offsets().get(m_topicAndPartition).error();
+    if (code != ErrorMapping.NoError()) {
+      fault=ErrorMapping.exceptionFor(code);
+      if (code == ErrorMapping.NotCoordinatorForConsumerCode()) {
+        getOffsetCoordinator();
+      }
+ else       if (code == ErrorMapping.UnknownTopicOrPartitionCode()) {
+        fault=null;
+        break;
+      }
+    }
+ else {
+      fault=null;
+      break;
+    }
+  }
+ catch (  Exception e) {
+    if (e instanceof IOException) {
+      getOffsetCoordinator();
+    }
+    fault=e;
+  }
+  if (fault != null) {
+    error(fault,"unable to fetch earliest offset for " + m_topicAndPartition);
+    rsp=null;
+  }
+  return rsp;
+}

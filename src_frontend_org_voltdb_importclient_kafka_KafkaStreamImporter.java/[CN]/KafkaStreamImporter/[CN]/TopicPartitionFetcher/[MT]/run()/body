@@ -1,119 +1,92 @@
 {
-  SimpleConsumer consumer=null;
   info("Starting partition fetcher for " + m_topicAndPartition);
   long submitCount=0;
   AtomicLong cbcnt=new AtomicLong(0);
   try {
-    HostAndPort leaderBroker=m_leader;
-    int fetchFailedCount=1;
+    resetLeader();
+    int sleepCounter=1;
     while (!m_shutdown) {
-      if (consumer == null) {
-        consumer=new SimpleConsumer(leaderBroker.getHost(),leaderBroker.getPort(),m_consumerSocketTimeout,m_fetchSize,CLIENT_ID);
-      }
       if (m_currentOffset.get() < 0) {
         getOffsetCoordinator();
-        m_currentOffset.set(getLastOffset(kafka.api.OffsetRequest.LatestTime()));
+        long lastOffset=getLastOffset();
+        m_currentOffset.set(lastOffset);
         if (m_currentOffset.get() < 0) {
-          fetchFailedCount=backoffSleep(fetchFailedCount);
-          info("Latest offset not found for " + m_topicAndPartition + " using earliest offset.");
-          m_currentOffset.set(getLastOffset(kafka.api.OffsetRequest.EarliestTime()));
+          sleepCounter=backoffSleep(sleepCounter);
+          info("No valid offset found for " + m_topicAndPartition);
+          continue;
         }
-        info("Starting offset for " + m_topicAndPartition + " is set to: "+ m_currentOffset.get());
-        continue;
+        info("Starting offset for " + m_topicAndPartition + " is "+ m_currentOffset.get());
       }
       long currentFetchCount=0;
-      if (m_pendingOffsets.size() < m_perTopicPendingLimit) {
-        FetchRequest req=new FetchRequestBuilder().clientId(CLIENT_ID).addFetch(m_topicAndPartition.topic(),m_topicAndPartition.partition(),m_currentOffset.get(),m_fetchSize).build();
-        FetchResponse fetchResponse=null;
-        try {
-          fetchResponse=consumer.fetch(req);
-          if (fetchResponse == null) {
-            fetchFailedCount=backoffSleep(fetchFailedCount);
-            continue;
-          }
-        }
- catch (        Exception ex) {
-          error(ex,"Failed to fetch from %s",m_topicAndPartition);
-          if (ex instanceof ClosedChannelException) {
-            closeConsumer(consumer);
-            consumer=null;
-            leaderBroker=findNewLeader();
-            if (leaderBroker == null) {
-              error(null,"Fetch Failed to find leader continue with old leader: %s",m_leader);
-              leaderBroker=m_leader;
-            }
- else {
-              if (!leaderBroker.equals(m_leader)) {
-                info("Fetch Found new leader for " + m_topicAndPartition + " New Leader: "+ leaderBroker);
-              }
-            }
-            continue;
-          }
-          fetchFailedCount=backoffSleep(fetchFailedCount);
+      FetchRequest req=new FetchRequestBuilder().clientId(CLIENT_ID).addFetch(m_topicAndPartition.topic(),m_topicAndPartition.partition(),m_currentOffset.get(),m_fetchSize).build();
+      FetchResponse fetchResponse=null;
+      try {
+        fetchResponse=m_consumer.fetch(req);
+        if (fetchResponse == null) {
+          sleepCounter=backoffSleep(sleepCounter);
           continue;
         }
-        if (fetchResponse.hasError()) {
-          short code=fetchResponse.errorCode(m_topicAndPartition.topic(),m_topicAndPartition.partition());
-          warn(null,"Failed to fetch messages for %s Code: %d",m_topicAndPartition,code);
-          fetchFailedCount=backoffSleep(fetchFailedCount);
-          if (code == ErrorMapping.OffsetOutOfRangeCode()) {
-            info("Invalid offset requested for " + m_topicAndPartition);
-            getOffsetCoordinator();
-            m_currentOffset.set(getLastOffset(kafka.api.OffsetRequest.LatestTime()));
-            continue;
-          }
-          closeConsumer(consumer);
-          consumer=null;
-          leaderBroker=findNewLeader();
-          if (leaderBroker == null) {
-            error(null,"Failed to find leader continue with old leader: %s",m_leader);
-            leaderBroker=m_leader;
-          }
- else {
-            if (!leaderBroker.equals(m_leader)) {
-              info("Found new leader for " + m_topicAndPartition + " New Leader: "+ leaderBroker);
-            }
-          }
+      }
+ catch (      Exception ex) {
+        error(ex,"Failed to fetch from %s",m_topicAndPartition);
+        if (ex instanceof IOException) {
+          resetLeader();
           continue;
         }
-        fetchFailedCount=1;
-        for (        MessageAndOffset messageAndOffset : fetchResponse.messageSet(m_topicAndPartition.topic(),m_topicAndPartition.partition())) {
-          long currentOffset=messageAndOffset.offset();
-          if (currentOffset < m_currentOffset.get()) {
-            continue;
+        sleepCounter=backoffSleep(sleepCounter);
+        continue;
+      }
+      if (fetchResponse.hasError()) {
+        short code=fetchResponse.errorCode(m_topicAndPartition.topic(),m_topicAndPartition.partition());
+        warn(ErrorMapping.exceptionFor(code),"Failed to fetch messages for %s",m_topicAndPartition);
+        sleepCounter=backoffSleep(sleepCounter);
+        if (code == ErrorMapping.OffsetOutOfRangeCode()) {
+          info("Invalid offset requested for " + m_topicAndPartition);
+          getOffsetCoordinator();
+          m_currentOffset.set(-1L);
+          continue;
+        }
+        resetLeader();
+        continue;
+      }
+      sleepCounter=1;
+      for (      MessageAndOffset messageAndOffset : fetchResponse.messageSet(m_topicAndPartition.topic(),m_topicAndPartition.partition())) {
+        currentFetchCount++;
+        long currentOffset=messageAndOffset.offset();
+        if (currentOffset < m_currentOffset.get()) {
+          continue;
+        }
+        ByteBuffer payload=messageAndOffset.message().payload();
+        String line=new String(payload.array(),payload.arrayOffset(),payload.limit(),StandardCharsets.UTF_8);
+        CSVInvocation invocation=new CSVInvocation(m_procedure,line);
+        TopicPartitionInvocationCallback cb=new TopicPartitionInvocationCallback(currentOffset,messageAndOffset.nextOffset(),cbcnt);
+        m_pendingOffsets.add(currentOffset);
+        if (!callProcedure(cb,invocation)) {
+          if (isDebugEnabled()) {
+            debug("Failed to process Invocation possibly bad data: " + line);
           }
-          ByteBuffer payload=messageAndOffset.message().payload();
-          currentFetchCount++;
-          String line=new String(payload.array(),payload.arrayOffset(),payload.limit(),"UTF-8");
-          CSVInvocation invocation=new CSVInvocation(m_procedure,line);
-          TopicPartitionInvocationCallback cb=new TopicPartitionInvocationCallback(currentOffset,messageAndOffset.nextOffset(),m_topicAndPartition,cbcnt);
-          m_pendingOffsets.add(currentOffset);
-          if (!callProcedure(cb,invocation)) {
-            if (isDebugEnabled()) {
-              debug("Failed to process Invocation possibly bad data: " + line);
-            }
 synchronized (m_seenOffset) {
-              m_seenOffset.add(messageAndOffset.nextOffset());
-            }
-            m_pendingOffsets.remove(currentOffset);
+            m_seenOffset.add(messageAndOffset.nextOffset());
           }
-          submitCount++;
-          m_currentOffset.set(messageAndOffset.nextOffset());
-          if (m_shutdown) {
-            break;
-          }
+          m_pendingOffsets.remove(currentOffset);
+        }
+        submitCount++;
+        m_currentOffset.set(messageAndOffset.nextOffset());
+        if (m_shutdown) {
+          break;
         }
       }
       if (m_shutdown) {
         break;
       }
-      if (currentFetchCount == 0) {
+      if (currentFetchCount == 0 || m_hasBackPressure) {
         try {
-          Thread.sleep(1000);
+          Thread.sleep(m_backpressureSleepMs);
         }
  catch (        InterruptedException ie) {
         }
       }
+      commitOffset();
     }
     info("Partition fecher stopped for " + m_topicAndPartition + " Last commit point is: "+ m_currentOffset.get()+ " Callback Rcvd: "+ cbcnt.get()+ " Submitted: "+ submitCount);
   }
@@ -121,8 +94,9 @@ synchronized (m_seenOffset) {
     error("Failed to start topic partition fetcher for " + m_topicAndPartition,ex);
   }
  finally {
-    closeConsumer(consumer);
-    consumer=null;
+    commitOffset();
+    closeConsumer(m_consumer);
+    m_consumer=null;
     closeConsumer(m_offsetManager.getAndSet(null));
   }
 }
