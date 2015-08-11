@@ -1,0 +1,53 @@
+{
+  Boolean sleep=false;
+  Boolean noConnections=false;
+  Boolean timedOutOnce=false;
+  while (true) {
+    try {
+      ClientResponse cr=client.callProcedure("@AdHoc",query);
+      if (cr.getStatus() == ClientResponse.SUCCESS) {
+        return cr;
+      }
+ else {
+        log.debug(cr.getStatusString());
+        log.error("unexpected response");
+        System.exit(-1);
+      }
+    }
+ catch (    NoConnectionsException e) {
+      noConnections=true;
+    }
+catch (    IOException e) {
+      log.error("IOException",e);
+      System.exit(-1);
+    }
+catch (    ProcCallException e) {
+      ClientResponse cr=e.getClientResponse();
+      String ss=cr.getStatusString();
+      log.debug(ss);
+      if (!timedOutOnce && ss.matches("(?s).*No response received in the allotted time.*")) {
+        timedOutOnce=false;
+        sleep=true;
+      }
+ else       if ((ss.matches("(?s).*AdHoc transaction [0-9]+ wasn.t planned against the current catalog version.*") || ss.matches(".*Connection to database host \\(.*\\) was lost before a response was received.*") || ss.matches(".*Transaction dropped due to change in mastership. It is possible the transaction was committed.*")|| ss.matches("(?s).*Transaction being restarted due to fault recovery or shutdown.*")|| ss.matches("(?s).*Invalid catalog update.  Catalog or deployment change was planned against one version of the cluster configuration but that version was no longer live.*"))) {
+      }
+ else       if (ss.matches(".*Server is currently unavailable; try again later.*") || ss.matches(".*Server is paused and is currently unavailable.*")) {
+        sleep=true;
+      }
+ else {
+        log.error("Unexpected ProcCallException",e);
+        System.exit(-1);
+      }
+    }
+    if (sleep | noConnections) {
+      try {
+        Thread.sleep(3000);
+      }
+ catch (      Exception f) {
+      }
+      sleep=false;
+      if (noConnections)       while (client.getConnectedHostList().size() == 0)       ;
+      noConnections=false;
+    }
+  }
+}
