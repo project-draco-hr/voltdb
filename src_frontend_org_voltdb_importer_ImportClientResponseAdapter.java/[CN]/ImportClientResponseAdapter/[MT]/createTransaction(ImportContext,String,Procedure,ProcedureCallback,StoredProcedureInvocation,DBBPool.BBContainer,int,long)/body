@@ -1,7 +1,4 @@
 {
-  if (m_stopped) {
-    return false;
-  }
   if (!m_partitionExecutor.containsKey(partition)) {
     m_partitionExecutor.putIfAbsent(partition,CoreUtils.getSingleThreadExecutor("ImportHandlerExecutor - " + partition));
   }
@@ -9,11 +6,21 @@
   try {
     executor.submit(new Runnable(){
       @Override public void run(){
+        context.hasBackPressure(hasBackPressure());
+        submitTransaction();
+      }
+      public boolean submitTransaction(){
         final long handle=nextHandle();
         task.setClientHandle(handle);
-        final ImportCallback cb=new ImportCallback(tcont,procName,proccb,handle);
+        final ImportCallback cb=new ImportCallback(context,tcont,procName,partition,proccb,handle);
         m_callbacks.put(handle,cb);
-        VoltDB.instance().getClientInterface().createTransaction(connectionId(),task,catProc.getReadonly(),catProc.getSinglepartition(),catProc.getEverysite(),partition,task.getSerializedSize(),nowNanos);
+        boolean bval=getClientInterface().createTransaction(connectionId(),task,catProc.getReadonly(),catProc.getSinglepartition(),catProc.getEverysite(),partition,task.getSerializedSize(),nowNanos);
+        if (!bval) {
+          m_logger.error("Failed to submit transaction.");
+          cb.discard();
+          m_callbacks.remove(handle);
+        }
+        return bval;
       }
     }
 );
