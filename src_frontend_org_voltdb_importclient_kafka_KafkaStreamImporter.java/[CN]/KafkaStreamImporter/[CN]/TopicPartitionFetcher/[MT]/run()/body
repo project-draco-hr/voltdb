@@ -13,6 +13,8 @@
           continue;
         }
         long lastOffset=getLastOffset();
+        m_gapTracker.resetTo(lastOffset);
+        m_lastCommittedOffset=lastOffset;
         m_currentOffset.set(lastOffset);
         if (m_currentOffset.get() < 0) {
           sleepCounter=backoffSleep(sleepCounter);
@@ -63,14 +65,12 @@
         ByteBuffer payload=messageAndOffset.message().payload();
         String line=new String(payload.array(),payload.arrayOffset(),payload.limit(),StandardCharsets.UTF_8);
         CSVInvocation invocation=new CSVInvocation(m_procedure,line);
-        TopicPartitionInvocationCallback cb=new TopicPartitionInvocationCallback(this,messageAndOffset.nextOffset(),cbcnt);
+        TopicPartitionInvocationCallback cb=new TopicPartitionInvocationCallback(messageAndOffset.nextOffset(),cbcnt,m_gapTracker,m_dead,invocation,m_resubmitInvocation);
         if (!callProcedure(cb,invocation)) {
           if (isDebugEnabled()) {
             debug("Failed to process Invocation possibly bad data: " + line);
           }
-synchronized (m_seenOffset) {
-            m_seenOffset.add(messageAndOffset.nextOffset());
-          }
+          m_gapTracker.commit(currentOffset);
         }
         submitCount++;
         m_currentOffset.set(messageAndOffset.nextOffset());
@@ -78,6 +78,7 @@ synchronized (m_seenOffset) {
           break;
         }
       }
+      submitCount+=submitBouncedTransactions();
       if (m_shutdown) {
         break;
       }
@@ -100,6 +101,6 @@ synchronized (m_seenOffset) {
     m_consumer=null;
     closeConsumer(m_offsetManager.getAndSet(null));
   }
-  m_dead=true;
+  m_dead.compareAndSet(false,true);
   info("Partition fecher stopped for " + m_topicAndPartition + " Last commit point is: "+ m_lastCommittedOffset+ " Callback Rcvd: "+ cbcnt.get()+ " Submitted: "+ submitCount);
 }
