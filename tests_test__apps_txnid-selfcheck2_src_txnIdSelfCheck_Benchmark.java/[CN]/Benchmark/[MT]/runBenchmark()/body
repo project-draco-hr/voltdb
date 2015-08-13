@@ -42,6 +42,11 @@
     printJStack();
     System.exit(-1);
   }
+  clientThreads=new ArrayList<ClientThread>();
+  for (byte cid=(byte)config.threadoffset; cid < config.threadoffset + config.threads; cid++) {
+    ClientThread clientThread=new ClientThread(cid,txnCount,client,processor,permits,config.allowinprocadhoc,config.mpratio);
+    clientThreads.add(clientThread);
+  }
   log.info(HORIZONTAL_RULE);
   log.info("Loading Filler Tables...");
   log.info(HORIZONTAL_RULE);
@@ -66,6 +71,9 @@
     Thread.sleep(1000);
     System.out.println("Wait for hashinator..");
   }
+  for (  ClientThread t : clientThreads) {
+    t.start();
+  }
   partitionedTruncater=new TruncateTableLoader(client,"trup",(config.partfillerrowmb * 1024 * 1024) / config.fillerrowsize,config.fillerrowsize,50,permits,config.mpratio);
   partitionedTruncater.start();
   replicatedTruncater=null;
@@ -89,12 +97,6 @@
   idpt=new InvokeDroppedProcedureThread(client);
   idpt.start();
   ddlt=new DdlThread(client);
-  clientThreads=new ArrayList<ClientThread>();
-  for (byte cid=(byte)config.threadoffset; cid < config.threadoffset + config.threads; cid++) {
-    ClientThread clientThread=new ClientThread(cid,txnCount,client,processor,permits,config.allowinprocadhoc,config.mpratio);
-    clientThread.start();
-    clientThreads.add(clientThread);
-  }
   log.info("All threads started...");
   while (true) {
     Thread.sleep(Integer.MAX_VALUE);
