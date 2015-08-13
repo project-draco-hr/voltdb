@@ -3,27 +3,36 @@
   Config config=new Config();
   config.parse(KafkaImportBenchmark.class.getName(),args);
   dbconnect(config.servers,config.ratelimit);
-  exportProc=new InsertExport(client);
+  exportProc=new InsertExport(client,rowsAdded);
   exportMon=new TableChangeMonitor(client,"StreamedTable","KAFKAEXPORTTABLE1");
   importMon=new TableChangeMonitor(client,"PersistentTable","KAFKAIMPORTTABLE1");
-  log.info("starting KafkaImportBenchmark...");
+  log.info("Starting KafkaImportBenchmark...");
   KafkaImportBenchmark benchmark=new KafkaImportBenchmark(config);
   BenchmarkRunner runner=new BenchmarkRunner(benchmark);
   runner.start();
   runner.join();
+  long exportRowCount=MatchChecks.getExportRowCount(client);
+  log.info("Export phase complete, " + exportRowCount + " rows exported, waiting for import to drain...");
   long count=0;
-  long prev=0;
   do {
-    count=MatchChecks.getMirrorTableRowCount(client);
-    log.info("Mirror table count: " + count);
-    if (prev != 0) {
-      log.info("Import rate: " + (prev - count) / END_WAIT + " tps");
-    }
     Thread.sleep(END_WAIT * 1000);
-    prev=count;
   }
- while (count > 0);
-  boolean testResult=FinalCheck.check(client);
+ while (importProgress.size() < 4 || importProgress.get(importProgress.size() - 1) > importProgress.get(importProgress.size() - 2) || importProgress.get(importProgress.size() - 1) > importProgress.get(importProgress.size() - 3) || importProgress.get(importProgress.size() - 1) > importProgress.get(importProgress.size() - 4));
+  long mirrorRows=MatchChecks.getMirrorTableRowCount(client);
+  long importRows=MatchChecks.getImportTableRowCount(client);
+  long importRowCount=MatchChecks.getImportRowCount(client);
+  log.info("Total rows exported: " + finalInsertCount);
+  log.info("Unmatched Rows remaining in the export Mirror Table: " + mirrorRows);
+  log.info("Unmatched Rows received from Kafka to Import Table (duplicate rows): " + importRows);
+  boolean testResult=true;
+  if (mirrorRows != 0) {
+    log.error(mirrorRows + " Rows are missing from the import stream, failing test");
+    testResult=false;
+  }
+  if (importRowCount < exportRowCount) {
+    log.error("Export count '" + exportRowCount + "' does not match import row count '"+ importRowCount+ "' test fails.");
+    testResult=false;
+  }
   client.drain();
   client.close();
   if (testResult == true) {
