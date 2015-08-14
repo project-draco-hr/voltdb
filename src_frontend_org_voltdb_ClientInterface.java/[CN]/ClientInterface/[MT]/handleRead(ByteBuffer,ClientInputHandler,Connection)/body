@@ -9,23 +9,7 @@
   }
   final CatalogContext catalogContext=m_catalogContext.get();
   final AuthSystem.AuthUser user=catalogContext.authSystem.getUser(handler.m_username);
-  Procedure catProc=catalogContext.procedures.get(task.procName);
-  if (catProc == null) {
-    catProc=catalogContext.m_defaultProcs.checkForDefaultProcedure(task.procName);
-  }
-  if (catProc == null) {
-    String proc=task.procName;
-    if (task.procName.equals("@AdHoc") || task.procName.equals("@AdHocSpForTest")) {
-      proc="@AdHoc_RW_MP";
-    }
- else     if (task.procName.equals("@UpdateClasses")) {
-      proc="@UpdateApplicationCatalog";
-    }
-    Config sysProc=SystemProcedureCatalog.listing.get(proc);
-    if (sysProc != null) {
-      catProc=sysProc.asCatalogProcedure();
-    }
-  }
+  Procedure catProc=getProcedureFromName(task.procName,catalogContext);
   if (user == null) {
     authLog.info("User " + handler.m_username + " has been removed from the system via a catalog update");
     return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],"User " + handler.m_username + " has been removed from the system via a catalog update",task.clientHandle);
@@ -38,7 +22,6 @@
   if (!allowPauseModeExecution(handler,catProc,task)) {
     return new ClientResponseImpl(ClientResponseImpl.SERVER_UNAVAILABLE,new VoltTable[0],"Server is paused and is available in read-only mode - please try again later.",task.clientHandle);
   }
-  final ProcedurePartitionInfo ppi=(ProcedurePartitionInfo)catProc.getAttachment();
   ClientResponseImpl error=null;
   if ((error=m_permissionValidator.shouldAccept(task.procName,user,task,catProc)) != null) {
     return error;
@@ -142,13 +125,11 @@
     }
   }
   int partition=-1;
-  if (catProc.getSinglepartition()) {
-    try {
-      partition=getPartitionForProcedure(ppi.index,ppi.type,task);
-    }
- catch (    Exception e) {
-      return getMispartitionedErrorResponse(task,catProc,e);
-    }
+  try {
+    partition=getPartitionForProcedure(catProc,task);
+  }
+ catch (  Exception e) {
+    return getMispartitionedErrorResponse(task,catProc,e);
   }
   boolean success=createTransaction(handler.connectionId(),task,catProc.getReadonly(),catProc.getSinglepartition(),catProc.getEverysite(),partition,buf.capacity(),nowNanos);
   if (!success) {
