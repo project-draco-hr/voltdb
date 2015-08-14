@@ -1,10 +1,18 @@
 {
-  if (m_stopping) {
-    info("Importer is stopping, ignoring the change notification.");
-    return;
-  }
   if (m_es == null) {
     VoltDB.crashLocalVoltDB("buildTopicLeaderMetadata must be called before getting an onChange",false,null);
+  }
+  for (  URI r : assignment.getRemoved()) {
+    TopicPartitionFetcher fetcher=m_fetchers.get(r.toString());
+    if (fetcher != null) {
+      fetcher.shutdown();
+      info("KafkaImporter is NOT fetching for resource: " + r);
+      m_fetchers.remove(r.toString());
+    }
+  }
+  if (m_stopping) {
+    info("Importer is stopping, ignoring these additions " + assignment.getAdded());
+    return;
   }
   for (  URI nuri : assignment.getAdded()) {
     Map<String,List<Integer>> topicMap=new HashMap<String,List<Integer>>();
@@ -33,14 +41,6 @@
           info("KafkaImporter is fetching for resource: " + nuri);
         }
       }
-    }
-  }
-  for (  URI r : assignment.getRemoved()) {
-    TopicPartitionFetcher fetcher=m_fetchers.get(r.toString());
-    if (fetcher != null) {
-      fetcher.shutdown();
-      info("KafkaImporter is NOT fetching for resource: " + r);
-      m_fetchers.remove(r.toString());
     }
   }
 }
