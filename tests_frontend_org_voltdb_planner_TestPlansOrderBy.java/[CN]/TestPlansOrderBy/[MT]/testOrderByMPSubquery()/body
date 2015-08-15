@@ -1,0 +1,50 @@
+{
+{
+    List<AbstractPlanNode> frags=compileToFragments("select PT_D1 from (select P_D1 as PT_D1 from P where P.P_D1 > 0 order by P_D1) P_T order by PT_D1;");
+    assertEquals(2,frags.size());
+    AbstractPlanNode pn=frags.get(0).getChild(0).getChild(0);
+    assertEquals(PlanNodeType.ORDERBY,pn.getPlanNodeType());
+    pn=frags.get(1).getChild(0);
+    assertEquals(PlanNodeType.SEQSCAN,pn.getPlanNodeType());
+    assertEquals("P_T",((SeqScanPlanNode)pn).getTargetTableAlias());
+  }
+{
+    List<AbstractPlanNode> frags=compileToFragments("select PT_D1 from (select P_D1 as PT_D1 from P where P.P_D1 > 0 order by P_D1 limit 4) P_T order by PT_D1;");
+    assertEquals(2,frags.size());
+    AbstractPlanNode pn=frags.get(0).getChild(0).getChild(0);
+    assertEquals(PlanNodeType.ORDERBY,pn.getPlanNodeType());
+    pn=pn.getChild(0);
+    assertEquals(PlanNodeType.SEQSCAN,pn.getPlanNodeType());
+    assertEquals("P_T",((SeqScanPlanNode)pn).getTargetTableAlias());
+    pn=pn.getChild(0).getChild(0);
+    validateMergeReceive(pn,true,new int[1]);
+    pn=frags.get(1).getChild(0);
+    assertEquals(PlanNodeType.INDEXSCAN,pn.getPlanNodeType());
+    assertEquals("P",((IndexScanPlanNode)pn).getTargetTableAlias());
+  }
+{
+    List<AbstractPlanNode> frags=compileToFragments("select PT_D1, MP_D3 from (select P_D1 as PT_D1, max(P_D3) as MP_D3 from P group by P_D1 order by P_D1 limit 4) P_T order by PT_D1");
+    assertEquals(2,frags.size());
+    AbstractPlanNode pn=frags.get(0).getChild(0).getChild(0);
+    assertEquals(PlanNodeType.ORDERBY,pn.getPlanNodeType());
+    pn=pn.getChild(0);
+    assertEquals(PlanNodeType.SEQSCAN,pn.getPlanNodeType());
+    assertEquals("P_T",((SeqScanPlanNode)pn).getTargetTableAlias());
+    pn=pn.getChild(0).getChild(0);
+    validateAggregatedMergeReceive(pn,true,false,false,true);
+    pn=frags.get(1).getChild(0);
+    assertEquals(PlanNodeType.INDEXSCAN,pn.getPlanNodeType());
+    assertEquals("P",((IndexScanPlanNode)pn).getTargetTableAlias());
+  }
+{
+    List<AbstractPlanNode> frags=compileToFragments("select PT_D1, MP_D3 from (select P_D0  as PT_D0, P_D1 as PT_D1, max(P_D3) as MP_D3 from P group by P_D0, P_D1 order by P_D0) P_T order by PT_D1 limit 5");
+    assertEquals(2,frags.size());
+    AbstractPlanNode pn=frags.get(0).getChild(0).getChild(0);
+    validateMergeReceive(pn,true,new int[1]);
+    pn=frags.get(1).getChild(0);
+    assertEquals(PlanNodeType.ORDERBY,pn.getPlanNodeType());
+    pn=pn.getChild(0);
+    assertEquals(PlanNodeType.SEQSCAN,pn.getPlanNodeType());
+    assertEquals("P_T",((SeqScanPlanNode)pn).getTargetTableAlias());
+  }
+}

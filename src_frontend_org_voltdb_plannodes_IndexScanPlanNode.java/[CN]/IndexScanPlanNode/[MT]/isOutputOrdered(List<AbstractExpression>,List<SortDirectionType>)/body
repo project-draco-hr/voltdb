@@ -11,23 +11,25 @@
   }
   List<AbstractExpression> indexedExprs=new ArrayList<AbstractExpression>();
   List<ColumnRef> indexedColRefs=new ArrayList<ColumnRef>();
-  List<Integer> indexedColIds=new ArrayList<Integer>();
-  CatalogUtil.getCatalogIndexExpressions(getCatalogIndex(),getTableScan(),indexedExprs,indexedColRefs,indexedColIds);
-  int indexExprCount=(indexedExprs.isEmpty()) ? indexedColRefs.size() : indexedExprs.size();
+  boolean columnIndex=CatalogUtil.getCatalogIndexExpressions(getCatalogIndex(),getTableScan(),indexedExprs,indexedColRefs);
+  int indexExprCount=(columnIndex) ? indexedColRefs.size() : indexedExprs.size();
   if (indexExprCount < sortExpressions.size()) {
     return false;
   }
-  for (int idxToCover=0; idxToCover < sortExpressions.size(); ++idxToCover) {
-    AbstractExpression sortExpression=sortExpressions.get(idxToCover);
-    boolean covered=false;
-    if (!indexedExprs.isEmpty()) {
-      covered=isSortExpressionCovered(sortExpression,indexedExprs,idxToCover);
+  if (columnIndex) {
+    for (int idxToCover=0; idxToCover < sortExpressions.size(); ++idxToCover) {
+      AbstractExpression sortExpression=sortExpressions.get(idxToCover);
+      if (!isSortExpressionCovered(sortExpression,indexedColRefs,idxToCover,getTableScan())) {
+        return false;
+      }
     }
+  }
  else {
-      covered=isSortExpressionCovered(sortExpression,indexedColRefs,idxToCover,getTableScan());
-    }
-    if (!covered) {
-      return false;
+    for (int idxToCover=0; idxToCover < sortExpressions.size(); ++idxToCover) {
+      AbstractExpression sortExpression=sortExpressions.get(idxToCover);
+      if (!isSortExpressionCovered(sortExpression,indexedExprs,idxToCover)) {
+        return false;
+      }
     }
   }
   return true;
