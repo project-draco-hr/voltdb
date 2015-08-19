@@ -1,0 +1,56 @@
+{
+  Set<URI> availableResources=new TreeSet<URI>();
+  for (  String key : m_brokerKeys) {
+    SimpleConsumer consumer=null;
+    int consumerSocketTimeout=m_brokerSOTimeout.get(key);
+    int fetchsize=m_brokerFetchSize.get(key);
+    try {
+      for (      String topic : m_brokerTopicList.get(key)) {
+        consumer=new SimpleConsumer(m_brokerList.get(key).get(0).getHost(),m_brokerList.get(key).get(0).getPort(),consumerSocketTimeout,fetchsize,CLIENT_ID);
+        TopicMetadataRequest req=new TopicMetadataRequest(singletonList(topic));
+        kafka.javaapi.TopicMetadataResponse resp=null;
+        try {
+          resp=consumer.send(req);
+        }
+ catch (        Exception ex) {
+          error(ex,"Failed to send topic metadata request for topic " + topic);
+          continue;
+        }
+        List<TopicMetadata> metaData=resp.topicsMetadata();
+        if (metaData == null) {
+          error("Failed to get topic metadata for topic " + topic);
+          continue;
+        }
+        m_topicPartitionMetaData.put(topic,metaData);
+        List<Integer> partitions=m_topicPartitions.get(topic);
+        if (partitions == null) {
+          partitions=new ArrayList<Integer>();
+          m_topicPartitions.put(topic,partitions);
+        }
+        for (        TopicMetadata item : metaData) {
+          for (          PartitionMetadata part : item.partitionsMetadata()) {
+            partitions.add(part.partitionId());
+            URI uri;
+            try {
+              uri=new URI("kafka",key,topic + "/partition/" + part.partitionId());
+            }
+ catch (            URISyntaxException ex) {
+              error(ex,"Failed to create URI for " + topic + "/"+ part.partitionId());
+              continue;
+            }
+            availableResources.add(uri);
+            String leaderKey=topic + "-" + part.partitionId();
+            Broker leader=part.leader();
+            m_topicPartitionLeader.put(leaderKey,new HostAndPort(leader.host(),leader.port()));
+          }
+        }
+      }
+    }
+  finally {
+      closeConsumer(consumer);
+    }
+  }
+  info("Available Channels are: " + availableResources);
+  m_es=Executors.newFixedThreadPool(availableResources.size() + 1,getThreadFactory("KafkaImporter","KafkaImporterTopicFetcher",ImportHandlerProxy.MEDIUM_STACK_SIZE));
+  return availableResources;
+}
