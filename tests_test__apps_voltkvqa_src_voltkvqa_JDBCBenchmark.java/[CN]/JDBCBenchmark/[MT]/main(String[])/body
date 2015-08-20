@@ -1,0 +1,158 @@
+{
+  try {
+    KVConfig config=new KVConfig();
+    config.parse(JDBCBenchmark.class.getName(),args);
+    System.out.println(config.getConfigDumpString());
+    Class.forName(DRIVER_NAME);
+    String url="jdbc:voltdb://" + config.servers;
+    if (config.externalConnectionPool.equalsIgnoreCase(C3P0_CONNECTIONPOOL)) {
+      useConnectionPool=true;
+      ComboPooledDataSource cpds=new ComboPooledDataSource();
+      cpds.setDriverClass(DRIVER_NAME);
+      cpds.setJdbcUrl(url);
+      Ds=cpds;
+    }
+ else     if (config.externalConnectionPool.equalsIgnoreCase(TOMCAT_CONNECTIONPOOL)) {
+      useConnectionPool=true;
+      String configName="tomcat.properties";
+      boolean useDefaultConnectionPoolConfig=true;
+      Properties cpProperties=new Properties();
+      try {
+        FileInputStream fileInput=new FileInputStream(new File(configName));
+        cpProperties.load(fileInput);
+        fileInput.close();
+        useDefaultConnectionPoolConfig=false;
+      }
+ catch (      FileNotFoundException e) {
+        System.out.println("connection pool property file '" + configName + "' not found, use default settings");
+      }
+      PoolProperties p=new PoolProperties();
+      p.setUrl(url);
+      p.setDriverClassName(DRIVER_NAME);
+      if (useDefaultConnectionPoolConfig) {
+        p.setInitialSize(config.threads + 1);
+      }
+ else {
+        p.setInitialSize(Integer.parseInt(cpProperties.getProperty("tomcat.initialSize","40")));
+      }
+      org.apache.tomcat.jdbc.pool.DataSource tomcatDs=new org.apache.tomcat.jdbc.pool.DataSource();
+      tomcatDs.setPoolProperties(p);
+      Ds=tomcatDs;
+    }
+ else     if (config.externalConnectionPool.equalsIgnoreCase(BONECP_CONNECTIONPOOL)) {
+      useConnectionPool=true;
+      String configName="bonecp.properties";
+      boolean useDefaultConnectionPoolConfig=true;
+      Properties cpProperties=new Properties();
+      try {
+        FileInputStream fileInput=new FileInputStream(new File(configName));
+        cpProperties.load(fileInput);
+        fileInput.close();
+        useDefaultConnectionPoolConfig=false;
+      }
+ catch (      FileNotFoundException e) {
+        System.out.println("connection pool property file '" + configName + "' not found, use default settings");
+      }
+      BoneCPConfig p;
+      if (useDefaultConnectionPoolConfig) {
+        p=new BoneCPConfig();
+        p.setDefaultReadOnly(false);
+        p.setPartitionCount(config.threads / 2);
+        p.setMaxConnectionsPerPartition(4);
+      }
+ else {
+        p=new BoneCPConfig(cpProperties);
+      }
+      p.setJdbcUrl(url + "?enableSetReadOnly=true");
+      BoneCPDataSource boneDs=new BoneCPDataSource(p);
+      Ds=boneDs;
+    }
+ else     if (config.externalConnectionPool.equalsIgnoreCase(HIKARI_CONNECTIONPOOL)) {
+      useConnectionPool=true;
+      HikariConfig p=new HikariConfig("hikari.properties");
+      p.setDriverClassName(DRIVER_NAME);
+      p.setJdbcUrl(url);
+      HikariDataSource hiDs=new HikariDataSource(p);
+      Ds=hiDs;
+    }
+ else {
+      useConnectionPool=false;
+      Ds=null;
+    }
+    System.out.printf("Connecting to: %s\n",url);
+    int sleep=1000;
+    while (true) {
+      try {
+        if (useConnectionPool) {
+          Ds.getConnection();
+          System.out.printf("Using Connection Pool: %s\n",config.externalConnectionPool);
+        }
+        Con=DriverManager.getConnection(url,"","");
+        break;
+      }
+ catch (      Exception e) {
+        System.err.printf("Connection failed - retrying in %d second(s).\n " + e,sleep / 1000);
+        try {
+          Thread.sleep(sleep);
+        }
+ catch (        Exception tie) {
+        }
+        if (sleep < 8000)         sleep+=sleep;
+      }
+    }
+    ClientStatsContext fullStatsContext=((IVoltDBConnection)Con).createStatsContext();
+    periodicStatsContext=((IVoltDBConnection)Con).createStatsContext();
+    System.out.println("Connected.  Starting benchmark.");
+    final PayloadProcessor processor=new PayloadProcessor(config.keysize,config.minvaluesize,config.maxvaluesize,config.entropy,config.poolsize,config.usecompression);
+    if (config.preload) {
+      System.out.print("Initializing data store... ");
+      final PreparedStatement removeCS=Con.prepareStatement("DELETE FROM store;");
+      final CallableStatement putCS=Con.prepareCall("{call STORE.upsert(?,?)}");
+      for (int i=0; i < config.poolsize; i++) {
+        if (i == 0) {
+          removeCS.execute();
+        }
+        putCS.setString(1,String.format(processor.KeyFormat,i));
+        putCS.setBytes(2,processor.generateForStore().getStoreValue());
+        putCS.execute();
+      }
+      System.out.println(" Done.");
+    }
+    fullStatsContext.fetchAndResetBaseline();
+    periodicStatsContext.fetchAndResetBaseline();
+    benchmarkStartTS=System.currentTimeMillis();
+    Timer timer=new Timer();
+    TimerTask statsPrinting=new TimerTask(){
+      @Override public void run(){
+        printStatistics();
+      }
+    }
+;
+    timer.scheduleAtFixedRate(statsPrinting,config.displayinterval * 1000l,config.displayinterval * 1000l);
+    ArrayList<Thread> threads=new ArrayList<Thread>();
+    for (int i=0; i < config.threads; i++)     threads.add(new Thread(new ClientThread(url,processor,config.duration,config.getputratio)));
+    for (    Thread thread : threads)     thread.start();
+    for (    Thread thread : threads)     thread.join();
+    timer.cancel();
+    ClientStats stats=fullStatsContext.fetch().getStats();
+    System.out.printf("\n-------------------------------------------------------------------------------------\n" + " Store Results\n" + "-------------------------------------------------------------------------------------\n\n"+ "A total of %,d operations was posted...\n"+ " - GETs: %,9d Operations (%,9d Misses/Failures)\n"+ "         %,9d MB in compressed store data\n"+ "         %,9d MB in uncompressed application data\n"+ "         Network Throughput: %6.3f Gbps*\n\n"+ " - PUTs: %,9d Operations (%,9d Failures)\n"+ "         %,9d MB in compressed store data\n"+ "         %,9d MB in uncompressed application data\n"+ "         Network Throughput: %6.3f Gbps*\n\n"+ " - Total Network Throughput: %6.3f Gbps*\n\n"+ "* Figure includes key & value traffic but not database protocol overhead.\n"+ "\n"+ "-------------------------------------------------------------------------------------\n",GetStoreResults.get(0) + GetStoreResults.get(1) + PutStoreResults.get(0)+ PutStoreResults.get(1),GetStoreResults.get(0),GetStoreResults.get(1),GetCompressionResults.get(0) / 1048576l,GetCompressionResults.get(1) / 1048576l,((double)GetCompressionResults.get(0) + (GetStoreResults.get(0) + GetStoreResults.get(1)) * config.keysize) / (134217728d * config.duration),PutStoreResults.get(0),PutStoreResults.get(1),PutCompressionResults.get(0) / 1048576l,PutCompressionResults.get(1) / 1048576l,((double)PutCompressionResults.get(0) + (PutStoreResults.get(0) + PutStoreResults.get(1)) * config.keysize) / (134217728d * config.duration),((double)GetCompressionResults.get(0) + (GetStoreResults.get(0) + GetStoreResults.get(1)) * config.keysize) / (134217728d * config.duration) + ((double)PutCompressionResults.get(0) + (PutStoreResults.get(0) + PutStoreResults.get(1)) * config.keysize) / (134217728d * config.duration));
+    System.out.println("\n\n-------------------------------------------------------------------------------------\n" + " Client Latency Statistics\n" + "-------------------------------------------------------------------------------------\n\n");
+    System.out.printf("Average latency:               %,9.2f ms\n",stats.getAverageLatency());
+    System.out.printf("10th percentile latency:       %,9.2f ms\n",stats.kPercentileLatencyAsDouble(.1));
+    System.out.printf("25th percentile latency:       %,9.2f ms\n",stats.kPercentileLatencyAsDouble(.25));
+    System.out.printf("50th percentile latency:       %,9.2f ms\n",stats.kPercentileLatencyAsDouble(.5));
+    System.out.printf("75th percentile latency:       %,9.2f ms\n",stats.kPercentileLatencyAsDouble(.75));
+    System.out.printf("90th percentile latency:       %,9.2f ms\n",stats.kPercentileLatencyAsDouble(.9));
+    System.out.printf("95th percentile latency:       %,9.2f ms\n",stats.kPercentileLatencyAsDouble(.95));
+    System.out.printf("99th percentile latency:       %,9.2f ms\n",stats.kPercentileLatencyAsDouble(.99));
+    System.out.printf("99.5th percentile latency:     %,9.2f ms\n",stats.kPercentileLatencyAsDouble(.995));
+    System.out.printf("99.9th percentile latency:     %,9.2f ms\n",stats.kPercentileLatencyAsDouble(.999));
+    System.out.println("\n\n" + stats.latencyHistoReport());
+    Con.unwrap(IVoltDBConnection.class).saveStatistics(stats,config.statsfile);
+    Con.close();
+  }
+ catch (  Exception x) {
+    System.out.println("Exception: " + x);
+    x.printStackTrace();
+  }
+}
