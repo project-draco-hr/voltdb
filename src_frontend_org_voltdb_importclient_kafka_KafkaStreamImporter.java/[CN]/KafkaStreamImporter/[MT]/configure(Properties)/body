@@ -1,18 +1,48 @@
 {
-  m_properties=(Properties)p.clone();
-  m_procedure=m_properties.getProperty("procedure","").trim();
-  if (m_procedure.isEmpty()) {
+  String brokers=p.getProperty("brokers","").trim();
+  if (brokers.isEmpty()) {
+    throw new RuntimeException("Missing kafka broker");
+  }
+  List<String> brokerList=Arrays.asList(brokers.split("\\s*,\\s*"));
+  if (brokerList == null || brokerList.isEmpty()) {
+    throw new RuntimeException("Missing kafka broker");
+  }
+  List<HostAndPort> haplist=new ArrayList<HostAndPort>();
+  for (  String broker : brokerList) {
+    HostAndPort hap=HostAndPort.fromString(broker);
+    haplist.add(hap);
+  }
+  if (haplist.isEmpty()) {
+    throw new RuntimeException("Missing or misconfigured kafka broker list. See brokers property");
+  }
+  String key=getBrokerKey(brokers);
+  if (m_brokerList.containsKey(key)) {
+    List<HostAndPort> l=m_brokerList.get(key);
+    l.addAll(haplist);
+  }
+ else {
+    m_brokerList.put(key,haplist);
+  }
+  m_brokerKeys.add(key);
+  String procedure=p.getProperty("procedure","").trim();
+  if (procedure.isEmpty()) {
     throw new RuntimeException("Missing procedure.");
   }
-  String topics=m_properties.getProperty("topics","").trim();
+  Map<String,String> topicProc=topicProc=m_brokerProcedure.get(key);
+  if (topicProc == null) {
+    topicProc=new HashMap<String,String>();
+    m_brokerProcedure.put(key,topicProc);
+  }
+  String topics=p.getProperty("topics","").trim();
   if (topics.isEmpty()) {
     throw new RuntimeException("Missing topic(s).");
   }
-  m_topicList=Arrays.asList(topics.split("\\s*,\\s*"));
-  if (m_topicList == null || m_topicList.isEmpty()) {
+  List<String> ttopicList=Arrays.asList(topics.split("\\s*,\\s*"));
+  if (ttopicList == null || ttopicList.isEmpty()) {
     throw new RuntimeException("Missing topic(s).");
   }
-  for (  String topic : m_topicList) {
+  List<String> topicList=new ArrayList<String>();
+  for (  String topic : ttopicList) {
     if (topic.contains("..") || topic.contains(".")) {
       throw new RuntimeException("topic name cannot be \".\" or \"..\"");
     }
@@ -22,24 +52,18 @@
     if (!legalTopicNamesPattern.matcher(topic).matches()) {
       throw new RuntimeException("topic name " + topic + " is illegal, contains a character other than ASCII alphanumerics, '.', '_' and '-'");
     }
+    topicList.add(topic);
+    topicProc.put(topic,procedure);
   }
-  String brokers=m_properties.getProperty("brokers","").trim();
-  if (brokers.isEmpty()) {
-    throw new RuntimeException("Missing kafka broker");
+  if (m_brokerTopicList.containsKey(key)) {
+    List<String> l=m_brokerTopicList.get(key);
+    l.addAll(topicList);
   }
-  List<String> brokerList=Arrays.asList(brokers.split("\\s*,\\s*"));
-  if (brokerList == null || brokerList.isEmpty()) {
-    throw new RuntimeException("Missing kafka broker");
+ else {
+    m_brokerTopicList.put(key,topicList);
   }
-  for (  String broker : brokerList) {
-    HostAndPort hap=HostAndPort.fromString(broker);
-    m_brokerList.add(hap);
-  }
-  if (m_brokerList.isEmpty()) {
-    throw new RuntimeException("Missing or misconfigured kafka broker list. See brokers property");
-  }
-  m_groupId=m_properties.getProperty("groupid",GROUP_ID).trim();
-  m_fetchSize=Integer.parseInt(m_properties.getProperty("fetch.message.max.bytes","65536"));
-  m_consumerSocketTimeout=Integer.parseInt(m_properties.getProperty("socket.timeout.ms","30000"));
-  m_backpressureSleepMs=Integer.parseInt(m_properties.getProperty("backpressure.sleep.ms","50"));
+  m_brokerGroupId.put(key,p.getProperty("groupid",GROUP_ID).trim());
+  m_brokerFetchSize.put(key,Integer.parseInt(p.getProperty("fetch.message.max.bytes","65536")));
+  m_brokerSOTimeout.put(key,Integer.parseInt(p.getProperty("socket.timeout.ms","30000")));
+  m_backpressureSleepMs=Integer.parseInt(p.getProperty("backpressure.sleep.ms","1"));
 }

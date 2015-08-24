@@ -42,15 +42,24 @@
     printJStack();
     System.exit(-1);
   }
+  clientThreads=new ArrayList<ClientThread>();
+  if (!config.disabledThreads.contains("clients")) {
+    for (byte cid=(byte)config.threadoffset; cid < config.threadoffset + config.threads; cid++) {
+      ClientThread clientThread=new ClientThread(cid,txnCount,client,processor,permits,config.allowinprocadhoc,config.mpratio);
+      clientThreads.add(clientThread);
+    }
+  }
   log.info(HORIZONTAL_RULE);
   log.info("Loading Filler Tables...");
   log.info(HORIZONTAL_RULE);
-  partitionedLoader=new BigTableLoader(client,"bigp",(config.partfillerrowmb * 1024 * 1024) / config.fillerrowsize,config.fillerrowsize,50,permits,partitionCount);
-  partitionedLoader.start();
-  replicatedLoader=null;
-  if (config.mpratio > 0.0) {
-    replicatedLoader=new BigTableLoader(client,"bigr",(config.replfillerrowmb * 1024 * 1024) / config.fillerrowsize,config.fillerrowsize,3,permits,partitionCount);
-    replicatedLoader.start();
+  if (!config.disabledThreads.contains("partBiglt")) {
+    partBiglt=new BigTableLoader(client,"bigp",(config.partfillerrowmb * 1024 * 1024) / config.fillerrowsize,config.fillerrowsize,50,permits,partitionCount);
+    partBiglt.start();
+  }
+  replBiglt=null;
+  if (config.mpratio > 0.0 && !config.disabledThreads.contains("replBiglt")) {
+    replBiglt=new BigTableLoader(client,"bigr",(config.replfillerrowmb * 1024 * 1024) / config.fillerrowsize,config.fillerrowsize,3,permits,partitionCount);
+    replBiglt.start();
   }
   log.info(HORIZONTAL_RULE);
   log.info("Starting Benchmark");
@@ -66,34 +75,53 @@
     Thread.sleep(1000);
     System.out.println("Wait for hashinator..");
   }
-  partitionedTruncater=new TruncateTableLoader(client,"trup",(config.partfillerrowmb * 1024 * 1024) / config.fillerrowsize,config.fillerrowsize,50,permits,config.mpratio);
-  partitionedTruncater.start();
-  replicatedTruncater=null;
-  if (config.mpratio > 0.0) {
-    replicatedTruncater=new TruncateTableLoader(client,"trur",(config.replfillerrowmb * 1024 * 1024) / config.fillerrowsize,config.fillerrowsize,3,permits,config.mpratio);
-    replicatedTruncater.start();
+  if (!config.disabledThreads.contains("clients")) {
+    for (    ClientThread t : clientThreads) {
+      t.start();
+    }
   }
-  plt=new LoadTableLoader(client,"loadp",(config.partfillerrowmb * 1024 * 1024) / config.fillerrowsize,50,permits,false,0);
-  plt.start();
-  rlt=null;
-  if (config.mpratio > 0.0) {
-    rlt=new LoadTableLoader(client,"loadmp",(config.replfillerrowmb * 1024 * 1024) / config.fillerrowsize,3,permits,true,-1);
-    rlt.start();
+  if (!config.disabledThreads.contains("partTrunclt")) {
+    partTrunclt=new TruncateTableLoader(client,"trup",(config.partfillerrowmb * 1024 * 1024) / config.fillerrowsize,config.fillerrowsize,50,permits,config.mpratio);
+    partTrunclt.start();
   }
-  readThread=new ReadThread(client,config.threads,config.threadoffset,config.allowinprocadhoc,config.mpratio,permits);
-  readThread.start();
-  adHocMayhemThread=new AdHocMayhemThread(client,config.mpratio,permits);
-  if (!config.disableadhoc) {
-    adHocMayhemThread.start();
+  replTrunclt=null;
+  if (config.mpratio > 0.0 && !config.disabledThreads.contains("replTrunclt")) {
+    replTrunclt=new TruncateTableLoader(client,"trur",(config.replfillerrowmb * 1024 * 1024) / config.fillerrowsize,config.fillerrowsize,3,permits,config.mpratio);
+    replTrunclt.start();
   }
-  idpt=new InvokeDroppedProcedureThread(client);
-  idpt.start();
-  ddlt=new DdlThread(client);
-  clientThreads=new ArrayList<ClientThread>();
-  for (byte cid=(byte)config.threadoffset; cid < config.threadoffset + config.threads; cid++) {
-    ClientThread clientThread=new ClientThread(cid,txnCount,client,processor,permits,config.allowinprocadhoc,config.mpratio);
-    clientThread.start();
-    clientThreads.add(clientThread);
+  if (!config.disabledThreads.contains("partCappedlt")) {
+    partCappedlt=new CappedTableLoader(client,"capp",(config.partfillerrowmb * 1024 * 1024) / config.fillerrowsize,config.fillerrowsize,50,permits,config.mpratio);
+    partCappedlt.start();
+  }
+  if (config.mpratio > 0.0 && !config.disabledThreads.contains("replCappedlt")) {
+    replCappedlt=new CappedTableLoader(client,"capr",(config.replfillerrowmb * 1024 * 1024) / config.fillerrowsize,config.fillerrowsize,3,permits,config.mpratio);
+    replCappedlt.start();
+  }
+  if (!config.disabledThreads.contains("partLoadlt")) {
+    partLoadlt=new LoadTableLoader(client,"loadp",(config.partfillerrowmb * 1024 * 1024) / config.fillerrowsize,50,permits,false,0);
+    partLoadlt.start();
+  }
+  replLoadlt=null;
+  if (config.mpratio > 0.0 && !config.disabledThreads.contains("replLoadlt")) {
+    replLoadlt=new LoadTableLoader(client,"loadmp",(config.replfillerrowmb * 1024 * 1024) / config.fillerrowsize,3,permits,true,-1);
+    replLoadlt.start();
+  }
+  if (!config.disabledThreads.contains("readThread")) {
+    readThread=new ReadThread(client,config.threads,config.threadoffset,config.allowinprocadhoc,config.mpratio,permits);
+    readThread.start();
+  }
+  if (!config.disabledThreads.contains("adHocMayhemThread")) {
+    adHocMayhemThread=new AdHocMayhemThread(client,config.mpratio,permits);
+    if (!config.disableadhoc) {
+      adHocMayhemThread.start();
+    }
+  }
+  if (!config.disabledThreads.contains("idpt")) {
+    idpt=new InvokeDroppedProcedureThread(client);
+    idpt.start();
+  }
+  if (!config.disabledThreads.contains("ddlt")) {
+    ddlt=new DdlThread(client);
   }
   log.info("All threads started...");
   while (true) {

@@ -1,14 +1,9 @@
 {
-  if (m_seenOffset.isEmpty())   return false;
-  long offset=m_seenOffset.last();
-  SortedSet<Long> removeSet=m_seenOffset.subSet(m_seenOffset.first(),offset);
   final int correlationId=m_topicAndPartition.partition();
   final short version=1;
-  if (m_lastCommittedOffset != offset) {
-    OffsetAndMetadata offsetMetdata=new OffsetAndMetadata(offset,"commitRequest",ErrorMapping.NoError());
-    Map<TopicAndPartition,OffsetAndMetadata> reqMap=new HashMap<TopicAndPartition,OffsetAndMetadata>();
-    reqMap.put(m_topicAndPartition,offsetMetdata);
-    OffsetCommitRequest offsetCommitRequest=new OffsetCommitRequest(m_groupId,reqMap,correlationId,CLIENT_ID,version);
+  final long safe=m_gapTracker.commit(-1L);
+  if (safe > m_lastCommittedOffset) {
+    OffsetCommitRequest offsetCommitRequest=new OffsetCommitRequest(m_groupId,singletonMap(m_topicAndPartition,new OffsetAndMetadata(safe,"commit",ErrorMapping.NoError())),correlationId,CLIENT_ID,version);
     OffsetCommitResponse offsetCommitResponse=null;
     try {
       SimpleConsumer consumer=m_offsetManager.get();
@@ -39,14 +34,11 @@
     }
     final short code=((Short)offsetCommitResponse.errors().get(m_topicAndPartition));
     if (code != ErrorMapping.NoError()) {
-      final String msg="Commit Offset Failed to commit for " + m_topicAndPartition + " Code: %d";
-      error(null,msg,code);
+      final String msg="Commit Offset Failed to commit for " + m_topicAndPartition;
+      error(ErrorMapping.exceptionFor(code),msg);
       return false;
     }
-  }
-  m_lastCommittedOffset=offset;
-synchronized (m_seenOffset) {
-    removeSet.clear();
+    m_lastCommittedOffset=safe;
   }
   return true;
 }
