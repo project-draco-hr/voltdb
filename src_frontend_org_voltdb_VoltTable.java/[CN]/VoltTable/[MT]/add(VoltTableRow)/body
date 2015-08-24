@@ -1,13 +1,68 @@
 {
+  if (m_readOnly) {
+    throw new IllegalStateException("Table is read-only. Make a copy before changing.");
+  }
   assert(verifyTableInvariants());
-  final Object[] values=new Object[m_colCount];
-  for (int i=0; i < m_colCount; i++) {
-    try {
-      values[i]=row.get(i,getColumnType(i));
+  if (m_colCount == 0) {
+    throw new IllegalStateException("Table has no columns defined");
+  }
+  if (row.getColumnCount() != m_colCount) {
+    throw new IllegalArgumentException(row.getColumnCount() + " arguments but table has " + m_colCount+ " columns");
+  }
+  final int pos=m_buffer.position();
+  try {
+    m_buffer.limit(m_buffer.capacity());
+    byte[] inboundSchemaString=row.getSchemaString();
+    byte[] mySchemaString=getSchemaString();
+    boolean canDoRawCopy=(inboundSchemaString == mySchemaString) || Arrays.equals(inboundSchemaString,mySchemaString);
+    if (canDoRawCopy) {
+      m_schemaString=inboundSchemaString;
+      byte[] rawRow=row.getRawRow();
+      m_buffer.put(rawRow);
     }
- catch (    Exception e) {
-      e.printStackTrace();
+ else {
+      m_buffer.position(pos + 4);
+      for (int i=0; i < m_colCount; i++) {
+        VoltType inboundType=row.getColumnType(i);
+        VoltType outboundType=getColumnType(i);
+        if (inboundType == outboundType) {
+          byte[] raw=row.getRaw(i);
+          m_buffer.put(raw);
+        }
+ else {
+          Object inboundValue=row.get(i,inboundType);
+          addColumnValue(inboundValue,outboundType,i);
+        }
+      }
+    }
+    m_rowCount++;
+    m_buffer.putInt(m_rowStart,m_rowCount);
+    final int rowsize=m_buffer.position() - pos - 4;
+    if (rowsize > VoltTableRow.MAX_TUPLE_LENGTH) {
+      throw new VoltOverflowException("Table row total length larger than allowed max " + VoltTableRow.MAX_TUPLE_LENGTH_STR);
+    }
+    m_buffer.limit(m_buffer.position());
+    assert(rowsize >= 0);
+    if (!canDoRawCopy) {
+      m_buffer.putInt(pos,rowsize);
     }
   }
-  addRow(values);
+ catch (  VoltTypeException vte) {
+    m_buffer.position(pos);
+    throw vte;
+  }
+catch (  BufferOverflowException e) {
+    m_buffer.position(pos);
+    expandBuffer();
+    add(row);
+  }
+catch (  IllegalArgumentException e) {
+    if (m_buffer.limit() - m_buffer.position() < 32) {
+      m_buffer.position(pos);
+      expandBuffer();
+      add(row);
+    }
+ else     throw e;
+  }
+  assert(verifyTableInvariants());
 }
