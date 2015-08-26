@@ -8,7 +8,20 @@
     m_txnState.setBeginUndoToken(siteConnection.getLatestUndoToken());
   }
   SpTransactionState txnState=(SpTransactionState)m_txnState;
-  final InitiateResponseMessage response=processInitiateTask(txnState.m_initiationMsg,siteConnection);
+  InitiateResponseMessage response;
+  int originalTimeout=siteConnection.getBatchTimeout();
+  int individualTimeout=m_txnState.getInvocation().getBatchTimeout();
+  try {
+    if (BatchTimeoutOverrideType.isUserSetTimeout(individualTimeout)) {
+      siteConnection.setBatchTimeout(individualTimeout);
+    }
+    response=processInitiateTask(txnState.m_initiationMsg,siteConnection);
+  }
+  finally {
+    if (BatchTimeoutOverrideType.isUserSetTimeout(individualTimeout)) {
+      siteConnection.setBatchTimeout(originalTimeout);
+    }
+  }
   if (!response.shouldCommit()) {
     m_txnState.setNeedsRollback(true);
   }
