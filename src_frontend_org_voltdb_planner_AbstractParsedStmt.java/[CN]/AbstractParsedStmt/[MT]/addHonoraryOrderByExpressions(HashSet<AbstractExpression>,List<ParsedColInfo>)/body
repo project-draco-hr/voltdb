@@ -1,0 +1,68 @@
+{
+  if (m_tableAliasMap.size() != 1) {
+    return;
+  }
+  HashMap<AbstractExpression,Set<AbstractExpression>> valueEquivalence=analyzeValueEquivalence();
+  for (  ParsedColInfo colInfo : candidateColumns) {
+    AbstractExpression colExpr=colInfo.expression;
+    if (colExpr instanceof TupleValueExpression) {
+      TupleValueExpression tve=(TupleValueExpression)colExpr;
+      Set<AbstractExpression> tveEquivs=valueEquivalence.get(colExpr);
+      if (tveEquivs != null) {
+        for (        AbstractExpression expr : tveEquivs) {
+          if (expr instanceof ParameterValueExpression || expr instanceof ConstantValueExpression) {
+            orderByExprs.add(colExpr);
+          }
+        }
+      }
+    }
+  }
+  StmtTableScan scan=m_tableAliasMap.values().iterator().next();
+  Table table=getTableFromDB(scan.getTableName());
+  if (table == null) {
+    return;
+  }
+  Set<Column> orderByColumns=new HashSet<Column>();
+  for (  AbstractExpression expr : orderByExprs) {
+    if (expr instanceof TupleValueExpression) {
+      TupleValueExpression tve=(TupleValueExpression)expr;
+      Column col=table.getColumns().get(tve.getColumnName());
+      orderByColumns.add(col);
+    }
+  }
+  CatalogMap<Constraint> constraints=table.getConstraints();
+  if (constraints == null) {
+    return;
+  }
+  Set<Index> indices=new HashSet<Index>();
+  for (  Constraint constraint : constraints) {
+    Index index=constraint.getIndex();
+    if (index != null && index.getUnique() && index.getExpressionsjson().isEmpty()) {
+      indices.add(index);
+    }
+  }
+  for (  ParsedColInfo colInfo : candidateColumns) {
+    AbstractExpression expr=colInfo.expression;
+    if (expr instanceof TupleValueExpression) {
+      TupleValueExpression tve=(TupleValueExpression)expr;
+      for (      Index index : indices) {
+        CatalogMap<ColumnRef> columns=index.getColumns();
+        boolean addAllColumns=true;
+        for (        ColumnRef cr : columns) {
+          Column col=cr.getColumn();
+          if (orderByColumns.contains(col) == false) {
+            addAllColumns=false;
+            break;
+          }
+        }
+        if (addAllColumns) {
+          for (          Column addCol : table.getColumns()) {
+            TupleValueExpression ntve=new TupleValueExpression(tve.getTableName(),tve.getTableAlias(),addCol.getName(),null,-1);
+            orderByExprs.add(ntve);
+          }
+          break;
+        }
+      }
+    }
+  }
+}
