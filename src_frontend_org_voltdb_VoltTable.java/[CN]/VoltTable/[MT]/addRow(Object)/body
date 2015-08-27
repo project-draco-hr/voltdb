@@ -1,8 +1,8 @@
 {
+  assert(verifyTableInvariants());
   if (m_readOnly) {
     throw new IllegalStateException("Table is read-only. Make a copy before changing.");
   }
-  assert(verifyTableInvariants());
   if (m_colCount == 0) {
     throw new IllegalStateException("Table has no columns defined");
   }
@@ -19,15 +19,14 @@
       VoltType columnType=VoltType.get(m_buffer.get(typePos + col));
       addColumnValue(value,columnType,col);
     }
-    m_rowCount++;
-    m_buffer.putInt(m_rowStart,m_rowCount);
     final int rowsize=m_buffer.position() - pos - 4;
+    assert(rowsize >= 0);
     if (rowsize > VoltTableRow.MAX_TUPLE_LENGTH) {
       throw new VoltOverflowException("Table row total length larger than allowed max " + VoltTableRow.MAX_TUPLE_LENGTH_STR);
     }
-    m_buffer.limit(m_buffer.position());
-    assert(rowsize >= 0);
     m_buffer.putInt(pos,rowsize);
+    m_rowCount++;
+    m_buffer.putInt(m_rowStart,m_rowCount);
   }
  catch (  VoltTypeException vte) {
     m_buffer.position(pos);
@@ -38,13 +37,20 @@ catch (  BufferOverflowException e) {
     expandBuffer();
     addRow(values);
   }
+catch (  VoltOverflowException e) {
+    m_buffer.position(pos);
+    throw e;
+  }
 catch (  IllegalArgumentException e) {
+    m_buffer.position(pos);
     if (m_buffer.limit() - m_buffer.position() < 32) {
-      m_buffer.position(pos);
       expandBuffer();
       addRow(values);
     }
  else     throw e;
+  }
+ finally {
+    m_buffer.limit(m_buffer.position());
   }
   assert(verifyTableInvariants());
 }
