@@ -1,0 +1,51 @@
+{
+  try {
+    String simpleSchema="CREATE TABLE foo (\n" + "    bar BIGINT NOT NULL,\n" + "    PRIMARY KEY (bar)\n"+ ");";
+    File schemaFile=VoltProjectBuilder.writeStringToTempFile(simpleSchema);
+    String schemaPath=schemaFile.getPath();
+    schemaPath=URLEncoder.encode(schemaPath,"UTF-8");
+    VoltProjectBuilder builder=new VoltProjectBuilder();
+    builder.addSchema(schemaPath);
+    builder.addPartitionInfo("foo","bar");
+    builder.addProcedures(DelayProc.class);
+    builder.setHTTPDPort(8095);
+    boolean success=builder.compile(Configuration.getPathToCatalogForTest("json.jar"));
+    assertTrue(success);
+    VoltDB.Configuration config=new VoltDB.Configuration();
+    config.m_pathToCatalog=config.setPathToCatalogForTest("json.jar");
+    config.m_pathToDeployment=builder.getPathToDeployment();
+    server=new ServerThread(config);
+    server.start();
+    server.waitForInitialization();
+    String jdep=getUrlOverJSON("http://localhost:8095/deployment",null,null,null,200,"application/json");
+    Map<String,String> params=new HashMap<>();
+    ObjectMapper mapper=new ObjectMapper();
+    DeploymentType deptype=mapper.readValue(jdep,DeploymentType.class);
+    SystemSettingsType ss=deptype.getSystemsettings();
+    if (ss == null) {
+      ss=new SystemSettingsType();
+      deptype.setSystemsettings(ss);
+    }
+    ResourceMonitorType resourceMonitor=new ResourceMonitorType();
+    Memorylimit memLimit=new Memorylimit();
+    memLimit.setSize("10");
+    resourceMonitor.setMemorylimit(memLimit);
+    ss.setResourcemonitor(resourceMonitor);
+    String ndeptype=mapper.writeValueAsString(deptype);
+    params.put("deployment",ndeptype);
+    String pdep=postUrlOverJSON("http://localhost:8095/deployment/",null,null,null,200,"application/json",params);
+    assertTrue(pdep.contains("Deployment Updated"));
+    memLimit.setSize("90%25");
+    ndeptype=mapper.writeValueAsString(deptype);
+    params.put("deployment",ndeptype);
+    pdep=postUrlOverJSON("http://localhost:8095/deployment/",null,null,null,200,"application/json",params);
+    assertTrue(pdep.contains("Deployment Updated"));
+  }
+  finally {
+    if (server != null) {
+      server.shutdown();
+      server.join();
+    }
+    server=null;
+  }
+}
