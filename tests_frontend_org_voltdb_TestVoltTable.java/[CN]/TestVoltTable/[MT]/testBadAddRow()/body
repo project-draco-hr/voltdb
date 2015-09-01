@@ -1,0 +1,42 @@
+{
+  int rowCount=10;
+  Random r=new Random(0);
+  for (int j=0; j < 75; j++) {
+    TableHelper th=new TableHelper();
+    VoltTable t1=th.getTotallyRandomTable("foo",true).table;
+    th.randomFill(t1,rowCount,500);
+    VoltTable.ColumnInfo[] columns=new VoltTable.ColumnInfo[t1.getColumnCount()];
+    for (int i=0; i < columns.length; i++) {
+      columns[i]=new VoltTable.ColumnInfo(t1.getColumnName(i),t1.getColumnType(i));
+    }
+    int randCol=r.nextInt(columns.length);
+    VoltType ct1=t1.getColumnType(randCol);
+    if ((ct1 == VoltType.VARBINARY) || (ct1 == VoltType.STRING)) {
+      columns[randCol]=new VoltTable.ColumnInfo(columns[randCol].name,VoltType.TINYINT);
+    }
+ else {
+      columns[randCol]=new VoltTable.ColumnInfo(columns[randCol].name,VoltType.VARBINARY);
+    }
+    VoltTable t2=new VoltTable(columns);
+    t1.resetRowPosition();
+    while (t1.advanceRow()) {
+      try {
+        th.randomFill(t2,1,10);
+        if (r.nextInt(20) == 0) {
+          th.randomFill(t2,1,2048 * 1024);
+        }
+        t2.add(t1);
+        Object valueOfInterest=t1.get(randCol,t1.getColumnType(randCol));
+        if ((valueOfInterest != null) && (t1.wasNull() == false)) {
+          fail();
+        }
+      }
+ catch (      Exception e) {
+        boolean tooBig=e instanceof VoltOverflowException;
+        boolean nonNull=t1.get(randCol,t1.getColumnType(randCol)) != null;
+        assertTrue(tooBig || nonNull);
+      }
+    }
+    t2.toJSONString();
+  }
+}
