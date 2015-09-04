@@ -1,6 +1,22 @@
 {
-  VoltTable new_table=CatalogUtil.getVoltTable(outputTableSchema);
+  VoltTable new_table;
+  if (shouldPreserveDRHiddenColumn) {
+    new_table=CatalogUtil.getVoltTable(outputTableSchema,CatalogUtil.DR_HIDDEN_COLUMN_INFO);
+  }
+ else {
+    new_table=CatalogUtil.getVoltTable(outputTableSchema);
+  }
   Map<Integer,Integer> column_copy_index_map=computeColumnCopyIndexMap(inputTable,new_table);
+  boolean addDRHiddenColumn=shouldPreserveDRHiddenColumn && !column_copy_index_map.containsKey(new_table.getColumnCount() - 1);
+  Column catalogColumnForHiddenColumn=null;
+  if (addDRHiddenColumn) {
+    catalogColumnForHiddenColumn=new Column();
+    catalogColumnForHiddenColumn.setName(CatalogUtil.DR_HIDDEN_COLUMN_NAME);
+    catalogColumnForHiddenColumn.setType(VoltType.BIGINT.getValue());
+    catalogColumnForHiddenColumn.setSize(VoltType.BIGINT.getLengthInBytesForFixedTypes());
+    catalogColumnForHiddenColumn.setInbytes(false);
+    catalogColumnForHiddenColumn.setNullable(true);
+  }
   while (inputTable.advanceRow()) {
     Object[] coerced_values=new Object[new_table.getColumnCount()];
     for (int i=0; i < new_table.getColumnCount(); i++) {
@@ -10,6 +26,9 @@
       }
  else {
         Column catalog_column=outputTableSchema.getColumns().get(new_table.getColumnName(i));
+        if (shouldPreserveDRHiddenColumn && catalog_column == null) {
+          catalog_column=catalogColumnForHiddenColumn;
+        }
         VoltType default_type=VoltType.get((byte)catalog_column.getDefaulttype());
         if (default_type != VoltType.INVALID) {
           try {
