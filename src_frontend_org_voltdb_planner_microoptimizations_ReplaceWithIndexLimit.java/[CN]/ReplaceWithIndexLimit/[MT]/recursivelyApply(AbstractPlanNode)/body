@@ -77,14 +77,45 @@
     exprs=ExpressionUtil.uncombine(ispn.getEndExpression());
   }
   int numberOfExprs=exprs.size();
-  if (sortDirection == SortDirectionType.DESC && ispn.getSortDirection() == SortDirectionType.INVALID) {
-    if (numberOfExprs > 1 || (numberOfExprs == 1 && aggExpr.bindingToIndexedExpression(exprs.get(0).getLeft()) == null)) {
+  Index indexToUse=ispn.getCatalogIndex();
+  List<AbstractExpression> indexedExprs=null;
+  if (!indexToUse.getExpressionsjson().isEmpty()) {
+    StmtTableScan tableScan=m_parsedStmt.m_tableAliasMap.get(ispn.getTargetTableAlias());
+    try {
+      indexedExprs=AbstractExpression.fromJSONArrayString(indexToUse.getExpressionsjson(),tableScan);
+    }
+ catch (    JSONException e) {
+      e.printStackTrace();
+      assert(false);
       return plan;
+    }
+  }
+  if (sortDirection == SortDirectionType.DESC && ispn.getSortDirection() == SortDirectionType.INVALID) {
+    if (numberOfExprs == 1) {
+      AbstractExpression exprToBind=indexedExprs == null ? exprs.get(0).getLeft() : indexedExprs.get(0);
+      if (aggExpr.bindingToIndexedExpression(exprToBind) == null) {
+        return plan;
+      }
+    }
+ else     if (numberOfExprs > 1) {
+      boolean earlyReturn=true;
+      for (int i=0; i < numberOfExprs; ++i) {
+        AbstractExpression expr=exprs.get(i);
+        AbstractExpression indexedExpr=indexedExprs == null ? expr.getLeft() : indexedExprs.get(i);
+        if (aggExpr.bindingToIndexedExpression(indexedExpr) != null && (expr.getExpressionType() == ExpressionType.COMPARE_LESSTHANOREQUALTO || expr.getExpressionType() == ExpressionType.COMPARE_LESSTHAN || expr.getExpressionType() == ExpressionType.COMPARE_EQUAL)) {
+          earlyReturn=false;
+          break;
+        }
+      }
+      if (earlyReturn) {
+        return plan;
+      }
     }
   }
   if (numberOfExprs > numOfSearchKeys) {
     AbstractExpression lastEndExpr=exprs.get(numberOfExprs - 1);
-    if ((lastEndExpr.getExpressionType() == ExpressionType.COMPARE_LESSTHAN || lastEndExpr.getExpressionType() == ExpressionType.COMPARE_LESSTHANOREQUALTO) && lastEndExpr.getLeft().equals(aggExpr)) {
+    AbstractExpression exprToBind=indexedExprs == null ? lastEndExpr.getLeft() : indexedExprs.get(numberOfExprs - 1);
+    if ((lastEndExpr.getExpressionType() == ExpressionType.COMPARE_LESSTHAN || lastEndExpr.getExpressionType() == ExpressionType.COMPARE_LESSTHANOREQUALTO) && aggExpr.bindingToIndexedExpression(exprToBind) != null) {
       exprs.remove(lastEndExpr);
     }
   }
