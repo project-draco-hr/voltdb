@@ -3,12 +3,22 @@
   final long period=config.displayinterval;
   timer.scheduleAtFixedRate(new TimerTask(){
     @Override public void run(){
-      long count=MatchChecks.getImportRowCount(client);
-      if (count == VoltType.NULL_BIGINT)       count=0;
-      importProgress.add((int)count);
-      if (importProgress.size() > 1) {
-        log.info("Import Throughput " + (count - importProgress.get(importProgress.size() - 2)) / period + "/s, Total Rows: " + count);
+      long count=0;
+      if (config.externalexport) {
+        count=MatchChecks.getImportTableRowCount(config.alltypes,client);
       }
+ else {
+        count=MatchChecks.getImportRowCount(client);
+      }
+      importProgress.add((int)count);
+      if (config.alltypes) {
+        long key=MatchChecks.checkRowMismatch(client);
+        if (key != 0) {
+          log.error("Import value mismatch at row " + key + ". Exiting.");
+          System.exit(-1);
+        }
+      }
+      if (importProgress.size() > 1)       log.info("Import Throughput " + (count - importProgress.get(importProgress.size() - 2)) / period + "/s, Total Rows: " + count);
     }
   }
 ,config.displayinterval * 1000,config.displayinterval * 1000);
