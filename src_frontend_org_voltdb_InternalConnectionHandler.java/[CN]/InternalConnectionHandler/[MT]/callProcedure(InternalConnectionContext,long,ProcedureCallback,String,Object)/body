@@ -15,25 +15,17 @@
  catch (    InterruptedException ex) {
     }
   }
-  final long nowNanos=System.nanoTime();
   StoredProcedureInvocation task=new StoredProcedureInvocation();
-  ParameterSet pset=ParameterSet.fromArrayWithCopy(fieldList);
-  int sz=1 + 4 + proc.length()+ 8+ pset.getSerializedSize();
-  final BBContainer tcont=getBuffer(sz);
-  final ByteBuffer taskbuf=tcont.b();
+  task.setProcName(proc);
+  task.setParams(fieldList);
   try {
-    taskbuf.put(ProcedureInvocationType.ORIGINAL.getValue());
-    taskbuf.putInt(proc.length());
-    taskbuf.put(proc.getBytes());
-    taskbuf.putLong(m_adapter.connectionId());
-    pset.flattenToBuffer(taskbuf);
-    taskbuf.flip();
-    task.initFromBuffer(taskbuf);
+    task=MiscUtils.roundTripForCL(task);
+    task.setClientHandle(m_adapter.connectionId());
   }
- catch (  IOException ex) {
+ catch (  Exception e) {
+    String fmt="Cannot invoke procedure %s from streaming interface %s. failed to create task.";
+    m_logger.rateLimitedLog(SUPPRESS_INTERVAL,Level.ERROR,null,fmt,proc,caller);
     m_failedCount.incrementAndGet();
-    m_logger.error("Failed to serialize parameters for stream: " + proc,ex);
-    tcont.discard();
     return false;
   }
   int partition=-1;
@@ -44,16 +36,12 @@
     String fmt="Can not invoke procedure %s from streaming interface %s. Partition not found.";
     m_logger.rateLimitedLog(SUPPRESS_INTERVAL,Level.ERROR,e,fmt,proc,caller);
     m_failedCount.incrementAndGet();
-    tcont.discard();
     return false;
   }
-  boolean success=m_adapter.createTransaction(caller,proc,catProc,procCallback,task,tcont,partition,nowNanos);
-  if (!success) {
-    tcont.discard();
+  if (!m_adapter.createTransaction(caller,proc,catProc,procCallback,task,partition,System.nanoTime())) {
     m_failedCount.incrementAndGet();
+    return false;
   }
- else {
-    m_submitSuccessCount.incrementAndGet();
-  }
-  return success;
+  m_submitSuccessCount.incrementAndGet();
+  return true;
 }
