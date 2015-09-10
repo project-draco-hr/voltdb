@@ -11,11 +11,18 @@
       fault=Optional.of(loggedDistributerException(e,"failed to parse json in %s",path));
       return;
     }
+    final String hval=basename.apply(path);
+    if (hval == null || hval.trim().isEmpty()) {
+      IllegalArgumentException e=new IllegalArgumentException("path has undiscernable basename: \"" + path + "\"");
+      fault=Optional.of(loggedDistributerException(e,"could not derive host from %s",path));
+      return;
+    }
     Predicate<Map.Entry<ChannelSpec,String>> inSpecs=ChannelSpec.specKeyIn(nodespecs.get(),String.class);
+    Predicate<Map.Entry<ChannelSpec,String>> thisHost=hostValueIs(hval,ChannelSpec.class);
     int[] sstamp=new int[]{0};
-    AtomicInteger dstamp=m_hosts.getReference().get(host);
+    AtomicInteger dstamp=m_hosts.getReference().get(hval);
     if (dstamp == null) {
-      LOG.warn("(" + m_hostId + ") has no data stamp for "+ host+ ", host registry contains: "+ m_hosts.getReference());
+      LOG.warn("(" + m_hostId + ") has no data stamp for "+ hval+ ", host registry contains: "+ m_hosts.getReference());
       dstamp=new AtomicInteger(0);
     }
     NavigableMap<ChannelSpec,String> prev=null;
@@ -34,11 +41,11 @@
       mbldr=ImmutableSortedMap.naturalOrder();
       mbldr.putAll(Maps.filterEntries(prev,not(or(thisHost,inSpecs))));
       for (      ChannelSpec spec : nodespecs.get()) {
-        mbldr.put(spec,host);
+        mbldr.put(spec,hval);
       }
     }
  while (!m_specs.compareAndSet(prev,mbldr.build(),sstamp[0],sstamp[0] + 1));
-    if (host.equals(m_hostId) && !m_done.get()) {
+    if (hval.equals(m_hostId) && !m_done.get()) {
       ChannelAssignment assignment=new ChannelAssignment(oldspecs,nodespecs.get(),stat.getVersion());
       for (      ImporterChannelAssignment cassigns : assignment.getImporterChannelAssignments()) {
         m_eb.post(cassigns);
