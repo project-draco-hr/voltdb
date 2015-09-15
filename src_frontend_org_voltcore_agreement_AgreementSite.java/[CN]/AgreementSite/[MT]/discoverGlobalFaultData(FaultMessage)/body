@@ -2,12 +2,24 @@
   if (m_recovering) {
     org.voltdb.VoltDB.crashLocalVoltDB("Aborting recovery due to a remote node (" + CoreUtils.hsIdToString(faultMessage.failedSite) + ") failure. Retry again.",true,null);
   }
-  Map<Long,Long> initiatorSafeInitPoint=m_meshArbiter.reconfigureOnFault(m_hsIds,faultMessage);
-  if (initiatorSafeInitPoint.isEmpty())   return;
-  Set<Long> failedSites=initiatorSafeInitPoint.keySet();
-  handleSiteFaults(failedSites,initiatorSafeInitPoint);
+  Set<Long> unknownFaultedHosts=new TreeSet<>();
+  Map<Long,Long> initiatorSafeInitPoint=m_meshArbiter.reconfigureOnFault(m_hsIds,faultMessage,unknownFaultedHosts);
+  Set<Long> failedSites;
+  if (!initiatorSafeInitPoint.isEmpty()) {
+    failedSites=initiatorSafeInitPoint.keySet();
+    handleSiteFaults(failedSites,initiatorSafeInitPoint);
+  }
+ else   if (unknownFaultedHosts.isEmpty()) {
+    return;
+  }
+ else {
+    failedSites=ImmutableSet.of();
+  }
   ImmutableSet.Builder<Integer> failedHosts=ImmutableSet.builder();
   for (  long hsId : failedSites) {
+    failedHosts.add(CoreUtils.getHostIdFromHSId(hsId));
+  }
+  for (  long hsId : unknownFaultedHosts) {
     failedHosts.add(CoreUtils.getHostIdFromHSId(hsId));
   }
   m_failedHostsCallback.disconnect(failedHosts.build());
