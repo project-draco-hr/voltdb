@@ -117,6 +117,30 @@
       if (retval != null) {
         return retval;
       }
+      if (catalogContext.database.getTables().size() == 0) {
+        if (!VoltDB.instance().getCatalogContext().cluster.getUseddlschema()) {
+          return new ClientResponseImpl(ClientResponseImpl.GRACEFUL_FAILURE,new VoltTable[0],"Cannot restore catalog from snapshot when schema is set to catalog in the deployment.",task.clientHandle);
+        }
+        log.warn("@SnapshotRestore called on an empty database, attempting to restore catalog from snapshot.");
+        try {
+          JSONObject jsObj=new JSONObject(task.getParams().getParam(0).toString());
+          final String path=jsObj.getString(SnapshotUtil.JSON_PATH);
+          final String nonce=jsObj.getString(SnapshotUtil.JSON_NONCE);
+          final byte[] catalog=MiscUtils.fileToBytes(new File(path,nonce + ".jar"));
+          final String dep=new String(catalogContext.getDeploymentBytes(),java.nio.charset.StandardCharsets.UTF_8);
+          SyncCallback cb=new SyncCallback();
+          getInternalConnectionHandler().callProcedure(new ClientInterfaceConnectionContext(),0,cb,user,"@UpdateApplicationCatalog",catalog,dep);
+          cb.waitForResponse();
+          m_catalogContext.set(VoltDB.instance().getCatalogContext());
+          catProc=getProcedureFromName(task.procName,m_catalogContext.get());
+        }
+ catch (        JSONException e) {
+          return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],"Unable to parse parameters.",task.clientHandle);
+        }
+catch (        InterruptedException e) {
+          return new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],"Unexpected failure while restoring catalog from snapshot.",task.clientHandle);
+        }
+      }
     }
     if (task.procName.equals("@Pause") || task.procName.equals("@Resume")) {
       if (!handler.isAdmin()) {
