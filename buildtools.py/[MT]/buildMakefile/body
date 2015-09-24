@@ -76,22 +76,29 @@ def buildMakefile(CTX):
         (jni, static) = outputNamesForSource(filename)
         jni_objects.append(jni)
         static_objects.append(static)
+    cleanobjs = []
     makefile.write(('# create symbols by running nm against libvoltdb-%s\n' % version))
-    makefile.write(('nativelibs/libvoltdb-%s.sym: nativelibs/libvoltdb-%s.$(JNIEXT)\n' % (version, version)))
-    makefile.write(('\t$(NM) $(NMFLAGS) nativelibs/libvoltdb-%s.$(JNIEXT) > $@\n' % version))
+    nmfilename = ('nativelibs/libvoltdb-%s.sym' % version)
+    jnilibname = ('nativelibs/libvoltdb-%s.$(JNIEXT)' % version)
+    cleanobjs += [nmfilename]
+    cleanobjs += ['prod/voltrun']
+    makefile.write(('%s: %s\n' % (nmfilename, jnilibname)))
+    makefile.write(('\t$(NM) $(NMFLAGS) %s > $@\n' % jnilibname))
     makefile.write('\n')
     makefile.write('# main jnilib target\n')
-    makefile.write(((('nativelibs/libvoltdb-%s.$(JNIEXT): ' % version) + ' '.join(jni_objects)) + '\n'))
+    makefile.write(('%s: %s\n' % (jnilibname, formatList(jni_objects))))
     makefile.write('\t$(LINK.cpp) $(JNILIBFLAGS) -o $@ $^\n')
     makefile.write('\n')
     makefile.write('# voltdb instance that loads the jvm from C++\n')
-    makefile.write((('prod/voltrun: $(SRC)/voltrun.cpp ' + ' '.join(static_objects)) + '\n'))
+    makefile.write((('prod/voltrun: $(SRC)/voltrun.cpp ' + formatList(static_objects)) + '\n'))
     makefile.write('\t$(LINK.cpp) $(JNIBINFLAGS) -o $@ $^\n')
     makefile.write('\n')
+    cleanobjs += ['prod/voltrun']
     makefile.write('# voltdb execution engine that accepts work on a tcp socket (vs. jni)\n')
     makefile.write(('prod/voltdbipc: $(SRC)/voltdbipc.cpp ' + ' objects/volt.a\n'))
     makefile.write(('\t$(LINK.cpp) -o $@ $^ %s\n' % CTX.LASTLDFLAGS))
     makefile.write('\n')
+    cleanobjs += ['prod/voltdbipc']
     makefile.write('.PHONY: test\n')
     makefile.write('test: ')
     for test in tests:
@@ -102,65 +109,85 @@ def buildMakefile(CTX):
     if (CTX.LEVEL == 'MEMCHECK_NOFREELIST'):
         makefile.write('prod/voltdbipc')
     makefile.write('\n\n')
-    makefile.write((('objects/volt.a: ' + ' '.join(jni_objects)) + ' objects/harness.o\n'))
+    makefile.write(('objects/volt.a: objects/harness.o %s\n' % formatList(jni_objects)))
     makefile.write('\t$(AR) $(ARFLAGS) $@ $?\n')
     makefile.write((('objects/harness.o: ../../' + TEST_PREFIX) + '/harness.cpp\n'))
-    makefile.write('\t$(CCACHE) $(COMPILE.cpp) -o $@ $^\n')
-    makefile.write('\t$(CCACHE) $(COMPILE.cpp) -o $@ $^\n')
+    makefile.write('\t$(CCACHE) $(COMPILE.cpp) -MMD -MP -o $@ $^\n')
+    makefile.write(('-include %s\n' % 'objects/harness.d'))
     makefile.write('\n')
+    cleanobjs += ['objects/volt.a', 'objects/harness.o', 'objects/harness.d']
     LOCALTESTCPPFLAGS = (LOCALCPPFLAGS + (' -I%s' % TEST_PREFIX))
-    allsources = []
+    makefile.write('########################################################################\n')
+    makefile.write(('#\n# %s\n#\n' % 'Volt Files'))
+    makefile.write('########################################################################\n')
     for filename in input_paths:
-        allsources += [(filename, LOCALCPPFLAGS, IGNORE_SYS_PREFIXES)]
-    for filename in third_party_input_paths:
-        allsources += [(filename, LOCALCPPFLAGS, IGNORE_SYS_PREFIXES)]
-    for test in tests:
-        (binname, objectname, sourcename) = namesForTestCode(test)
-        allsources += [(sourcename, LOCALTESTCPPFLAGS, IGNORE_SYS_PREFIXES)]
-    deps = getAllDependencies(allsources, 1)
-    for filename in input_paths:
-        mydeps = deps[filename]
-        mydeps = [x.replace(INPUT_PREFIX, '$(SRC)') for x in mydeps]
         (jni_objname, static_objname) = outputNamesForSource(filename)
         filename = filename.replace(INPUT_PREFIX, '$(SRC)')
         jni_targetpath = ((OUTPUT_PREFIX + '/') + '/'.join(jni_objname.split('/')[:(-1)]))
         static_targetpath = ((OUTPUT_PREFIX + '/') + '/'.join(static_objname.split('/')[:(-1)]))
         os.system(('mkdir -p %s' % jni_targetpath))
         os.system(('mkdir -p %s' % static_targetpath))
-        makefile.write((((((jni_objname + ': ') + filename) + ' ') + ' '.join(mydeps)) + '\n'))
-        makefile.write(('\t$(CCACHE) $(COMPILE.cpp) %s -o $@ %s\n' % (CTX.EXTRAFLAGS, filename)))
-        makefile.write((((((static_objname + ': ') + filename) + ' ') + ' '.join(mydeps)) + '\n'))
-        makefile.write(('\t$(CCACHE) $(COMPILE.cpp) %s -o $@ %s\n' % (CTX.EXTRAFLAGS, filename)))
+        makefile.write('########################################################################\n')
+        makefile.write(('#\n# %s\n#\n' % filename))
+        makefile.write('########################################################################\n')
+        makefile.write(('%s: %s\n' % (jni_objname, filename)))
+        makefile.write(('\t$(CCACHE) $(COMPILE.cpp) %s -MMD -MP -o $@ %s\n' % (CTX.EXTRAFLAGS, filename)))
+        makefile.write(('%s: %s\n' % (static_objname, filename)))
+        makefile.write(('\t$(CCACHE) $(COMPILE.cpp) %s -MMD -MP -o $@ %s\n' % (CTX.EXTRAFLAGS, filename)))
+        makefile.write(('-include %s\n' % replaceSuffix(jni_objname, '.d')))
+        makefile.write(('-include %s\n' % replaceSuffix(static_objname, '.d')))
+        cleanobjs += [jni_objname, static_objname, replaceSuffix(jni_objname, '.d'), replaceSuffix(jni_objname, '.d')]
+        makefile.write('\n')
     makefile.write('\n')
+    makefile.write('########################################################################\n')
+    makefile.write(('#\n# %s\n#\n' % 'Third Party Files'))
+    makefile.write('########################################################################\n')
     for filename in third_party_input_paths:
-        mydeps = deps[filename]
-        mydeps = [x.replace(THIRD_PARTY_INPUT_PREFIX, '$(THIRD_PARTY_SRC)') for x in mydeps]
         (jni_objname, static_objname) = outputNamesForSource(filename)
         filename = filename.replace(THIRD_PARTY_INPUT_PREFIX, '$(THIRD_PARTY_SRC)')
         jni_targetpath = ((OUTPUT_PREFIX + '/') + '/'.join(jni_objname.split('/')[:(-1)]))
         static_targetpath = ((OUTPUT_PREFIX + '/') + '/'.join(static_objname.split('/')[:(-1)]))
         os.system(('mkdir -p %s' % jni_targetpath))
         os.system(('mkdir -p %s' % static_targetpath))
-        makefile.write((((((jni_objname + ': ') + filename) + ' ') + ' '.join(mydeps)) + '\n'))
-        makefile.write(('\t$(CCACHE) $(COMPILE.cpp) %s -o $@ %s\n' % (CTX.EXTRAFLAGS, filename)))
-        makefile.write((((((static_objname + ': ') + filename) + ' ') + ' '.join(mydeps)) + '\n'))
-        makefile.write(('\t$(CCACHE) $(COMPILE.cpp) %s -o $@ %s\n' % (CTX.EXTRAFLAGS, filename)))
+        makefile.write('########################################################################\n')
+        makefile.write(('#\n# %s\n#\n' % filename))
+        makefile.write('########################################################################\n')
+        makefile.write(('%s: %s\n' % (jni_objname, filename)))
+        makefile.write(('\t$(CCACHE) $(COMPILE.cpp) %s -MMD -MP -o $@ %s\n' % (CTX.EXTRAFLAGS, filename)))
+        makefile.write(('%s: %s\n' % (static_objname, filename)))
+        makefile.write(('\t$(CCACHE) $(COMPILE.cpp) %s -MMD -MP -o $@ %s\n' % (CTX.EXTRAFLAGS, filename)))
+        makefile.write(('-include %s\n' % replaceSuffix(jni_objname, '.d')))
+        makefile.write(('-include %s\n' % replaceSuffix(static_objname, '.d')))
+        cleanobjs += [jni_objname, static_objname, replaceSuffix(jni_objname, '.d'), replaceSuffix(jni_objname, '.d')]
+        makefile.write('\n')
     makefile.write('\n')
+    makefile.write('########################################################################\n')
+    makefile.write(('#\n# %s\n#\n' % 'Tests'))
+    makefile.write('########################################################################\n')
     for test in tests:
         (binname, objectname, sourcename) = namesForTestCode(test)
+        makefile.write('########################################################################\n')
+        makefile.write(('#\n# %s\n#\n' % filename))
+        makefile.write('########################################################################\n')
         makefile.write(('%s: ../../%s' % (objectname, sourcename)))
-        mydeps = deps[sourcename]
-        for dep in mydeps:
-            makefile.write((' ../../%s' % dep))
         makefile.write('\n')
-        makefile.write(('\t$(CCACHE) $(COMPILE.cpp) -I../../%s -o $@ ../../%s\n' % (TEST_PREFIX, sourcename)))
+        makefile.write(('\t$(CCACHE) $(COMPILE.cpp) -I../../%s -MMD -MP -o $@ ../../%s\n' % (TEST_PREFIX, sourcename)))
+        makefile.write(('-include %s\n' % replaceSuffix(objectname, '.d')))
         makefile.write(('%s: %s objects/volt.a\n' % (binname, objectname)))
         makefile.write(('\t$(LINK.cpp) -o %s %s objects/volt.a\n' % (binname, objectname)))
+        makefile.write('\n')
         targetpath = ((OUTPUT_PREFIX + '/') + '/'.join(binname.split('/')[:(-1)]))
         os.system(('mkdir -p %s' % targetpath))
         pysourcename = (sourcename[:(-3)] + 'py')
+        cleanobjs += [objectname, replaceSuffix(objectname, '.d'), binname]
         if os.path.exists(pysourcename):
             shutil.copy(pysourcename, targetpath)
+            cleanobjs += [targetpath]
+    makefile.write('########################################################################\n')
+    makefile.write(('#\n# %s\n#\n' % 'Cleaning'))
+    makefile.write('########################################################################\n')
     makefile.write('\n')
+    makefile.write('clean:\n')
+    makefile.write(('\t${RM} %s\n' % formatList(cleanobjs)))
     makefile.close()
     return True
