@@ -1,7 +1,5 @@
 {
-  String systemStr;
-  String csvStr;
-  String procStr;
+  String systemStr="", csvStr="", procStr="";
 switch (matView) {
 case "matView":
     systemStr="w/";
@@ -28,11 +26,28 @@ systemStr="4mins";
 csvStr="4mins";
 procStr="idsWith4MinMatView";
 break;
-default :
-assert(matView.equals("4MinMatViewOpt"));
+case "4MinMatViewOpt":
 systemStr="4mins opt";
 csvStr="4mins opt";
 procStr="idsWith4MinMatViewOpt";
+break;
+case "MultiGroupsMinMatView":
+systemStr="multi groups min";
+csvStr="multi groups";
+procStr="idsWithMultiGroupsMinMatView";
+break;
+case "MultiGroupsMinMatViewOpt":
+systemStr="multi groups min opt";
+csvStr="multi groups opt";
+procStr="idsWithMultiGroupsMinMatViewOpt";
+break;
+case "MultiGroupsMinMatViewBestOpt":
+systemStr="multi groups min best opt";
+csvStr="multi groups best opt";
+procStr="idsWithMultiGroupsMinMatViewBestOpt";
+break;
+default :
+throw new RuntimeException("Benchmark " + matView + " not found!");
 }
 int grp=1;
 fullStatsContext.fetchAndResetBaseline();
@@ -44,6 +59,9 @@ if (config.group > 0) {
 for (int i=0; i < config.txn; i++) {
 if (systemStr.startsWith("4")) {
 client.callProcedure(new NullCallback(),procStr + "_insert",i,grp,i,-i,i,-i);
+}
+ else if (systemStr.startsWith("multi")) {
+client.callProcedure(new NullCallback(),procStr + "_insert",i,grp,grp,i);
 }
  else {
 client.callProcedure(new NullCallback(),procStr + "_insert",i,grp,i);
@@ -60,6 +78,9 @@ grp++;
 for (int i=0; i < config.txn; i++) {
 if (systemStr.startsWith("4")) {
 client.callProcedure(new NullCallback(),procStr + "_insert",i,i,i,-i,i,-i);
+}
+ else if (systemStr.startsWith("multi")) {
+client.callProcedure(new NullCallback(),procStr + "_insert",i,grp,grp,i);
 }
  else {
 client.callProcedure(new NullCallback(),procStr + "_insert",i,i,i);
@@ -129,8 +150,12 @@ fullStatsContext.fetchAndResetBaseline();
 periodicStatsContext.fetchAndResetBaseline();
 benchmarkStartTS=System.currentTimeMillis();
 schedulePeriodicStats();
-System.out.println("\n\nDeleting from table " + systemStr + " materialized view...\n");
-for (int i=0; i < config.txn; i++) {
+int numDeletes=config.txn;
+if (systemStr.startsWith("multi")) {
+numDeletes=10000;
+}
+System.out.println("\n\nDeleting " + numDeletes + " rows from table "+ systemStr+ " materialized view...\n");
+for (int i=0; i < numDeletes; i++) {
 client.callProcedure(new NullCallback(),procStr + "_delete",i);
 }
 timer.cancel();
