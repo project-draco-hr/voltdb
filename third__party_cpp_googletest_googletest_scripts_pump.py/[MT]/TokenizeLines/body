@@ -1,0 +1,64 @@
+def TokenizeLines(lines, pos):
+    while True:
+        found = FindFirst(lines, TOKEN_TABLE, pos)
+        if (not found):
+            yield MakeToken(lines, pos, Eof(), 'code')
+            return
+        if (found.start == pos):
+            prev_token = None
+            prev_token_rstripped = None
+        else:
+            prev_token = MakeToken(lines, pos, found.start, 'code')
+            prev_token_rstripped = RStripNewLineFromToken(prev_token)
+        if (found.token_type == '$var'):
+            if prev_token_rstripped:
+                yield prev_token_rstripped
+            yield found
+            id_token = ParseToken(lines, found.end, ID_REGEX, 'id')
+            yield id_token
+            pos = Skip(lines, id_token.end, OPTIONAL_WHITE_SPACES_REGEX)
+            eq_token = ParseToken(lines, pos, EQ_REGEX, '=')
+            yield eq_token
+            pos = Skip(lines, eq_token.end, '\\s*')
+            if (SubString(lines, pos, (pos + 2)) != '[['):
+                exp_token = ParseToken(lines, pos, REST_OF_LINE_REGEX, 'exp')
+                yield exp_token
+                pos = Cursor((exp_token.end.line + 1), 0)
+        elif (found.token_type == '$for'):
+            if prev_token_rstripped:
+                yield prev_token_rstripped
+            yield found
+            id_token = ParseToken(lines, found.end, ID_REGEX, 'id')
+            yield id_token
+            pos = Skip(lines, id_token.end, WHITE_SPACE_REGEX)
+        elif (found.token_type == '$range'):
+            if prev_token_rstripped:
+                yield prev_token_rstripped
+            yield found
+            id_token = ParseToken(lines, found.end, ID_REGEX, 'id')
+            yield id_token
+            pos = Skip(lines, id_token.end, OPTIONAL_WHITE_SPACES_REGEX)
+            dots_pos = SkipUntil(lines, pos, DOT_DOT_REGEX, '..')
+            yield MakeToken(lines, pos, dots_pos, 'exp')
+            yield MakeToken(lines, dots_pos, (dots_pos + 2), '..')
+            pos = (dots_pos + 2)
+            new_pos = Cursor((pos.line + 1), 0)
+            yield MakeToken(lines, pos, new_pos, 'exp')
+            pos = new_pos
+        elif (found.token_type == '$'):
+            if prev_token:
+                yield prev_token
+            yield found
+            exp_token = ParseExpTokenInParens(lines, found.end)
+            yield exp_token
+            pos = exp_token.end
+        elif ((found.token_type == ']]') or (found.token_type == '$if') or (found.token_type == '$elif') or (found.token_type == '$else')):
+            if prev_token_rstripped:
+                yield prev_token_rstripped
+            yield found
+            pos = found.end
+        else:
+            if prev_token:
+                yield prev_token
+            yield found
+            pos = found.end

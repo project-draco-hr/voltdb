@@ -1,0 +1,44 @@
+def ToType(self, tokens):
+    'Convert [Token,...] to [Class(...), ] useful for base classes.\n        For example, code like class Foo : public Bar<x, y> { ... };\n        the "Bar<x, y>" portion gets converted to an AST.\n\n        Returns:\n          [Class(...), ...]\n        '
+    result = []
+    name_tokens = []
+    reference = pointer = array = False
+
+    def AddType(templated_types):
+        names = []
+        modifiers = []
+        for t in name_tokens:
+            if keywords.IsKeyword(t.name):
+                modifiers.append(t.name)
+            else:
+                names.append(t.name)
+        name = ''.join(names)
+        if name_tokens:
+            result.append(Type(name_tokens[0].start, name_tokens[(-1)].end, name, templated_types, modifiers, reference, pointer, array))
+        del name_tokens[:]
+    i = 0
+    end = len(tokens)
+    while (i < end):
+        token = tokens[i]
+        if (token.name == '<'):
+            (new_tokens, new_end) = self._GetTemplateEnd(tokens, (i + 1))
+            AddType(self.ToType(new_tokens))
+            i = new_end
+            reference = pointer = array = False
+        elif (token.name == ','):
+            AddType([])
+            reference = pointer = array = False
+        elif (token.name == '*'):
+            pointer = True
+        elif (token.name == '&'):
+            reference = True
+        elif (token.name == '['):
+            pointer = True
+        elif (token.name == ']'):
+            pass
+        else:
+            name_tokens.append(token)
+        i += 1
+    if name_tokens:
+        AddType([])
+    return result

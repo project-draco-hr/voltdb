@@ -1,0 +1,24 @@
+def FuseGTestAllCcToFile(gtest_root, output_file):
+    'Scans folder gtest_root to generate gtest/gtest-all.cc in output_file.'
+    processed_files = sets.Set()
+
+    def ProcessFile(gtest_source_file):
+        'Processes the given gtest source file.'
+        if (gtest_source_file in processed_files):
+            return
+        processed_files.add(gtest_source_file)
+        for line in file(os.path.join(gtest_root, gtest_source_file), 'r'):
+            m = INCLUDE_GTEST_FILE_REGEX.match(line)
+            if m:
+                if (('include/' + m.group(1)) == GTEST_SPI_H_SEED):
+                    ProcessFile(GTEST_SPI_H_SEED)
+                elif (not (GTEST_H_SEED in processed_files)):
+                    processed_files.add(GTEST_H_SEED)
+                    output_file.write(('#include "%s"\n' % (GTEST_H_OUTPUT,)))
+            else:
+                m = INCLUDE_SRC_FILE_REGEX.match(line)
+                if m:
+                    ProcessFile(m.group(1))
+                else:
+                    output_file.write(line)
+    ProcessFile(GTEST_ALL_CC_SEED)
