@@ -1,0 +1,28 @@
+def handle_struct(self):
+    (name_tokens, var_token) = self.GetName()
+    if name_tokens:
+        next_token = self._GetNextToken()
+        is_syntax = ((var_token.token_type == tokenize.SYNTAX) and (var_token.name[0] in '*&'))
+        is_variable = ((var_token.token_type == tokenize.NAME) and (next_token.name == ';'))
+        variable = var_token
+        if (is_syntax and (not is_variable)):
+            variable = next_token
+            temp = self._GetNextToken()
+            if ((temp.token_type == tokenize.SYNTAX) and (temp.name == '(')):
+                t0 = name_tokens[0]
+                struct = tokenize.Token(tokenize.NAME, 'struct', (t0.start - 7), (t0.start - 2))
+                type_and_name = [struct]
+                type_and_name.extend(name_tokens)
+                type_and_name.extend((var_token, next_token))
+                return self._GetMethod(type_and_name, 0, None, False)
+            assert (temp.name == ';'), (temp, name_tokens, var_token)
+        if (is_syntax or (is_variable and (not self._handling_typedef))):
+            modifiers = ['struct']
+            type_name = ''.join([t.name for t in name_tokens])
+            position = name_tokens[0]
+            return self._CreateVariable(position, variable.name, type_name, modifiers, var_token.name, None)
+        name_tokens.extend((var_token, next_token))
+        self._AddBackTokens(name_tokens)
+    else:
+        self._AddBackToken(var_token)
+    return self._GetClass(Struct, VISIBILITY_PUBLIC, None)
