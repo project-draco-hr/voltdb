@@ -1,0 +1,62 @@
+{
+  Client client=getClient();
+  while (!((ClientImpl)client).isHashinatorInitialized()) {
+    Thread.sleep(1000);
+    System.out.println("Waiting for hashinator to be initialized...");
+  }
+  pushDataToImporters(100,1,true);
+  waitForLogEvents(client,100);
+  long lastPending=0;
+  ClientResponse response=client.callProcedure("@Statistics","Importer",0);
+  VoltTable stats=response.getResults()[0];
+  boolean found=false;
+  for (int i=0; i < stats.getRowCount(); i++) {
+    VoltTableRow row=stats.fetchRow(i);
+    String name=row.getString(ImporterStatsCollector.IMPORTER_NAME_COL);
+    String procName=row.getString(ImporterStatsCollector.PROC_NAME_COL);
+    if (!name.equals("SocketImporter")) {
+      continue;
+    }
+    assertEquals(procName,row.getString(ImporterStatsCollector.PROC_NAME_COL));
+    assertEquals(0,row.getLong(ImporterStatsCollector.FAILURE_COUNT_COL));
+    long pending=row.getLong(ImporterStatsCollector.PENDING_COUNT_COL);
+    if (pending > 0) {
+      found=true;
+    }
+    assertEquals(100 - pending,row.getLong(ImporterStatsCollector.SUCCESS_COUNT_COL));
+    assertEquals(0,row.getLong(ImporterStatsCollector.RETRY_COUNT_COL));
+    lastPending=pending;
+  }
+  assertTrue(found);
+  long endTime=System.currentTimeMillis() + 10000;
+  while (System.currentTimeMillis() <= endTime) {
+    response=client.callProcedure("@Statistics","Importer",0);
+    stats=response.getResults()[0];
+    found=false;
+    for (int i=0; i < stats.getRowCount(); i++) {
+      VoltTableRow row=stats.fetchRow(i);
+      String name=row.getString(ImporterStatsCollector.IMPORTER_NAME_COL);
+      if (!name.equals("SocketImporter")) {
+        continue;
+      }
+      assertEquals(0,row.getLong(ImporterStatsCollector.FAILURE_COUNT_COL));
+      long pending=row.getLong(ImporterStatsCollector.PENDING_COUNT_COL);
+      if (pending < lastPending) {
+        lastPending=pending;
+        found=true;
+        assertEquals(100 - pending,row.getLong(ImporterStatsCollector.SUCCESS_COUNT_COL));
+        assertEquals(0,row.getLong(ImporterStatsCollector.RETRY_COUNT_COL));
+        break;
+      }
+      try {
+        Thread.sleep(1000);
+      }
+ catch (      InterruptedException e) {
+      }
+    }
+    if (found) {
+      break;
+    }
+  }
+  assertTrue(found);
+}
