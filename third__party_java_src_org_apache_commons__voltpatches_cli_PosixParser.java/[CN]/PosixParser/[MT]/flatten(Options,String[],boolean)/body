@@ -1,0 +1,50 @@
+{
+  init();
+  this.options=options;
+  Iterator<String> iter=Arrays.asList(arguments).iterator();
+  while (iter.hasNext()) {
+    String token=iter.next();
+    if ("-".equals(token) || "--".equals(token)) {
+      tokens.add(token);
+    }
+ else     if (token.startsWith("--")) {
+      int pos=token.indexOf('=');
+      String opt=pos == -1 ? token : token.substring(0,pos);
+      List<String> matchingOpts=options.getMatchingOptions(opt);
+      if (matchingOpts.isEmpty()) {
+        processNonOptionToken(token,stopAtNonOption);
+      }
+ else       if (matchingOpts.size() > 1) {
+        throw new AmbiguousOptionException(opt,matchingOpts);
+      }
+ else {
+        currentOption=options.getOption(matchingOpts.get(0));
+        tokens.add("--" + currentOption.getLongOpt());
+        if (pos != -1) {
+          tokens.add(token.substring(pos + 1));
+        }
+      }
+    }
+ else     if (token.startsWith("-")) {
+      if (token.length() == 2 || options.hasOption(token)) {
+        processOptionToken(token,stopAtNonOption);
+      }
+ else       if (!options.getMatchingOptions(token).isEmpty()) {
+        List<String> matchingOpts=options.getMatchingOptions(token);
+        if (matchingOpts.size() > 1) {
+          throw new AmbiguousOptionException(token,matchingOpts);
+        }
+        Option opt=options.getOption(matchingOpts.get(0));
+        processOptionToken("-" + opt.getLongOpt(),stopAtNonOption);
+      }
+ else {
+        burstToken(token,stopAtNonOption);
+      }
+    }
+ else {
+      processNonOptionToken(token,stopAtNonOption);
+    }
+    gobble(iter);
+  }
+  return tokens.toArray(new String[tokens.size()]);
+}
