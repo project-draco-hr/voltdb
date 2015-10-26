@@ -1,0 +1,34 @@
+{
+  if (args.length == 0) {
+    System.out.println("Usage server port reportIntervalSeconds");
+    return;
+  }
+  final Client c=ClientFactory.createClient();
+  System.out.println("Connecting to " + args[0] + " port "+ Integer.valueOf(args[1]));
+  c.createConnection(args[0],Integer.valueOf(args[1]));
+  System.out.printf("%12s, %10s, %10s, %10s, %10s, %10s, %10s\n","TIMESTAMP","COUNT","95","99","99.9","99.99","99.999");
+  final SimpleDateFormat sdf=new SimpleDateFormat("HH:mm:ss:SSS");
+  ScheduledExecutorService ses=Executors.newSingleThreadScheduledExecutor();
+  ses.scheduleAtFixedRate(new Runnable(){
+    @Override public void run(){
+      VoltTable table=null;
+      try {
+        table=c.callProcedure("@Statistics","LATENCY_HISTOGRAM",0).getResults()[0];
+      }
+ catch (      IOException|ProcCallException e) {
+        System.out.println("Failed to get statistics:");
+        e.printStackTrace();
+        System.exit(0);
+      }
+      table.advanceRow();
+      Date now=new Date(table.getLong(0));
+      Histogram newHistogram=getHistogram(ByteBuffer.wrap(table.getVarbinary(5)));
+      Histogram diffHistogram;
+      if (m_histogramData == null)       diffHistogram=newHistogram;
+ else       diffHistogram=m_histogramData.diff(newHistogram);
+      System.out.printf("%12s, %10d, %8.2fms, %8.2fms, %8.2fms, %8.2fms, %8.2fms\n",sdf.format(now),diffHistogram.totalCount,diffHistogram.getValueAtPercentile(95),diffHistogram.getValueAtPercentile(99),diffHistogram.getValueAtPercentile(99.9),diffHistogram.getValueAtPercentile(99.99),diffHistogram.getValueAtPercentile(99.999));
+      m_histogramData=newHistogram;
+    }
+  }
+,0,Integer.valueOf(args[2]),TimeUnit.SECONDS);
+}
