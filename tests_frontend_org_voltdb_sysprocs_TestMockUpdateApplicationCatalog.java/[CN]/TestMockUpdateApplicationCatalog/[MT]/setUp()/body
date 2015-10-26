@@ -1,0 +1,26 @@
+{
+  TPCCProjectBuilder builder=new TPCCProjectBuilder();
+  builder.addDefaultSchema();
+  builder.addDefaultPartitioning();
+  boolean success=builder.compile(Configuration.getPathToCatalogForTest("catalogupdate-cluster-base.jar"),1,1,0);
+  assert(success);
+  MiscUtils.copyFile(builder.getPathToDeployment(),Configuration.getPathToCatalogForTest("catalogupdate-cluster-base.xml"));
+  m_config=new VoltDB.Configuration();
+  m_config.m_pathToCatalog=Configuration.getPathToCatalogForTest("catalogupdate-cluster-base.jar");
+  m_config.m_pathToDeployment=Configuration.getPathToCatalogForTest("catalogupdate-cluster-base.xml");
+  m_localServer=new ServerThread(m_config);
+  m_localServer.start();
+  m_localServer.waitForInitialization();
+  builder=new TPCCProjectBuilder();
+  builder.addDefaultSchema();
+  builder.addDefaultPartitioning();
+  builder.addProcedures(BASEPROCS);
+  success=builder.compile(Configuration.getPathToCatalogForTest("catalogupdate-cluster-expanded.jar"),1,1,0);
+  assert(success);
+  JavaClassForTest testClass=Mockito.mock(JavaClassForTest.class);
+  Mockito.when(testClass.forName(Matchers.anyString(),Matchers.anyBoolean(),Mockito.any(JarLoader.class))).thenThrow(new UnsupportedClassVersionError("Unsupported major.minor version 52.0"));
+  UpdateApplicationCatalog.setJavaClassForTest(testClass);
+  assertEquals(OperationMode.RUNNING,VoltDB.instance().getMode());
+  m_client=ClientFactory.createClient();
+  m_client.createConnection("localhost:" + m_config.m_adminPort);
+}
