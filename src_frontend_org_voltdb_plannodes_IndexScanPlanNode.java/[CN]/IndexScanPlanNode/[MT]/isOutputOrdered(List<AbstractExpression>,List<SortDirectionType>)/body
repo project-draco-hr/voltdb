@@ -1,0 +1,36 @@
+{
+  assert(sortExpressions.size() == sortDirections.size());
+  AbstractPlanNode agg=AggregatePlanNode.getInlineAggregationNode(this);
+  if (agg != null && agg.getPlanNodeType() == PlanNodeType.HASHAGGREGATE) {
+    return false;
+  }
+  for (  SortDirectionType sortDirection : sortDirections) {
+    if (sortDirection != getSortDirection()) {
+      return false;
+    }
+  }
+  List<AbstractExpression> indexedExprs=new ArrayList<AbstractExpression>();
+  List<ColumnRef> indexedColRefs=new ArrayList<ColumnRef>();
+  boolean columnIndex=CatalogUtil.getCatalogIndexExpressions(getCatalogIndex(),getTableScan(),indexedExprs,indexedColRefs);
+  int indexExprCount=(columnIndex) ? indexedColRefs.size() : indexedExprs.size();
+  if (indexExprCount < sortExpressions.size()) {
+    return false;
+  }
+  if (columnIndex) {
+    for (int idxToCover=0; idxToCover < sortExpressions.size(); ++idxToCover) {
+      AbstractExpression sortExpression=sortExpressions.get(idxToCover);
+      if (!isSortExpressionCovered(sortExpression,indexedColRefs,idxToCover,getTableScan())) {
+        return false;
+      }
+    }
+  }
+ else {
+    for (int idxToCover=0; idxToCover < sortExpressions.size(); ++idxToCover) {
+      AbstractExpression sortExpression=sortExpressions.get(idxToCover);
+      if (!isSortExpressionCovered(sortExpression,indexedExprs,idxToCover)) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
