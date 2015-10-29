@@ -1,0 +1,47 @@
+{
+  ClientResponse response=client.callProcedure("@Statistics","Importer",1);
+  VoltTable stats=response.getResults()[0];
+  int numSocketsFound=0;
+  boolean foundLog4j=false;
+  for (int i=0; i < stats.getRowCount(); i++) {
+    VoltTableRow row=stats.fetchRow(i);
+    String name=row.getString(ImporterStatsCollector.IMPORTER_NAME_COL);
+    long expectedFailures=0;
+    long lastFailures=0;
+    long lastSuccesses=0;
+    String procName=row.getString(ImporterStatsCollector.PROC_NAME_COL);
+    if (name.equals("SocketImporter")) {
+      expectedFailures=m_expectedSocketFailures.get(procName);
+      lastFailures=m_lastSocketFailures.containsKey(procName) ? m_lastSocketFailures.get(procName) : 0;
+      lastSuccesses=m_lastSocketSuccesses.containsKey(procName) ? m_lastSocketSuccesses.get(procName) : 0;
+      numSocketsFound++;
+    }
+ else     if (name.equals("Log4jSocketHandlerImporter")) {
+      expectedFailures=0;
+      procName="log_events.insert";
+      lastFailures=0;
+      lastSuccesses=(m_lastLog4jSuccesses < 0) ? 0 : m_lastLog4jSuccesses;
+      foundLog4j=true;
+    }
+ else {
+      continue;
+    }
+    assertEquals(procName,row.getString(ImporterStatsCollector.PROC_NAME_COL));
+    assertEquals(expectedFailures - lastFailures,row.getLong(ImporterStatsCollector.FAILURE_COUNT_COL));
+    assertEquals(count - expectedFailures - lastSuccesses,row.getLong(ImporterStatsCollector.SUCCESS_COUNT_COL));
+    if (name.equals("SocketImporter")) {
+      m_lastSocketFailures.put(procName,expectedFailures);
+      m_lastSocketSuccesses.put(procName,count - expectedFailures);
+    }
+ else     if (name.equals("Log4jSocketHandlerImporter")) {
+      m_lastLog4jSuccesses=count;
+    }
+    assertEquals(0,row.getLong(ImporterStatsCollector.PENDING_COUNT_COL));
+    assertEquals(0,row.getLong(ImporterStatsCollector.RETRY_COUNT_COL));
+    assertNotNull(row.getLong("TIMESTAMP"));
+    assertNotNull(row.getLong(VoltSystemProcedure.CNAME_HOST_ID));
+    assertNotNull(row.getString("HOSTNAME"));
+    assertNotNull(row.getLong(VoltSystemProcedure.CNAME_SITE_ID));
+  }
+  assertTrue(numSocketsFound == 2 && foundLog4j);
+}

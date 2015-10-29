@@ -1,0 +1,50 @@
+{
+  try {
+    String simpleSchema="CREATE TABLE test1 (\n" + "    fld1 BIGINT NOT NULL,\n" + "    PRIMARY KEY (fld1)\n"+ ");";
+    File schemaFile=VoltProjectBuilder.writeStringToTempFile(simpleSchema);
+    String schemaPath=schemaFile.getPath();
+    schemaPath=URLEncoder.encode(schemaPath,"UTF-8");
+    VoltProjectBuilder builder=new VoltProjectBuilder();
+    builder.addSchema(schemaPath);
+    builder.addPartitionInfo("test1","fld1");
+    builder.addProcedures(WorkerProc.class);
+    UserInfo[] ui=new UserInfo[5];
+    if (securityOn) {
+      RoleInfo ri=new RoleInfo("role1",true,false,true,true,false,false);
+      builder.addRoles(new RoleInfo[]{ri});
+      for (int i=0; i < ui.length; i++) {
+        ui[i]=new UserInfo("user" + String.valueOf(i),"password" + String.valueOf(i),new String[]{"role1"});
+      }
+      builder.addUsers(ui);
+      builder.setSecurityEnabled(true,true);
+    }
+    builder.setHTTPDPort(8095);
+    boolean success=builder.compile(Configuration.getPathToCatalogForTest("json.jar"));
+    assertTrue(success);
+    VoltDB.Configuration config=new VoltDB.Configuration();
+    config.m_pathToCatalog=config.setPathToCatalogForTest("json.jar");
+    config.m_pathToDeployment=builder.getPathToDeployment();
+    server=new ServerThread(config);
+    server.start();
+    server.waitForInitialization();
+    TestWorker.s_insertCount=new AtomicLong(0);
+    int poolSize=25;
+    ExecutorService executor=Executors.newFixedThreadPool(poolSize);
+    int workCount=200;
+    for (int i=0; i < workCount; i++) {
+      executor.execute(new TestWorker(i,workCount / 10,(securityOn ? ui[workCount % ui.length].name : null),(securityOn ? ui[workCount % ui.length].password : null)));
+    }
+    executor.shutdown();
+    if (!executor.awaitTermination(60,TimeUnit.SECONDS)) {
+      fail("Workers should have finished execution by now");
+    }
+    assertTrue(TestWorker.s_success);
+  }
+  finally {
+    if (server != null) {
+      server.shutdown();
+      server.join();
+    }
+    server=null;
+  }
+}

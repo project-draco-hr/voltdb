@@ -1,24 +1,49 @@
 {
   final List<Table> tables=SnapshotUtil.getTablesToSave(catalogDatabase);
-  final Set<String> tableNamesToInclude=new HashSet<String>();
+  Set<String> tableNamesToInclude=null;
+  Set<String> tableNamesToExclude=null;
   if (jsData != null) {
-    JSONArray tableNames=jsData.optJSONArray("tableNames");
+    JSONArray tableNames=jsData.optJSONArray("tables");
     if (tableNames != null) {
+      tableNamesToInclude=Sets.newHashSet();
       for (int i=0; i < tableNames.length(); i++) {
         try {
-          tableNamesToInclude.add(tableNames.getString(i));
+          final String s=tableNames.getString(i).trim().toUpperCase();
+          if (!s.isEmpty()) {
+            tableNamesToInclude.add(s);
+          }
         }
  catch (        JSONException e) {
-          SNAP_LOG.warn("Unable to parse tables to include for stream snapshot",e);
+          SNAP_LOG.warn("Unable to parse tables to include for snapshot",e);
+        }
+      }
+    }
+    JSONArray excludeTableNames=jsData.optJSONArray("skiptables");
+    if (excludeTableNames != null) {
+      tableNamesToExclude=Sets.newHashSet();
+      for (int i=0; i < excludeTableNames.length(); i++) {
+        try {
+          final String s=excludeTableNames.getString(i).trim().toUpperCase();
+          if (!s.isEmpty()) {
+            tableNamesToExclude.add(s);
+          }
+        }
+ catch (        JSONException e) {
+          SNAP_LOG.warn("Unable to parse tables to exclude for snapshot",e);
         }
       }
     }
   }
-  ListIterator<Table> iter=tables.listIterator();
-  while (iter.hasNext()) {
-    Table table=iter.next();
-    if (!tableNamesToInclude.contains(table.getTypeName())) {
-      iter.remove();
+  if (tableNamesToInclude != null && tableNamesToInclude.isEmpty()) {
+    tables.clear();
+  }
+ else {
+    ListIterator<Table> iter=tables.listIterator();
+    while (iter.hasNext()) {
+      Table table=iter.next();
+      if ((tableNamesToInclude != null && !tableNamesToInclude.contains(table.getTypeName())) || (tableNamesToExclude != null && tableNamesToExclude.contains(table.getTypeName()))) {
+        iter.remove();
+      }
     }
   }
   return tables.toArray(new Table[0]);

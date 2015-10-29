@@ -25,30 +25,34 @@
       hostassoc.add(host);
     }
   }
-  Collections.shuffle(hostassoc,new Random(System.identityHashCode(this)));
+  Collections.shuffle(hostassoc,new Random(seed));
   Iterator<String> hitr=hostassoc.iterator();
   Iterator<ChannelSpec> citr=added.iterator();
   while (citr.hasNext()) {
     String host=hitr.next();
     ChannelSpec spec=citr.next();
     byhost.put(host,spec);
-    LOG.info("LEADER (" + m_hostId + ") assingning "+ spec+ " to host "+ host);
+    LOG.info("LEADER (" + m_hostId + ") assigning "+ spec+ " to host "+ host);
   }
   try {
     NavigableSet<ChannelSpec> previous=null;
     NavigableSet<ChannelSpec> needed=null;
-    SetNodeChannels setter=null;
+    List<SetNodeChannels> setters=new ArrayList<>();
     for (    String host : hosts.navigableKeySet()) {
       previous=Maps.filterValues(specs,equalTo(host)).navigableKeySet();
       needed=byhost.get(host);
       if (!needed.equals(previous)) {
         int version=hosts.get(host).get();
         byte[] nodedata=asHostData(needed);
-        setter=new SetNodeChannels(joinZKPath(HOST_DN,host),version,nodedata);
+        setters.add(new SetNodeChannels(joinZKPath(HOST_DN,host),version,nodedata));
       }
     }
-    if (setter != null) {
-      setter.getCallbackCode();
+    for (    SetNodeChannels setter : setters) {
+      if (setter.getCallbackCode() != Code.OK && !m_done.get()) {
+        LOG.warn("LEADER (" + m_hostId + ") Retrying channel assignment because write attempt to "+ setter.path+ " failed with "+ setter.getCallbackCode());
+        m_es.submit(new AssignChannels(seed));
+        return;
+      }
     }
   }
  catch (  JSONException|IllegalArgumentException e) {

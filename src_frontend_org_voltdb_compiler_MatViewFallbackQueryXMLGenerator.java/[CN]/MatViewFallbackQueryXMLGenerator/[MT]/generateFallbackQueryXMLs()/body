@@ -1,0 +1,42 @@
+{
+  List<VoltXMLElement> columns=VoltXMLElementHelper.getFirstChild(m_xml,"columns").children;
+  List<VoltXMLElement> parameters=VoltXMLElementHelper.getFirstChild(m_xml,"parameters").children;
+  VoltXMLElement groupcolumnsElement=VoltXMLElementHelper.getFirstChild(m_xml,"groupcolumns");
+  List<VoltXMLElement> tablescans=VoltXMLElementHelper.getFirstChild(m_xml,"tablescans").children;
+  VoltXMLElement tablescanForJoinCond=tablescans.get(tablescans.size() - 1);
+  List<VoltXMLElement> joincondList=VoltXMLElementHelper.getFirstChild(tablescanForJoinCond,"joincond",true).children;
+  VoltXMLElement joincond=joincondList.size() == 0 ? null : joincondList.get(0);
+  joincondList.clear();
+  if (groupcolumnsElement != null) {
+    List<VoltXMLElement> groupcolumns=groupcolumnsElement.children;
+    for (int i=0; i < m_groupByColumnsParsedInfo.size(); ++i) {
+      String index=String.valueOf(i);
+      String valueType=m_groupByColumnsParsedInfo.get(i).expression.getValueType().getName();
+      VoltXMLElement column=groupcolumns.get(i);
+      parameters.add(VoltXMLElementHelper.buildParamElement(nextElementId(),index,valueType));
+      VoltXMLElement columnParamJoincond=VoltXMLElementHelper.buildColumnParamJoincondElement("equal",column,lastElementId(),nextElementId());
+      joincond=VoltXMLElementHelper.mergeTwoElementsUsingOperator("and",nextElementId(),joincond,columnParamJoincond);
+    }
+    m_xml.children.remove(groupcolumnsElement);
+  }
+  List<VoltXMLElement> originalColumns=new ArrayList<VoltXMLElement>();
+  originalColumns.addAll(columns);
+  columns.clear();
+  String paramIndex=String.valueOf(m_groupByColumnsParsedInfo.size());
+  for (int i=m_groupByColumnsParsedInfo.size() + 1; i < m_displayColumnsParsedInfo.size(); ++i) {
+    VoltXMLElement column=originalColumns.get(i);
+    String optype=column.attributes.get("optype");
+    if (optype.equals("min") || optype.equals("max")) {
+      columns.add(column);
+      VoltXMLElement aggArg=column.children.get(0);
+      String operator=optype.equals("min") ? "greaterthanorequalto" : "lessthanorequalto";
+      String valueType=m_displayColumnsParsedInfo.get(i).expression.getValueType().getName();
+      parameters.add(VoltXMLElementHelper.buildParamElement(nextElementId(),paramIndex,valueType));
+      VoltXMLElement aggArgJoincond=VoltXMLElementHelper.buildColumnParamJoincondElement(operator,aggArg,lastElementId(),nextElementId());
+      joincondList.add(VoltXMLElementHelper.mergeTwoElementsUsingOperator("and",nextElementId(),joincond,aggArgJoincond));
+      m_fallbackQueryXMLs.add(m_xml.duplicate());
+      columns.clear();
+      joincondList.clear();
+    }
+  }
+}

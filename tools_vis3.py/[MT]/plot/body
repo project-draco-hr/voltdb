@@ -1,15 +1,23 @@
-def plot(title, xlabel, ylabel, filename, width, height, data, info):
+def plot(title, xbranch, ybranch, filename, width, height, data, root_path):
     global mc
+    xlabel = ('%s Thpt tx/sec' % xbranch)
+    ylabel = ('%s Thpt tx/sec' % ybranch)
     pl = Plot(title, xlabel, ylabel, filename, width, height, 1)
+    seq = []
     if (len(data) > 0):
         for (k, v) in data.iteritems():
+            if (v['y']['tps'] == 0.0):
+                continue
             diff = (((float(v['y']['tps']) - float(v['x']['tps'])) / float(v['y']['tps'])) * 100.0)
             acolor = ['g', 'r'][(diff < 0)]
             pl.plot(v['x']['tps'], v['y']['tps'], acolor, MARKERS[0], '')
+            test_case = ('%s %d %s' % (k[2], k[3], ['node', 'nodes'][(k[3] > 1)]))
+            seq.append([test_case, round(diff, 2), round(v['y']['tps'], 2), v['y']['count'], round(v['x']['tps'], 2), v['x']['count'], acolor])
             if (abs(diff) > 5.0):
-                atxt = ('%s %d %s (%.2f%%)' % (k[2], k[3], ['node', 'nodes'][(k[3] > 1)], diff))
+                atxt = ('%s (%.2f%%)' % (test_case, diff))
                 pl.ax.annotate(atxt, xy=(v['x']['tps'], v['y']['tps']), xycoords='data', xytext=((10 * [1, (-1)][(diff > 0)]), (-5)), textcoords='offset points', ha=['left', 'right'][(diff > 0)], size=10, color=acolor)
-    if (len(info) > 1):
-        _at = AnchoredText('\n'.join(info), loc=2, prop=dict(size=10))
-        pl.ax.add_artist(_at)
     pl.close()
+    seq = sorted(seq, key=(lambda t: t[1]))
+    seq.insert(0, ['test #nodes', '% diff', ybranch, '#samples', xbranch, '#samples', 'flag'])
+    with open(filename.replace('png', 'html'), 'w+') as f:
+        f.write(get_html_tbl(reduce((lambda x, y: (x + y)), seq, []), 7))
