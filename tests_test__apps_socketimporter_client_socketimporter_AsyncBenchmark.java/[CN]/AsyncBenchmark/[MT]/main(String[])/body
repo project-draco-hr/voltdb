@@ -1,45 +1,63 @@
 {
+  VoltLogger log=new VoltLogger("Benchmark.main");
   final long WAIT_FOR_A_WHILE=100 * 1000;
   Config config=new Config();
   config.parse(AsyncBenchmark.class.getName(),args);
-  connect(config.sockservers);
+  System.out.print(HORIZONTAL_RULE);
+  log.info(" Command Line Configuration");
+  log.info(HORIZONTAL_RULE);
+  log.info(config.getConfigDumpString());
+  if (config.latencyreport) {
+    log.info("NOTICE: Not implemented in this benchmark client.\n");
+  }
   dbconnect(config.servers);
+  log.info("Setting up DDL");
+  checkDB=new DataUtils(queue,dqueue,client,config.partitioned);
+  checkDB.ddlSetup(config.partitioned);
+  connect(config.sockservers);
   CountDownLatch cdl=new CountDownLatch(haplist.size());
   for (  HostAndPort hap : haplist.keySet()) {
     AsyncBenchmark benchmark=new AsyncBenchmark(config);
     BenchmarkRunner runner=new BenchmarkRunner(benchmark,cdl,hap);
     runner.start();
   }
-  System.out.println("Starting CheckData methods. Queue size: " + queue.size());
-  CheckData checkDB=new CheckData(queue,dqueue,client);
-  while (queue.size() == 0) {
-    try {
-      Thread.sleep(1000);
+  schedulePeriodicStats();
+  if (!config.perftest) {
+    while (queue.size() == 0) {
+      try {
+        Thread.sleep(1000);
+      }
+ catch (      InterruptedException ex) {
+        Thread.currentThread().interrupt();
+      }
     }
- catch (    InterruptedException ex) {
-      Thread.currentThread().interrupt();
-    }
+    log.info("Starting CheckData methods. Queue size: " + queue.size());
+    checkDB.processQueue();
   }
-  System.out.println("Starting CheckData methods. Queue size: " + queue.size());
-  checkDB.processQueue();
   cdl.await();
   for (  HostAndPort hap : haplist.keySet()) {
     OutputStream writer=haplist.get(hap);
     writer.flush();
     writer.close();
   }
-  System.out.println("...starting timed check looping... " + queue.size());
-  final long queueEndTime=System.currentTimeMillis() + WAIT_FOR_A_WHILE;
-  System.out.println("Continue checking for " + (queueEndTime - System.currentTimeMillis()) / 1000 + " seconds.");
-  while (queueEndTime > System.currentTimeMillis()) {
-    checkDB.processQueue();
+  printResults();
+  if (!config.perftest) {
+    log.info("...starting timed check looping... " + queue.size());
+    final long queueEndTime=System.currentTimeMillis() + WAIT_FOR_A_WHILE;
+    log.info("Continue checking for " + (queueEndTime - System.currentTimeMillis()) / 1000 + " seconds.");
+    while (queueEndTime > System.currentTimeMillis()) {
+      checkDB.processQueue();
+    }
   }
   client.drain();
-  System.out.println("Queued tuples remaining: " + queue.size());
-  System.out.println("Total rows added by Socket Injester: " + finalInsertCount.get());
-  System.out.println("Socket write count: " + socketWrites.get());
-  System.out.println("Socket write exception count: " + socketWriteExceptions.get());
-  System.out.println("Rows checked against database: " + rowsChecked.get());
-  System.out.println("Mismatch rows (value imported <> value in DB): " + rowsMismatch.get());
+  client.close();
+  if (!config.perftest) {
+    log.info("Queued tuples remaining: " + queue.size());
+    log.info("Rows checked against database: " + rowsChecked.get());
+    log.info("Mismatch rows (value imported <> value in DB): " + rowsMismatch.get());
+  }
+  log.info("Total rows added by Socket Injester: " + (warmupCount.get() + runCount.get()));
+  log.info("Socket write count: " + socketWrites.get());
+  log.info("Socket write exception count: " + socketWriteExceptions.get());
   System.exit(0);
 }

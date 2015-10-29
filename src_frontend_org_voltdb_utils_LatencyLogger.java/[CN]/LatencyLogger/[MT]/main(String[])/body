@@ -1,0 +1,53 @@
+{
+  if (args.length != 3) {
+    System.out.println("Usage server port reportIntervalSeconds");
+    return;
+  }
+  int duration=0;
+  try {
+    duration=Integer.valueOf(args[2]);
+    if (duration < 1)     throw new NumberFormatException();
+  }
+ catch (  NumberFormatException e) {
+    System.out.println("reportIntervalSeconds should be greater than or equal to 1");
+    System.out.println("Usage server port reportIntervalSeconds");
+    System.exit(0);
+  }
+  final Client c=ClientFactory.createClient();
+  int port=0;
+  try {
+    port=Integer.valueOf(args[1]);
+  }
+ catch (  NumberFormatException e) {
+    System.out.println("Failed to parse port number.");
+    System.out.println("Usage server port reportIntervalSeconds");
+    System.exit(0);
+  }
+  System.out.println("Connecting to " + args[0] + " port "+ port);
+  c.createConnection(args[0],port);
+  System.out.printf("%12s, %10s, %10s, %10s, %10s, %10s, %10s\n","TIMESTAMP","COUNT","95","99","99.9","99.99","99.999");
+  final SimpleDateFormat sdf=new SimpleDateFormat("HH:mm:ss:SSS");
+  ScheduledExecutorService ses=Executors.newSingleThreadScheduledExecutor();
+  ses.scheduleAtFixedRate(new Runnable(){
+    @Override public void run(){
+      VoltTable table=null;
+      try {
+        table=c.callProcedure("@Statistics","LATENCY_HISTOGRAM",0).getResults()[0];
+      }
+ catch (      IOException|ProcCallException e) {
+        System.out.println("Failed to get statistics:");
+        e.printStackTrace();
+        System.exit(0);
+      }
+      table.advanceRow();
+      Date now=new Date(table.getLong(0));
+      Histogram newHistogram=getHistogram(ByteBuffer.wrap(table.getVarbinary(5)));
+      Histogram diffHistogram;
+      if (m_histogramData == null)       diffHistogram=newHistogram;
+ else       diffHistogram=m_histogramData.diff(newHistogram);
+      System.out.printf("%12s, %10d, %8.2fms, %8.2fms, %8.2fms, %8.2fms, %8.2fms\n",sdf.format(now),diffHistogram.totalCount,diffHistogram.getValueAtPercentile(95),diffHistogram.getValueAtPercentile(99),diffHistogram.getValueAtPercentile(99.9),diffHistogram.getValueAtPercentile(99.99),diffHistogram.getValueAtPercentile(99.999));
+      m_histogramData=newHistogram;
+    }
+  }
+,0,duration,TimeUnit.SECONDS);
+}

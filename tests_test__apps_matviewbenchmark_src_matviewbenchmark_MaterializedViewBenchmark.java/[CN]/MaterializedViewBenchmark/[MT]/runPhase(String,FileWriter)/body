@@ -1,0 +1,170 @@
+{
+  String systemStr="", csvStr="", procStr="";
+switch (matView) {
+case "matView":
+    systemStr="w/";
+  csvStr="w";
+procStr="idsWithMatView";
+break;
+case "noMatView":
+systemStr="w/o";
+csvStr="wo";
+procStr="ids";
+break;
+case "minMatView":
+systemStr="w/ min";
+csvStr="w min";
+procStr="idsWithMinMatView";
+break;
+case "minMatViewOpt":
+systemStr="w/ min opt";
+csvStr="w min opt";
+procStr="idsWithMinMatViewOpt";
+break;
+case "4MinMatView":
+systemStr="4mins";
+csvStr="4mins";
+procStr="idsWith4MinMatView";
+break;
+case "4MinMatViewOpt":
+systemStr="4mins opt";
+csvStr="4mins opt";
+procStr="idsWith4MinMatViewOpt";
+break;
+case "MultiGroupsMinMatView":
+systemStr="multi groups min";
+csvStr="2g";
+procStr="idsWithMultiGroupsMinMatView";
+break;
+case "MultiGroupsMinMatViewOpt":
+systemStr="multi groups min opt";
+csvStr="2g opt";
+procStr="idsWithMultiGroupsMinMatViewOpt";
+break;
+case "MultiGroupsMinMatViewBestOpt":
+systemStr="multi groups min best opt";
+csvStr="2g b opt";
+procStr="idsWithMultiGroupsMinMatViewBestOpt";
+break;
+default :
+throw new RuntimeException("Benchmark " + matView + " not found!");
+}
+assert(csvStr.length() <= 9);
+int grp=1;
+fullStatsContext.fetchAndResetBaseline();
+periodicStatsContext.fetchAndResetBaseline();
+benchmarkStartTS=System.currentTimeMillis();
+schedulePeriodicStats();
+System.out.println("\n\nInserting into table " + systemStr + " materialized view...\n");
+if (config.group > 0) {
+for (int i=0; i < config.txn; i++) {
+if (systemStr.startsWith("4")) {
+client.callProcedure(new NullCallback(),procStr + "_insert",i,grp,i,-i,i,-i);
+}
+ else if (systemStr.startsWith("multi")) {
+client.callProcedure(new NullCallback(),procStr + "_insert",i,grp,grp,i);
+}
+ else {
+client.callProcedure(new NullCallback(),procStr + "_insert",i,grp,i);
+}
+if (grp == config.group) {
+grp=1;
+}
+ else {
+grp++;
+}
+}
+}
+ else {
+for (int i=0; i < config.txn; i++) {
+if (systemStr.startsWith("4")) {
+client.callProcedure(new NullCallback(),procStr + "_insert",i,i,i,-i,i,-i);
+}
+ else if (systemStr.startsWith("multi")) {
+client.callProcedure(new NullCallback(),procStr + "_insert",i,grp,grp,i);
+}
+ else {
+client.callProcedure(new NullCallback(),procStr + "_insert",i,i,i);
+}
+}
+}
+timer.cancel();
+client.drain();
+if ((config.statsfile == null) || (config.statsfile.length() == 0)) {
+printResults(procStr + "_insert");
+}
+ else {
+printResults(procStr + "_insert",fw,"Insert " + csvStr + " MV");
+}
+System.out.print(HORIZONTAL_RULE);
+if (!isMinMatViewCase(matView)) {
+grp=2;
+fullStatsContext.fetchAndResetBaseline();
+periodicStatsContext.fetchAndResetBaseline();
+benchmarkStartTS=System.currentTimeMillis();
+schedulePeriodicStats();
+System.out.println("\n\nUpdating grouping column in table " + systemStr + " materialized view...\n");
+if (config.group > 0) {
+for (int i=0; i < config.txn; i++) {
+client.callProcedure(new NullCallback(),procStr + "_group_id_update",grp,i);
+if (grp == (config.group + 1)) {
+grp=2;
+}
+ else {
+grp++;
+}
+}
+}
+ else {
+for (int i=0; i < config.txn; i++) {
+client.callProcedure(new NullCallback(),procStr + "_group_id_update",(i + 1),i);
+}
+}
+timer.cancel();
+client.drain();
+if ((config.statsfile == null) || (config.statsfile.length() == 0)) {
+printResults(procStr + "_group_id_update");
+}
+ else {
+printResults(procStr + "_group_id_update",fw,"Update Grp " + csvStr + " MV");
+}
+System.out.print(HORIZONTAL_RULE);
+fullStatsContext.fetchAndResetBaseline();
+periodicStatsContext.fetchAndResetBaseline();
+benchmarkStartTS=System.currentTimeMillis();
+schedulePeriodicStats();
+System.out.println("\n\nUpdating aggregated column in table " + systemStr + " materialized view...\n");
+for (int i=0; i < config.txn; i++) {
+client.callProcedure(new NullCallback(),procStr + "_value_update",(i + 1),i);
+}
+timer.cancel();
+client.drain();
+if ((config.statsfile == null) || (config.statsfile.length() == 0)) {
+printResults(procStr + "_value_update");
+}
+ else {
+printResults(procStr + "_value_update",fw,"Update Sum " + csvStr + " MV");
+}
+System.out.print(HORIZONTAL_RULE);
+}
+fullStatsContext.fetchAndResetBaseline();
+periodicStatsContext.fetchAndResetBaseline();
+benchmarkStartTS=System.currentTimeMillis();
+schedulePeriodicStats();
+int numDeletes=config.txn;
+if (systemStr.startsWith("multi")) {
+numDeletes=10000;
+}
+System.out.println("\n\nDeleting " + numDeletes + " rows from table "+ systemStr+ " materialized view...\n");
+for (int i=0; i < numDeletes; i++) {
+client.callProcedure(new NullCallback(),procStr + "_delete",i);
+}
+timer.cancel();
+client.drain();
+if ((config.statsfile == null) || (config.statsfile.length() == 0)) {
+printResults(procStr + "_delete");
+}
+ else {
+printResults(procStr + "_delete",fw,"Delete " + csvStr + " MV");
+}
+}
