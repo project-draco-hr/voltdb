@@ -1,0 +1,66 @@
+{
+  List<AbstractPlanNode> receives=orderbyNode.findAllNodesOfType(PlanNodeType.RECEIVE);
+  if (receives.isEmpty()) {
+    return orderbyNode;
+  }
+  assert(receives.size() == 1);
+  ReceivePlanNode receive=(ReceivePlanNode)receives.get(0);
+  AbstractPlanNode limitNode=orderbyNode.getInlinePlanNode(PlanNodeType.LIMIT);
+  AbstractPlanNode aggregateNode=null;
+  AbstractPlanNode inlineCandidate=receive.getParent(0);
+  while (orderbyNode != inlineCandidate) {
+    if (inlineCandidate instanceof AbstractScanPlanNode) {
+      return orderbyNode;
+    }
+    PlanNodeType nodeType=inlineCandidate.getPlanNodeType();
+    if (nodeType == PlanNodeType.LIMIT && limitNode == null) {
+      limitNode=inlineCandidate;
+    }
+ else     if ((nodeType == PlanNodeType.AGGREGATE || nodeType == PlanNodeType.PARTIALAGGREGATE) && aggregateNode == null) {
+      aggregateNode=inlineCandidate;
+    }
+ else     if (nodeType == PlanNodeType.HASHAGGREGATE && aggregateNode == null) {
+      aggregateNode=convertToSerialAggregation(inlineCandidate,orderbyNode);
+      if (PlanNodeType.HASHAGGREGATE == aggregateNode.getPlanNodeType()) {
+        return orderbyNode;
+      }
+    }
+ else {
+      return orderbyNode;
+    }
+    assert(inlineCandidate.getParentCount() == 1);
+    inlineCandidate=inlineCandidate.getParent(0);
+  }
+  assert(receive.getChildCount() == 1);
+  AbstractPlanNode partitionRoot=receive.getChild(0);
+  if (!partitionRoot.isOutputOrdered(orderbyNode.getSortExpressions(),orderbyNode.getSortDirections())) {
+    return orderbyNode;
+  }
+  assert(orderbyNode.getParentCount() <= 1);
+  AbstractPlanNode rootNode=(orderbyNode.getParentCount() == 1) ? orderbyNode.getParent(0) : null;
+  MergeReceivePlanNode mergeReceive=new MergeReceivePlanNode();
+  assert(receive.getChildCount() == 1);
+  mergeReceive.addAndLinkChild(receive.getChild(0));
+  receive.removeFromGraph();
+  if (rootNode == null) {
+    rootNode=mergeReceive;
+  }
+ else {
+    rootNode.clearChildren();
+    rootNode.addAndLinkChild(mergeReceive);
+  }
+  mergeReceive.addInlinePlanNode(orderbyNode);
+  if (limitNode != null) {
+    orderbyNode.removeInlinePlanNode(PlanNodeType.LIMIT);
+  }
+  if (aggregateNode != null) {
+    if (limitNode != null) {
+      aggregateNode.addInlinePlanNode(limitNode);
+    }
+    mergeReceive.addInlinePlanNode(aggregateNode);
+  }
+  if (limitNode != null && aggregateNode == null) {
+    mergeReceive.addInlinePlanNode(limitNode);
+  }
+  return rootNode;
+}
