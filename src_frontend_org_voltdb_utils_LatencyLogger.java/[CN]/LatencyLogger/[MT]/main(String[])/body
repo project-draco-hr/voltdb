@@ -1,18 +1,25 @@
 {
+  final String hostname;
   if (args.length != 3) {
-    System.out.println("Usage server port reportIntervalSeconds");
-    return;
+    if (args.length == 4)     hostname=args[3];
+ else {
+      System.out.println(usage());
+      return;
+    }
   }
-  int duration=0;
+ else   hostname=args[0];
+  final String server=args[0];
+  int dur=0;
   try {
-    duration=Integer.valueOf(args[2]);
-    if (duration < 1)     throw new NumberFormatException();
+    dur=Integer.valueOf(args[2]);
+    if (dur < 1)     throw new NumberFormatException();
   }
  catch (  NumberFormatException e) {
     System.out.println("reportIntervalSeconds should be greater than or equal to 1");
-    System.out.println("Usage server port reportIntervalSeconds");
+    System.out.println(usage());
     System.exit(0);
   }
+  final int duration=dur;
   final Client c=ClientFactory.createClient();
   int port=0;
   try {
@@ -23,9 +30,9 @@
     System.out.println("Usage server port reportIntervalSeconds");
     System.exit(0);
   }
-  System.out.println("Connecting to " + args[0] + " port "+ port);
+  System.out.println("Connecting to " + server + " port "+ port);
   c.createConnection(args[0],port);
-  System.out.printf("%12s, %10s, %10s, %10s, %10s, %10s, %10s\n","TIMESTAMP","COUNT","95","99","99.9","99.99","99.999");
+  System.out.printf("%12s, %10s, %10s, %10s, %10s, %10s, %10s, %10s\n","TIMESTAMP","COUNT","TPS","95","99","99.9","99.99","99.999");
   final SimpleDateFormat sdf=new SimpleDateFormat("HH:mm:ss:SSS");
   ScheduledExecutorService ses=Executors.newSingleThreadScheduledExecutor();
   ses.scheduleAtFixedRate(new Runnable(){
@@ -39,13 +46,25 @@
         e.printStackTrace();
         System.exit(0);
       }
-      table.advanceRow();
+      List<String> hostnames=new ArrayList<String>();
+      String tableHostname="";
+      while (!hostname.equalsIgnoreCase(tableHostname)) {
+        if (!table.advanceRow()) {
+          System.out.println("Server host name " + server + " not found. Valid host names are "+ hostnames.toString());
+          System.exit(0);
+        }
+        tableHostname=table.getString(2);
+        hostnames.add(tableHostname);
+      }
       Date now=new Date(table.getLong(0));
-      Histogram newHistogram=getHistogram(ByteBuffer.wrap(table.getVarbinary(5)));
+      Histogram newHistogram=AbstractHistogram.fromCompressedBytes(table.getVarbinary(4),CompressionStrategySnappy.INSTANCE);
       Histogram diffHistogram;
       if (m_histogramData == null)       diffHistogram=newHistogram;
- else       diffHistogram=m_histogramData.diff(newHistogram);
-      System.out.printf("%12s, %10d, %8.2fms, %8.2fms, %8.2fms, %8.2fms, %8.2fms\n",sdf.format(now),diffHistogram.totalCount,diffHistogram.getValueAtPercentile(95),diffHistogram.getValueAtPercentile(99),diffHistogram.getValueAtPercentile(99.9),diffHistogram.getValueAtPercentile(99.99),diffHistogram.getValueAtPercentile(99.999));
+ else       diffHistogram=Histogram.diff(newHistogram,m_histogramData);
+      HistogramData histData=diffHistogram.getHistogramData();
+      long totalCount=histData.getTotalCount();
+      if (totalCount > 0)       System.out.printf("%12s, %10d, %10d, %8.2fms, %8.2fms, %8.2fms, %8.2fms, %8.2fms\n",sdf.format(now),totalCount,(totalCount / duration),(histData.getValueAtPercentile(95.0D) / 1000.0D),(histData.getValueAtPercentile(99) / 1000.0D),(histData.getValueAtPercentile(99.9) / 1000.0D),(histData.getValueAtPercentile(99.99) / 1000.0D),(histData.getValueAtPercentile(99.999) / 1000.0D));
+ else       System.out.printf("%12s, %10d, %10d, %8.2fms, %8.2fms, %8.2fms, %8.2fms, %8.2fms\n",sdf.format(now),totalCount,0,0D,0D,0D,0D,0D);
       m_histogramData=newHistogram;
     }
   }
