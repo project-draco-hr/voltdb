@@ -1,0 +1,24 @@
+{
+  AbstractPlanNode pn;
+  AbstractPlanNode n;
+  pn=compile("select * FROM  " + "R3 FULL JOIN R1 ON R3.A = R1.A WHERE R3.C IS NULL");
+  n=pn.getChild(0).getChild(0);
+  verifyJoinNode(n,PlanNodeType.NESTLOOPINDEX,JoinType.FULL,null,null,ExpressionType.OPERATOR_IS_NULL,PlanNodeType.SEQSCAN,PlanNodeType.INDEXSCAN);
+  pn=compile("select * FROM  " + "R1 FULL JOIN R3 ON R3.C = R1.A AND R3.A > 0");
+  n=pn.getChild(0).getChild(0);
+  verifyJoinNode(n,PlanNodeType.NESTLOOP,JoinType.FULL,null,ExpressionType.CONJUNCTION_AND,null,PlanNodeType.SEQSCAN,PlanNodeType.SEQSCAN,"R1","R3");
+  pn=compile("select * FROM R1 FULL JOIN R3 ON R3.A = R1.A AND R3.A > 55");
+  n=pn.getChild(0).getChild(0);
+  verifyJoinNode(n,PlanNodeType.NESTLOOPINDEX,JoinType.FULL,null,null,null,PlanNodeType.SEQSCAN,PlanNodeType.INDEXSCAN,"R1","R3");
+  verifyIndexScanNode(n.getInlinePlanNode(PlanNodeType.INDEXSCAN),IndexLookupType.EQ,ExpressionType.COMPARE_GREATERTHAN);
+  pn=compile("select * FROM R1 FULL JOIN R3 ON R3.A = R1.A AND R3.c = R1.c");
+  n=pn.getChild(0).getChild(0);
+  verifyJoinNode(n,PlanNodeType.NESTLOOPINDEX,JoinType.FULL,null,null,null,PlanNodeType.SEQSCAN,PlanNodeType.INDEXSCAN,"R1","R3");
+  verifyIndexScanNode(n.getInlinePlanNode(PlanNodeType.INDEXSCAN),IndexLookupType.EQ,ExpressionType.COMPARE_EQUAL);
+  pn=compile("select * FROM R1 JOIN R2 ON R1.A = R2.C FULL JOIN R3 ON R3.A = R2.C  AND R1.A > 0");
+  n=pn.getChild(0).getChild(0);
+  verifyJoinNode(n,PlanNodeType.NESTLOOPINDEX,JoinType.FULL,ExpressionType.COMPARE_GREATERTHAN,null,null,PlanNodeType.NESTLOOP,PlanNodeType.INDEXSCAN,null,"R3");
+  verifyIndexScanNode(n.getInlinePlanNode(PlanNodeType.INDEXSCAN),IndexLookupType.EQ,null);
+  n=n.getChild(0);
+  verifyJoinNode(n,PlanNodeType.NESTLOOP,JoinType.INNER,null,ExpressionType.COMPARE_EQUAL,null,PlanNodeType.SEQSCAN,PlanNodeType.SEQSCAN);
+}
