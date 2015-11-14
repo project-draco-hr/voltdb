@@ -13,19 +13,12 @@
     innerChildNode.m_accessPaths.add(getRelevantNaivePath(parentNode.m_joinInnerOuterList,parentNode.m_joinInnerList));
     return;
   }
-  List<AbstractExpression> joinExpressions;
-  List<AbstractExpression> filterExpressions;
-  if (parentNode.getJoinType() == JoinType.FULL) {
-    joinExpressions=new ArrayList<>();
-    joinExpressions.addAll(parentNode.m_joinInnerOuterList);
-    joinExpressions.addAll(parentNode.m_joinInnerList);
-    filterExpressions=null;
+  if (parentNode.getJoinType() != JoinType.FULL) {
+    innerChildNode.m_accessPaths.addAll(getRelevantAccessPathsForTable(innerChildNode.getTableScan(),parentNode.m_joinInnerOuterList,parentNode.m_joinInnerList,null));
   }
  else {
-    joinExpressions=parentNode.m_joinInnerOuterList;
-    filterExpressions=parentNode.m_joinInnerList;
+    innerChildNode.m_accessPaths.addAll(getRelevantAccessPathsForTable(innerChildNode.getTableScan(),parentNode.m_joinInnerOuterList,null,parentNode.m_joinInnerList));
   }
-  innerChildNode.m_accessPaths.addAll(getRelevantAccessPathsForTable(innerChildNode.getTableScan(),joinExpressions,filterExpressions,null));
   StmtTableScan innerTable=innerChildNode.getTableScan();
   assert(innerTable != null);
   boolean mayNeedInnerSendReceive=(!m_partitioning.wasSpecifiedAsSingle()) && (m_partitioning.getCountOfPartitionedTables() > 0) && (parentNode.getJoinType() != JoinType.INNER)&& !innerTable.getIsReplicated();
@@ -36,7 +29,16 @@
         innerOuterAccessPaths.add(innerAccessPath);
       }
     }
-    Collection<AccessPath> nljAccessPaths=getRelevantAccessPathsForTable(innerChildNode.getTableScan(),null,parentNode.m_joinInnerList,parentNode.m_joinInnerOuterList);
+    Collection<AccessPath> nljAccessPaths;
+    if (parentNode.getJoinType() != JoinType.FULL) {
+      nljAccessPaths=getRelevantAccessPathsForTable(innerChildNode.getTableScan(),null,parentNode.m_joinInnerList,parentNode.m_joinInnerOuterList);
+    }
+ else {
+      List<AbstractExpression> postExpressions=new ArrayList<>();
+      postExpressions.addAll(parentNode.m_joinInnerList);
+      postExpressions.addAll(parentNode.m_joinInnerOuterList);
+      nljAccessPaths=getRelevantAccessPathsForTable(innerChildNode.getTableScan(),null,null,postExpressions);
+    }
     innerChildNode.m_accessPaths.clear();
     innerChildNode.m_accessPaths.addAll(nljAccessPaths);
     innerChildNode.m_accessPaths.addAll(innerOuterAccessPaths);
