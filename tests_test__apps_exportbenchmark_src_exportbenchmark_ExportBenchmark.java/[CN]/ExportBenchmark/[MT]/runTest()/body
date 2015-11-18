@@ -19,27 +19,34 @@
 );
   writes.start();
   Thread.sleep(config.warmup * 1000);
-  setupSocketListener();
-  listenForStats();
+  if (config.target.equals("socket")) {
+    setupSocketListener();
+    listenForStats();
+  }
   writes.join();
   periodicStatsTimer.cancel();
   System.out.println("Client flushed; waiting for export to finish");
   boolean success=false;
-  try {
-    success=waitForStreamedAllocatedMemoryZero();
+  if (config.target.equals("socket")) {
+    try {
+      success=waitForStreamedAllocatedMemoryZero();
+    }
+ catch (    IOException e) {
+      System.err.println("Error while waiting for export: ");
+      e.getLocalizedMessage();
+    }
+catch (    ProcCallException e) {
+      System.err.println("Error while calling procedures: ");
+      e.getLocalizedMessage();
+    }
   }
- catch (  IOException e) {
-    System.err.println("Error while waiting for export: ");
-    e.getLocalizedMessage();
-  }
-catch (  ProcCallException e) {
-    System.err.println("Error while calling procedures: ");
-    e.getLocalizedMessage();
+ else {
+    success=true;
   }
   System.out.println("Finished benchmark");
   printResults(benchmarkEndTS - benchmarkWarmupEndTS);
   client.close();
-  if (serverStats.size() == 0) {
+  if (config.target.equals("socket") && serverStats.size() == 0) {
     System.err.println("ERROR: Never received stats from export clients");
     success=false;
   }

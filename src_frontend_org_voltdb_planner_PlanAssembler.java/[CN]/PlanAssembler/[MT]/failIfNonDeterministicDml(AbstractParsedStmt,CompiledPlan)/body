@@ -2,17 +2,25 @@
   if (plan == null || plan.isReadOnly()) {
     return;
   }
-  if (parsedStmt instanceof ParsedInsertStmt && !plan.isOrderDeterministic()) {
+  boolean contentDeterministic=plan.isContentDeterministic();
+  if (parsedStmt instanceof ParsedInsertStmt && !(plan.isOrderDeterministic() && contentDeterministic)) {
     ParsedInsertStmt parsedInsert=(ParsedInsertStmt)parsedStmt;
     boolean targetHasLimitRowsTrigger=parsedInsert.targetTableHasLimitRowsTrigger();
+    String contentDeterministicMsg="";
+    if (!contentDeterministic) {
+      contentDeterministicMsg="  " + plan.nondeterminismDetail();
+    }
     if (parsedStmt.m_isUpsert) {
-      throw new PlanningErrorException("UPSERT statement manipulates data in a non-deterministic way.  " + "Adding an ORDER BY clause to UPSERT INTO ... SELECT may address this issue.");
+      throw new PlanningErrorException("UPSERT statement manipulates data in a non-deterministic way.  " + "Adding an ORDER BY clause to UPSERT INTO ... SELECT may address this issue." + contentDeterministicMsg);
     }
  else     if (targetHasLimitRowsTrigger) {
-      throw new PlanningErrorException("Order of rows produced by SELECT statement in INSERT INTO ... SELECT is " + "non-deterministic.  Since the table being inserted into has a row limit " + "trigger, the SELECT output must be ordered.  Add an ORDER BY clause "+ "to address this issue.");
+      throw new PlanningErrorException("Order of rows produced by SELECT statement in INSERT INTO ... SELECT is " + "non-deterministic.  Since the table being inserted into has a row limit " + "trigger, the SELECT output must be ordered.  Add an ORDER BY clause "+ "to address this issue."+ contentDeterministicMsg);
     }
  else     if (plan.hasLimitOrOffset()) {
-      throw new PlanningErrorException("INSERT statement manipulates data in a content non-deterministic way.  " + "Adding an ORDER BY clause to INSERT INTO ... SELECT may address this issue.");
+      throw new PlanningErrorException("INSERT statement manipulates data in a content non-deterministic way.  " + "Adding an ORDER BY clause to INSERT INTO ... SELECT may address this issue." + contentDeterministicMsg);
+    }
+ else     if (!contentDeterministic) {
+      throw new PlanningErrorException("INSERT statement manipulates data in a non-deterministic way." + contentDeterministicMsg);
     }
   }
   if (parsedStmt instanceof ParsedDeleteStmt && !((ParsedDeleteStmt)parsedStmt).sideEffectsAreDeterministic()) {
