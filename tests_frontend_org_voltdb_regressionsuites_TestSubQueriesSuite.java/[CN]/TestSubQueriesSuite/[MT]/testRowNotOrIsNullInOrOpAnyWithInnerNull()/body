@@ -20,10 +20,15 @@
     sql="select ID from R1 " + "where ((WAGE, DEPT) = ANY " + "       (select WAGE, DEPT from R2 "+ "        where ID < 104)) "+ "      IS NULL;";
     validateTableOfLongs(client,sql,new long[][]{{100}});
     sql="select ID from R1 " + "where (WAGE, DEPT) NOT IN " + "      (select WAGE, DEPT from R2 "+ "       where ID < 104) "+ "order by ID;";
-    dumpQueryPlans(client,sql);
     validateTableOfLongs(client,sql,new long[][]{{10},{300}});
     sql="select ID from R1 " + "where NOT (WAGE, DEPT) = ANY " + "          (select WAGE, DEPT from R2 "+ "           where ID < 104) "+ "order by ID;";
     validateTableOfLongs(client,sql,new long[][]{{10},{300}});
+    sql="select ID from R1 " + "where (abs(ID), 2*DEPT-DEPT) IN " + "      (select ID, DEPT from R2 "+ "       where ID < 104) "+ "order by ID;";
+    validateTableOfLongs(client,sql,new long[][]{{100}});
+    sql="select ID from R1 " + "where (ID, 2) IN " + "      (select ID, DEPT from R2 "+ "       where ID < 104) "+ "order by ID;";
+    validateTableOfLongs(client,sql,new long[][]{{100}});
+    sql="select ID from R1 " + "where (ID, ID+DEPT-ID) IN " + "      (select ID, DEPT from R2 "+ "       where ID < 104) "+ "order by ID;";
+    validateTableOfLongs(client,sql,new long[][]{{100}});
   }
   if (!isHSQL()) {
     sql="select ID from R1 " + "where NOT ((WAGE, DEPT) IN " + "           (select WAGE, DEPT from R2 "+ "            where ID < 104)) "+ "order by ID;";
@@ -34,5 +39,43 @@
     validateTableOfLongs(client,sql,new long[][]{{10},{300}});
     sql="select ID from R1 " + "where (WAGE, DEPT) NOT IN " + "      (select WAGE, DEPT from R2 "+ "       where ID < 104) "+ "order by ID;";
     validateTableOfLongs(client,sql,new long[][]{{10},{300}});
+    sql="select ID from R1 " + "where (abs(WAGE), 2+DEPT-2) NOT IN " + "      (select WAGE, DEPT from R2 "+ "       where ID < 104) "+ "order by ID;";
+    validateTableOfLongs(client,sql,new long[][]{{10},{300}});
+    sql="select ID from R1 " + "where (WAGE, 2) NOT IN " + "      (select WAGE, DEPT from R2 "+ "       where ID < 104) "+ "order by ID;";
+    try {
+      validateTableOfLongs(client,sql,new long[][]{{10},{300}});
+      fail("Was not expecting constant row column to survive planning");
+    }
+ catch (    ProcCallException ex) {
+      String errMsg="use of a constant value";
+      assertTrue(ex.getMessage().contains(errMsg));
+    }
+    sql="select ID from R1 " + "where (WAGE, 2) IN " + "      (select WAGE, DEPT from R2 "+ "       where ID < 104 limit 1) "+ "order by ID;";
+    try {
+      validateTableOfLongs(client,sql,new long[][]{{10},{300}});
+      fail("Was not expecting constant row column to survive planning");
+    }
+ catch (    ProcCallException ex) {
+      String errMsg="use of a constant value";
+      assertTrue(ex.getMessage().contains(errMsg));
+    }
+    sql="select ID from R1 " + "where (WAGE, ID+DEPT-ID) NOT IN " + "      (select WAGE, DEPT from R2 "+ "       where ID < 104) "+ "order by ID;";
+    try {
+      validateTableOfLongs(client,sql,new long[][]{{10},{300}});
+      fail("Was not expecting multi-column expression to survive planning");
+    }
+ catch (    ProcCallException ex) {
+      String errMsg="combination of column values";
+      assertTrue(ex.getMessage().contains(errMsg));
+    }
+    sql="select ID from R1 " + "where (WAGE, ID+DEPT-ID) IN " + "      (select WAGE, DEPT from R2 "+ "       where ID < 104 limit 1) "+ "order by ID;";
+    try {
+      validateTableOfLongs(client,sql,new long[][]{{10},{300}});
+      fail("Was not expecting multi-column expression to survive planning");
+    }
+ catch (    ProcCallException ex) {
+      String errMsg="combination of column values";
+      assertTrue(ex.getMessage().contains(errMsg));
+    }
   }
 }
