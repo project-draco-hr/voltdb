@@ -1,14 +1,23 @@
 {
+  byte version=inBuffer.get();
+  inBuffer.get();
+  inBuffer.get();
   int numLoops=inBuffer.getInt();
-  List<List<PointType>> loops=new ArrayList<List<PointType>>();
+  List<List<XYZPoint>> loops=new ArrayList<List<XYZPoint>>();
+  int indexOfOuterRing=0;
   for (int i=0; i < numLoops; ++i) {
-    List<PointType> loop=new ArrayList<PointType>();
-    int numVertices=inBuffer.getInt();
-    for (int j=0; j < numVertices; ++j) {
-      PointType pt=PointType.unflattenFromBuffer(inBuffer);
-      loop.add(pt);
+    List<XYZPoint> loop=new ArrayList<XYZPoint>();
+    int depth=unflattenLoopFromBuffer(inBuffer,loop);
+    if (depth == 0) {
+      indexOfOuterRing=i;
     }
     loops.add(loop);
   }
-  return new GeographyValue(loops);
+  if (version == COMPLETE_ENCODING && indexOfOuterRing != 0) {
+    List<XYZPoint> outerRing=loops.get(indexOfOuterRing);
+    loops.set(indexOfOuterRing,loops.get(0));
+    loops.set(0,outerRing);
+  }
+  unflattenBoundFromBuffer(inBuffer);
+  return polygonFromXyzPoints(loops);
 }
