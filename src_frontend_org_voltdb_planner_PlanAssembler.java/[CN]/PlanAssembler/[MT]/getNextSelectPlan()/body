@@ -1,15 +1,5 @@
 {
   assert(m_subAssembler != null);
-  HashAggregatePlanNode reAggNode=null;
-  HashAggregatePlanNode mvReAggTemplate=m_parsedSelect.m_mvFixInfo.getReAggregationPlanNode();
-  if (mvReAggTemplate != null) {
-    reAggNode=new HashAggregatePlanNode(mvReAggTemplate);
-    List<AbstractExpression> subqueryExprs=ExpressionUtil.findAllExpressionsOfClass(reAggNode.getPostPredicate(),AbstractSubqueryExpression.class);
-    if (!subqueryExprs.isEmpty()) {
-      m_recentErrorMsg=IN_EXISTS_SCALAR_ERROR_MESSAGE;
-      return null;
-    }
-  }
   AbstractPlanNode subSelectRoot=m_subAssembler.nextPlan();
   if (subSelectRoot == null) {
     m_recentErrorMsg=m_subAssembler.m_recentErrorMsg;
@@ -34,14 +24,14 @@
           if (nljs.size() + nlijs.size() == 0) {
             mvFixInfoEdgeCaseOuterJoin=true;
           }
-          root=handleMVBasedMultiPartQuery(reAggNode,root,mvFixInfoEdgeCaseOuterJoin);
+          root=handleMVBasedMultiPartQuery(root,mvFixInfoEdgeCaseOuterJoin);
         }
       }
     }
+ else     if (receivers.size() > 0) {
+      throw new PlanningErrorException("This special case join between an outer replicated table and " + "an inner partitioned table is too complex and is not supported.");
+    }
  else {
-      if (receivers.size() > 0) {
-        throw new PlanningErrorException("This special case join between an outer replicated table and " + "an inner partitioned table is too complex and is not supported.");
-      }
       root=SubPlanAssembler.addSendReceivePair(root);
       assert(root instanceof ReceivePlanNode);
       if (m_parsedSelect.mayNeedAvgPushdown()) {
@@ -54,7 +44,7 @@
     root=handleAggregationOperators(root);
     if (m_parsedSelect.m_mvFixInfo.needed() && mvFixInfoCoordinatorNeeded) {
       AbstractPlanNode tmpRoot=root;
-      root=handleMVBasedMultiPartQuery(reAggNode,root,mvFixInfoEdgeCaseOuterJoin);
+      root=handleMVBasedMultiPartQuery(root,mvFixInfoEdgeCaseOuterJoin);
       if (root != tmpRoot) {
         mvFixNeedsProjection=true;
       }

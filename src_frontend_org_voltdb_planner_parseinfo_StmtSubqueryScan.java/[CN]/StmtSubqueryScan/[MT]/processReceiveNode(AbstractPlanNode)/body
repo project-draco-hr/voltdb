@@ -1,38 +1,46 @@
 {
   assert(m_subqueriesPartitioning != null);
   if (!m_subqueriesPartitioning.requiresTwoFragments()) {
-    return false;
+    return root;
   }
+  assert(root.findAllNodesOfClass(AbstractReceivePlanNode.class).size() == 1);
   assert(m_subqueryStmt != null);
-  if (failsSingleFragmentTest()) {
-    return false;
+  if (hasReceiveNode()) {
+    m_hasReceiveNode=true;
+    return root;
   }
-  m_failedSingleFragmentTest=true;
+  m_hasReceiveNode=true;
+  if (root.hasAnyNodeOfClass(MergeReceivePlanNode.class)) {
+    return root;
+  }
   if (m_subqueryStmt instanceof ParsedUnionStmt) {
-    return false;
+    assert(m_subqueryStmt instanceof ParsedUnionStmt);
+    return root;
   }
-  if (!(m_subqueryStmt instanceof ParsedSelectStmt)) {
+  if (m_subqueryStmt instanceof ParsedSelectStmt == false) {
     throw new PlanningErrorException("Unsupported subquery found in FROM clause:" + m_subqueryStmt.toString());
   }
   ParsedSelectStmt selectStmt=(ParsedSelectStmt)m_subqueryStmt;
+  assert(selectStmt != null);
   if (selectStmt.hasLimitOrOffset() || selectStmt.hasDistinctWithGroupBy()) {
-    return false;
+    return root;
   }
   if (selectStmt.m_mvFixInfo.needed()) {
-    return false;
+    return root;
   }
   if (selectStmt.hasAggregateOrGroupby()) {
     if (!selectStmt.isGrouped()) {
       m_tableAggregateSubquery=true;
-      return false;
+      return root;
     }
     if (!selectStmt.hasPartitionColumnInGroupby()) {
-      return false;
+      return root;
     }
     if (selectStmt.hasAggregateDistinct()) {
-      return false;
+      return root;
     }
   }
-  m_failedSingleFragmentTest=false;
-  return true;
+  root=removeCoordinatorSendReceivePair(root);
+  m_hasReceiveNode=false;
+  return root;
 }
