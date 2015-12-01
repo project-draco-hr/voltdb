@@ -1,0 +1,29 @@
+{
+  VoltDB.Configuration config=new VoltDB.Configuration();
+  String ddl="create table FOO (" + "ID integer not null," + "TS timestamp, "+ "constraint PK_TREE primary key (ID)"+ ");\n"+ "partition table FOO on column ID;\n"+ "create table FOO_R ("+ "ID integer not null,"+ "TS timestamp, "+ "constraint PK_TREE_R primary key (ID)"+ ");\n"+ "";
+  createSchema(config,ddl,2,1,0);
+  try {
+    startSystem(config);
+    assertFalse(findIndexInSystemCatalogResults("partial_FOO_ts"));
+    try {
+      m_client.callProcedure("@AdHoc","create index partial_FOO_ts on FOO (TS) where TS > '2000-01-01';");
+    }
+ catch (    ProcCallException pce) {
+      pce.printStackTrace();
+      fail("Should be able to create a partial index on a partitioned table");
+    }
+    assertTrue(findIndexInSystemCatalogResults("partial_FOO_ts"));
+    assertFalse(findIndexInSystemCatalogResults("partial_FOO_R_ts"));
+    try {
+      m_client.callProcedure("@AdHoc","create index partial_FOO_R_ts on FOO_R (TS) where TS > '2000-01-01';");
+    }
+ catch (    ProcCallException pce) {
+      pce.printStackTrace();
+      fail("Should be able to create a partial index on a replicated table" + " after apparently succeeding with a partitioned table.");
+    }
+    assertTrue(findIndexInSystemCatalogResults("partial_FOO_R_ts"));
+  }
+  finally {
+    teardownSystem();
+  }
+}

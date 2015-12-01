@@ -1,21 +1,22 @@
 {
   AbstractParsedStmt subQuery=subqueryScan.getSubqueryStmt();
   assert(subQuery != null);
-  PlanSelector selector=(PlanSelector)m_planSelector.clone();
-  selector.m_planId=planId;
+  PlanSelector planSelector=(PlanSelector)m_planSelector.clone();
+  planSelector.m_planId=planId;
   StatementPartitioning currentPartitioning=(StatementPartitioning)m_partitioning.clone();
-  PlanAssembler assembler=new PlanAssembler(m_catalogCluster,m_catalogDb,currentPartitioning,selector);
+  PlanAssembler assembler=new PlanAssembler(m_catalogCluster,m_catalogDb,currentPartitioning,planSelector);
   CompiledPlan compiledPlan=assembler.getBestCostPlan(subQuery);
   if (compiledPlan == null) {
     String tbAlias=subqueryScan.getTableAlias();
     m_recentErrorMsg="Subquery statement for table " + tbAlias + " has error: "+ assembler.getErrorMessage();
-    if (m_recentErrorMsg == null) {
-      m_recentErrorMsg="Unable to plan for subquery statement for table " + tbAlias;
-    }
-    return selector.m_planId;
+    return planSelector.m_planId;
   }
   subqueryScan.setSubqueriesPartitioning(currentPartitioning);
-  compiledPlan.rootPlanGraph=subqueryScan.processReceiveNode(compiledPlan.rootPlanGraph);
+  if (subqueryScan.canRunInOneFragment()) {
+    if (!compiledPlan.rootPlanGraph.hasAnyNodeOfClass(MergeReceivePlanNode.class)) {
+      compiledPlan.rootPlanGraph=removeCoordinatorSendReceivePair(compiledPlan.rootPlanGraph);
+    }
+  }
   subqueryScan.setBestCostPlan(compiledPlan);
-  return selector.m_planId;
+  return planSelector.m_planId;
 }

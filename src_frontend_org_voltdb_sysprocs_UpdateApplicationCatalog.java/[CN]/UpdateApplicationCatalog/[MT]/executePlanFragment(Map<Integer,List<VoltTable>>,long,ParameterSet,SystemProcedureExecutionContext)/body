@@ -10,9 +10,27 @@
       JarLoader testjarloader=testjar.getLoader();
       for (      String classname : testjarloader.getClassNames()) {
         try {
-          Class.forName(classname,true,testjarloader);
+          m_javaClass.forName(classname,true,testjarloader);
         }
- catch (        LinkageError|ClassNotFoundException e) {
+ catch (        UnsupportedClassVersionError e) {
+          String msg="Cannot load classes compiled with a higher version of Java than currently" + " in use. Class " + classname + " was compiled with ";
+          Integer major=0;
+          try {
+            major=Integer.parseInt(e.getMessage().split("version")[1].trim().split("\\.")[0]);
+          }
+ catch (          Exception ex) {
+            if (log.isDebugEnabled())             log.debug("Unable to parse compile version number from UnsupportedClassVersionError. " + ex.getMessage());
+          }
+          if (m_versionMap.containsKey(major)) {
+            msg=msg.concat(m_versionMap.get(major) + ", current runtime version is " + System.getProperty("java.version")+ ".");
+          }
+ else {
+            msg=msg.concat("an incompatable Java version.");
+          }
+          log.error(msg);
+          throw new VoltAbortException(msg);
+        }
+catch (        LinkageError|ClassNotFoundException e) {
           String cause=e.getMessage();
           if (cause == null && e.getCause() != null) {
             cause=e.getCause().getMessage();

@@ -1,0 +1,30 @@
+{
+  Client client=getFullyConnectedClient();
+  try {
+    CountDownLatch cdl=new CountDownLatch(1);
+    byte expectedResponse=(kfactor > 0) ? ClientResponse.SUCCESS : ClientResponse.GRACEFUL_FAILURE;
+    client.callProcedure(new StopCallBack(cdl,expectedResponse,1),"@StopNode",1);
+    cdl.await();
+    if (expectedResponse == ClientResponse.SUCCESS) {
+      waitForHostToBeGone(1);
+    }
+    client.callProcedure("@SystemInformation","overview");
+  }
+ catch (  Exception ex) {
+    fail();
+    ex.printStackTrace();
+  }
+  boolean lostConnect=false;
+  try {
+    CountDownLatch cdl=new CountDownLatch(2);
+    client.callProcedure(new StopCallBack(cdl,ClientResponse.GRACEFUL_FAILURE,1),"@StopNode",1);
+    client.callProcedure(new StopCallBack(cdl,ClientResponse.GRACEFUL_FAILURE,0),"@StopNode",0);
+    VoltTable tab=client.callProcedure("@SystemInformation","overview").getResults()[0];
+    cdl.await();
+  }
+ catch (  Exception pce) {
+    pce.printStackTrace();
+    lostConnect=pce.getMessage().contains("was lost before a response was received");
+  }
+  assertFalse(lostConnect);
+}
