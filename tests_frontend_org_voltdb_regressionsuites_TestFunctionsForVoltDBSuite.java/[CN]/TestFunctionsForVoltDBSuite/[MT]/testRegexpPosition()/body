@@ -1,0 +1,53 @@
+{
+  System.out.println("STARTING testRegexpPosition");
+  Client client=getClient();
+  ClientResponse cr=null;
+  VoltTable vt=null;
+  cr=client.callProcedure("@AdHoc","INSERT INTO P1 (ID, DESC) VALUES (200, 'TEST reGexp_poSiTion123456Test')");
+  assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+  vt=client.callProcedure("@AdHoc","SELECT REGEXP_POSITION(DESC, 'TEST') FROM P1 WHERE REGEXP_POSITION(DESC, 'TEST') > 0;").getResults()[0];
+  assertTrue(vt.advanceRow());
+  assertEquals(1,vt.asScalarLong());
+  vt=client.callProcedure("@AdHoc","SELECT REGEXP_POSITION(DESC, '[a-z](\\d+)[a-z]') FROM P1 WHERE REGEXP_POSITION(DESC, '[a-z](\\d+)[a-z]') > 0").getResults()[0];
+  assertFalse(vt.advanceRow());
+  vt=client.callProcedure("@AdHoc","SELECT REGEXP_POSITION(DESC, '[a-z](\\d+)[A-Z]') FROM P1 WHERE REGEXP_POSITION(DESC, '[a-z](\\d+)[A-Z]') > 0").getResults()[0];
+  assertTrue(vt.advanceRow());
+  assertEquals(20,vt.asScalarLong());
+  vt=client.callProcedure("@AdHoc","SELECT REGEXP_POSITION(DESC, '[a-z](\\d+)[a-z]', 'i') FROM P1 WHERE REGEXP_POSITION(DESC, '[a-z](\\d+)[a-z]', 'i') > 0").getResults()[0];
+  assertTrue(vt.advanceRow());
+  assertEquals(20,vt.asScalarLong());
+  try {
+    client.callProcedure("@AdHoc","SELECT REGEXP_POSITION(DESC, '[a-z](a]') FROM P1 WHERE REGEXP_POSITION(DESC, '[a-z](a]') > 0");
+  }
+ catch (  ProcCallException e) {
+    assertEquals(ClientResponse.GRACEFUL_FAILURE,e.getClientResponse().getStatus());
+    assertTrue(e.getClientResponse().getStatusString().contains("illegal pattern string"));
+  }
+  try {
+    client.callProcedure("@AdHoc","SELECT REGEXP_POSITION(DESC, '[a-z](\\d+)[A-Z]', 'k') FROM P1 WHERE REGEXP_POSITION(DESC, '[a-z](\\d+)[A-Z]', 'k') > 0");
+  }
+ catch (  ProcCallException e) {
+    assertEquals(ClientResponse.GRACEFUL_FAILURE,e.getClientResponse().getStatus());
+    assertTrue(e.getClientResponse().getStatusString().contains("illegal match flags"));
+  }
+  vt=client.callProcedure("@AdHoc","SELECT REGEXP_POSITION(DESC, NULL) FROM P1 WHERE ID = 200").getResults()[0];
+  assertTrue(vt.advanceRow());
+  vt.getLong(0);
+  assertTrue(vt.wasNull());
+  cr=client.callProcedure("@AdHoc","INSERT INTO P1 (ID, DESC) VALUES (201, NULL);");
+  assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+  vt=client.callProcedure("@AdHoc","SELECT REGEXP_POSITION(DESC, 'TEST') FROM P1 WHERE ID = 201").getResults()[0];
+  assertTrue(vt.advanceRow());
+  vt.getLong(0);
+  assertTrue(vt.wasNull());
+  cr=client.callProcedure("@AdHoc","INSERT INTO P1 (ID, DESC) VALUES (202, 'vVoltDBBB?????????');");
+  assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+  vt=client.callProcedure("@AdHoc","SELECT REGEXP_POSITION(DESC, '[A-Z]???') FROM P1 WHERE ID = 202;").getResults()[0];
+  assertTrue(vt.advanceRow());
+  assertEquals(9,vt.getLong(0));
+  vt=client.callProcedure("@AdHoc","SELECT REGEXP_POSITION(DESC, '[a-z]???', 'i') FROM P1 WHERE ID = 202;").getResults()[0];
+  assertTrue(vt.advanceRow());
+  assertEquals(9,vt.getLong(0));
+  cr=client.callProcedure("@AdHoc","DELETE FROM P1 WHERE ID IN (200, 201, 202);");
+  assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+}
