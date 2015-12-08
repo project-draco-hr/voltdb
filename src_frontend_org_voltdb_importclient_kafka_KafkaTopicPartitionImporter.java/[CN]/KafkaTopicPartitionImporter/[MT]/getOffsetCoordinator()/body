@@ -1,0 +1,38 @@
+{
+  KafkaStreamImporterException probeException=null;
+  int correlationId=0;
+  OUTER:   for (int attempts=0; attempts < 3; ++attempts) {
+    for (    KafkaStreamImporterConfig.HostAndPort hp : m_config.getBrokers()) {
+      BlockingChannel channel=null;
+      try {
+        channel=new BlockingChannel(hp.getHost(),hp.getPort(),BlockingChannel.UseDefaultBufferSize(),BlockingChannel.UseDefaultBufferSize(),m_config.getSocketTimeout());
+        channel.connect();
+        channel.send(new ConsumerMetadataRequest(m_config.getGroupId(),ConsumerMetadataRequest.CurrentVersion(),correlationId++,KafkaStreamImporterConfig.CLIENT_ID));
+        ConsumerMetadataResponse metadataResponse=ConsumerMetadataResponse.readFrom(channel.receive().buffer());
+        if (metadataResponse.errorCode() == ErrorMapping.NoError()) {
+          Broker offsetManager=metadataResponse.coordinator();
+          m_coordinator=new KafkaStreamImporterConfig.HostAndPort(offsetManager.host(),offsetManager.port());
+          SimpleConsumer consumer=m_offsetManager.getAndSet(new SimpleConsumer(m_coordinator.getHost(),m_coordinator.getPort(),m_config.getSocketTimeout(),m_config.getFetchSize(),KafkaStreamImporterConfig.CLIENT_ID));
+          info(null,"Offset Coordinator for " + m_topicAndPartition + " is "+ offsetManager);
+          KafkaStreamImporterConfig.closeConsumer(consumer);
+          probeException=null;
+          consumer=null;
+          break OUTER;
+        }
+        probeException=new KafkaStreamImporterException("Failed to get Offset Coordinator for %s",ErrorMapping.exceptionFor(metadataResponse.errorCode()),m_topicAndPartition);
+      }
+ catch (      Exception e) {
+        probeException=new KafkaStreamImporterException("Failed to get Offset Coordinator for %s",e,m_topicAndPartition);
+      }
+ finally {
+        if (channel != null) {
+          channel.disconnect();
+        }
+      }
+    }
+    if (probeException != null) {
+      warn(probeException,"Failed to query all brokers for the offset coordinator for " + m_topicAndPartition);
+    }
+    backoffSleep(attempts + 1);
+  }
+}
