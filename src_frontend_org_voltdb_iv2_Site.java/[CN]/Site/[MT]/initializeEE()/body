@@ -2,12 +2,19 @@
   String hostname=CoreUtils.getHostnameOrAddress();
   HashinatorConfig hashinatorConfig=TheHashinator.getCurrentConfig();
   ExecutionEngine eeTemp=null;
+  Deployment deploy=m_context.cluster.getDeployment().get("deployment");
   try {
     if (m_backend == BackendTarget.NATIVE_EE_JNI) {
-      eeTemp=new ExecutionEngineJNI(m_context.cluster.getRelativeIndex(),m_siteId,m_partitionId,CoreUtils.getHostIdFromHSId(m_siteId),hostname,m_context.cluster.getDrclusterid(),m_context.cluster.getDeployment().get("deployment").getSystemsettings().get("systemsettings").getTemptablemaxsize(),hashinatorConfig,m_mpDrGateway != null);
+      eeTemp=new ExecutionEngineJNI(m_context.cluster.getRelativeIndex(),m_siteId,m_partitionId,CoreUtils.getHostIdFromHSId(m_siteId),hostname,m_context.cluster.getDrclusterid(),deploy.getSystemsettings().get("systemsettings").getTemptablemaxsize(),hashinatorConfig,m_mpDrGateway != null);
+    }
+ else     if (m_backend == BackendTarget.NATIVE_EE_SPY_JNI) {
+      Class<?> spyClass=Class.forName("org.mockito.Mockito");
+      Method spyMethod=spyClass.getDeclaredMethod("spy",Object.class);
+      ExecutionEngine internalEE=new ExecutionEngineJNI(m_context.cluster.getRelativeIndex(),m_siteId,m_partitionId,CoreUtils.getHostIdFromHSId(m_siteId),hostname,m_context.cluster.getDrclusterid(),m_context.cluster.getDeployment().get("deployment").getSystemsettings().get("systemsettings").getTemptablemaxsize(),hashinatorConfig,m_mpDrGateway != null);
+      eeTemp=(ExecutionEngine)spyMethod.invoke(null,internalEE);
     }
  else {
-      eeTemp=new ExecutionEngineIPC(m_context.cluster.getRelativeIndex(),m_siteId,m_partitionId,CoreUtils.getHostIdFromHSId(m_siteId),hostname,m_context.cluster.getDrclusterid(),m_context.cluster.getDeployment().get("deployment").getSystemsettings().get("systemsettings").getTemptablemaxsize(),m_backend,VoltDB.instance().getConfig().m_ipcPort,hashinatorConfig,m_mpDrGateway != null);
+      eeTemp=new ExecutionEngineIPC(m_context.cluster.getRelativeIndex(),m_siteId,m_partitionId,CoreUtils.getHostIdFromHSId(m_siteId),hostname,m_context.cluster.getDrclusterid(),deploy.getSystemsettings().get("systemsettings").getTemptablemaxsize(),m_backend,VoltDB.instance().getConfig().m_ipcPort,hashinatorConfig,m_mpDrGateway != null);
     }
     eeTemp.loadCatalog(m_startupConfig.m_timestamp,m_startupConfig.m_serializedCatalog);
     eeTemp.setBatchTimeout(m_context.cluster.getDeployment().get("deployment").getSystemsettings().get("systemsettings").getQuerytimeout());
