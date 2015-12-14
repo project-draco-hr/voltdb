@@ -27,13 +27,13 @@
             writeFutures.get();
           }
  catch (          Throwable t) {
-            if (m_lastSnapshotSucceded) {
+            if (m_perSiteLastSnapshotSucceded) {
               if (t instanceof StreamSnapshotTimeoutException || t.getCause() instanceof StreamSnapshotTimeoutException) {
               }
  else {
                 SNAP_LOG.error("Error while attempting to write snapshot data",t);
               }
-              m_lastSnapshotSucceded=false;
+              m_perSiteLastSnapshotSucceded=false;
             }
           }
         }
@@ -75,6 +75,7 @@ synchronized (ExecutionSitesCurrentlySnapshotting) {
       m_remoteDCLastSeenIds=null;
       final Thread terminatorThread=new Thread("Snapshot terminator"){
         @Override public void run(){
+          boolean snapshotSucceeded=true;
           try {
             for (            Thread t : m_snapshotTargetTerminators) {
               if (t == this) {
@@ -92,11 +93,11 @@ synchronized (ExecutionSitesCurrentlySnapshotting) {
                 t.close();
               }
  catch (              IOException e) {
-                m_lastSnapshotSucceded=false;
+                snapshotSucceeded=false;
                 throw new RuntimeException(e);
               }
 catch (              InterruptedException e) {
-                m_lastSnapshotSucceded=false;
+                snapshotSucceeded=false;
                 throw new RuntimeException(e);
               }
             }
@@ -111,7 +112,6 @@ catch (              InterruptedException e) {
             }
           }
   finally {
-            final boolean snapshotSucceeded=m_lastSnapshotSucceded;
             try {
               VoltDB.instance().getHostMessenger().getZK().delete(VoltZK.nodes_currently_snapshotting + "/" + VoltDB.instance().getHostMessenger().getHostId(),-1);
             }
