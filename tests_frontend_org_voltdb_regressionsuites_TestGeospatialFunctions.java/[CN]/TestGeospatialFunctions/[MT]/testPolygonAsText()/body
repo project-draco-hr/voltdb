@@ -1,0 +1,24 @@
+{
+  Client client=getClient();
+  populateTables(client);
+  VoltTable vt=client.callProcedure("@AdHoc","select region, asText(region) from borders order by pk").getResults()[0];
+  GeographyValue gv;
+  int index=0;
+  while (vt.advanceRow()) {
+    gv=vt.getGeographyValue(0);
+    if (gv == null) {
+      assertEquals(null,vt.getString(1));
+    }
+ else {
+      assertEquals(gv.toString().toLowerCase(),vt.getString(1).toLowerCase());
+    }
+    index++;
+  }
+  Borders someWhere=new Borders(index,"someWhere",new GeographyValue("POLYGON ((-10.1234567891234 10.1234567891234, " + "-14.1234567891264 10.1234567891234, " + "-14.0 4.1234567891234, "+ "-10.1234567891234 10.1234567891234))"));
+  vt=client.callProcedure("BORDERS.Insert",someWhere.getPk(),someWhere.getName(),someWhere.getRegion()).getResults()[0];
+  validateTableOfScalarLongs(vt,new long[]{1});
+  vt=client.callProcedure("@AdHoc","select region, asText(region) from borders where pk = " + index).getResults()[0];
+  vt.advanceRow();
+  gv=vt.getGeographyValue(0);
+  assertEquals(gv.toString().toLowerCase(),vt.getString(1).toLowerCase());
+}
