@@ -7,6 +7,7 @@ def generate_html_reports(suite, seed, statements_path, cmpdb_path, jni_path, ou
     failures = 0
     count = 0
     mismatches = []
+    crashed = []
     voltdb_npes = []
     cmpdb_npes = []
     all_results = []
@@ -16,14 +17,25 @@ def generate_html_reports(suite, seed, statements_path, cmpdb_path, jni_path, ou
                 statement = cPickle.load(statements_file)
             except EOFError:
                 break
-            jni = cPickle.load(jni_file)
-            cdb = cPickle.load(cmpdb_file)
+            notFound = False
+            try:
+                jni = cPickle.load(jni_file)
+            except EOFError as e:
+                notFound = True
+                jni = {'Status': (-99), 'Exception': 'None', 'Result': None, 'Info': '<p style="color:red">RESULT NOT FOUND! Probably due to a VoltDB crash!</p>', }
+            try:
+                cdb = cPickle.load(cmpdb_file)
+            except EOFError as e:
+                notFound = True
+                cdb = {'Status': (-98), 'Exception': 'None', 'Result': None, 'Info': (('<p style="color:red">RESULT NOT FOUND! Probably due to a ' + cmpdb) + ' backend crash!</p>'), }
             count += 1
             if (int(jni['Status']) != 1):
                 failures += 1
             statement['jni'] = jni
             statement['cmp'] = cdb
-            if is_different(statement, cntonly):
+            if notFound:
+                crashed.append(statement)
+            elif is_different(statement, cntonly):
                 mismatches.append(statement)
             if ('NullPointerException' in str(jni)):
                 voltdb_npes.append(statement)
@@ -47,6 +59,9 @@ def generate_html_reports(suite, seed, statements_path, cmpdb_path, jni_path, ou
     if (len(mismatches) > 0):
         sorted(mismatches, cmp=cmp, key=key)
         report += print_section('Mismatched Statements', mismatches, output_dir, cmpdb)
+    if (len(crashed) > 0):
+        sorted(crashed, cmp=cmp, key=key)
+        report += print_section('Statements Missing Results, due to a Crash<br>(the first one probably caused the crash)', crashed, output_dir, cmpdb)
     if (len(voltdb_npes) > 0):
         sorted(voltdb_npes, cmp=cmp, key=key)
         report += print_section('Statements That Cause a NullPointerException (NPE) in VoltDB', voltdb_npes, output_dir, cmpdb)
