@@ -3,7 +3,14 @@
   prepareBuffers(outputBuffers);
   Pair<Long,int[]> serializeResult=context.tableStreamSerializeMore(m_tableId,m_type,outputBuffers);
   if (serializeResult.getFirst() == SERIALIZATION_ERROR) {
-    VoltDB.crashLocalVoltDB("Failure while serializing data from table " + m_tableId,false,null);
+    for (    DBBPool.BBContainer container : outputBuffers) {
+      container.discard();
+    }
+    SnapshotSerializationException ex=new SnapshotSerializationException("Snapshot of table " + m_tableId + " failed to complete.");
+    for (    SnapshotTableTask task : m_tableTasks) {
+      task.m_target.reportSerializationFailure(ex);
+    }
+    return Pair.of(null,false);
   }
   if (serializeResult.getSecond()[0] > 0) {
     if (rowCountAccumulator != null && rowCountAccumulator.length == 1) {
