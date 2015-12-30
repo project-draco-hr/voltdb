@@ -1,0 +1,41 @@
+def check_dr(runner, partition_min_host, partition_min, partition_max):
+    resp = get_stats(runner, 'DRPRODUCER')
+    partition_data = resp.table(0)
+    for pid in partition_min:
+        if (pid in partition_max):
+            partition_min[pid] = partition_max[pid]
+    for r in partition_data.tuples():
+        pid = r[3]
+        hostname = str(r[2])
+        if (str(r[8]) == 'None'):
+            last_queued = (-1)
+        else:
+            last_queued = r[8]
+        if (str(r[9]) == 'None'):
+            last_acked = (-1)
+        else:
+            last_acked = r[9]
+        if (r[5] > 0):
+            if (pid in partition_max):
+                partition_max[pid] = max(last_queued, partition_max[pid])
+            else:
+                partition_max[pid] = last_queued
+            if (pid in partition_min):
+                if (last_acked < partition_min[pid]):
+                    partition_min[pid] = last_acked
+            else:
+                partition_min_host[pid] = set()
+                partition_min[pid] = last_acked
+            partition_min_host[pid].add(hostname)
+        else:
+            if (pid in partition_min):
+                partition_min_host[pid].discard(hostname)
+                if (not partition_min_host[pid]):
+                    del partition_min_host[pid]
+                    del partition_min[pid]
+            if (pid in partition_max):
+                if (partition_max[pid] > last_acked):
+                    runner.warning(('DR Producer reports no data for partition %i on host %s but last acked drId (%i) does not match other hosts last acked drId (%s)' % (pid, hostname, last_acked, partition_max[pid])))
+                partition_max[pid] = max(last_acked, partition_max[pid])
+            else:
+                partition_max[pid] = last_acked
