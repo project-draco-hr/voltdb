@@ -3,24 +3,23 @@
     serializeNull(buf);
     return;
   }
-  if (bd.scale() > 12) {
+  int decimalScale=bd.scale();
+  if (decimalScale > kDefaultScale) {
     bd=roundToScale(bd,kDefaultScale,getRoundingMode());
+    decimalScale=bd.scale();
   }
-  int scale=bd.scale();
-  int precision=bd.precision();
-  final int precisionMinusScale=precision - scale;
-  if (precisionMinusScale > 26) {
-    throw new RuntimeException("Precision of " + bd + " to the left of the decimal point is "+ precisionMinusScale+ " and the max is 26");
+  int overallPrecision=bd.precision();
+  final int wholeNumberPrecision=overallPrecision - decimalScale;
+  if (wholeNumberPrecision > 26) {
+    throw new RuntimeException("Precision of " + bd + " to the left of the decimal point is "+ wholeNumberPrecision+ " and the max is 26");
   }
-  final int scaleFactor=kDefaultScale - bd.scale();
-  BigInteger unscaledBI=bd.unscaledValue().multiply(scaleFactors[scaleFactor]);
-  boolean isNegative=false;
-  if (unscaledBI.signum() < 0) {
-    isNegative=true;
+  final int scalingFactor=kDefaultScale - decimalScale;
+  BigInteger scalableBI=bd.unscaledValue();
+  scalableBI=scalableBI.multiply(scaleFactors[scalingFactor]);
+  final byte wholePicos[]=scalableBI.toByteArray();
+  if (wholePicos.length > 16) {
+    throw new RuntimeException("Precision of " + bd + " is > 38 digits");
   }
-  final byte unscaledValue[]=unscaledBI.toByteArray();
-  if (unscaledValue.length > 16) {
-    throw new RuntimeException("Precision of " + bd + " is >38 digits");
-  }
-  buf.put(expandToLength16(unscaledValue,isNegative));
+  boolean isNegative=(scalableBI.signum() < 0);
+  buf.put(expandToLength16(wholePicos,isNegative));
 }
