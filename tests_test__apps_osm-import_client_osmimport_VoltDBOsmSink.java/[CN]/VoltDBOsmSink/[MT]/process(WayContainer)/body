@@ -1,0 +1,64 @@
+{
+  Way way;
+  List<Long> nodeIds;
+  way=wayContainer.getEntity();
+  nodeIds=new ArrayList<Long>(way.getWayNodes().size());
+  for (  WayNode wayNode : way.getWayNodes()) {
+    nodeIds.add(wayNode.getNodeId());
+  }
+  if (way.getWayNodes().size() > 1 || keepInvalidWays) {
+    for (    Tag tag : way.getTags()) {
+      try {
+        client.callProcedure(new InsertCallback(),INS_WAY_TAGS_PROC,way.getId(),tag.getKey(),tag.getValue());
+      }
+ catch (      NoConnectionsException e) {
+        e.printStackTrace();
+      }
+catch (      IOException e) {
+        e.printStackTrace();
+      }
+    }
+    int sequence=0;
+    for (    Long nodeId : nodeIds) {
+      try {
+        client.callProcedure(new InsertCallback(),INS_WAYS_NODES_PROC,way.getId(),nodeId,sequence);
+      }
+ catch (      NoConnectionsException e) {
+        e.printStackTrace();
+      }
+catch (      IOException e) {
+        e.printStackTrace();
+      }
+      sequence++;
+    }
+    StringBuffer sb=new StringBuffer();
+    long n0=nodeIds.get(0);
+    long nn=nodeIds.get(nodeIds.size() - 1);
+    if (n0 == nn) {
+      if (enableBboxBuilder) {
+        Polygon pg=wayGeometryBuilder.createPolygon(way);
+        pg.outerWKT(sb);
+      }
+    }
+ else {
+      if (enableLinestringBuilder) {
+        LineString lineString=wayGeometryBuilder.createWayLinestring(way);
+        lineString.outerWKT(sb);
+      }
+ else {
+        System.out.println("ignoring LineString geometries");
+        return;
+      }
+    }
+    String bbox=sb.toString();
+    try {
+      client.callProcedure(new InsertCallback(),INS_WAYS_PROC,way.getId(),way.getVersion(),way.getUser().getId(),way.getTimestamp(),way.getChangesetId(),bbox);
+    }
+ catch (    NoConnectionsException e) {
+      e.printStackTrace();
+    }
+catch (    IOException e) {
+      e.printStackTrace();
+    }
+  }
+}
