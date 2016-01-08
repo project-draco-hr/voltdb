@@ -1,0 +1,38 @@
+{
+  GeographyValue cheesyPolygon=GeographyValue.fromText(cheesyWKT);
+  GeographyValue cheesyShellPolygon=GeographyValue.fromText(cheesyShellWKT);
+  List<GeographyValue> cheesyHoles=new ArrayList<GeographyValue>();
+  List<List<GeographyPointValue>> loops=cheesyPolygon.getLoops();
+  for (int idx=1; idx < loops.size(); idx+=1) {
+    List<GeographyPointValue> oneHole=loops.get(idx);
+    List<GeographyPointValue> rev=new ArrayList<GeographyPointValue>();
+    rev.addAll(oneHole);
+    Collections.reverse(rev);
+    List<List<GeographyPointValue>> holeLoops=new ArrayList<List<GeographyPointValue>>();
+    holeLoops.add(rev);
+    cheesyHoles.add(new GeographyValue(holeLoops));
+  }
+  String cheesyOrigin="POINT(0.0 0.0)";
+  String cheesyInHole="POINT(15  15)";
+  List<String> exteriorPoints=Arrays.asList("POINT( 60  60)","POINT( 60 -60)","POINT(-60 -60)","POINT(-60  60)");
+  List<String> centers=Arrays.asList("POINT( 11  11)","POINT( 11 -11)","POINT(-11 -11)","POINT(-11  11)");
+  client.callProcedure("T.INSERT",0,"SHELL",cheesyShellPolygon);
+  client.callProcedure("T.INSERT",1,"Formaggio",cheesyPolygon);
+  for (int idx=0; idx < cheesyHoles.size(); idx+=1) {
+    GeographyValue hole=cheesyHoles.get(idx);
+    client.callProcedure("T.INSERT",idx + 100,hole.toString(),hole);
+  }
+  client.callProcedure("LOCATION.INSERT",0,"ORIGIN",GeographyPointValue.geographyPointFromText(cheesyOrigin));
+  client.callProcedure("LOCATION.INSERT",1,"INHOLE",GeographyPointValue.geographyPointFromText(cheesyInHole));
+  for (int idx=0; idx < exteriorPoints.size(); idx+=1) {
+    String exPt=exteriorPoints.get(idx);
+    client.callProcedure("LOCATION.INSERT",idx + 200,exPt,GeographyPointValue.geographyPointFromText(exPt));
+    idx+=1;
+  }
+  for (int idx=0; idx < centers.size(); idx+=1) {
+    String ctrPt=centers.get(idx);
+    client.callProcedure("LOCATION.INSERT",idx + 300,ctrPt,GeographyPointValue.geographyPointFromText(ctrPt));
+  }
+  VoltTable vt=client.callProcedure("@AdHoc","select t.pk from t where not isValid(t.poly) order by t.pk").getResults()[0];
+  assertTrue("fillCheesyTable: " + vt.getRowCount() + " invalid polygons.",vt.getRowCount() == 0);
+}
