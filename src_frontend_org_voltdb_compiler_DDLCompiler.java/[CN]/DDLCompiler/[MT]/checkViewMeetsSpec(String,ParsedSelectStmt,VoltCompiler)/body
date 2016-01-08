@@ -12,10 +12,21 @@
       msg.append("must exactly match the GROUP BY clause at index " + String.valueOf(i) + " of SELECT list.");
       throw compiler.new VoltCompilerException(msg.toString());
     }
+    StringBuffer exprMsg=new StringBuffer();
+    if (!outcol.expression.isValueTypeIndexable(exprMsg)) {
+      msg.append("with " + exprMsg + " in GROUP BY clause not supported.");
+      throw compiler.new VoltCompilerException(msg.toString());
+    }
     checkExpressions.add(outcol.expression);
   }
-  AbstractExpression coli=stmt.m_displayColumns.get(i).expression;
-  if (coli.getExpressionType() != ExpressionType.AGGREGATE_COUNT_STAR) {
+  boolean countStarFound=false;
+  if (i < displayColCount) {
+    AbstractExpression coli=stmt.m_displayColumns.get(i).expression;
+    if (coli.getExpressionType() == ExpressionType.AGGREGATE_COUNT_STAR) {
+      countStarFound=true;
+    }
+  }
+  if (countStarFound == false) {
     msg.append("must have count(*) after the GROUP BY columns (if any) but before the aggregate functions (if any).");
     throw compiler.new VoltCompilerException(msg.toString());
   }
@@ -35,7 +46,7 @@
   if (where != null) {
     checkExpressions.add(where);
   }
-  if (!AbstractExpression.areIndexableExpressions(checkExpressions,msg)) {
+  if (!AbstractExpression.validateIndexingMVsGaurds(checkExpressions,msg)) {
     throw compiler.new VoltCompilerException(msg.toString());
   }
   if (stmt.hasSubquery()) {
