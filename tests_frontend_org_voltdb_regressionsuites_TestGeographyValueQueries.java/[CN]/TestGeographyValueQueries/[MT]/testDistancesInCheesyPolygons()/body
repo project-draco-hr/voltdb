@@ -1,0 +1,40 @@
+{
+  Client client=getClient();
+  fillCheesyTable(client);
+  VoltTable vt=client.callProcedure("@AdHoc","select t.pk, l.pk, distance(t.poly, l.loc_point) " + "  from t, location as l " + "  where 200 <= l.pk and t.pk < 2 order by t.pk, l.pk;").getResults()[0];
+  Map<Long,Double> shellMap=new HashMap<Long,Double>();
+  Map<Long,Double> cheeseMap=new HashMap<Long,Double>();
+  Set<Long> indices=new HashSet<Long>();
+  while (vt.advanceRow()) {
+    Long polyKey=vt.getLong(0);
+    Long ptKey=vt.getLong(1);
+    Double distance=vt.getDouble(2);
+    if (polyKey == 0) {
+      shellMap.put(ptKey,distance);
+    }
+ else     if (polyKey == 1) {
+      cheeseMap.put(ptKey,distance);
+    }
+ else {
+      assertTrue("Unexpected polygon : " + polyKey,false);
+    }
+    indices.add(ptKey);
+  }
+  for (  Long index : indices) {
+    Double shellDist=shellMap.get(index);
+    Double cheeseDist=shellMap.get(index);
+    assertNotNull("Index " + index + " not found in shell.",shellDist);
+    assertNotNull("Index " + index + " not found in cheese.",cheeseDist);
+    assertEquals("Expected shell and cheese distance to be equal",shellDist,cheeseDist);
+  }
+  vt=client.callProcedure("@AdHoc","select l.pk, distance(l.loc_point, t.poly) " + "from t, location as l " + "  where t.pk = 1 and 300 <= l.pk "+ "  order by l.pk;").getResults()[0];
+  double dist=-1;
+  while (vt.advanceRow()) {
+    if (dist < 0) {
+      dist=vt.getDouble(1);
+    }
+ else {
+      assertEquals("Distances are not equal",dist,vt.getDouble(1));
+    }
+  }
+}
