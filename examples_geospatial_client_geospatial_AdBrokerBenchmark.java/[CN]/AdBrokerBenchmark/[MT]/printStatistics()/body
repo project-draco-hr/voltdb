@@ -1,0 +1,37 @@
+{
+  ClientStats stats=m_periodicStatsContext.fetchAndResetBaseline().getStats();
+  long time=Math.round((stats.getEndTimestamp() - m_benchmarkStartTS) / 1000.0);
+  System.out.printf("%02d:%02d:%02d ",time / 3600,(time / 60) % 60,time % 60);
+  System.out.printf("Throughput %d/s, ",stats.getTxnThroughput());
+  System.out.printf("Aborts/Failures %d/%d",stats.getInvocationAborts(),stats.getInvocationErrors());
+  if (m_config.latencyreport) {
+    System.out.printf(", Avg/95%% Latency %.2f/%.2fms",stats.getAverageLatency(),stats.kPercentileLatencyAsDouble(0.95));
+  }
+  System.out.printf("\n");
+  VoltTable[] tables=null;
+  try {
+    tables=m_client.callProcedure("GetStats",m_config.displayinterval).getResults();
+  }
+ catch (  IOException|ProcCallException e) {
+    e.printStackTrace();
+    System.exit(1);
+  }
+  VoltTable hits=tables[0];
+  hits.advanceRow();
+  assert(hits.getLong(0) == 0);
+  long unmetRequests=hits.getLong(1);
+  hits.advanceRow();
+  assert(hits.getLong(0) == 1);
+  long metRequests=hits.getLong(1);
+  long totalRequests=unmetRequests + metRequests;
+  double percentMet=(((double)metRequests) / totalRequests) * 100.0;
+  System.out.printf("Total number of ad requests: %d, %3.2f%% resulted in an ad being served\n",totalRequests,percentMet);
+  VoltTable recentAdvertisers=tables[1];
+  System.out.println("\nTop 5 advertisers of the last " + m_config.displayinterval + " seconds, "+ "by sorted on the sum of dollar amounts of bids won:");
+  System.out.println("Advertiser                                   Revenue   Count");
+  System.out.println("----------                                   -------   -----");
+  while (recentAdvertisers.advanceRow()) {
+    System.out.printf("%-40s  %9.2f    %d\n",recentAdvertisers.getString(0),recentAdvertisers.getDouble(1),recentAdvertisers.getLong(2));
+  }
+  System.out.println();
+}

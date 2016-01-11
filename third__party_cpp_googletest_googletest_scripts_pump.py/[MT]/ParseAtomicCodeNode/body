@@ -1,0 +1,58 @@
+def ParseAtomicCodeNode(tokens):
+
+    def Pop(token_type=None):
+        return PopToken(tokens, token_type)
+    head = PopFront(tokens)
+    t = head.token_type
+    if (t == 'code'):
+        return RawCodeNode(head)
+    elif (t == '$var'):
+        id_token = Pop('id')
+        Pop('=')
+        next = PeekToken(tokens)
+        if (next.token_type == 'exp'):
+            exp_token = Pop()
+            return VarNode(id_token, ParseExpNode(exp_token))
+        Pop('[[')
+        code_node = ParseCodeNode(tokens)
+        Pop(']]')
+        return VarNode(id_token, code_node)
+    elif (t == '$for'):
+        id_token = Pop('id')
+        next_token = PeekToken(tokens)
+        if (next_token.token_type == 'code'):
+            sep_token = next_token
+            Pop('code')
+        else:
+            sep_token = None
+        Pop('[[')
+        code_node = ParseCodeNode(tokens)
+        Pop(']]')
+        return ForNode(id_token, sep_token, code_node)
+    elif (t == '$if'):
+        exp_token = Pop('code')
+        Pop('[[')
+        code_node = ParseCodeNode(tokens)
+        Pop(']]')
+        else_node = ParseElseNode(tokens)
+        return IfNode(ParseExpNode(exp_token), code_node, else_node)
+    elif (t == '$range'):
+        id_token = Pop('id')
+        exp1_token = Pop('exp')
+        Pop('..')
+        exp2_token = Pop('exp')
+        return RangeNode(id_token, ParseExpNode(exp1_token), ParseExpNode(exp2_token))
+    elif (t == '$id'):
+        return ParseExpNode(Token((head.start + 1), head.end, head.value[1:], 'id'))
+    elif (t == '$($)'):
+        return LiteralDollarNode(head)
+    elif (t == '$'):
+        exp_token = Pop('exp')
+        return ParseExpNode(exp_token)
+    elif (t == '[['):
+        code_node = ParseCodeNode(tokens)
+        Pop(']]')
+        return code_node
+    else:
+        PushFront(tokens, head)
+        return None
