@@ -1,0 +1,25 @@
+def GetBaseFile(self, filename):
+    base_content = ''
+    new_content = None
+    is_binary = False
+    oldrelpath = relpath = self._GetRelPath(filename)
+    out = RunShell(['hg', 'status', '-C', '--rev', self.base_rev, relpath])
+    out = out.splitlines()
+    if out[0].startswith(('%s: ' % relpath)):
+        out = out[1:]
+    if (len(out) > 1):
+        oldrelpath = out[1].strip()
+        status = 'M'
+    else:
+        (status, _) = out[0].split(' ', 1)
+    if (status != 'A'):
+        base_content = RunShell(['hg', 'cat', '-r', self.base_rev, oldrelpath], silent_ok=True)
+        is_binary = ('\x00' in base_content)
+    if (status != 'R'):
+        new_content = open(relpath, 'rb').read()
+        is_binary = (is_binary or ('\x00' in new_content))
+    if (is_binary and base_content):
+        base_content = RunShell(['hg', 'cat', '-r', self.base_rev, oldrelpath], silent_ok=True, universal_newlines=False)
+    if ((not is_binary) or (not self.IsImage(relpath))):
+        new_content = None
+    return (base_content, new_content, is_binary, status)

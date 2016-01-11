@@ -1,0 +1,81 @@
+{
+  final String msgPrefix="Improperly formatted WKT for polygon: ";
+  StreamTokenizer tokenizer=new StreamTokenizer(new StringReader(wkt));
+  tokenizer.lowerCaseMode(true);
+  tokenizer.eolIsSignificant(false);
+  List<XYZPoint> currentLoop=null;
+  List<List<XYZPoint>> loops=new ArrayList<List<XYZPoint>>();
+  boolean is_shell=true;
+  try {
+    int token=tokenizer.nextToken();
+    if (token != StreamTokenizer.TT_WORD || !tokenizer.sval.equals("polygon")) {
+      throw new IllegalArgumentException(msgPrefix + "expected WKT to start with POLYGON");
+    }
+    token=tokenizer.nextToken();
+    if (token != '(') {
+      throw new IllegalArgumentException(msgPrefix + "expected left parenthesis after POLYGON");
+    }
+    boolean polygonOpen=true;
+    while (polygonOpen) {
+      token=tokenizer.nextToken();
+switch (token) {
+case '(':
+        if (currentLoop != null) {
+          throw new IllegalArgumentException(msgPrefix + "missing closing parenthesis");
+        }
+      currentLoop=new ArrayList<XYZPoint>();
+    break;
+case StreamTokenizer.TT_NUMBER:
+  if (currentLoop == null) {
+    throw new IllegalArgumentException(msgPrefix + "missing opening parenthesis");
+  }
+double lng=tokenizer.nval;
+token=tokenizer.nextToken();
+if (token != StreamTokenizer.TT_NUMBER) {
+throw new IllegalArgumentException(msgPrefix + "missing latitude in long lat pair");
+}
+double lat=tokenizer.nval;
+currentLoop.add(XYZPoint.fromGeographyPointValue(new GeographyPointValue(lng,lat)));
+token=tokenizer.nextToken();
+if (token != ',') {
+if (token != ')') {
+throw new IllegalArgumentException(msgPrefix + "missing comma between long lat pairs");
+}
+tokenizer.pushBack();
+}
+break;
+case ')':
+diagnoseLoop(currentLoop,msgPrefix);
+currentLoop.remove(currentLoop.size() - 1);
+if (!is_shell) {
+for (int fidx=1, lidx=currentLoop.size() - 1; fidx < lidx; ++fidx, --lidx) {
+Collections.swap(currentLoop,fidx,lidx);
+}
+}
+is_shell=false;
+loops.add(currentLoop);
+currentLoop=null;
+token=tokenizer.nextToken();
+if (token == ')') {
+polygonOpen=false;
+}
+ else if (token != ',') {
+throw new IllegalArgumentException(msgPrefix + "unrecognized token in WKT: " + Character.toString((char)token));
+}
+break;
+case StreamTokenizer.TT_EOF:
+throw new IllegalArgumentException(msgPrefix + "premature end of input");
+default :
+throw new IllegalArgumentException(msgPrefix + "unrecognized token in WKT: " + Character.toString((char)token));
+}
+}
+token=tokenizer.nextToken();
+if (token != StreamTokenizer.TT_EOF) {
+throw new IllegalArgumentException(msgPrefix + "unrecognized input after WKT");
+}
+}
+ catch (IOException e) {
+throw new IllegalArgumentException(msgPrefix + "error tokenizing string");
+}
+return loops;
+}
