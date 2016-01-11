@@ -1,0 +1,46 @@
+"Tool for uploading diffs from a version control system to the codereview app.\n\nUsage summary: upload.py [options] [-- diff_options]\n\nDiff options are passed to the diff command of the underlying system.\n\nSupported version control systems:\n  Git\n  Mercurial\n  Subversion\n\nIt is important for Git/Mercurial users to specify a tree/node/branch to diff\nagainst by using the '--rev' option.\n"
+import cookielib
+import getpass
+import logging
+import md5
+import mimetypes
+import optparse
+import os
+import re
+import socket
+import subprocess
+import sys
+import urllib
+import urllib2
+import urlparse
+try:
+    import readline
+except ImportError:
+    pass
+verbosity = 1
+MAX_UPLOAD_SIZE = (900 * 1024)
+parser = optparse.OptionParser(usage='%prog [options] [-- diff_options]')
+parser.add_option('-y', '--assume_yes', action='store_true', dest='assume_yes', default=False, help="Assume that the answer to yes/no questions is 'yes'.")
+group = parser.add_option_group('Logging options')
+group.add_option('-q', '--quiet', action='store_const', const=0, dest='verbose', help='Print errors only.')
+group.add_option('-v', '--verbose', action='store_const', const=2, dest='verbose', default=1, help='Print info level logs (default).')
+group.add_option('--noisy', action='store_const', const=3, dest='verbose', help='Print all logs.')
+group = parser.add_option_group('Review server options')
+group.add_option('-s', '--server', action='store', dest='server', default='codereview.appspot.com', metavar='SERVER', help="The server to upload to. The format is host[:port]. Defaults to 'codereview.appspot.com'.")
+group.add_option('-e', '--email', action='store', dest='email', metavar='EMAIL', default=None, help='The username to use. Will prompt if omitted.')
+group.add_option('-H', '--host', action='store', dest='host', metavar='HOST', default=None, help='Overrides the Host header sent with all RPCs.')
+group.add_option('--no_cookies', action='store_false', dest='save_cookies', default=True, help='Do not save authentication cookies to local disk.')
+group = parser.add_option_group('Issue options')
+group.add_option('-d', '--description', action='store', dest='description', metavar='DESCRIPTION', default=None, help='Optional description when creating an issue.')
+group.add_option('-f', '--description_file', action='store', dest='description_file', metavar='DESCRIPTION_FILE', default=None, help='Optional path of a file that contains the description when creating an issue.')
+group.add_option('-r', '--reviewers', action='store', dest='reviewers', metavar='REVIEWERS', default=None, help='Add reviewers (comma separated email addresses).')
+group.add_option('--cc', action='store', dest='cc', metavar='CC', default=None, help='Add CC (comma separated email addresses).')
+group = parser.add_option_group('Patch options')
+group.add_option('-m', '--message', action='store', dest='message', metavar='MESSAGE', default=None, help='A message to identify the patch. Will prompt if omitted.')
+group.add_option('-i', '--issue', type='int', action='store', metavar='ISSUE', default=None, help='Issue number to which to add. Defaults to new issue.')
+group.add_option('--download_base', action='store_true', dest='download_base', default=False, help='Base files will be downloaded by the server (side-by-side diffs may not work on files with CRs).')
+group.add_option('--rev', action='store', dest='revision', metavar='REV', default=None, help='Branch/tree/revision to diff against (used by DVCS).')
+group.add_option('--send_mail', action='store_true', dest='send_mail', default=False, help='Send notification email to reviewers.')
+use_shell = sys.platform.startswith('win')
+if (__name__ == '__main__'):
+    main()

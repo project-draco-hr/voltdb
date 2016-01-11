@@ -1,0 +1,37 @@
+'Tests the text output of Google C++ Testing Framework.\n\nSYNOPSIS\n       gtest_output_test.py --build_dir=BUILD/DIR --gengolden\n         # where BUILD/DIR contains the built gtest_output_test_ file.\n       gtest_output_test.py --gengolden\n       gtest_output_test.py\n'
+__author__ = 'wan@google.com (Zhanyong Wan)'
+import difflib
+import os
+import re
+import sys
+import gtest_test_utils
+GENGOLDEN_FLAG = '--gengolden'
+CATCH_EXCEPTIONS_ENV_VAR_NAME = 'GTEST_CATCH_EXCEPTIONS'
+IS_WINDOWS = (os.name == 'nt')
+GOLDEN_NAME = 'gtest_output_test_golden_lin.txt'
+PROGRAM_PATH = gtest_test_utils.GetTestExecutablePath('gtest_output_test_')
+COMMAND_LIST_TESTS = ({}, [PROGRAM_PATH, '--gtest_list_tests'])
+COMMAND_WITH_COLOR = ({}, [PROGRAM_PATH, '--gtest_color=yes'])
+COMMAND_WITH_TIME = ({}, [PROGRAM_PATH, '--gtest_print_time', 'internal_skip_environment_and_ad_hoc_tests', '--gtest_filter=FatalFailureTest.*:LoggingTest.*'])
+COMMAND_WITH_DISABLED = ({}, [PROGRAM_PATH, '--gtest_also_run_disabled_tests', 'internal_skip_environment_and_ad_hoc_tests', '--gtest_filter=*DISABLED_*'])
+COMMAND_WITH_SHARDING = ({'GTEST_SHARD_INDEX': '1', 'GTEST_TOTAL_SHARDS': '2', }, [PROGRAM_PATH, 'internal_skip_environment_and_ad_hoc_tests', '--gtest_filter=PassingTest.*'])
+GOLDEN_PATH = os.path.join(gtest_test_utils.GetSourceDir(), GOLDEN_NAME)
+test_list = GetShellCommandOutput(COMMAND_LIST_TESTS)
+SUPPORTS_DEATH_TESTS = ('DeathTest' in test_list)
+SUPPORTS_TYPED_TESTS = ('TypedTest' in test_list)
+SUPPORTS_THREADS = ('ExpectFailureWithThreadsTest' in test_list)
+SUPPORTS_STACK_TRACES = False
+CAN_GENERATE_GOLDEN_FILE = (SUPPORTS_DEATH_TESTS and SUPPORTS_TYPED_TESTS and SUPPORTS_THREADS and (not IS_WINDOWS))
+if (__name__ == '__main__'):
+    if (sys.argv[1:] == [GENGOLDEN_FLAG]):
+        if CAN_GENERATE_GOLDEN_FILE:
+            output = GetOutputOfAllCommands()
+            golden_file = open(GOLDEN_PATH, 'wb')
+            golden_file.write(output)
+            golden_file.close()
+        else:
+            message = 'Unable to write a golden file when compiled in an environment\nthat does not support all the required features (death tests, typed tests,\nand multiple threads).  Please generate the golden file using a binary built\nwith those features enabled.'
+            sys.stderr.write(message)
+            sys.exit(1)
+    else:
+        gtest_test_utils.Main()

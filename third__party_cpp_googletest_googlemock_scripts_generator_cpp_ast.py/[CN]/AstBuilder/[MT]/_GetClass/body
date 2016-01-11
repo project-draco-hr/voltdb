@@ -1,0 +1,50 @@
+def _GetClass(self, class_type, visibility, templated_types):
+    class_name = None
+    class_token = self._GetNextToken()
+    if (class_token.token_type != tokenize.NAME):
+        assert (class_token.token_type == tokenize.SYNTAX), class_token
+        token = class_token
+    else:
+        next_token = self._GetNextToken()
+        if (next_token.token_type == tokenize.NAME):
+            self._AddBackToken(next_token)
+        else:
+            self._AddBackTokens([class_token, next_token])
+        (name_tokens, token) = self.GetName()
+        class_name = ''.join([t.name for t in name_tokens])
+    bases = None
+    if (token.token_type == tokenize.SYNTAX):
+        if (token.name == ';'):
+            return class_type(class_token.start, class_token.end, class_name, None, templated_types, None, self.namespace_stack)
+        if (token.name in '*&'):
+            name_token = self._GetNextToken()
+            next_token = self._GetNextToken()
+            if (next_token.name == ';'):
+                modifiers = ['class']
+                return self._CreateVariable(class_token, name_token.name, class_name, modifiers, token.name, None)
+            else:
+                tokens = (class_token, token, name_token, next_token)
+                self._AddBackTokens(tokens)
+                return self.GetMethod(FUNCTION_NONE, None)
+        if (token.name == ':'):
+            (bases, token) = self._GetBases()
+    body = None
+    if ((token.token_type == tokenize.SYNTAX) and (token.name == '{')):
+        assert (token.token_type == tokenize.SYNTAX), token
+        assert (token.name == '{'), token
+        ast = AstBuilder(self.GetScope(), self.filename, class_name, visibility, self.namespace_stack)
+        body = list(ast.Generate())
+        if (not self._handling_typedef):
+            token = self._GetNextToken()
+            if (token.token_type != tokenize.NAME):
+                assert (token.token_type == tokenize.SYNTAX), token
+                assert (token.name == ';'), token
+            else:
+                new_class = class_type(class_token.start, class_token.end, class_name, bases, None, body, self.namespace_stack)
+                modifiers = []
+                return self._CreateVariable(class_token, token.name, new_class, modifiers, token.name, None)
+    else:
+        if (not self._handling_typedef):
+            self.HandleError('non-typedef token', token)
+        self._AddBackToken(token)
+    return class_type(class_token.start, class_token.end, class_name, bases, templated_types, body, self.namespace_stack)

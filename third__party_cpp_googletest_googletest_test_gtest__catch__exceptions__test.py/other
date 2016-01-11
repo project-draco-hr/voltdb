@@ -1,0 +1,40 @@
+"Tests Google Test's exception catching behavior.\n\nThis script invokes gtest_catch_exceptions_test_ and\ngtest_catch_exceptions_ex_test_ (programs written with\nGoogle Test) and verifies their output.\n"
+__author__ = 'vladl@google.com (Vlad Losev)'
+import os
+import gtest_test_utils
+FLAG_PREFIX = '--gtest_'
+LIST_TESTS_FLAG = (FLAG_PREFIX + 'list_tests')
+NO_CATCH_EXCEPTIONS_FLAG = (FLAG_PREFIX + 'catch_exceptions=0')
+FILTER_FLAG = (FLAG_PREFIX + 'filter')
+EX_EXE_PATH = gtest_test_utils.GetTestExecutablePath('gtest_catch_exceptions_ex_test_')
+EXE_PATH = gtest_test_utils.GetTestExecutablePath('gtest_catch_exceptions_no_ex_test_')
+environ = gtest_test_utils.environ
+SetEnvVar = gtest_test_utils.SetEnvVar
+SetEnvVar(gtest_test_utils.PREMATURE_EXIT_FILE_ENV_VAR, None)
+TEST_LIST = gtest_test_utils.Subprocess([EXE_PATH, LIST_TESTS_FLAG], env=environ).output
+SUPPORTS_SEH_EXCEPTIONS = ('ThrowsSehException' in TEST_LIST)
+if SUPPORTS_SEH_EXCEPTIONS:
+    BINARY_OUTPUT = gtest_test_utils.Subprocess([EXE_PATH], env=environ).output
+EX_BINARY_OUTPUT = gtest_test_utils.Subprocess([EX_EXE_PATH], env=environ).output
+if SUPPORTS_SEH_EXCEPTIONS:
+
+
+    class CatchSehExceptionsTest(gtest_test_utils.TestCase):
+        'Tests exception-catching behavior.'
+
+        def TestSehExceptions(self, test_output):
+            self.assert_(("SEH exception with code 0x2a thrown in the test fixture's constructor" in test_output))
+            self.assert_(("SEH exception with code 0x2a thrown in the test fixture's destructor" in test_output))
+            self.assert_(('SEH exception with code 0x2a thrown in SetUpTestCase()' in test_output))
+            self.assert_(('SEH exception with code 0x2a thrown in TearDownTestCase()' in test_output))
+            self.assert_(('SEH exception with code 0x2a thrown in SetUp()' in test_output))
+            self.assert_(('SEH exception with code 0x2a thrown in TearDown()' in test_output))
+            self.assert_(('SEH exception with code 0x2a thrown in the test body' in test_output))
+
+        def testCatchesSehExceptionsWithCxxExceptionsEnabled(self):
+            self.TestSehExceptions(EX_BINARY_OUTPUT)
+
+        def testCatchesSehExceptionsWithCxxExceptionsDisabled(self):
+            self.TestSehExceptions(BINARY_OUTPUT)
+if (__name__ == '__main__'):
+    gtest_test_utils.Main()
