@@ -1,0 +1,78 @@
+def _GenerateOne(self, token):
+    if (token.token_type == tokenize.NAME):
+        if (keywords.IsKeyword(token.name) and (not keywords.IsBuiltinType(token.name))):
+            method = getattr(self, ('handle_' + token.name))
+            return method()
+        elif (token.name == self.in_class_name_only):
+            next = self._GetNextToken()
+            self._AddBackToken(next)
+            if ((next.token_type == tokenize.SYNTAX) and (next.name == '(')):
+                return self._GetMethod([token], FUNCTION_CTOR, None, True)
+        syntax = tokenize.SYNTAX
+        (temp_tokens, last_token) = self._GetVarTokensUpTo(syntax, '(', ';', '{', '[')
+        temp_tokens.insert(0, token)
+        if (last_token.name == '('):
+            expr = bool([e for e in temp_tokens if (e.name == '=')])
+            if expr:
+                new_temp = self._GetTokensUpTo(tokenize.SYNTAX, ';')
+                temp_tokens.append(last_token)
+                temp_tokens.extend(new_temp)
+                last_token = tokenize.Token(tokenize.SYNTAX, ';', 0, 0)
+        if (last_token.name == '['):
+            temp_tokens.append(last_token)
+            if (temp_tokens[(-2)].name == 'operator'):
+                temp_tokens.append(self._GetNextToken())
+            else:
+                (temp_tokens2, last_token) = self._GetVarTokensUpTo(tokenize.SYNTAX, ';')
+                temp_tokens.extend(temp_tokens2)
+        if (last_token.name == ';'):
+            parts = self.converter.DeclarationToParts(temp_tokens, True)
+            (name, type_name, templated_types, modifiers, default, unused_other_tokens) = parts
+            t0 = temp_tokens[0]
+            names = [t.name for t in temp_tokens]
+            if templated_types:
+                (start, end) = self.converter.GetTemplateIndices(names)
+                names = (names[:start] + names[end:])
+            default = ''.join([t.name for t in default])
+            return self._CreateVariable(t0, name, type_name, modifiers, names, templated_types, default)
+        if (last_token.name == '{'):
+            self._AddBackTokens(temp_tokens[1:])
+            self._AddBackToken(last_token)
+            method_name = temp_tokens[0].name
+            method = getattr(self, ('handle_' + method_name), None)
+            if (not method):
+                return None
+            return method()
+        return self._GetMethod(temp_tokens, 0, None, False)
+    elif (token.token_type == tokenize.SYNTAX):
+        if ((token.name == '~') and self.in_class):
+            token = self._GetNextToken()
+            if ((token.token_type == tokenize.NAME) and (token.name == self.in_class_name_only)):
+                return self._GetMethod([token], FUNCTION_DTOR, None, True)
+    elif (token.token_type == tokenize.PREPROCESSOR):
+        name = token.name[1:].lstrip()
+        if name.startswith('include'):
+            name = name[7:].strip()
+            assert name
+            if name.startswith('\\'):
+                name = name[1:].strip()
+            assert (name[0] in '<"'), token
+            assert (name[(-1)] in '>"'), token
+            system = (name[0] == '<')
+            filename = name[1:(-1)]
+            return Include(token.start, token.end, filename, system)
+        if name.startswith('define'):
+            name = name[6:].strip()
+            assert name
+            value = ''
+            for (i, c) in enumerate(name):
+                if c.isspace():
+                    value = name[i:].lstrip()
+                    name = name[:i]
+                    break
+            return Define(token.start, token.end, name, value)
+        if (name.startswith('if') and name[2:3].isspace()):
+            condition = name[3:].strip()
+            if (condition.startswith('0') or condition.startswith('(0)')):
+                self._SkipIf0Blocks()
+    return None

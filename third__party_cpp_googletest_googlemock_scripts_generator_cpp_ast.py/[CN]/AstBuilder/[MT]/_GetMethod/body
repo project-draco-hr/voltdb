@@ -1,0 +1,102 @@
+def _GetMethod(self, return_type_and_name, modifiers, templated_types, get_paren):
+    template_portion = None
+    if get_paren:
+        token = self._GetNextToken()
+        assert (token.token_type == tokenize.SYNTAX), token
+        if (token.name == '<'):
+            template_portion = [token]
+            template_portion.extend(self._GetMatchingChar('<', '>'))
+            token = self._GetNextToken()
+        assert (token.token_type == tokenize.SYNTAX), token
+        assert (token.name == '('), token
+    name = return_type_and_name.pop()
+    if (name.name == '>'):
+        index = 1
+        while (return_type_and_name[index].name != '<'):
+            index += 1
+        template_portion = (return_type_and_name[index:] + [name])
+        del return_type_and_name[index:]
+        name = return_type_and_name.pop()
+    elif (name.name == ']'):
+        rt = return_type_and_name
+        assert (rt[(-1)].name == '['), return_type_and_name
+        assert (rt[(-2)].name == 'operator'), return_type_and_name
+        name_seq = return_type_and_name[(-2):]
+        del return_type_and_name[(-2):]
+        name = tokenize.Token(tokenize.NAME, 'operator[]', name_seq[0].start, name.end)
+        unused_open_paren = self._GetNextToken()
+    return_type = return_type_and_name
+    indices = name
+    if return_type:
+        indices = return_type[0]
+    if ((name.name == self.in_class) and (not modifiers)):
+        modifiers |= FUNCTION_CTOR
+    parameters = list(self._GetParameters())
+    del parameters[(-1)]
+    if ((name.name == 'operator') and (not parameters)):
+        token = self._GetNextToken()
+        assert (token.name == '('), token
+        parameters = list(self._GetParameters())
+        del parameters[(-1)]
+    token = self._GetNextToken()
+    while (token.token_type == tokenize.NAME):
+        modifier_token = token
+        token = self._GetNextToken()
+        if (modifier_token.name == 'const'):
+            modifiers |= FUNCTION_CONST
+        elif (modifier_token.name == '__attribute__'):
+            modifiers |= FUNCTION_ATTRIBUTE
+            assert (token.name == '('), token
+            unused_tokens = list(self._GetMatchingChar('(', ')'))
+            token = self._GetNextToken()
+        elif (modifier_token.name == 'throw'):
+            modifiers |= FUNCTION_THROW
+            assert (token.name == '('), token
+            unused_tokens = list(self._GetMatchingChar('(', ')'))
+            token = self._GetNextToken()
+        elif (modifier_token.name == 'override'):
+            modifiers |= FUNCTION_OVERRIDE
+        elif (modifier_token.name == modifier_token.name.upper()):
+            modifiers |= FUNCTION_UNKNOWN_ANNOTATION
+        else:
+            self.HandleError('unexpected token', modifier_token)
+    assert (token.token_type == tokenize.SYNTAX), token
+    if (token.name == ':'):
+        while ((token.name != ';') and (token.name != '{')):
+            token = self._GetNextToken()
+    if (token.name == '('):
+        if (parameters[0].name == '*'):
+            name = parameters.pop()
+            modifiers = [p.name for p in parameters]
+            function_parameters = list(self._GetMatchingChar('(', ')'))
+            del function_parameters[(-1)]
+            token = self._GetNextToken()
+            assert (token.token_type == tokenize.SYNTAX), token
+            assert (token.name == ';'), token
+            return self._CreateVariable(indices, name.name, indices.name, modifiers, '', None)
+        real_name = parameters[(-1)]
+        modifiers = [p.name for p in self._GetParameters()]
+        del modifiers[(-1)]
+        return self._CreateVariable(indices, real_name.name, indices.name, modifiers, '', None)
+    if (token.name == '{'):
+        body = list(self.GetScope())
+        del body[(-1)]
+    else:
+        body = None
+        if (token.name == '='):
+            token = self._GetNextToken()
+            if ((token.name == 'default') or (token.name == 'delete')):
+                token = self._GetNextToken()
+            else:
+                assert (token.token_type == tokenize.CONSTANT), token
+                assert (token.name == '0'), token
+                modifiers |= FUNCTION_PURE_VIRTUAL
+                token = self._GetNextToken()
+        if (token.name == '['):
+            tokens = list(self._GetMatchingChar('[', ']'))
+            token = self._GetNextToken()
+        assert (token.name == ';'), (token, return_type_and_name, parameters)
+    if ((len(return_type) > 2) and (return_type[(-1)].name == '::')):
+        (return_type, in_class) = self._GetReturnTypeAndClassName(return_type)
+        return Method(indices.start, indices.end, name.name, in_class, return_type, parameters, modifiers, templated_types, body, self.namespace_stack)
+    return Function(indices.start, indices.end, name.name, return_type, parameters, modifiers, templated_types, body, self.namespace_stack)

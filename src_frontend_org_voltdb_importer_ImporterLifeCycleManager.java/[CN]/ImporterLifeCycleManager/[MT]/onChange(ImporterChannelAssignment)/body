@@ -1,11 +1,15 @@
 {
   if (m_stopping)   return;
+  ImmutableMap<URI,AbstractImporter> oldReference=m_importers.get();
   ImmutableMap.Builder<URI,AbstractImporter> builder=new ImmutableMap.Builder<>();
-  builder.putAll(Maps.filterKeys(m_importers,notUriIn(assignment.getRemoved())));
+  builder.putAll(Maps.filterKeys(oldReference,notUriIn(assignment.getRemoved())));
+  List<AbstractImporter> toStop=new ArrayList<>();
   for (  URI removed : assignment.getRemoved()) {
     try {
-      AbstractImporter importer=m_importers.get(removed);
-      importer.stop();
+      AbstractImporter importer=oldReference.get(removed);
+      if (importer != null) {
+        toStop.add(importer);
+      }
     }
  catch (    Exception e) {
       s_logger.warn(String.format("Error calling stop on %s in importer %s",removed.toString(),m_factory.getTypeName()),e);
@@ -17,6 +21,10 @@
     newImporters.add(importer);
     builder.put(added,importer);
   }
-  m_importers=builder.build();
-  startImporters(newImporters);
+  ImmutableMap<URI,AbstractImporter> newReference=builder.build();
+  boolean success=m_importers.compareAndSet(oldReference,newReference);
+  if (!m_stopping && success) {
+    stopImporters(toStop);
+    startImporters(newImporters);
+  }
 }

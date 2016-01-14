@@ -1,0 +1,38 @@
+def _GenerateMocks(filename, source, ast_list, desired_class_names):
+    processed_class_names = set()
+    lines = []
+    for node in ast_list:
+        if (isinstance(node, ast.Class) and node.body and ((not desired_class_names) or (node.name in desired_class_names))):
+            class_name = node.name
+            parent_name = class_name
+            processed_class_names.add(class_name)
+            class_node = node
+            if class_node.namespace:
+                lines.extend([('namespace %s {' % n) for n in class_node.namespace])
+                lines.append('')
+            if class_node.templated_types:
+                template_arg_count = len(class_node.templated_types.keys())
+                template_args = [('T%d' % n) for n in range(template_arg_count)]
+                template_decls = [('typename ' + arg) for arg in template_args]
+                lines.append((('template <' + ', '.join(template_decls)) + '>'))
+                parent_name += (('<' + ', '.join(template_args)) + '>')
+            lines.append(('class Mock%s : public %s {' % (class_name, parent_name)))
+            lines.append(('%spublic:' % (' ' * (_INDENT // 2))))
+            _GenerateMethods(lines, source, class_node)
+            if lines:
+                if (len(lines) == 2):
+                    del lines[(-1)]
+                lines.append('};')
+                lines.append('')
+            if class_node.namespace:
+                for i in range((len(class_node.namespace) - 1), (-1), (-1)):
+                    lines.append(('}  // namespace %s' % class_node.namespace[i]))
+                lines.append('')
+    if desired_class_names:
+        missing_class_name_list = list((desired_class_names - processed_class_names))
+        if missing_class_name_list:
+            missing_class_name_list.sort()
+            sys.stderr.write(('Class(es) not found in %s: %s\n' % (filename, ', '.join(missing_class_name_list))))
+    elif (not processed_class_names):
+        sys.stderr.write(('No class found in %s\n' % filename))
+    return lines

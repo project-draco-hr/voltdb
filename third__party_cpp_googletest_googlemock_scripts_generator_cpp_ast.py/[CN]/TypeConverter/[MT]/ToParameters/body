@@ -1,0 +1,52 @@
+def ToParameters(self, tokens):
+    if (not tokens):
+        return []
+    result = []
+    name = type_name = ''
+    type_modifiers = []
+    pointer = reference = array = False
+    first_token = None
+    default = []
+
+    def AddParameter(end):
+        if default:
+            del default[0]
+        parts = self.DeclarationToParts(type_modifiers, True)
+        (name, type_name, templated_types, modifiers, unused_default, unused_other_tokens) = parts
+        parameter_type = Type(first_token.start, first_token.end, type_name, templated_types, modifiers, reference, pointer, array)
+        p = Parameter(first_token.start, end, name, parameter_type, default)
+        result.append(p)
+    template_count = 0
+    for s in tokens:
+        if (not first_token):
+            first_token = s
+        if (s.name == '<'):
+            template_count += 1
+        elif (s.name == '>'):
+            template_count -= 1
+        if (template_count > 0):
+            type_modifiers.append(s)
+            continue
+        if (s.name == ','):
+            AddParameter(s.start)
+            name = type_name = ''
+            type_modifiers = []
+            pointer = reference = array = False
+            first_token = None
+            default = []
+        elif (s.name == '*'):
+            pointer = True
+        elif (s.name == '&'):
+            reference = True
+        elif (s.name == '['):
+            array = True
+        elif (s.name == ']'):
+            pass
+        elif (s.name == '='):
+            default.append(None)
+        elif default:
+            default.append(s)
+        else:
+            type_modifiers.append(s)
+    AddParameter(tokens[(-1)].end)
+    return result

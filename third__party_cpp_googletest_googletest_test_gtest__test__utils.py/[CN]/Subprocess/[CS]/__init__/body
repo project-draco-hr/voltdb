@@ -1,0 +1,46 @@
+def __init__(self, command, working_dir=None, capture_stderr=True, env=None):
+    "Changes into a specified directory, if provided, and executes a command.\n\n    Restores the old directory afterwards.\n\n    Args:\n      command:        The command to run, in the form of sys.argv.\n      working_dir:    The directory to change into.\n      capture_stderr: Determines whether to capture stderr in the output member\n                      or to discard it.\n      env:            Dictionary with environment to pass to the subprocess.\n\n    Returns:\n      An object that represents outcome of the executed process. It has the\n      following attributes:\n        terminated_by_signal   True iff the child process has been terminated\n                               by a signal.\n        signal                 Sygnal that terminated the child process.\n        exited                 True iff the child process exited normally.\n        exit_code              The code with which the child process exited.\n        output                 Child process's stdout and stderr output\n                               combined in a string.\n    "
+    if _SUBPROCESS_MODULE_AVAILABLE:
+        if capture_stderr:
+            stderr = subprocess.STDOUT
+        else:
+            stderr = subprocess.PIPE
+        p = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=stderr, cwd=working_dir, universal_newlines=True, env=env)
+        self.output = p.communicate()[0]
+        self._return_code = p.returncode
+    else:
+        old_dir = os.getcwd()
+
+        def _ReplaceEnvDict(dest, src):
+            for key in dest.keys():
+                del dest[key]
+            dest.update(src)
+        if (env is not None):
+            old_environ = os.environ.copy()
+            _ReplaceEnvDict(os.environ, env)
+        try:
+            if (working_dir is not None):
+                os.chdir(working_dir)
+            if capture_stderr:
+                p = popen2.Popen4(command)
+            else:
+                p = popen2.Popen3(command)
+            p.tochild.close()
+            self.output = p.fromchild.read()
+            ret_code = p.wait()
+        finally:
+            os.chdir(old_dir)
+            if (env is not None):
+                _ReplaceEnvDict(os.environ, old_environ)
+        if os.WIFSIGNALED(ret_code):
+            self._return_code = (- os.WTERMSIG(ret_code))
+        else:
+            self._return_code = os.WEXITSTATUS(ret_code)
+    if (self._return_code < 0):
+        self.terminated_by_signal = True
+        self.exited = False
+        self.signal = (- self._return_code)
+    else:
+        self.terminated_by_signal = False
+        self.exited = True
+        self.exit_code = self._return_code

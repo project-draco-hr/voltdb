@@ -1,0 +1,16 @@
+def _TypeInTemplatedBaseDiagnoser(msg):
+    'Diagnoses the TTB disease, given the error messages by the compiler.'
+    gcc_4_3_1_regex_type_in_retval = (("In member function \\'int .*\\n" + _GCC_FILE_LINE_RE) + 'error: a function call cannot appear in a constant-expression')
+    gcc_4_4_0_regex_type_in_retval = (('error: a function call cannot appear in a constant-expression' + _GCC_FILE_LINE_RE) + 'error: template argument 1 is invalid\\n')
+    gcc_regex_type_of_sole_param = (_GCC_FILE_LINE_RE + "error: \\'(?P<type>.+)\\' was not declared in this scope\\n.*error: template argument 1 is invalid\\n")
+    gcc_regex_type_of_a_param = (("error: expected `;\\' before \\'::\\' token\\n" + _GCC_FILE_LINE_RE) + "error: \\'(?P<type>.+)\\' was not declared in this scope\\n.*error: template argument 1 is invalid\\n.*error: \\'.+\\' was not declared in this scope")
+    clang_regex_type_of_retval_or_sole_param = (_CLANG_FILE_LINE_RE + "error: use of undeclared identifier \\'(?P<type>.*)\\'\\n(.*\\n)*?(?P=file):(?P=line):\\d+: error: non-friend class member \\'Result\\' cannot have a qualified name")
+    clang_regex_type_of_a_param = (_CLANG_FILE_LINE_RE + 'error: C\\+\\+ requires a type specifier for all declarations\\n(.*\\n)*?(?P=file):(?P=line):(?P=column): error: C\\+\\+ requires a type specifier for all declarations')
+    clang_regex_unknown_type = (_CLANG_FILE_LINE_RE + "error: unknown type name \\'(?P<type>[^\\']+)\\'")
+    diagnosis = '\nIn a mock class template, types or typedefs defined in the base class\ntemplate are *not* automatically visible.  This is how C++ works.  Before\nyou can use a type or typedef named %(type)s defined in base class Base<T>, you\nneed to make it visible.  One way to do it is:\n\n  typedef typename Base<T>::%(type)s %(type)s;'
+    for diag in _GenericDiagnoser('TTB', 'Type in Template Base', [(gcc_4_3_1_regex_type_in_retval, (diagnosis % {'type': 'Foo', })), (gcc_4_4_0_regex_type_in_retval, (diagnosis % {'type': 'Foo', })), (gcc_regex_type_of_sole_param, diagnosis), (gcc_regex_type_of_a_param, diagnosis), (clang_regex_type_of_retval_or_sole_param, diagnosis), (clang_regex_type_of_a_param, (diagnosis % {'type': 'Foo', }))], msg):
+        yield diag
+    for m in _FindAllMatches(clang_regex_unknown_type, msg):
+        type_ = m.groupdict()['type']
+        if (type_ not in _COMMON_GMOCK_SYMBOLS):
+            yield ('TTB', 'Type in Template Base', (diagnosis % m.groupdict()))
