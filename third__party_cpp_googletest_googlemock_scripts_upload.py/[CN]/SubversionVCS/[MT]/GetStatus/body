@@ -1,0 +1,35 @@
+def GetStatus(self, filename):
+    'Returns the status of a file.'
+    if (not self.options.revision):
+        status = RunShell(['svn', 'status', '--ignore-externals', filename])
+        if (not status):
+            ErrorExit(('svn status returned no output for %s' % filename))
+        status_lines = status.splitlines()
+        if ((len(status_lines) == 3) and (not status_lines[0]) and status_lines[1].startswith('--- Changelist')):
+            status = status_lines[2]
+        else:
+            status = status_lines[0]
+    else:
+        (dirname, relfilename) = os.path.split(filename)
+        if (dirname not in self.svnls_cache):
+            cmd = ['svn', 'list', '-r', self.rev_start, (dirname or '.')]
+            (out, returncode) = RunShellWithReturnCode(cmd)
+            if returncode:
+                ErrorExit(('Failed to get status for %s.' % filename))
+            old_files = out.splitlines()
+            args = ['svn', 'list']
+            if self.rev_end:
+                args += ['-r', self.rev_end]
+            cmd = (args + [(dirname or '.')])
+            (out, returncode) = RunShellWithReturnCode(cmd)
+            if returncode:
+                ErrorExit(('Failed to run command %s' % cmd))
+            self.svnls_cache[dirname] = (old_files, out.splitlines())
+        (old_files, new_files) = self.svnls_cache[dirname]
+        if ((relfilename in old_files) and (relfilename not in new_files)):
+            status = 'D   '
+        elif ((relfilename in old_files) and (relfilename in new_files)):
+            status = 'M   '
+        else:
+            status = 'A   '
+    return status

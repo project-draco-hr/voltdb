@@ -1,0 +1,44 @@
+def RunAtomicCode(env, node, output):
+    if isinstance(node, VarNode):
+        identifier = node.identifier.value.strip()
+        result = Output()
+        RunAtomicCode(env.Clone(), node.atomic_code, result)
+        value = result.string
+        env.PushVariable(identifier, value)
+    elif isinstance(node, RangeNode):
+        identifier = node.identifier.value.strip()
+        lower = int(env.EvalExp(node.exp1))
+        upper = int(env.EvalExp(node.exp2))
+        env.PushRange(identifier, lower, upper)
+    elif isinstance(node, ForNode):
+        identifier = node.identifier.value.strip()
+        if (node.sep is None):
+            sep = ''
+        else:
+            sep = node.sep.value
+        (lower, upper) = env.GetRange(identifier)
+        for i in range(lower, (upper + 1)):
+            new_env = env.Clone()
+            new_env.PushVariable(identifier, i)
+            RunCode(new_env, node.code, output)
+            if (i != upper):
+                output.Append(sep)
+    elif isinstance(node, RawCodeNode):
+        output.Append(node.raw_code.value)
+    elif isinstance(node, IfNode):
+        cond = env.EvalExp(node.exp)
+        if cond:
+            RunCode(env.Clone(), node.then_branch, output)
+        elif (node.else_branch is not None):
+            RunCode(env.Clone(), node.else_branch, output)
+    elif isinstance(node, ExpNode):
+        value = env.EvalExp(node)
+        output.Append(('%s' % (value,)))
+    elif isinstance(node, LiteralDollarNode):
+        output.Append('$')
+    elif isinstance(node, CodeNode):
+        RunCode(env.Clone(), node, output)
+    else:
+        print 'BAD'
+        print node
+        sys.exit(1)
