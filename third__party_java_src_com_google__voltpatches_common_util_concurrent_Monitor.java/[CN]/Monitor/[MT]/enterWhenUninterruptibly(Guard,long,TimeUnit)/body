@@ -1,39 +1,53 @@
 {
-  long timeoutNanos=unit.toNanos(time);
+  final long timeoutNanos=toSafeNanos(time,unit);
   if (guard.monitor != this) {
     throw new IllegalMonitorStateException();
   }
   final ReentrantLock lock=this.lock;
-  long deadline=System.nanoTime() + timeoutNanos;
+  long startTime=0L;
   boolean signalBeforeWaiting=lock.isHeldByCurrentThread();
   boolean interrupted=Thread.interrupted();
   try {
     if (fair || !lock.tryLock()) {
-      boolean locked=false;
-      do {
+      startTime=initNanoTime(timeoutNanos);
+      for (long remainingNanos=timeoutNanos; ; ) {
         try {
-          locked=lock.tryLock(timeoutNanos,TimeUnit.NANOSECONDS);
-          if (!locked) {
+          if (lock.tryLock(remainingNanos,TimeUnit.NANOSECONDS)) {
+            break;
+          }
+ else {
             return false;
           }
         }
  catch (        InterruptedException interrupt) {
           interrupted=true;
+          remainingNanos=remainingNanos(startTime,timeoutNanos);
         }
-        timeoutNanos=deadline - System.nanoTime();
       }
- while (!locked);
     }
     boolean satisfied=false;
     try {
       while (true) {
         try {
-          return satisfied=guard.isSatisfied() || awaitNanos(guard,timeoutNanos,signalBeforeWaiting);
+          if (guard.isSatisfied()) {
+            satisfied=true;
+          }
+ else {
+            final long remainingNanos;
+            if (startTime == 0L) {
+              startTime=initNanoTime(timeoutNanos);
+              remainingNanos=timeoutNanos;
+            }
+ else {
+              remainingNanos=remainingNanos(startTime,timeoutNanos);
+            }
+            satisfied=awaitNanos(guard,remainingNanos,signalBeforeWaiting);
+          }
+          return satisfied;
         }
  catch (        InterruptedException interrupt) {
           interrupted=true;
           signalBeforeWaiting=false;
-          timeoutNanos=deadline - System.nanoTime();
         }
       }
     }
