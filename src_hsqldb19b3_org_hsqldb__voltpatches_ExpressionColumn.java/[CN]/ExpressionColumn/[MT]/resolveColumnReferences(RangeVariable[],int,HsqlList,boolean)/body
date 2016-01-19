@@ -17,14 +17,56 @@ case OpTypes.COLUMN:
 if (rangeVariable != null) {
 return unresolvedSet;
 }
+java.util.Set<ColumnReferenceResolution> usingResolutions=new java.util.TreeSet<ColumnReferenceResolution>(m_comparator);
+java.util.Set<ColumnReferenceResolution> rangeVariableResolutions=new java.util.TreeSet<ColumnReferenceResolution>(m_comparator);
+ColumnReferenceResolution lastRes=null;
+int foundSize=0;
 for (int i=0; i < rangeCount; i++) {
 RangeVariable rangeVar=rangeVarArray[i];
 if (rangeVar == null) {
 continue;
 }
-if (resolveColumnReference(rangeVar)) {
+ColumnReferenceResolution resolution=resolveColumnReference(rangeVar);
+if (resolution != null) {
+if (resolution.isExpression()) {
+if (usingResolutions.add(resolution)) {
+foundSize+=1;
+}
+lastRes=resolution;
+}
+ else if (resolution.isRangeVariable()) {
+if (rangeVariableResolutions.add(resolution)) {
+foundSize+=1;
+}
+lastRes=resolution;
+}
+ else {
+assert(false);
+}
+}
+}
+if (foundSize == 1) {
+lastRes.finallyResolve();
 return unresolvedSet;
 }
+ else if (foundSize > 1) {
+StringBuffer sb=new StringBuffer();
+sb.append(String.format("Column \"%s\" is ambiguous.  It's in tables: ",columnName));
+String sep="";
+if (usingResolutions.size() > 0) {
+sb.append("USING(");
+for (ColumnReferenceResolution crr : usingResolutions) {
+sb.append(sep).append(crr.getName());
+sep=", ";
+}
+sb.append(")");
+sep=", ";
+}
+for (ColumnReferenceResolution crr : rangeVariableResolutions) {
+sb.append(sep).append(crr.getName());
+sep=", ";
+}
+throw new HsqlException(sb.toString(),"",0);
 }
 if (unresolvedSet == null) {
 unresolvedSet=new ArrayListIdentity();
