@@ -1,10 +1,22 @@
 {
-  if (!sync.cancel(mayInterruptIfRunning)) {
-    return false;
+  Object localValue=value;
+  if (localValue == null | localValue instanceof AbstractFuture.SetFuture) {
+    Throwable cause=GENERATE_CANCELLATION_CAUSES ? newCancellationCause() : null;
+    Object valueToSet=new Cancellation(mayInterruptIfRunning,cause);
+    do {
+      if (ATOMIC_HELPER.casValue(this,localValue,valueToSet)) {
+        if (mayInterruptIfRunning) {
+          interruptTask();
+        }
+        complete();
+        if (localValue instanceof AbstractFuture.SetFuture) {
+          ((AbstractFuture<?>.SetFuture)localValue).future.cancel(mayInterruptIfRunning);
+        }
+        return true;
+      }
+      localValue=value;
+    }
+ while (localValue instanceof AbstractFuture.SetFuture);
   }
-  executionList.execute();
-  if (mayInterruptIfRunning) {
-    interruptTask();
-  }
-  return true;
+  return false;
 }
