@@ -1,0 +1,50 @@
+{
+  String brokers=props.getProperty("brokers","").trim();
+  if (brokers.isEmpty()) {
+    throw new IllegalArgumentException("Missing kafka broker");
+  }
+  String key=getBrokerKey(brokers);
+  List<String> brokerList=Arrays.asList(brokers.split("\\s*,\\s*"));
+  if (brokerList == null || brokerList.isEmpty()) {
+    throw new IllegalArgumentException("Missing kafka broker");
+  }
+  List<HostAndPort> hapList=new ArrayList<HostAndPort>();
+  for (  String broker : brokerList) {
+    HostAndPort hap=HostAndPort.fromString(broker);
+    hapList.add(hap);
+  }
+  if (hapList.isEmpty()) {
+    throw new IllegalArgumentException("Missing or misconfigured kafka broker list. See brokers property");
+  }
+  String procedure=props.getProperty("procedure","").trim();
+  if (procedure.isEmpty()) {
+    throw new IllegalArgumentException("Missing procedure.");
+  }
+  String topics=props.getProperty("topics","").trim();
+  if (topics.isEmpty()) {
+    throw new IllegalArgumentException("Missing topic(s).");
+  }
+  String groupId=props.getProperty("groupid",GROUP_ID).trim();
+  int fetchSize=Integer.parseInt(props.getProperty("fetch.message.max.bytes","65536"));
+  int soTimeout=Integer.parseInt(props.getProperty("socket.timeout.ms","30000"));
+  List<String> ttopicList=Arrays.asList(topics.split("\\s*,\\s*"));
+  if (ttopicList == null || ttopicList.isEmpty()) {
+    throw new IllegalArgumentException("Missing topic(s).");
+  }
+  Map<URI,ImporterConfig> configs=new HashMap<>();
+  for (  String topic : ttopicList) {
+    if (topic.length() > topicMaxNameLength) {
+      throw new IllegalArgumentException("topic name is illegal, can't be longer than " + topicMaxNameLength + " characters");
+    }
+    if (!legalTopicNamesPattern.matcher(topic).matches()) {
+      throw new IllegalArgumentException("topic name " + topic + " is illegal, contains a character other than ASCII alphanumerics, '_' and '-'");
+    }
+    try {
+      configs.putAll(getConfigsForPartitions(key,hapList,topic,groupId,procedure,soTimeout,fetchSize,formatter));
+    }
+ catch (    Exception e) {
+      m_logger.warn(String.format("Error trying to get partition information for topic [%s] on host [%s]",topic,hapList.get(0).getHost()),e);
+    }
+  }
+  return configs;
+}
