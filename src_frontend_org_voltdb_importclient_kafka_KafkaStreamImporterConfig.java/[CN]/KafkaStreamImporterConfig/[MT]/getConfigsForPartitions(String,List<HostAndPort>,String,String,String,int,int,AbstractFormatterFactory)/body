@@ -1,0 +1,48 @@
+{
+  SimpleConsumer consumer=null;
+  Map<URI,KafkaStreamImporterConfig> configs=new HashMap<>();
+  List<FailedMetaDataAttempt> attempts=new ArrayList<>();
+  Iterator<HostAndPort> hpitr=brokerList.iterator();
+  while (configs.isEmpty() && hpitr.hasNext()) {
+    HostAndPort hp=hpitr.next();
+    try {
+      consumer=new SimpleConsumer(hp.getHost(),hp.getPort(),soTimeout,fetchSize,CLIENT_ID);
+      TopicMetadataRequest req=new TopicMetadataRequest(singletonList(topic));
+      kafka.javaapi.TopicMetadataResponse resp=consumer.send(req);
+      List<TopicMetadata> metaData=resp.topicsMetadata();
+      if (metaData == null) {
+        attempts.add(new FailedMetaDataAttempt("Failed to get topic metadata for topic " + topic + " from host "+ hp.getHost(),null));
+        continue;
+      }
+      for (      TopicMetadata item : metaData) {
+        for (        PartitionMetadata part : item.partitionsMetadata()) {
+          URI uri;
+          try {
+            uri=new URI("kafka",key,topic + "/partition/" + part.partitionId());
+          }
+ catch (          URISyntaxException ex) {
+            throw new KafkaConfigurationException("unable to create topic resource URI",ex);
+          }
+          Broker leader=part.leader();
+          KafkaStreamImporterConfig config=new KafkaStreamImporterConfig(uri,brokerList,topic,part.partitionId(),new HostAndPort(leader.host(),leader.port()),groupId,fetchSize,soTimeout,procedure,formatterFactory);
+          configs.put(uri,config);
+        }
+      }
+    }
+ catch (    Exception e) {
+      attempts.add(new FailedMetaDataAttempt("Failed to send topic metadata request for topic " + topic + " from host "+ hp.getHost(),e));
+      continue;
+    }
+ finally {
+      closeConsumer(consumer);
+    }
+  }
+  if (!attempts.isEmpty()) {
+    for (    FailedMetaDataAttempt attempt : attempts) {
+      attempt.log();
+    }
+    attempts.clear();
+    throw new KafkaConfigurationException("Failed to get topic metadata for %s",topic);
+  }
+  return configs;
+}
