@@ -1,16 +1,36 @@
-def normalize_value(v, vtype):
+def normalize_value(v, vtype, num_digits):
     global __NULL
     if (v is None):
         return None
     if ((vtype in __NULL) and (v == __NULL[vtype])):
         return None
     elif (vtype == FastSerializer.VOLTTYPE_FLOAT):
-        decimal_places = SIGNIFICANT_DIGITS
-        abs_v = abs(float(v))
-        if (abs_v >= 1.0):
-            decimal_places = ((SIGNIFICANT_DIGITS - 1) - int(math.floor(math.log10(abs_v))))
-        return round(v, decimal_places)
+        return round_to_num_digits(v, num_digits)
     elif (vtype == FastSerializer.VOLTTYPE_DECIMAL):
         return decimal.Decimal(v)._rescale((-12), 'ROUND_HALF_EVEN')
+    elif ((vtype == FastSerializer.VOLTTYPE_STRING) and v):
+        r = v
+        point = __POINT.search(v)
+        if point:
+            r = (((('POINT (' + str(round_to_num_digits(point.group(1), num_digits))) + ' ') + str(round_to_num_digits(point.group(2), num_digits))) + ')')
+        polygon = __POLYGON.search(v)
+        if polygon:
+            r = 'POLYGON ('
+            loops = re.findall(__LOOP, v)
+            for i in range(len(loops)):
+                loop = loops[i]
+                if loop:
+                    if (i > 0):
+                        r += ', '
+                    r += '('
+                    points = loop[1:(-1)].split(',')
+                    for j in range(len(points)):
+                        if (j > 0):
+                            r += ', '
+                        longlat = __LONG_LAT.search(points[j])
+                        r += ((str(round_to_num_digits(longlat.group(1), num_digits)) + ' ') + str(round_to_num_digits(longlat.group(2), num_digits)))
+                    r += ')'
+            r += ')'
+        return r
     else:
         return v
