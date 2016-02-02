@@ -1,0 +1,62 @@
+{
+  Client client=getClient();
+  populateTables(client);
+  VoltTable vt;
+  String sql;
+  ProcCallException exception=null;
+  try {
+    sql="select A.name, B.name from borders A, borders B where DWithin(A.region, B.region, 100);";
+    vt=client.callProcedure("@AdHoc",sql).getResults()[0];
+  }
+ catch (  ProcCallException excp) {
+    exception=excp;
+    assertTrue(exception.getMessage().contains("incompatible data type in operation"));
+    assertTrue(exception.getMessage().contains("DWITHIN between two POLYGONS not supported"));
+  }
+ finally {
+    assertNotNull(exception);
+  }
+  exception=null;
+  try {
+    sql="select places.name, DWithin(borders.region, borders.pk, 100) " + "from borders, places where borders.pk = places.pk " + "order by borders.pk";
+    vt=client.callProcedure("@AdHoc",sql).getResults()[0];
+  }
+ catch (  ProcCallException excp) {
+    exception=excp;
+    assertTrue(exception.getMessage().contains("Error compiling query"));
+    assertTrue(exception.getMessage().contains("incompatible data type in operation"));
+    String specificMsg="The DWITHIN function evaulates if geographies are within specified distance of one-another for " + "POINT-to-POINT, POINT-to-POLYGON and POLYGON-to-POINT geographies only.";
+    assertTrue(exception.getMessage().contains(specificMsg));
+  }
+ finally {
+    assertNotNull(exception);
+  }
+  exception=null;
+  try {
+    sql="select places.name, DWithin(borders.region, places.loc, borders.name) " + "from borders, places where borders.pk = places.pk " + "order by borders.pk";
+    vt=client.callProcedure("@AdHoc",sql).getResults()[0];
+  }
+ catch (  ProcCallException excp) {
+    exception=excp;
+    assertTrue(exception.getMessage().contains("Error compiling query"));
+    assertTrue(exception.getMessage().contains("incompatible data type in operation"));
+    String specificMsg="input type DISTANCE to DWITHIN function must be non-negative numeric value";
+    assertTrue(exception.getMessage().contains(specificMsg));
+  }
+ finally {
+    assertNotNull(exception);
+  }
+  exception=null;
+  try {
+    sql="select places.name " + "from borders, places where  DWithin(borders.region, places.loc, -1) ;";
+    vt=client.callProcedure("@AdHoc",sql).getResults()[0];
+  }
+ catch (  ProcCallException excp) {
+    exception=excp;
+    assertTrue(exception.getMessage().contains("Invalid input to DWITHIN function: "));
+    assertTrue(exception.getMessage().contains("\'Value of DISTANCE argument must be non-negative\'"));
+  }
+ finally {
+    assertNotNull(exception);
+  }
+}
