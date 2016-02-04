@@ -2,7 +2,7 @@
   AuthProvider ap=null;
   LoginContext loginContext=null;
   GSSManager gssManager=null;
-  byte[] principal=null;
+  String principal=null;
   m_perm_list=new String[Permission.values().length];
   int idx=0;
   for (  Permission p : Permission.values()) {
@@ -12,7 +12,7 @@
   if (!m_enabled) {
     m_authProvider=ap;
     m_loginCtx=loginContext;
-    m_principalName=principal;
+    m_principalName=null;
     m_gssManager=null;
     return;
   }
@@ -26,7 +26,7 @@
     }
     try {
       loginContext.login();
-      principal=loginContext.getSubject().getPrincipals().iterator().next().getName().getBytes(Charsets.UTF_8);
+      principal=loginContext.getSubject().getPrincipals().iterator().next().getName();
       gssManager=GSSManager.getInstance();
     }
  catch (    AccountExpiredException ex) {
@@ -46,7 +46,7 @@ catch (    Exception ex) {
     }
   }
   m_loginCtx=loginContext;
-  m_principalName=principal;
+  m_principalName=principal != null ? principal.getBytes(StandardCharsets.UTF_8) : null;
   m_gssManager=gssManager;
   for (  org.voltdb.catalog.User catalogUser : db.getUsers()) {
     String shadowPassword=catalogUser.getShadowpassword();
@@ -121,5 +121,8 @@ catch (    Exception ex) {
   }
   for (  AuthGroup group : m_groups.values()) {
     group.finish();
+  }
+  if (principal != null && m_users.containsKey(principal)) {
+    VoltDB.crashGlobalVoltDB("Kerberos service principal " + principal + " must not correspond to a database user",true,null);
   }
 }

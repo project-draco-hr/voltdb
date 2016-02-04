@@ -1,0 +1,38 @@
+'Unit test for Google Test test filters.\n\nA user can specify which test(s) in a Google Test program to run via either\nthe GTEST_FILTER environment variable or the --gtest_filter flag.\nThis script tests such functionality by invoking\ngtest_filter_unittest_ (a program written with Google Test) with different\nenvironments and command line flags.\n\nNote that test sharding may also influence which tests are filtered. Therefore,\nwe test that here also.\n'
+__author__ = 'wan@google.com (Zhanyong Wan)'
+import os
+import re
+import sets
+import sys
+import gtest_test_utils
+os.environ['EMPTY_VAR'] = ''
+child = gtest_test_utils.Subprocess([sys.executable, '-c', "import os; print 'EMPTY_VAR' in os.environ"])
+CAN_PASS_EMPTY_ENV = eval(child.output)
+os.environ['UNSET_VAR'] = 'X'
+del os.environ['UNSET_VAR']
+child = gtest_test_utils.Subprocess([sys.executable, '-c', "import os; print 'UNSET_VAR' not in os.environ"])
+CAN_UNSET_ENV = eval(child.output)
+CAN_TEST_EMPTY_FILTER = (CAN_PASS_EMPTY_ENV and CAN_UNSET_ENV)
+FILTER_ENV_VAR = 'GTEST_FILTER'
+TOTAL_SHARDS_ENV_VAR = 'GTEST_TOTAL_SHARDS'
+SHARD_INDEX_ENV_VAR = 'GTEST_SHARD_INDEX'
+SHARD_STATUS_FILE_ENV_VAR = 'GTEST_SHARD_STATUS_FILE'
+FILTER_FLAG = 'gtest_filter'
+ALSO_RUN_DISABED_TESTS_FLAG = 'gtest_also_run_disabled_tests'
+COMMAND = gtest_test_utils.GetTestExecutablePath('gtest_filter_unittest_')
+PARAM_TEST_REGEX = re.compile('/ParamTest')
+TEST_CASE_REGEX = re.compile('^\\[\\-+\\] \\d+ tests? from (\\w+(/\\w+)?)')
+TEST_REGEX = re.compile('^\\[\\s*RUN\\s*\\].*\\.(\\w+(/\\w+)?)')
+LIST_TESTS_FLAG = '--gtest_list_tests'
+SUPPORTS_DEATH_TESTS = ('HasDeathTest' in gtest_test_utils.Subprocess([COMMAND, LIST_TESTS_FLAG]).output)
+PARAM_TESTS = ['SeqP/ParamTest.TestX/0', 'SeqP/ParamTest.TestX/1', 'SeqP/ParamTest.TestY/0', 'SeqP/ParamTest.TestY/1', 'SeqQ/ParamTest.TestX/0', 'SeqQ/ParamTest.TestX/1', 'SeqQ/ParamTest.TestY/0', 'SeqQ/ParamTest.TestY/1']
+DISABLED_TESTS = ['BarTest.DISABLED_TestFour', 'BarTest.DISABLED_TestFive', 'BazTest.DISABLED_TestC', 'DISABLED_FoobarTest.Test1', 'DISABLED_FoobarTest.DISABLED_Test2', 'DISABLED_FoobarbazTest.TestA']
+if SUPPORTS_DEATH_TESTS:
+    DEATH_TESTS = ['HasDeathTest.Test1', 'HasDeathTest.Test2']
+else:
+    DEATH_TESTS = []
+ACTIVE_TESTS = ((['FooTest.Abc', 'FooTest.Xyz', 'BarTest.TestOne', 'BarTest.TestTwo', 'BarTest.TestThree', 'BazTest.TestOne', 'BazTest.TestA', 'BazTest.TestB'] + DEATH_TESTS) + PARAM_TESTS)
+param_tests_present = None
+environ = os.environ.copy()
+if (__name__ == '__main__'):
+    gtest_test_utils.Main()

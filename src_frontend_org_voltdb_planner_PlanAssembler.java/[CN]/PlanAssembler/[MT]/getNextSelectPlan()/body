@@ -1,8 +1,18 @@
 {
-  assert(subAssembler != null);
-  AbstractPlanNode subSelectRoot=subAssembler.nextPlan();
+  assert(m_subAssembler != null);
+  HashAggregatePlanNode reAggNode=null;
+  HashAggregatePlanNode mvReAggTemplate=m_parsedSelect.m_mvFixInfo.getReAggregationPlanNode();
+  if (mvReAggTemplate != null) {
+    reAggNode=new HashAggregatePlanNode(mvReAggTemplate);
+    List<AbstractExpression> subqueryExprs=ExpressionUtil.findAllExpressionsOfClass(reAggNode.getPostPredicate(),AbstractSubqueryExpression.class);
+    if (!subqueryExprs.isEmpty()) {
+      m_recentErrorMsg=IN_EXISTS_SCALAR_ERROR_MESSAGE;
+      return null;
+    }
+  }
+  AbstractPlanNode subSelectRoot=m_subAssembler.nextPlan();
   if (subSelectRoot == null) {
-    m_recentErrorMsg=subAssembler.m_recentErrorMsg;
+    m_recentErrorMsg=m_subAssembler.m_recentErrorMsg;
     return null;
   }
   AbstractPlanNode root=subSelectRoot;
@@ -10,7 +20,7 @@
   if (m_partitioning.requiresTwoFragments()) {
     boolean mvFixInfoCoordinatorNeeded=true;
     boolean mvFixInfoEdgeCaseOuterJoin=false;
-    ArrayList<AbstractPlanNode> receivers=root.findAllNodesOfType(PlanNodeType.RECEIVE);
+    ArrayList<AbstractPlanNode> receivers=root.findAllNodesOfClass(AbstractReceivePlanNode.class);
     if (receivers.size() == 1) {
       if (m_parsedSelect.m_mvFixInfo.needed()) {
         mvFixInfoCoordinatorNeeded=false;
@@ -24,14 +34,14 @@
           if (nljs.size() + nlijs.size() == 0) {
             mvFixInfoEdgeCaseOuterJoin=true;
           }
-          root=handleMVBasedMultiPartQuery(root,mvFixInfoEdgeCaseOuterJoin);
+          root=handleMVBasedMultiPartQuery(reAggNode,root,mvFixInfoEdgeCaseOuterJoin);
         }
       }
     }
- else     if (receivers.size() > 0) {
-      throw new PlanningErrorException("This special case join between an outer replicated table and " + "an inner partitioned table is too complex and is not supported.");
-    }
  else {
+      if (receivers.size() > 0) {
+        throw new PlanningErrorException("This special case join between an outer replicated table and " + "an inner partitioned table is too complex and is not supported.");
+      }
       root=SubPlanAssembler.addSendReceivePair(root);
       assert(root instanceof ReceivePlanNode);
       if (m_parsedSelect.mayNeedAvgPushdown()) {
@@ -44,7 +54,7 @@
     root=handleAggregationOperators(root);
     if (m_parsedSelect.m_mvFixInfo.needed() && mvFixInfoCoordinatorNeeded) {
       AbstractPlanNode tmpRoot=root;
-      root=handleMVBasedMultiPartQuery(root,mvFixInfoEdgeCaseOuterJoin);
+      root=handleMVBasedMultiPartQuery(reAggNode,root,mvFixInfoEdgeCaseOuterJoin);
       if (root != tmpRoot) {
         mvFixNeedsProjection=true;
       }
@@ -89,7 +99,8 @@
   plan.setReadOnly(true);
   boolean orderIsDeterministic=m_parsedSelect.isOrderDeterministic();
   boolean hasLimitOrOffset=m_parsedSelect.hasLimitOrOffset();
-  plan.statementGuaranteesDeterminism(hasLimitOrOffset,orderIsDeterministic);
+  String contentDeterminismMessage=m_parsedSelect.getContentDeterminismMessage();
+  plan.statementGuaranteesDeterminism(hasLimitOrOffset,orderIsDeterministic,contentDeterminismMessage);
   MicroOptimizationRunner.applyAll(plan,m_parsedSelect);
   return plan;
 }

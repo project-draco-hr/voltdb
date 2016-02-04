@@ -1,0 +1,61 @@
+{
+  try {
+    if (m_id == 0) {
+      for (int i=0; i < m_catUpdateCount; i++) {
+        String jdep=getUrlOverJSON("http://localhost:8095/deployment",m_username,m_password,"hashed",200,"application/json");
+        ObjectMapper mapper=new ObjectMapper();
+        DeploymentType deptype=mapper.readValue(jdep,DeploymentType.class);
+        int timeout=100 + m_id;
+        if (deptype.getHeartbeat() == null) {
+          HeartbeatType hb=new HeartbeatType();
+          hb.setTimeout(timeout);
+          deptype.setHeartbeat(hb);
+        }
+ else {
+          deptype.getHeartbeat().setTimeout(timeout);
+        }
+        Map<String,String> params=new HashMap<>();
+        params.put("deployment",URLEncoder.encode(mapper.writeValueAsString(deptype),"UTF-8"));
+        params.put("admin","true");
+        String responseJSON=postUrlOverJSON("http://localhost:8095/deployment/",m_username,m_password,"hashed",200,"application/json",params);
+        if (!responseJSON.contains("Deployment Updated.")) {
+          System.out.println("Failed to update deployment");
+          s_success=false;
+        }
+      }
+    }
+ else {
+      ParameterSet pset=ParameterSet.fromArrayNoCopy("insert into test1 values (" + (m_id) + ")");
+      String responseJSON=callProcOverJSON("@AdHoc",pset,m_username,m_password,false,false);
+      if (!responseJSON.contains("\"data\":[[1]]")) {
+        System.out.println("Insert should have returned 1. Got: " + responseJSON);
+        s_success=false;
+        return;
+      }
+      s_insertCount.incrementAndGet();
+      Thread.sleep(200);
+      pset=ParameterSet.fromArrayNoCopy("select count(*) from test1");
+      long expectedCount=s_insertCount.get();
+      responseJSON=callProcOverJSON("@AdHoc",pset,m_username,m_password,false,false);
+      int startIndex=responseJSON.indexOf(":[[");
+      int endIndex=responseJSON.indexOf("]]");
+      if (startIndex == -1 || endIndex == -1) {
+        System.out.println("Invalid response from select: " + responseJSON);
+        s_success=false;
+        return;
+      }
+      int count=Integer.parseInt(responseJSON.substring(startIndex + 3,endIndex));
+      if (count < expectedCount) {
+        System.out.println("Select must have returned at least " + expectedCount + ". Got "+ count);
+        s_success=false;
+        return;
+      }
+      pset=ParameterSet.fromArrayNoCopy(500);
+      responseJSON=callProcOverJSON("TestJSONInterface$WorkerProc",pset,m_username,m_password,false,false);
+    }
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+    s_success=false;
+  }
+}

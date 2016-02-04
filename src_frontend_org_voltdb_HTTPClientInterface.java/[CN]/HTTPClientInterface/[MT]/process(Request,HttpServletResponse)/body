@@ -2,9 +2,16 @@
   AuthenticationResult authResult=null;
   boolean suspended=false;
   boolean forceClose=false;
-  Continuation continuation=ContinuationSupport.getContinuation(request);
-  if (m_timeout > 0) {
-    continuation.setTimeout(m_timeout);
+  String authHeader=request.getHeader(HttpHeader.AUTHORIZATION.asString());
+  if (m_spnegoEnabled && (authHeader == null || !authHeader.startsWith(HttpHeader.NEGOTIATE.asString()))) {
+    m_log.debug("SpengoAuthenticator: sending challenge");
+    response.setHeader(HttpHeader.WWW_AUTHENTICATE.asString(),HttpHeader.NEGOTIATE.asString());
+    try {
+      response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+    }
+ catch (    IOException ignoreItAsTheBrowserMustHaveClosed) {
+    }
+    return;
   }
   String result=(String)request.getAttribute("result");
   if (result != null) {
@@ -18,6 +25,10 @@
     }
     return;
   }
+  Continuation continuation=ContinuationSupport.getContinuation(request);
+  if (m_timeout > 0 && continuation.isInitial()) {
+    continuation.setTimeout(m_timeout);
+  }
   if (Boolean.TRUE.equals(request.getAttribute("SQLSUBMITTED"))) {
     try {
       continuation.suspend(response);
@@ -29,7 +40,6 @@
   }
   String jsonp=null;
   try {
-    jsonp=request.getParameter("jsonp");
     if (request.getMethod().equalsIgnoreCase("POST")) {
       int queryParamSize=request.getContentLength();
       if (queryParamSize > MAX_QUERY_PARAM_SIZE) {
@@ -39,8 +49,32 @@
         throw new Exception("Received POST with no parameters in the body.");
       }
     }
+    jsonp=request.getParameter("jsonp");
     String procName=request.getParameter("Procedure");
     String params=request.getParameter("Parameters");
+    String timeoutStr=request.getParameter(QUERY_TIMEOUT_PARAM);
+    int queryTimeout=-1;
+    if (timeoutStr != null) {
+      try {
+        queryTimeout=Integer.parseInt(timeoutStr);
+        if (queryTimeout <= 0) {
+          throw new NumberFormatException();
+        }
+      }
+ catch (      NumberFormatException e) {
+        ClientResponseImpl rimpl=new ClientResponseImpl(ClientResponse.UNEXPECTED_FAILURE,new VoltTable[0],"Invalid procedure call timeout: " + timeoutStr);
+        String msg=rimpl.toJSONString();
+        if (jsonp != null) {
+          msg=String.format("%s( %s )",jsonp,msg);
+        }
+        response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+        try {
+          response.getWriter().print(msg);
+        }
+ catch (        IOException e1) {
+        }
+      }
+    }
     if (procName == null) {
       response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
       return;
@@ -81,12 +115,23 @@
         continuation.complete();
         return;
       }
-      success=authResult.m_client.callProcedure(cb,procName,paramSet.toArray());
+      if (queryTimeout == -1) {
+        success=authResult.m_client.callProcedure(cb,procName,paramSet.toArray());
+      }
+ else {
+        success=authResult.m_client.callProcedureWithTimeout(cb,queryTimeout,procName,paramSet.toArray());
+      }
     }
  else {
-      success=authResult.m_client.callProcedure(cb,procName);
+      if (queryTimeout == -1) {
+        success=authResult.m_client.callProcedure(cb,procName);
+      }
+ else {
+        success=authResult.m_client.callProcedureWithTimeout(cb,queryTimeout,procName);
+      }
     }
     if (!success) {
+      continuation.complete();
       throw new Exception("Server is not accepting work at this time.");
     }
     if (jsonp != null) {

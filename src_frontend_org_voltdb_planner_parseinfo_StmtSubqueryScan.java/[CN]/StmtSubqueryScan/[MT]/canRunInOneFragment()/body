@@ -1,0 +1,35 @@
+{
+  assert(m_subqueriesPartitioning != null);
+  assert(m_subqueryStmt != null);
+  if (m_subqueriesPartitioning.getCountOfPartitionedTables() == 0) {
+    return true;
+  }
+  if (failsSingleFragmentTest()) {
+    return false;
+  }
+  m_failedSingleFragmentTest=true;
+  if (m_subqueryStmt instanceof ParsedUnionStmt) {
+    return false;
+  }
+  if (!(m_subqueryStmt instanceof ParsedSelectStmt)) {
+    throw new PlanningErrorException("Unsupported subquery found in FROM clause:" + m_subqueryStmt.toString());
+  }
+  ParsedSelectStmt selectStmt=(ParsedSelectStmt)m_subqueryStmt;
+  if (selectStmt.hasLimitOrOffset() || selectStmt.hasDistinctWithGroupBy()) {
+    return false;
+  }
+  if (selectStmt.m_mvFixInfo.needed()) {
+    return false;
+  }
+  if (selectStmt.hasAggregateOrGroupby()) {
+    if (!selectStmt.isGrouped()) {
+      m_tableAggregateSubquery=true;
+      return false;
+    }
+    if (!selectStmt.hasPartitionColumnInGroupby()) {
+      return false;
+    }
+  }
+  m_failedSingleFragmentTest=false;
+  return true;
+}

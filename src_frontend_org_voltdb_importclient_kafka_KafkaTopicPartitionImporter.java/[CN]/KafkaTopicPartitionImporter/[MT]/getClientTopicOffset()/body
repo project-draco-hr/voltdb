@@ -1,0 +1,43 @@
+{
+  final short version=1;
+  final int correlationId=m_topicAndPartition.partition();
+  final OffsetFetchRequest rq=new OffsetFetchRequest(m_config.getGroupId(),singletonList(m_topicAndPartition),version,correlationId,KafkaStreamImporterConfig.CLIENT_ID);
+  OffsetFetchResponse rsp=null;
+  Throwable fault=null;
+  for (int attempts=0; attempts < 3; ++attempts)   try {
+    BlockingChannel channel=m_offsetManager.get();
+    channel.send(rq.underlying());
+    rsp=OffsetFetchResponse.readFrom(channel.receive().buffer());
+    short code=rsp.offsets().get(m_topicAndPartition).error();
+    if (code != ErrorMapping.NoError()) {
+      fault=ErrorMapping.exceptionFor(code);
+      backoffSleep(attempts + 1);
+      if (code == ErrorMapping.NotCoordinatorForConsumerCode()) {
+        getOffsetCoordinator();
+      }
+ else       if (code == ErrorMapping.ConsumerCoordinatorNotAvailableCode()) {
+        getOffsetCoordinator();
+      }
+ else       if (code == ErrorMapping.UnknownTopicOrPartitionCode()) {
+        getOffsetCoordinator();
+        fault=null;
+        continue;
+      }
+    }
+ else {
+      fault=null;
+      break;
+    }
+  }
+ catch (  Exception e) {
+    if (e instanceof IOException) {
+      getOffsetCoordinator();
+    }
+    fault=e;
+  }
+  if (fault != null) {
+    rateLimitedLog(Level.ERROR,fault,"unable to fetch earliest offset for " + m_topicAndPartition);
+    rsp=null;
+  }
+  return rsp;
+}
