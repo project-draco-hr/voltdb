@@ -9,13 +9,45 @@ def put(database_id):
             if ('deployment' not in xml_final):
                 return jsonify({'status': 'failure', 'error': 'Invalid file content.', })
             elif (type(xml_final['deployment']) is dict):
-                deployment_json = get_deployment_from_xml(xml_final['deployment'], 'dict')[0]
+                deployment_data = get_deployment_for_upload(xml_final['deployment'], 'dict')
+                if (type(deployment_data) is dict):
+                    if ('error' in deployment_data):
+                        return jsonify({'error': deployment_data['error'], })
+                else:
+                    deployment_json = deployment_data[0]
                 req = DictClass()
                 req.json = {}
                 req.json = deployment_json
                 inputs = JsonInputs(req)
                 if (not inputs.validate()):
                     return jsonify(success=False, errors=inputs.errors)
+                if (('systemsettings' in req.json) and ('resourcemonitor' in req.json['systemsettings'])):
+                    if (('memorylimit' in req.json['systemsettings']['resourcemonitor']) and ('size' in req.json['systemsettings']['resourcemonitor']['memorylimit'])):
+                        size = str(req.json['systemsettings']['resourcemonitor']['memorylimit']['size'])
+                        response = json.loads(check_size_value(size, 'memorylimit').data)
+                        if ('error' in response):
+                            return jsonify({'error': response['error'], })
+                    disk_limit_arr = []
+                    if (('disklimit' in req.json['systemsettings']['resourcemonitor']) and ('feature' in req.json['systemsettings']['resourcemonitor']['disklimit'])):
+                        for feature in req.json['systemsettings']['resourcemonitor']['disklimit']['feature']:
+                            size = feature['size']
+                            if (feature['name'] in disk_limit_arr):
+                                return jsonify({'error': 'Duplicate items are not allowed.', })
+                            disk_limit_arr.append(feature['name'])
+                            response = json.loads(check_size_value(size, 'disklimit').data)
+                            if ('error' in response):
+                                return jsonify({'error': response['error'], })
+                if (('snapshot' in req.json) and ('frequency' in req.json['snapshot'])):
+                    frequency_unit = ['h', 'm', 's']
+                    frequency = str(req.json['snapshot']['frequency'])
+                    last_char = frequency[(len(frequency) - 1)]
+                    if (last_char not in frequency_unit):
+                        return jsonify({'error': 'Snapshot: Invalid frequency value.', })
+                    frequency = frequency[:(-1)]
+                    try:
+                        int_frequency = int(frequency)
+                    except Exception as exp:
+                        return jsonify({'error': ('Snapshot: ' + str(exp)), })
                 map_deployment(req, database_id)
                 Global.DEPLOYMENT_USERS = []
                 if (('users' in req.json) and ('user' in req.json['users'])):
