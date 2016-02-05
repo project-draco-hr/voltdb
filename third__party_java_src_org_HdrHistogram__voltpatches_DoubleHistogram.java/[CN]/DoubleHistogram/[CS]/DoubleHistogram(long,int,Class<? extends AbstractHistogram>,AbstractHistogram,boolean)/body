@@ -1,0 +1,46 @@
+{
+  try {
+    if (highestToLowestValueRatio < 2) {
+      throw new IllegalArgumentException("highestToLowestValueRatio must be >= 2");
+    }
+    if ((highestToLowestValueRatio * Math.pow(10.0,numberOfSignificantValueDigits)) >= (1L << 61)) {
+      throw new IllegalArgumentException("highestToLowestValueRatio * (10^numberOfSignificantValueDigits) must be < (1L << 61)");
+    }
+    if (internalCountsHistogramClass == AtomicHistogram.class) {
+      throw new IllegalArgumentException("AtomicHistogram cannot be used as an internal counts histogram (does not support shifting)." + " Use ConcurrentHistogram instead.");
+    }
+    long integerValueRange=deriveIntegerValueRange(highestToLowestValueRatio,numberOfSignificantValueDigits);
+    final AbstractHistogram valuesHistogram;
+    double initialLowestValueInAutoRange;
+    if (internalCountsHistogram == null) {
+      Constructor<? extends AbstractHistogram> histogramConstructor=internalCountsHistogramClass.getConstructor(long.class,long.class,int.class);
+      valuesHistogram=histogramConstructor.newInstance(1L,(integerValueRange - 1),numberOfSignificantValueDigits);
+      initialLowestValueInAutoRange=Math.pow(2.0,800);
+    }
+ else     if (mimicInternalModel) {
+      Constructor<? extends AbstractHistogram> histogramConstructor=internalCountsHistogramClass.getConstructor(AbstractHistogram.class);
+      valuesHistogram=histogramConstructor.newInstance(internalCountsHistogram);
+      initialLowestValueInAutoRange=Math.pow(2.0,800);
+    }
+ else {
+      if ((internalCountsHistogram.getLowestDiscernibleValue() != 1) || (internalCountsHistogram.getHighestTrackableValue() != integerValueRange - 1) || internalCountsHistogram.getNumberOfSignificantValueDigits() != numberOfSignificantValueDigits) {
+        throw new IllegalStateException("integer values histogram does not match stated parameters.");
+      }
+      valuesHistogram=internalCountsHistogram;
+      initialLowestValueInAutoRange=internalCountsHistogram.getIntegerToDoubleValueConversionRatio() * internalCountsHistogram.subBucketHalfCount;
+    }
+    init(highestToLowestValueRatio,initialLowestValueInAutoRange,valuesHistogram);
+  }
+ catch (  NoSuchMethodException ex) {
+    throw new IllegalArgumentException(ex);
+  }
+catch (  IllegalAccessException ex) {
+    throw new IllegalArgumentException(ex);
+  }
+catch (  InstantiationException ex) {
+    throw new IllegalArgumentException(ex);
+  }
+catch (  InvocationTargetException ex) {
+    throw new IllegalArgumentException(ex);
+  }
+}
