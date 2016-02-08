@@ -1,0 +1,47 @@
+{
+  while (scanner.hasNextLine()) {
+    try {
+      if (scanner.hasNext("\\#.*")) {
+        if (scanner.hasNext("#\\[StartTime:")) {
+          scanner.next("#\\[StartTime:");
+          if (scanner.hasNextDouble()) {
+            setStartTimeSec(scanner.nextDouble());
+          }
+        }
+        scanner.nextLine();
+        continue;
+      }
+      if (scanner.hasNext("\"StartTimestamp\".*")) {
+        scanner.nextLine();
+        continue;
+      }
+      final double offsetStartTimeStampSec=scanner.nextDouble();
+      final double absoluteStartTimeStampSec=getStartTimeSec() + offsetStartTimeStampSec;
+      final double intervalLengthSec=scanner.nextDouble();
+      final double offsetEndTimeStampSec=offsetStartTimeStampSec + intervalLengthSec;
+      final double absoluteEndTimeStampSec=getStartTimeSec() + offsetEndTimeStampSec;
+      final double startTimeStampToCheckRangeOn=absolute ? absoluteStartTimeStampSec : offsetStartTimeStampSec;
+      if (startTimeStampToCheckRangeOn < rangeStartTimeSec) {
+        scanner.nextLine();
+        continue;
+      }
+      if (startTimeStampToCheckRangeOn > rangeEndTimeSec) {
+        return null;
+      }
+      scanner.nextDouble();
+      final String compressedPayloadString=scanner.next();
+      final ByteBuffer buffer=ByteBuffer.wrap(DatatypeConverter.parseBase64Binary(compressedPayloadString));
+      EncodableHistogram histogram=Histogram.decodeFromCompressedByteBuffer(buffer,0);
+      histogram.setStartTimeStamp((long)(absoluteStartTimeStampSec * 1000.0));
+      histogram.setEndTimeStamp((long)(absoluteEndTimeStampSec * 1000.0));
+      return histogram;
+    }
+ catch (    java.util.NoSuchElementException ex) {
+      return null;
+    }
+catch (    DataFormatException ex) {
+      return null;
+    }
+  }
+  return null;
+}

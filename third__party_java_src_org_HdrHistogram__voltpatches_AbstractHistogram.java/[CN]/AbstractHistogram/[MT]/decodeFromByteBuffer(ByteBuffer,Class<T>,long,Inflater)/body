@@ -1,0 +1,72 @@
+{
+  final int cookie=buffer.getInt();
+  final int payloadLengthInBytes;
+  final int normalizingIndexOffset;
+  final int numberOfSignificantValueDigits;
+  final long lowestTrackableUnitValue;
+  long highestTrackableValue;
+  final Double integerToDoubleValueConversionRatio;
+  if ((getCookieBase(cookie) == encodingCookieBase) || (getCookieBase(cookie) == V1EncodingCookieBase)) {
+    if (getCookieBase(cookie) == V2EncodingCookieBase) {
+      if (getWordSizeInBytesFromCookie(cookie) != V2maxWordSizeInBytes) {
+        throw new IllegalArgumentException("The buffer does not contain a Histogram (no valid cookie found)");
+      }
+    }
+    payloadLengthInBytes=buffer.getInt();
+    normalizingIndexOffset=buffer.getInt();
+    numberOfSignificantValueDigits=buffer.getInt();
+    lowestTrackableUnitValue=buffer.getLong();
+    highestTrackableValue=buffer.getLong();
+    integerToDoubleValueConversionRatio=buffer.getDouble();
+  }
+ else   if (getCookieBase(cookie) == V0EncodingCookieBase) {
+    numberOfSignificantValueDigits=buffer.getInt();
+    lowestTrackableUnitValue=buffer.getLong();
+    highestTrackableValue=buffer.getLong();
+    buffer.getLong();
+    payloadLengthInBytes=Integer.MAX_VALUE;
+    integerToDoubleValueConversionRatio=1.0;
+    normalizingIndexOffset=0;
+  }
+ else {
+    throw new IllegalArgumentException("The buffer does not contain a Histogram (no valid cookie found)");
+  }
+  highestTrackableValue=Math.max(highestTrackableValue,minBarForHighestTrackableValue);
+  T histogram;
+  try {
+    @SuppressWarnings("unchecked") Constructor<T> constructor=histogramClass.getConstructor(constructorArgsTypes);
+    histogram=constructor.newInstance(lowestTrackableUnitValue,highestTrackableValue,numberOfSignificantValueDigits);
+    histogram.setIntegerToDoubleValueConversionRatio(integerToDoubleValueConversionRatio);
+    histogram.setNormalizingIndexOffset(normalizingIndexOffset);
+  }
+ catch (  IllegalAccessException ex) {
+    throw new IllegalArgumentException(ex);
+  }
+catch (  NoSuchMethodException ex) {
+    throw new IllegalArgumentException(ex);
+  }
+catch (  InstantiationException ex) {
+    throw new IllegalArgumentException(ex);
+  }
+catch (  InvocationTargetException ex) {
+    throw new IllegalArgumentException(ex);
+  }
+  ByteBuffer payLoadSourceBuffer;
+  final int expectedCapacity=Math.min(histogram.getNeededV0PayloadByteBufferCapacity(histogram.countsArrayLength),payloadLengthInBytes);
+  if (decompressor == null) {
+    if (expectedCapacity > buffer.remaining()) {
+      throw new IllegalArgumentException("The buffer does not contain the full Histogram payload");
+    }
+    payLoadSourceBuffer=buffer;
+  }
+ else {
+    payLoadSourceBuffer=ByteBuffer.allocate(expectedCapacity).order(BIG_ENDIAN);
+    int decompressedByteCount=decompressor.inflate(payLoadSourceBuffer.array());
+    if ((payloadLengthInBytes != Integer.MAX_VALUE) && (decompressedByteCount < payloadLengthInBytes)) {
+      throw new IllegalArgumentException("The buffer does not contain the indicated payload amount");
+    }
+  }
+  int filledLength=((AbstractHistogram)histogram).fillCountsArrayFromSourceBuffer(payLoadSourceBuffer,expectedCapacity,getWordSizeInBytesFromCookie(cookie));
+  histogram.establishInternalTackingValues(filledLength);
+  return histogram;
+}
