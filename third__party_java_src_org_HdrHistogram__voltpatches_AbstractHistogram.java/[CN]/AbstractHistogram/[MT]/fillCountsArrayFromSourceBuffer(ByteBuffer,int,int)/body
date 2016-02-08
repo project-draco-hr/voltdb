@@ -1,0 +1,35 @@
+{
+  if ((wordSizeInBytes != 2) && (wordSizeInBytes != 4) && (wordSizeInBytes != 8)&& (wordSizeInBytes != V2maxWordSizeInBytes)) {
+    throw new IllegalArgumentException("word size must be 2, 4, 8, or V2maxWordSizeInBytes (" + V2maxWordSizeInBytes + ") bytes");
+  }
+  final long maxAllowableCountInHistigram=((this.wordSizeInBytes == 2) ? Short.MAX_VALUE : ((this.wordSizeInBytes == 4) ? Integer.MAX_VALUE : Long.MAX_VALUE));
+  int dstIndex=0;
+  int endPosition=sourceBuffer.position() + lengthInBytes;
+  while (sourceBuffer.position() < endPosition) {
+    long count;
+    int zerosCount=0;
+    if (wordSizeInBytes == V2maxWordSizeInBytes) {
+      count=ZigZagEncoding.getLong(sourceBuffer);
+      if (count < 0) {
+        long zc=-count;
+        if (zc > Integer.MAX_VALUE) {
+          throw new IllegalArgumentException("An encoded zero count of > Integer.MAX_VALUE was encountered in the source");
+        }
+        zerosCount=(int)zc;
+      }
+    }
+ else {
+      count=((wordSizeInBytes == 2) ? sourceBuffer.getShort() : ((wordSizeInBytes == 4) ? sourceBuffer.getInt() : sourceBuffer.getLong()));
+    }
+    if (count > maxAllowableCountInHistigram) {
+      throw new IllegalArgumentException("An encoded count (" + count + ") does not fit in the Histogram's ("+ this.wordSizeInBytes+ " bytes) was encountered in the source");
+    }
+    if (zerosCount > 0) {
+      dstIndex+=zerosCount;
+    }
+ else {
+      setCountAtIndex(dstIndex++,count);
+    }
+  }
+  return dstIndex;
+}

@@ -1,0 +1,28 @@
+{
+  int initialTargetPosition=buffer.position();
+  final int cookie=buffer.getInt();
+  final int headerSize;
+  if ((getCookieBase(cookie) == compressedEncodingCookieBase) || (getCookieBase(cookie) == V1CompressedEncodingCookieBase)) {
+    headerSize=ENCODING_HEADER_SIZE;
+  }
+ else   if (getCookieBase(cookie) == V0CompressedEncodingCookieBase) {
+    headerSize=V0_ENCODING_HEADER_SIZE;
+  }
+ else {
+    throw new IllegalArgumentException("The buffer does not contain a compressed Histogram");
+  }
+  final int lengthOfCompressedContents=buffer.getInt();
+  final Inflater decompressor=new Inflater();
+  if (buffer.hasArray()) {
+    decompressor.setInput(buffer.array(),initialTargetPosition + 8,lengthOfCompressedContents);
+  }
+ else {
+    byte[] compressedContents=new byte[lengthOfCompressedContents];
+    buffer.get(compressedContents);
+    decompressor.setInput(compressedContents);
+  }
+  final ByteBuffer headerBuffer=ByteBuffer.allocate(headerSize).order(BIG_ENDIAN);
+  decompressor.inflate(headerBuffer.array());
+  T histogram=decodeFromByteBuffer(headerBuffer,histogramClass,minBarForHighestTrackableValue,decompressor);
+  return histogram;
+}
