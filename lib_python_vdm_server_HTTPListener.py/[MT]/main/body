@@ -1,0 +1,94 @@
+def main(runner, amodule, config_dir, server):
+    try:
+        F_DEBUG = os.environ['DEBUG']
+    except KeyError:
+        F_DEBUG = 'False'
+    if (F_DEBUG == 'True'):
+        APP.config.update(DEBUG=True)
+    path = os.path.dirname(amodule.__file__)
+    Global.MODULE_PATH = path
+    depjson = os.path.join(path, 'deployment.json')
+    json_data = open(depjson).read()
+    deployment = json.loads(json_data)
+    Global.PATH = config_dir
+    global __IP__
+    global __PORT__
+    config_path = os.path.join(config_dir, 'vdm.xml')
+    arrServer = {}
+    bindIp = '0.0.0.0'
+    if (server is not None):
+        arrServer = server.split(':', 2)
+        __host_name__ = arrServer[0]
+        __host_or_ip__ = arrServer[0]
+        bindIp = __host_or_ip__
+        __PORT__ = int(8000)
+        __IP__ = arrServer[0]
+        if (len(arrServer) >= 2):
+            __PORT__ = int(arrServer[1])
+    else:
+        __host_name__ = socket.gethostname()
+        __host_or_ip__ = socket.gethostbyname(__host_name__)
+        __IP__ = __host_or_ip__
+        __PORT__ = int(8000)
+    if os.path.exists(config_path):
+        convert_xml_to_json(config_path)
+    else:
+        file_path = ''
+        try:
+            volt_jar = glob.glob(os.path.join(get_volt_jar_dir(), 'voltdb-*.jar'))
+            if (len(volt_jar) > 0):
+                file_path = volt_jar[0]
+            else:
+                print 'No voltdb jar file found.'
+        except Exception as err:
+            print err
+        if (file_path != ''):
+            is_pro = utility.is_pro_version(file_path)
+            if is_pro:
+                if (('commandlog' in deployment) and ('enabled' in deployment['commandlog']) and (not deployment['commandlog']['enabled'])):
+                    deployment['commandlog']['enabled'] = True
+        Global.DEPLOYMENT.append(deployment)
+        Global.SERVERS.append({'id': 1, 'name': __host_name__, 'hostname': __host_or_ip__, 'description': '', 'enabled': True, 'external-interface': '', 'internal-interface': '', 'public-interface': '', 'client-listener': '', 'internal-listener': '', 'admin-listener': '', 'http-listener': '', 'replication-listener': '', 'zookeeper-listener': '', 'placement-group': '', })
+        Global.DATABASES.append({'id': 1, 'name': 'local', 'deployment': 'default', 'members': [1], })
+    write_configuration_file()
+    SERVER_VIEW = ServerAPI.as_view('server_api')
+    DATABASE_VIEW = DatabaseAPI.as_view('database_api')
+    START_DATABASE_SERVER_VIEW = StartServerAPI.as_view('start_server_api')
+    START_LOCAL_SERVER_VIEW = StartLocalServerAPI.as_view('start_local_server_api')
+    RECOVER_DATABASE_SERVER_VIEW = RecoverServerAPI.as_view('recover_server_api')
+    STOP_DATABASE_SERVER_VIEW = StopServerAPI.as_view('stop_server_api')
+    START_DATABASE_VIEW = StartDatabaseAPI.as_view('start_database_api')
+    STOP_DATABASE_VIEW = StopDatabaseAPI.as_view('stop_database_api')
+    RECOVER_DATABASE_VIEW = RecoverDatabaseAPI.as_view('recover_database_api')
+    DATABASE_MEMBER_VIEW = DatabaseMemberAPI.as_view('database_member_api')
+    DEPLOYMENT_VIEW = deploymentAPI.as_view('deployment_api')
+    DEPLOYMENT_USER_VIEW = deploymentUserAPI.as_view('deployment_user_api')
+    VDM_STATUS_VIEW = VdmStatus.as_view('vdm_status_api')
+    VDM_CONFIGURATION_VIEW = VdmConfiguration.as_view('vdm_configuration_api')
+    SYNC_VDM_CONFIGURATION_VIEW = SyncVdmConfiguration.as_view('sync_vdm_configuration_api')
+    DATABASE_DEPLOYMENT_VIEW = DatabaseDeploymentAPI.as_view('database_deployment_api')
+    VDM_VIEW = VdmAPI.as_view('vdm_api')
+    APP.add_url_rule('/api/1.0/servers/', defaults={'server_id': None, }, view_func=SERVER_VIEW, methods=['GET'])
+    APP.add_url_rule('/api/1.0/servers/<int:database_id>', view_func=SERVER_VIEW, methods=['POST'])
+    APP.add_url_rule('/api/1.0/servers/<int:server_id>', view_func=SERVER_VIEW, methods=['GET', 'PUT', 'DELETE'])
+    APP.add_url_rule('/api/1.0/databases/', defaults={'database_id': None, }, view_func=DATABASE_VIEW, methods=['GET'])
+    APP.add_url_rule('/api/1.0/databases/<int:database_id>', view_func=DATABASE_VIEW, methods=['GET', 'PUT', 'DELETE'])
+    APP.add_url_rule('/api/1.0/databases/', view_func=DATABASE_VIEW, methods=['POST'])
+    APP.add_url_rule('/api/1.0/databases/member/<int:database_id>', view_func=DATABASE_MEMBER_VIEW, methods=['GET', 'PUT', 'DELETE'])
+    APP.add_url_rule('/api/1.0/databases/<int:database_id>/servers/<int:server_id>/start', view_func=START_DATABASE_SERVER_VIEW, methods=['PUT'])
+    APP.add_url_rule('/api/1.0/databases/<int:database_id>/servers/start', view_func=START_LOCAL_SERVER_VIEW, methods=['PUT'])
+    APP.add_url_rule('/api/1.0/databases/<int:database_id>/servers/recover', view_func=RECOVER_DATABASE_SERVER_VIEW, methods=['PUT'])
+    APP.add_url_rule('/api/1.0/databases/<int:database_id>/servers/<int:server_id>/stop', view_func=STOP_DATABASE_SERVER_VIEW, methods=['PUT'])
+    APP.add_url_rule('/api/1.0/databases/<int:database_id>/start', view_func=START_DATABASE_VIEW, methods=['PUT'])
+    APP.add_url_rule('/api/1.0/databases/<int:database_id>/stop', view_func=STOP_DATABASE_VIEW, methods=['PUT'])
+    APP.add_url_rule('/api/1.0/databases/<int:database_id>/recover', view_func=RECOVER_DATABASE_VIEW, methods=['PUT'])
+    APP.add_url_rule('/api/1.0/deployment/', defaults={'database_id': None, }, view_func=DEPLOYMENT_VIEW, methods=['GET'])
+    APP.add_url_rule('/api/1.0/deployment/<int:database_id>', view_func=DEPLOYMENT_VIEW, methods=['GET', 'PUT'])
+    APP.add_url_rule('/api/1.0/deployment/users/<string:username>', view_func=DEPLOYMENT_USER_VIEW, methods=['GET', 'PUT', 'POST', 'DELETE'])
+    APP.add_url_rule('/api/1.0/deployment/users/<int:database_id>/<string:username>', view_func=DEPLOYMENT_USER_VIEW, methods=['PUT', 'POST', 'DELETE'])
+    APP.add_url_rule('/api/1.0/vdm/status/', view_func=VDM_STATUS_VIEW, methods=['GET'])
+    APP.add_url_rule('/api/1.0/vdm/configuration/', view_func=VDM_CONFIGURATION_VIEW, methods=['GET', 'POST'])
+    APP.add_url_rule('/api/1.0/vdm/sync_configuration/', view_func=SYNC_VDM_CONFIGURATION_VIEW, methods=['POST'])
+    APP.add_url_rule('/api/1.0/databases/<int:database_id>/deployment/', view_func=DATABASE_DEPLOYMENT_VIEW, methods=['GET'])
+    APP.add_url_rule('/api/1.0/vdm/', view_func=VDM_VIEW, methods=['GET'])
+    APP.run(threaded=True, host=bindIp, port=__PORT__)

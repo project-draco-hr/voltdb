@@ -1,0 +1,21 @@
+def GenerateDiff(self, extra_args):
+    if self.options.revision:
+        extra_args = ([self.options.revision] + extra_args)
+    gitdiff = RunShell((['git', 'diff', '--full-index'] + extra_args))
+    svndiff = []
+    filecount = 0
+    filename = None
+    for line in gitdiff.splitlines():
+        match = re.match('diff --git a/(.*) b/.*$', line)
+        if match:
+            filecount += 1
+            filename = match.group(1)
+            svndiff.append(('Index: %s\n' % filename))
+        else:
+            match = re.match('index (\\w+)\\.\\.', line)
+            if match:
+                self.base_hashes[filename] = match.group(1)
+        svndiff.append((line + '\n'))
+    if (not filecount):
+        ErrorExit('No valid patches found in output from git diff')
+    return ''.join(svndiff)

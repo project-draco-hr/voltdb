@@ -2,6 +2,7 @@
   info(null,"Starting partition fetcher for " + m_topicAndPartition);
   long submitCount=0;
   AtomicLong cbcnt=new AtomicLong(0);
+  Formatter<String> formatter=(Formatter<String>)m_config.getFormatterFactory().create();
   try {
     resetLeader();
     int sleepCounter=1;
@@ -13,6 +14,10 @@
           continue;
         }
         long lastOffset=getLastOffset();
+        if (lastOffset == -1) {
+          sleepCounter=backoffSleep(sleepCounter);
+          continue;
+        }
         m_gapTracker.resetTo(lastOffset);
         m_lastCommittedOffset=lastOffset;
         m_currentOffset.set(lastOffset);
@@ -64,7 +69,7 @@
         }
         ByteBuffer payload=messageAndOffset.message().payload();
         String line=new String(payload.array(),payload.arrayOffset(),payload.limit(),StandardCharsets.UTF_8);
-        CSVInvocation invocation=new CSVInvocation(m_config.getProcedure(),line,m_config.getSeparator());
+        Invocation invocation=new Invocation(m_config.getProcedure(),formatter.transform(line));
         TopicPartitionInvocationCallback cb=new TopicPartitionInvocationCallback(messageAndOffset.nextOffset(),cbcnt,m_gapTracker,m_dead,invocation);
         if (!callProcedure(invocation,cb)) {
           if (isDebugEnabled()) {
@@ -98,7 +103,14 @@
     commitOffset();
     KafkaStreamImporterConfig.closeConsumer(m_consumer);
     m_consumer=null;
-    KafkaStreamImporterConfig.closeConsumer(m_offsetManager.getAndSet(null));
+    BlockingChannel channel=m_offsetManager.getAndSet(null);
+    if (channel != null) {
+      try {
+        channel.disconnect();
+      }
+ catch (      Exception ignoreIt) {
+      }
+    }
   }
   m_dead.compareAndSet(false,true);
   info(null,"Partition fetcher stopped for " + m_topicAndPartition + " Last commit point is: "+ m_lastCommittedOffset+ " Callback Rcvd: "+ cbcnt.get()+ " Submitted: "+ submitCount);

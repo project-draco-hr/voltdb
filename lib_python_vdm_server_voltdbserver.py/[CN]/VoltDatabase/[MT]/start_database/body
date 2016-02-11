@@ -1,0 +1,37 @@
+def start_database(self, recover=False):
+    '\n        Starts voltdb servers on all nodes configured for this database.\n        Returns reponse with HTTP status code and error details json.\n        '
+    HTTPListener.sync_configuration()
+    members = []
+    current_database = [database for database in HTTPListener.Global.DATABASES if (database['id'] == self.database_id)]
+    if (not current_database):
+        return create_response(('No database found for id: %u' % self.database_id), 404)
+    else:
+        members = current_database[0]['members']
+    if (not members):
+        return create_response(('No servers configured for the database: %u' % self.database_id), 404)
+    for server_id in members:
+        server = [server for server in HTTPListener.Global.SERVERS if (server['id'] == server_id)]
+        if (not server):
+            return create_response(('Server details not found for id: %u' % server_id), 404)
+    failed = False
+    server_status = {}
+    action = 'start'
+    if recover:
+        action = 'recover'
+    for server_id in members:
+        server = [server for server in HTTPListener.Global.SERVERS if (server['id'] == server_id)]
+        curr = server[0]
+        try:
+            url = ('http://%s:%u/api/1.0/databases/%u/servers/%s' % (curr['hostname'], HTTPListener.__PORT__, self.database_id, action))
+            response = requests.put(url)
+            if (response.status_code != requests.codes.ok):
+                failed = True
+            server_status[curr['hostname']] = json.loads(response.text)['statusstring']
+        except Exception as err:
+            failed = True
+            print traceback.format_exc()
+            server_status[curr['hostname']] = str(err)
+    if failed:
+        return create_response(('There were errors starting servers: ' + str(server_status)), 500)
+    else:
+        return create_response(('Start request sent successfully to servers: ' + str(server_status)), 200)

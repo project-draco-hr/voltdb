@@ -1,0 +1,38 @@
+{
+  if (!readerLock.isHeldByCurrentThread()) {
+    throw new IllegalStateException("flipPhase() can only be called while holding the readerLock()");
+  }
+  boolean nextPhaseIsEven=(startEpoch < 0);
+  long initialStartValue;
+  if (nextPhaseIsEven) {
+    initialStartValue=0;
+    evenEndEpochUpdater.lazySet(this,initialStartValue);
+  }
+ else {
+    initialStartValue=Long.MIN_VALUE;
+    oddEndEpochUpdater.lazySet(this,initialStartValue);
+  }
+  long startValueAtFlip=startEpochUpdater.getAndSet(this,initialStartValue);
+  boolean caughtUp=false;
+  do {
+    if (nextPhaseIsEven) {
+      caughtUp=(oddEndEpoch == startValueAtFlip);
+    }
+ else {
+      caughtUp=(evenEndEpoch == startValueAtFlip);
+    }
+    if (!caughtUp) {
+      if (yieldTimeNsec == 0) {
+        Thread.yield();
+      }
+ else {
+        try {
+          TimeUnit.NANOSECONDS.sleep(yieldTimeNsec);
+        }
+ catch (        InterruptedException ex) {
+        }
+      }
+    }
+  }
+ while (!caughtUp);
+}

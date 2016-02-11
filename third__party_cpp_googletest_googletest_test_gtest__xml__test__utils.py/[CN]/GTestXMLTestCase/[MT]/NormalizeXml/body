@@ -1,0 +1,22 @@
+def NormalizeXml(self, element):
+    '\n    Normalizes Google Test\'s XML output to eliminate references to transient\n    information that may change from run to run.\n\n    *  The "time" attribute of <testsuites>, <testsuite> and <testcase>\n       elements is replaced with a single asterisk, if it contains\n       only digit characters.\n    *  The "timestamp" attribute of <testsuites> elements is replaced with a\n       single asterisk, if it contains a valid ISO8601 datetime value.\n    *  The "type_param" attribute of <testcase> elements is replaced with a\n       single asterisk (if it sn non-empty) as it is the type name returned\n       by the compiler and is platform dependent.\n    *  The line info reported in the first line of the "message"\n       attribute and CDATA section of <failure> elements is replaced with the\n       file\'s basename and a single asterisk for the line number.\n    *  The directory names in file paths are removed.\n    *  The stack traces are removed.\n    '
+    if (element.tagName == 'testsuites'):
+        timestamp = element.getAttributeNode('timestamp')
+        timestamp.value = re.sub('^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d$', '*', timestamp.value)
+    if (element.tagName in ('testsuites', 'testsuite', 'testcase')):
+        time = element.getAttributeNode('time')
+        time.value = re.sub('^\\d+(\\.\\d+)?$', '*', time.value)
+        type_param = element.getAttributeNode('type_param')
+        if (type_param and type_param.value):
+            type_param.value = '*'
+    elif (element.tagName == 'failure'):
+        source_line_pat = '^.*[/\\\\](.*:)\\d+\\n'
+        message = element.getAttributeNode('message')
+        message.value = re.sub(source_line_pat, '\\1*\n', message.value)
+        for child in element.childNodes:
+            if (child.nodeType == Node.CDATA_SECTION_NODE):
+                cdata = re.sub(source_line_pat, '\\1*\n', child.nodeValue)
+                child.nodeValue = re.sub('\\nStack trace:\\n(.|\\n)*', '', cdata)
+    for child in element.childNodes:
+        if (child.nodeType == Node.ELEMENT_NODE):
+            self.NormalizeXml(child)

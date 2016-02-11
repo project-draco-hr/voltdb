@@ -1,0 +1,69 @@
+{
+  while (scanner.hasNextLine()) {
+    try {
+      if (scanner.hasNext("\\#.*")) {
+        if (scanner.hasNext("#\\[StartTime:")) {
+          scanner.next("#\\[StartTime:");
+          if (scanner.hasNextDouble()) {
+            startTimeSec=scanner.nextDouble();
+            observedStartTime=true;
+          }
+        }
+ else         if (scanner.hasNext("#\\[BaseTime:")) {
+          scanner.next("#\\[BaseTime:");
+          if (scanner.hasNextDouble()) {
+            baseTimeSec=scanner.nextDouble();
+            observedBaseTime=true;
+          }
+        }
+        scanner.nextLine();
+        continue;
+      }
+      if (scanner.hasNext("\"StartTimestamp\".*")) {
+        scanner.nextLine();
+        continue;
+      }
+      final double logTimeStampInSec=scanner.nextDouble();
+      if (!observedStartTime) {
+        startTimeSec=logTimeStampInSec;
+        observedStartTime=true;
+      }
+      if (!observedBaseTime) {
+        if (logTimeStampInSec < startTimeSec - (365 * 24 * 3600.0)) {
+          baseTimeSec=startTimeSec;
+        }
+ else {
+          baseTimeSec=0.0;
+        }
+        observedBaseTime=true;
+      }
+      final double absoluteStartTimeStampSec=logTimeStampInSec + baseTimeSec;
+      final double offsetStartTimeStampSec=absoluteStartTimeStampSec - startTimeSec;
+      final double intervalLengthSec=scanner.nextDouble();
+      final double absoluteEndTimeStampSec=absoluteStartTimeStampSec + intervalLengthSec;
+      final double startTimeStampToCheckRangeOn=absolute ? absoluteStartTimeStampSec : offsetStartTimeStampSec;
+      if (startTimeStampToCheckRangeOn < rangeStartTimeSec) {
+        scanner.nextLine();
+        continue;
+      }
+      if (startTimeStampToCheckRangeOn > rangeEndTimeSec) {
+        return null;
+      }
+      scanner.nextDouble();
+      final String compressedPayloadString=scanner.next();
+      final ByteBuffer buffer=ByteBuffer.wrap(DatatypeConverter.parseBase64Binary(compressedPayloadString));
+      EncodableHistogram histogram=EncodableHistogram.decodeFromCompressedByteBuffer(buffer,0);
+      histogram.setStartTimeStamp((long)(absoluteStartTimeStampSec * 1000.0));
+      histogram.setEndTimeStamp((long)(absoluteEndTimeStampSec * 1000.0));
+      scanner.nextLine();
+      return histogram;
+    }
+ catch (    java.util.NoSuchElementException ex) {
+      return null;
+    }
+catch (    DataFormatException ex) {
+      return null;
+    }
+  }
+  return null;
+}

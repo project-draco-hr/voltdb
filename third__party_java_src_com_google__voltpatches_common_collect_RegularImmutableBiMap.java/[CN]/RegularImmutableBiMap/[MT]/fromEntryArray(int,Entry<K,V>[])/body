@@ -1,0 +1,42 @@
+{
+  checkPositionIndex(n,entryArray.length);
+  int tableSize=Hashing.closedTableSize(n,MAX_LOAD_FACTOR);
+  int mask=tableSize - 1;
+  ImmutableMapEntry<K,V>[] keyTable=createEntryArray(tableSize);
+  ImmutableMapEntry<K,V>[] valueTable=createEntryArray(tableSize);
+  Entry<K,V>[] entries;
+  if (n == entryArray.length) {
+    entries=entryArray;
+  }
+ else {
+    entries=createEntryArray(n);
+  }
+  int hashCode=0;
+  for (int i=0; i < n; i++) {
+    @SuppressWarnings("unchecked") Entry<K,V> entry=entryArray[i];
+    K key=entry.getKey();
+    V value=entry.getValue();
+    checkEntryNotNull(key,value);
+    int keyHash=key.hashCode();
+    int valueHash=value.hashCode();
+    int keyBucket=Hashing.smear(keyHash) & mask;
+    int valueBucket=Hashing.smear(valueHash) & mask;
+    ImmutableMapEntry<K,V> nextInKeyBucket=keyTable[keyBucket];
+    checkNoConflictInKeyBucket(key,entry,nextInKeyBucket);
+    ImmutableMapEntry<K,V> nextInValueBucket=valueTable[valueBucket];
+    checkNoConflictInValueBucket(value,entry,nextInValueBucket);
+    ImmutableMapEntry<K,V> newEntry;
+    if (nextInValueBucket == null && nextInKeyBucket == null) {
+      boolean reusable=entry instanceof ImmutableMapEntry && ((ImmutableMapEntry<K,V>)entry).isReusable();
+      newEntry=reusable ? (ImmutableMapEntry<K,V>)entry : new ImmutableMapEntry<K,V>(key,value);
+    }
+ else {
+      newEntry=new NonTerminalImmutableBiMapEntry<K,V>(key,value,nextInKeyBucket,nextInValueBucket);
+    }
+    keyTable[keyBucket]=newEntry;
+    valueTable[valueBucket]=newEntry;
+    entries[i]=newEntry;
+    hashCode+=keyHash ^ valueHash;
+  }
+  return new RegularImmutableBiMap<K,V>(keyTable,valueTable,entries,mask,hashCode);
+}
