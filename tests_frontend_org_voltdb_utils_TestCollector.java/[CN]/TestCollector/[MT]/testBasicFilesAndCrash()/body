@@ -18,36 +18,29 @@
   FileOutputStream fStream=new FileOutputStream(f);
   fStream.write("fake text for test".getBytes());
   fStream.close();
-  File collectionDecompressed=collect(voltDbRootPath,false,50);
-  String subFolderPath="voltdb_logs" + File.separator;
-  File heapdumpFile=new File(collectionDecompressed,subFolderPath + "java_pid" + pid+ ".hprof");
-  assertTrue(heapdumpFile.exists());
-  File catalogJar=new File(collectionDecompressed,subFolderPath + "catalog.jar");
-  assertTrue(catalogJar.exists());
-  File deploymentXml=new File(collectionDecompressed,subFolderPath + "deployment.xml");
-  assertTrue(deploymentXml.exists());
-  File systemCheck=new File(collectionDecompressed,subFolderPath + "systemcheck");
-  assertTrue(systemCheck.exists());
-  File dmesgdata=new File(collectionDecompressed,subFolderPath + "dmesgdata");
-  assertTrue(dmesgdata.exists());
-  File logDir=new File(collectionDecompressed,subFolderPath + "log");
-  assertTrue(logDir.exists());
-  assertTrue(logDir.listFiles().length > 0);
+  ZipFile collectionZip=collect(voltDbRootPath,false,50);
+  String subFolderPath=rootDir + File.separator;
+  ZipEntry heapdumpFile=collectionZip.getEntry(subFolderPath + "heap_dumps" + File.separator+ "java_pid"+ pid+ ".hprof");
+  assertNotNull(heapdumpFile);
+  ZipEntry catalogJar=collectionZip.getEntry(subFolderPath + "voltdb_files" + File.separator+ "catalog.jar");
+  assertNotNull(catalogJar);
+  ZipEntry deploymentXml=collectionZip.getEntry(subFolderPath + "voltdb_files" + File.separator+ "deployment.xml");
+  assertNotNull(deploymentXml);
+  ZipEntry systemCheck=collectionZip.getEntry(subFolderPath + "system_logs" + File.separator+ "systemcheck");
+  assertNotNull(systemCheck);
+  ZipEntry dmesgdata=collectionZip.getEntry(subFolderPath + "system_logs" + File.separator+ "dmesgdata");
+  assertNotNull(dmesgdata);
   List<String> logPaths=getLogPaths(voltDbRootPath);
-  for (  File file : logDir.listFiles()) {
-    boolean match=false;
-    for (    String path : logPaths) {
-      if (file.getName().startsWith(new File(path).getName())) {
-        match=true;
-        break;
-      }
+  for (  String path : logPaths) {
+    ZipEntry logFile=collectionZip.getEntry(subFolderPath + "voltdb_logs" + File.separator+ new File(path).getName());
+    assertNotNull(logFile);
+  }
+  Enumeration<? extends ZipEntry> e=collectionZip.entries();
+  while (e.hasMoreElements()) {
+    String pathName=e.nextElement().getName();
+    if (pathName.startsWith(subFolderPath + "voltdb_crashfiles")) {
+      assertTrue(pathName.startsWith(subFolderPath + "voltdb_crashfiles" + File.separator+ "voltdb_crash") && pathName.endsWith(".txt"));
     }
-    assertTrue(match);
   }
-  File voltdbCrashDir=new File(collectionDecompressed,subFolderPath + "voltdb_crash");
-  assertTrue(voltdbCrashDir.exists());
-  assertTrue(voltdbCrashDir.listFiles().length > 0);
-  for (  File file : voltdbCrashDir.listFiles()) {
-    assertTrue(file.getName().startsWith("voltdb_crash") && file.getName().endsWith(".txt"));
-  }
+  collectionZip.close();
 }
