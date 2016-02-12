@@ -1,0 +1,35 @@
+{
+  byte[] token=B64Code.decode(encodedToken);
+  try {
+    if (encodedToken == null || encodedToken.isEmpty()) {
+      return null;
+    }
+    final Oid spnegoOid=new Oid("1.3.6.1.5.5.2");
+    GSSManager manager=GSSManager.getInstance();
+    GSSName name=manager.createName(m_servicePrincipal,null);
+    GSSContext ctx=manager.createContext(name.canonicalize(spnegoOid),spnegoOid,null,GSSContext.INDEFINITE_LIFETIME);
+    if (ctx == null) {
+      m_rate_limited_log.log(EstTime.currentTimeMillis(),Level.ERROR,null,"Failed to establish security context for SPNEGO authentication");
+      return null;
+    }
+    while (!ctx.isEstablished()) {
+      token=ctx.acceptSecContext(token,0,token.length);
+    }
+    if (ctx.isEstablished()) {
+      if (ctx.getSrcName() == null) {
+        m_rate_limited_log.log(EstTime.currentTimeMillis(),Level.ERROR,null,"Failed to read source name from established SPNEGO security context");
+        return null;
+      }
+      String user=ctx.getSrcName().toString();
+      if (m_log.isDebugEnabled()) {
+        m_log.debug("established SPNEGO security context for " + user);
+      }
+      return makeDelegateSubject(user);
+    }
+    return null;
+  }
+ catch (  GSSException e) {
+    m_rate_limited_log.log(EstTime.currentTimeMillis(),Level.ERROR,e,"failed SPNEGO authentication");
+    return null;
+  }
+}

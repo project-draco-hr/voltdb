@@ -1,4 +1,5 @@
 {
+  String isContentDeterministic=null;
   if (m_bestAndOnlyPlanWasGenerated) {
     return null;
   }
@@ -10,11 +11,11 @@
   int planId=0;
   for (  AbstractParsedStmt parsedChildStmt : m_parsedUnion.m_children) {
     StatementPartitioning partitioning=(StatementPartitioning)m_partitioning.clone();
-    PlanSelector processor=(PlanSelector)m_planSelector.clone();
-    processor.m_planId=planId;
-    PlanAssembler assembler=new PlanAssembler(m_catalogCluster,m_catalogDb,partitioning,processor);
+    PlanSelector planSelector=(PlanSelector)m_planSelector.clone();
+    planSelector.m_planId=planId;
+    PlanAssembler assembler=new PlanAssembler(m_catalogCluster,m_catalogDb,partitioning,planSelector);
     CompiledPlan bestChildPlan=assembler.getBestCostPlan(parsedChildStmt);
-    partitioning=assembler.getPartition();
+    partitioning=assembler.m_partitioning;
     if (bestChildPlan == null) {
       m_recentErrorMsg=assembler.getErrorMessage();
       if (m_recentErrorMsg == null) {
@@ -23,7 +24,10 @@
       return null;
     }
     childrenPlans.add(bestChildPlan);
-    planId=processor.m_planId;
+    if (isContentDeterministic != null) {
+      isContentDeterministic=bestChildPlan.nondeterminismDetail();
+    }
+    planId=planSelector.m_planId;
     if (commonPartitioning == null) {
       commonPartitioning=partitioning;
       continue;
@@ -69,7 +73,7 @@
   retval.sql=m_planSelector.m_sql;
   boolean orderIsDeterministic=m_parsedUnion.isOrderDeterministic();
   boolean hasLimitOrOffset=m_parsedUnion.hasLimitOrOffset();
-  retval.statementGuaranteesDeterminism(hasLimitOrOffset,orderIsDeterministic);
+  retval.statementGuaranteesDeterminism(hasLimitOrOffset,orderIsDeterministic,isContentDeterministic);
   retval.cost=0.0;
   for (  CompiledPlan bestChildPlan : childrenPlans) {
     retval.cost+=bestChildPlan.cost;

@@ -1,0 +1,49 @@
+{
+  final double DISTANCE_EPSILON=1.0e-8;
+  Client client=getClient();
+  populateTables(client);
+  client.callProcedure("places.Insert",50,"San Jose",GeographyPointValue.fromWKT("POINT(-121.903692 37.325464)"));
+  client.callProcedure("places.Insert",51,"Boston",GeographyPointValue.fromWKT("POINT(-71.069862 42.338100)"));
+  VoltTable vt;
+  String sql;
+  sql="select borders.name, places.name, distance(borders.region, places.loc) as distance " + "from borders, places where borders.pk = 1" + "order by distance, places.pk";
+  vt=client.callProcedure("@AdHoc",sql).getResults()[0];
+  assertApproximateContentOfTable(new Object[][]{{"Wyoming","Neverwhere",Double.MIN_VALUE},{"Wyoming","Cheyenne",0.0},{"Wyoming","Point on N Wyoming Border",0.0},{"Wyoming","Point on E Wyoming Border",0.0},{"Wyoming","Point On S Wyoming Border",0.0},{"Wyoming","Point On W Wyoming Border",0.0},{"Wyoming","East Point Not On Wyoming Border",1.9770308670798656E-10},{"Wyoming","West Point Not on Wyoming Border",495.81208205561956},{"Wyoming","Point near N Colorado border",2382.072566994318},{"Wyoming","North Point Not On Colorado Border",4045.11696044222},{"Wyoming","North Point Not On Wyoming Border",12768.354425089678},{"Wyoming","Fort Collins",48820.514427535185},{"Wyoming","Denver",146450.5648140179},{"Wyoming","South Point Not On Colorado Border",453546.1064887051},{"Wyoming","Albuquerque",659770.3125551793},{"Wyoming","San Jose",1020359.8369329285},{"Wyoming","Boston",2651698.17837178}},vt,DISTANCE_EPSILON);
+  sql="select borders.name, places.name, distance(borders.region, places.loc) as distance " + "from borders, places where not contains(borders.region, places.loc) " + "order by borders.pk";
+  vt=client.callProcedure("@AdHoc",sql).getResults()[0];
+  sql="select borders.name, places.name, distance(places.loc, borders.region) as distance " + "from borders, places where not contains(borders.region, places.loc) " + "order by borders.pk";
+  VoltTable vt1=client.callProcedure("@AdHoc",sql).getResults()[0];
+  assertEquals(vt1,vt);
+  sql="select borders.name as State, places.name as Location, " + "distance(centroid(borders.region), places.loc) as distance " + "from borders, places where contains(borders.region, places.loc) "+ "order by distance";
+  vt=client.callProcedure("@AdHoc",sql).getResults()[0];
+  assertApproximateContentOfTable(new Object[][]{{"Colorado","Denver",90126.44134902404},{"Colorado","Fort Collins",177132.68582044652},{"Colorado with a hole around Denver","Fort Collins",182956.55626884513},{"Colorado","Point near N Colorado border",223104.00553344024},{"Colorado with a hole around Denver","Point near N Colorado border",228833.82026300067},{"Wyoming","Point On W Wyoming Border",280064.27022410504},{"Wyoming","Point on E Wyoming Border",282622.1083568741},{"Wyoming","Point on N Wyoming Border",295384.0984736869},{"Wyoming","Cheyenne",308378.91700889106},{"Wyoming","Point On S Wyoming Border",355574.4468866087}},vt,DISTANCE_EPSILON);
+  sql="select distance(A.loc, B.loc) as distance " + "from places A, places B where A.name = 'Boston' and B.name = 'San Jose' " + "order by distance;";
+  vt=client.callProcedure("@AdHoc",sql).getResults()[0];
+  assertApproximateContentOfTable(new Object[][]{{4311575.515808559}},vt,DISTANCE_EPSILON);
+  ProcCallException exception=null;
+  try {
+    sql="select places.name, distance(borders.region, borders.region) " + "from borders, places where borders.pk = places.pk " + "order by borders.pk";
+    vt=client.callProcedure("@AdHoc",sql).getResults()[0];
+  }
+ catch (  ProcCallException excp) {
+    exception=excp;
+    assertTrue(exception.getMessage().contains("incompatible data type in operation"));
+    assertTrue(exception.getMessage().contains("DISTANCE between two POLYGONS not supported"));
+  }
+ finally {
+    assertNotNull(exception);
+  }
+  exception=null;
+  try {
+    sql="select places.name, distance(borders.region, borders.pk) " + "from borders, places where borders.pk = places.pk " + "order by borders.pk";
+    vt=client.callProcedure("@AdHoc",sql).getResults()[0];
+  }
+ catch (  ProcCallException excp) {
+    exception=excp;
+    assertTrue(exception.getMessage().contains("Error compiling query"));
+    assertTrue(exception.getMessage().contains("incompatible data type in operation"));
+  }
+ finally {
+    assertNotNull(exception);
+  }
+}

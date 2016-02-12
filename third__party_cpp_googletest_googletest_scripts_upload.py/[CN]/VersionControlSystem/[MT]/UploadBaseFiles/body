@@ -1,0 +1,41 @@
+def UploadBaseFiles(self, issue, rpc_server, patch_list, patchset, options, files):
+    'Uploads the base files (and if necessary, the current ones as well).'
+
+    def UploadFile(filename, file_id, content, is_binary, status, is_base):
+        'Uploads a file to the server.'
+        file_too_large = False
+        if is_base:
+            type = 'base'
+        else:
+            type = 'current'
+        if (len(content) > MAX_UPLOAD_SIZE):
+            print ("Not uploading the %s file for %s because it's too large." % (type, filename))
+            file_too_large = True
+            content = ''
+        checksum = md5.new(content).hexdigest()
+        if ((options.verbose > 0) and (not file_too_large)):
+            print ('Uploading %s file for %s' % (type, filename))
+        url = ('/%d/upload_content/%d/%d' % (int(issue), int(patchset), file_id))
+        form_fields = [('filename', filename), ('status', status), ('checksum', checksum), ('is_binary', str(is_binary)), ('is_current', str((not is_base)))]
+        if file_too_large:
+            form_fields.append(('file_too_large', '1'))
+        if options.email:
+            form_fields.append(('user', options.email))
+        (ctype, body) = EncodeMultipartFormData(form_fields, [('data', filename, content)])
+        response_body = rpc_server.Send(url, body, content_type=ctype)
+        if (not response_body.startswith('OK')):
+            StatusUpdate(('  --> %s' % response_body))
+            sys.exit(1)
+    patches = dict()
+    [patches.setdefault(v, k) for (k, v) in patch_list]
+    for filename in patches.keys():
+        (base_content, new_content, is_binary, status) = files[filename]
+        file_id_str = patches.get(filename)
+        if (file_id_str.find('nobase') != (-1)):
+            base_content = None
+            file_id_str = file_id_str[(file_id_str.rfind('_') + 1):]
+        file_id = int(file_id_str)
+        if (base_content != None):
+            UploadFile(filename, file_id, base_content, is_binary, status, True)
+        if (new_content != None):
+            UploadFile(filename, file_id, new_content, is_binary, status, False)

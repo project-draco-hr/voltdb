@@ -1,0 +1,30 @@
+def Send(self, request_path, payload=None, content_type='application/octet-stream', timeout=None, **kwargs):
+    "Sends an RPC and returns the response.\n\n    Args:\n      request_path: The path to send the request to, eg /api/appversion/create.\n      payload: The body of the request, or None to send an empty request.\n      content_type: The Content-Type header to use.\n      timeout: timeout in seconds; default None i.e. no timeout.\n        (Note: for large requests on OS X, the timeout doesn't work right.)\n      kwargs: Any keyword arguments are converted into query string parameters.\n\n    Returns:\n      The response body, as a string.\n    "
+    if (not self.authenticated):
+        self._Authenticate()
+    old_timeout = socket.getdefaulttimeout()
+    socket.setdefaulttimeout(timeout)
+    try:
+        tries = 0
+        while True:
+            tries += 1
+            args = dict(kwargs)
+            url = ('http://%s%s' % (self.host, request_path))
+            if args:
+                url += ('?' + urllib.urlencode(args))
+            req = self._CreateRequest(url=url, data=payload)
+            req.add_header('Content-Type', content_type)
+            try:
+                f = self.opener.open(req)
+                response = f.read()
+                f.close()
+                return response
+            except urllib2.HTTPError as e:
+                if (tries > 3):
+                    raise
+                elif (e.code == 401):
+                    self._Authenticate()
+                else:
+                    raise
+    finally:
+        socket.setdefaulttimeout(old_timeout)

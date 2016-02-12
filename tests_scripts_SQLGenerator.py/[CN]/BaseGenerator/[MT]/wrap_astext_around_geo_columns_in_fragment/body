@@ -1,0 +1,17 @@
+@classmethod
+def wrap_astext_around_geo_columns_in_fragment(cls, statement_fragment):
+    ' In the specified partial SQL statement, or fragment, wrap AsText(...)\n            around Geo types (point and polygon, i.e., GEOGRAPHY_POINT and\n            GEOGRAPHY), but only if it is not already wrapped in one of the\n            Geo functions, e.g., AsText(PT1), LONGITUDE(PT1), AREA(POLY1),\n            DISTANCE(PT2,POLY3), etc.\n        '
+    result = statement_fragment
+    statement_fragment_upper = statement_fragment.upper().replace(' ', '')
+    for col in BaseGenerator.__GEO_COLUMN_NAMES:
+        if (col in statement_fragment_upper):
+            found = False
+            for tbl in BaseGenerator.__GEO_COLUMN_PREFIXES:
+                if (found and (not tbl)):
+                    break
+                if ((tbl + col) in statement_fragment_upper):
+                    found = True
+                    if ((not any((((((f + '(') + tbl) + col) in statement_fragment_upper) for f in BaseGenerator.__GEO_FUNCTION_NAMES))) and (not any(((((((((f + '(') + t) + c) + ',') + tbl) + col) in statement_fragment_upper) for f in BaseGenerator.__GEO_FUNCS_W2_ARGS for t in BaseGenerator.__GEO_COLUMN_PREFIXES for c in BaseGenerator.__GEO_COLUMN_NAMES)))):
+                        result = result.replace((tbl + col), ((('AsText(' + tbl) + col) + ')'))
+                        print 'Modified fragment  : ', result
+    return result

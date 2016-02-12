@@ -1,0 +1,27 @@
+def start_local_server(database_id, recover=False):
+    deploymentcontents = DeploymentConfig.DeploymentConfiguration.get_database_deployment(database_id)
+    primary = get_first_hostname(database_id)
+    filename = os.path.join(PATH, 'deployment.xml')
+    deploymentfile = open(filename, 'w')
+    deploymentfile.write(deploymentcontents)
+    deploymentfile.close()
+    voltdb_dir = get_voltdb_dir()
+    verb = 'create'
+    if recover:
+        verb = 'recover'
+    voltdb_cmd = ['nohup', os.path.join(voltdb_dir, 'voltdb'), verb, '-d', filename, '-H', primary]
+    Global.OUTFILE_COUNTER = (Global.OUTFILE_COUNTER + 1)
+    outfilename = os.path.join(PATH, ('voltserver.output.%s.%u' % (Global.OUTFILE_TIME, Global.OUTFILE_COUNTER)))
+    voltserver = run_voltserver_process(voltdb_cmd, outfilename)
+    initialized = False
+    rfile = open(outfilename, 'r')
+    endtime = (time.time() + 2)
+    while (((endtime - time.time()) > 0) and (voltserver.returncode is None) and (not initialized)):
+        time.sleep(0.5)
+        voltserver.poll()
+        initialized = ('Server completed initialization' in rfile.readline())
+    rfile.close()
+    if (voltserver.returncode is None):
+        return 0
+    else:
+        return 1

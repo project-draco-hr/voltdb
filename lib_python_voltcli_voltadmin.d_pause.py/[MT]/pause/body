@@ -1,7 +1,42 @@
-@VOLT.Command(bundles=VOLT.AdminBundle(), description='Pause the VoltDB cluster and switch it to admin mode.')
+@VOLT.Command(bundles=VOLT.AdminBundle(), description='Pause the VoltDB cluster and switch it to admin mode.', options=VOLT.BooleanOption('-w', '--wait', 'waiting', 'wait for all DR and Export transactions to be externally processed', default=False))
 def pause(runner):
     status = runner.call_proc('@Pause', [], []).table(0).tuple(0).column_integer(0)
-    if (status == 0):
-        runner.info('The cluster is paused.')
-    else:
+    if (status != 0):
         runner.error(('The cluster has failed to pause with status: %d' % status))
+        return
+    runner.info('The cluster is paused.')
+    if runner.opts.waiting:
+        status = runner.call_proc('@Quiesce', [], []).table(0).tuple(0).column_integer(0)
+        if (status != 0):
+            runner.error(('The cluster has failed to quiesce with status: %d' % status))
+            return
+        runner.info('The cluster is quiesced.')
+        partition_min_host = dict()
+        partition_min = dict()
+        partition_max = dict()
+        check_dr(runner, partition_min_host, partition_min, partition_max)
+        export_tables_with_data = dict()
+        check_dr(runner, partition_min_host, partition_min, partition_max)
+        last_table_stat_time = 0
+        last_table_stat_time = check_export(runner, export_tables_with_data, last_table_stat_time)
+        if ((not partition_min) and (last_table_stat_time == 1)):
+            runner.info('All export and DR transactions have been processed.')
+            return
+        notifyInterval = 10
+        while True:
+            time.sleep(1)
+            if partition_min:
+                check_dr(runner, partition_min_host, partition_min, partition_max)
+            if (last_table_stat_time > 1):
+                curr_table_stat_time = check_export(runner, export_tables_with_data, last_table_stat_time)
+            if ((last_table_stat_time == 1) or (curr_table_stat_time > last_table_stat_time)):
+                if ((not export_tables_with_data) and (not partition_min)):
+                    runner.info('All export and DR transactions have been processed.')
+                    return
+            notifyInterval -= 1
+            if (notifyInterval == 0):
+                notifyInterval = 10
+                if ((last_table_stat_time > 1) and export_tables_with_data):
+                    print_export_pending(runner, export_tables_with_data)
+                if partition_min:
+                    print_dr_pending(runner, partition_min_host, partition_min, partition_max)
