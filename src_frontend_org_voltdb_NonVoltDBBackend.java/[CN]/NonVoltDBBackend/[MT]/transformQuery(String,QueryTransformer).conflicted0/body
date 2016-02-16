@@ -1,0 +1,58 @@
+{
+  StringBuffer modified_query=new StringBuffer();
+  Matcher matcher=qt.queryPattern.matcher(query);
+  int count=0;
+  while (matcher.find()) {
+    StringBuffer replaceText=new StringBuffer(qt.initialText);
+    String wholeMatch=matcher.group();
+    String group=wholeMatch;
+    if (qt.debugPrint) {
+      if (count < 1) {
+        System.out.println("In NonVoltDBBackend.transformQuery,\n  with query    : " + query);
+        System.out.println("  queryPattern: " + qt.queryPattern);
+        System.out.println("  initialText, prefix, suffix, useAltSuffixAfter, altSuffix, replacementText:\n    '" + qt.initialText + "', '"+ qt.prefix+ "', '"+ qt.suffix+ "', '"+ qt.useAltSuffixAfter+ "', '"+ qt.altSuffix+ "', '"+ qt.replacementText+ "'\n  useWholeMatch, columnType, multiplier, minimum, debugPrint; groups:\n    "+ qt.useWholeMatch+ ", "+ qt.columnType+ ", "+ qt.multiplier+ ", "+ qt.minimum+ ", "+ qt.debugPrint+ "\n    "+ qt.groups);
+      }
+      System.out.println("  " + ++count + ".wholeMatch: "+ wholeMatch);
+    }
+    for (    String groupName : qt.groups) {
+      group=matcher.group(groupName);
+      if (qt.debugPrint) {
+        System.out.println("    group     : " + group);
+      }
+      if (group == null) {
+        break;
+      }
+ else       if (!qt.useWholeMatch) {
+        String groupValue=group, suffixValue=qt.suffix;
+        if (qt.multiplier != null && qt.minimum != null) {
+          groupValue=Long.toString(Math.round(Math.max(Integer.parseInt(group) * qt.multiplier,qt.minimum)));
+        }
+        if (qt.altSuffix != null && group.toUpperCase().endsWith(qt.useAltSuffixAfter)) {
+          suffixValue=qt.altSuffix;
+        }
+        replaceText.append(handleParens(groupValue,qt.prefix,suffixValue));
+      }
+    }
+    if (qt.useWholeMatch) {
+      if (qt.columnType != null && ((qt.columnType == ColumnType.INTEGER && !isIntegerColumn(group)) || (qt.columnType == ColumnType.GEO && !isGeoColumn(group)))) {
+        replaceText.append(wholeMatch);
+      }
+ else {
+        if (qt.replacementText != null) {
+          wholeMatch=wholeMatch.replace(group,qt.replacementText);
+        }
+        replaceText.append(handleParens(wholeMatch,qt.prefix,qt.suffix));
+      }
+    }
+    if (qt.debugPrint) {
+      System.out.println("  replaceText : " + replaceText);
+    }
+    matcher.appendReplacement(modified_query,replaceText.toString());
+  }
+  matcher.appendTail(modified_query);
+  if ((DEBUG || qt.debugPrint) && !query.equalsIgnoreCase(modified_query.toString())) {
+    System.out.println("In NonVoltDBBackend.transformQuery,\n  with query    : " + query);
+    System.out.println("  modified_query: " + modified_query);
+  }
+  return modified_query.toString();
+}
