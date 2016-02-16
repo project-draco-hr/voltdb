@@ -1,8 +1,13 @@
 {
   VoltLogger log=new VoltLogger("Benchmark.main");
+  boolean testResult=true;
   Config config=new Config();
   config.parse(KafkaImportBenchmark.class.getName(),args);
   dbconnect(config.servers,config.ratelimit);
+  if (config.expected_rows == 0) {
+    testResult=verifyZero();
+    endTest(testResult);
+  }
   exportProc=new InsertExport(config.alltypes,client,rowsAdded);
   log.info("Starting KafkaImportBenchmark...");
   KafkaImportBenchmark benchmark=new KafkaImportBenchmark(config);
@@ -22,7 +27,6 @@
   long mirrorRows=MatchChecks.getMirrorTableRowCount(config.alltypes,client);
   long importRows=MatchChecks.getImportTableRowCount(config.alltypes,client);
   long importRowCount=MatchChecks.getImportRowCount(client);
-  boolean testResult=true;
   log.info("importer outstanding requests: " + importStatValues[OUTSTANDING_REQUESTS]);
   log.info("mirrorRows: " + mirrorRows);
   log.info("importRows: " + importRows);
@@ -46,14 +50,5 @@
   if (!config.useexport) {
     testResult=MatchChecks.checkPounderResults(config.expected_rows,client);
   }
-  client.drain();
-  client.close();
-  if (testResult == true) {
-    log.info("Test passed!");
-    System.exit(0);
-  }
- else {
-    log.info("Test failed!");
-    System.exit(1);
-  }
+  endTest(testResult);
 }
