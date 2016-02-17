@@ -1,6 +1,6 @@
 {
   boolean canDeliver=false;
-  long sequenceWithTxnId=Long.MIN_VALUE;
+  long sequenceWithUniqueId=Long.MIN_VALUE;
   boolean commandLog=(message instanceof TransactionInfoBaseMessage && (((TransactionInfoBaseMessage)message).isForReplay()));
   boolean dr=((message instanceof TransactionInfoBaseMessage && ((TransactionInfoBaseMessage)message).isForDRv1()));
   boolean sentinel=message instanceof MultiPartitionParticipantMessage;
@@ -8,17 +8,18 @@
   boolean sequenceForReplay=m_isLeader && replay;
   assert(!(commandLog && dr));
   if (commandLog || sentinel) {
-    sequenceWithTxnId=((TransactionInfoBaseMessage)message).getTxnId();
+    sequenceWithUniqueId=((TransactionInfoBaseMessage)message).getUniqueId();
   }
  else   if (dr) {
-    sequenceWithTxnId=((TransactionInfoBaseMessage)message).getOriginalTxnId();
+    VoltDB.crashLocalVoltDB("DRv1 path should never be called",true,null);
+    sequenceWithUniqueId=((TransactionInfoBaseMessage)message).getOriginalTxnId();
   }
   if (sequenceForReplay) {
-    InitiateResponseMessage dupe=m_replaySequencer.dedupe(sequenceWithTxnId,(TransactionInfoBaseMessage)message);
+    InitiateResponseMessage dupe=m_replaySequencer.dedupe(sequenceWithUniqueId,(TransactionInfoBaseMessage)message);
     if (dupe != null) {
       m_mailbox.send(dupe.getInitiatorHSId(),dupe);
     }
- else     if (!m_replaySequencer.offer(sequenceWithTxnId,(TransactionInfoBaseMessage)message)) {
+ else     if (!m_replaySequencer.offer(sequenceWithUniqueId,(TransactionInfoBaseMessage)message)) {
       canDeliver=true;
     }
  else {
@@ -34,8 +35,8 @@
   }
  else {
     if (replay) {
-      m_replaySequencer.updateLastSeenTxnId(sequenceWithTxnId,(TransactionInfoBaseMessage)message);
-      m_replaySequencer.updateLastPolledTxnId(sequenceWithTxnId,(TransactionInfoBaseMessage)message);
+      m_replaySequencer.updateLastSeenUniqueId(sequenceWithUniqueId,(TransactionInfoBaseMessage)message);
+      m_replaySequencer.updateLastPolledUniqueId(sequenceWithUniqueId,(TransactionInfoBaseMessage)message);
     }
     canDeliver=true;
   }

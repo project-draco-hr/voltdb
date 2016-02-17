@@ -1,66 +1,54 @@
 {
-  ReplayEntry found=m_replayEntries.get(inTxnId);
+  ReplayEntry found=m_replayEntries.get(inUniqueId);
   if (in instanceof Iv2EndOfLogMessage) {
     m_mpiEOLReached=true;
     return true;
   }
   if (in instanceof MultiPartitionParticipantMessage) {
-    if (inTxnId <= m_lastPolledFragmentTxnId) {
+    if (inUniqueId <= m_lastPolledFragmentUniqueId) {
       return true;
     }
     if (found == null) {
       ReplayEntry newEntry=new ReplayEntry();
-      newEntry.m_sentinalTxnId=inTxnId;
-      m_replayEntries.put(inTxnId,newEntry);
+      newEntry.m_sentinelUniqueId=inUniqueId;
+      m_replayEntries.put(inUniqueId,newEntry);
     }
  else {
-      found.m_sentinalTxnId=inTxnId;
+      found.m_sentinelUniqueId=inUniqueId;
       assert(found.isReady());
     }
   }
  else   if (in instanceof FragmentTaskMessage) {
-    if (inTxnId <= m_lastPolledFragmentTxnId) {
+    if (inUniqueId <= m_lastPolledFragmentUniqueId) {
       return false;
     }
     FragmentTaskMessage ftm=(FragmentTaskMessage)in;
     if (found == null) {
       ReplayEntry newEntry=new ReplayEntry();
       newEntry.m_firstFragment=ftm;
-      m_replayEntries.put(inTxnId,newEntry);
+      m_replayEntries.put(inUniqueId,newEntry);
     }
  else     if (found.m_firstFragment == null) {
       found.m_firstFragment=ftm;
       assert(found.isReady());
     }
  else {
-      found.addFragmentMessage(ftm);
+      found.addQueuedMessage(ftm);
     }
   }
  else   if (in instanceof CompleteTransactionMessage) {
-    CompleteTransactionMessage ctm=(CompleteTransactionMessage)in;
-    if (inTxnId <= m_lastPolledFragmentTxnId) {
-      if (found != null && found.m_firstFragment != null) {
-        found.markLastFragment(ctm);
-      }
-      return false;
-    }
-    if (found != null && found.m_firstFragment != null) {
-      found.addCompletedMessage(ctm);
-    }
- else {
-      return false;
-    }
+    return false;
   }
  else {
-    if (dedupe(inTxnId,in) != null) {
+    if (dedupe(inUniqueId,in) != null) {
       return true;
     }
-    updateLastSeenTxnId(inTxnId,in);
+    updateLastSeenUniqueId(inUniqueId,in);
     if (m_replayEntries.isEmpty() || !m_replayEntries.lastEntry().getValue().hasSentinel()) {
       return false;
     }
  else {
-      m_replayEntries.lastEntry().getValue().addBlockedMessage(in);
+      m_replayEntries.lastEntry().getValue().addQueuedMessage(in);
     }
   }
   return true;
