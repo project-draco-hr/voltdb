@@ -22,13 +22,19 @@
   AbstractJoinPlanNode ajNode=null;
   if (canHaveNLJ) {
     NestLoopPlanNode nljNode=new NestLoopPlanNode();
-    ArrayList<AbstractExpression> joinClauses=innerAccessPath.joinExprs;
-    if (innerPlan instanceof IndexScanPlanNode) {
+    ArrayList<AbstractExpression> joinClauses=new ArrayList<>(innerAccessPath.joinExprs);
+    if ((innerPlan instanceof IndexScanPlanNode) || (innerPlan instanceof NestLoopIndexPlanNode && innerPlan.getChild(0) instanceof MaterializedScanPlanNode)) {
       ArrayList<AbstractExpression> otherExprs=new ArrayList<AbstractExpression>();
       List<AbstractExpression> innerExpr=filterSingleTVEExpressions(innerAccessPath.otherExprs,otherExprs);
       joinClauses.addAll(otherExprs);
-      AbstractExpression indexScanPredicate=ExpressionUtil.combine(innerExpr);
-      ((IndexScanPlanNode)innerPlan).setPredicate(indexScanPredicate);
+      IndexScanPlanNode scanNode=null;
+      if (innerPlan instanceof IndexScanPlanNode) {
+        scanNode=(IndexScanPlanNode)innerPlan;
+      }
+ else {
+        scanNode=(IndexScanPlanNode)innerPlan.getInlinePlanNode(PlanNodeType.INDEXSCAN);
+      }
+      scanNode.setPredicate(innerExpr);
     }
  else     if (innerJoinNode instanceof BranchNode && joinNode.getJoinType() == JoinType.LEFT) {
       joinClauses.addAll(innerAccessPath.otherExprs);
@@ -47,7 +53,7 @@
  else   if (canHaveNLIJ) {
     NestLoopIndexPlanNode nlijNode=new NestLoopIndexPlanNode();
     IndexScanPlanNode innerNode=(IndexScanPlanNode)innerPlan;
-    innerNode.setPredicate(ExpressionUtil.combine(innerAccessPath.otherExprs));
+    innerNode.setPredicate(innerAccessPath.otherExprs);
     nlijNode.addInlinePlanNode(innerPlan);
     nlijNode.addAndLinkChild(outerPlan);
     ajNode=nlijNode;
