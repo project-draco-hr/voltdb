@@ -1,4 +1,5 @@
 {
+  System.out.println("Starting tests for Contains() ... ");
   Client client=getClient();
   populateGeoTables(client);
   VoltTable resultsUsingGeoIndex, resultsFromNonGeoIndex;
@@ -27,30 +28,57 @@
   assertTablesAreEqual(prefixMsg,resultsUsingGeoIndex,resultsFromNonGeoIndex);
   sql="Select A.id, A.region, B.loc from INDEXED_BORDERS A, INDEXED_PLACES B " + "where NOT Contains(A.region, B.loc) and A.id = B.id and A.id = 0 " + "order by A.id, A.region, B.loc;";
   resultsUsingGeoIndex=client.callProcedure("@AdHoc",sql).getResults()[0];
-  assertApproximateContentOfTable(new Object[][]{{0,polygonWithVertexNearBoundingBox,pointOutSidePolygon},{0,polygonWithVertexNearBoundingBox,pointDisjointRegionCellNPolygon},{0,polygonWithVertexNearBoundingBox,pointBBVertexOutsidePolygon},{0,polygonWithVertexNearBoundingBoxWith2Holes,pointOutSidePolygon},{0,polygonWithVertexNearBoundingBoxWith2Holes,pointCentroidOfPolygonWithNoHole},{0,polygonWithVertexNearBoundingBoxWith2Holes,pointDisjointRegionCellNPolygon},{0,polygonWithVertexNearBoundingBoxWith2Holes,pointBBVertexOutsidePolygon}},resultsUsingGeoIndex,EPSILON);
+  assertApproximateContentOfTable(new Object[][]{{0,polygonWithVertexNearBoundingBox,pointOutSidePolygon},{0,polygonWithVertexNearBoundingBox,pointDisjointRegionCellNPolygon},{0,polygonWithVertexNearBoundingBox,pointBBVertexOutsidePolygon},{0,polygonWithVertexNearBoundingBoxWithHoles,pointOutSidePolygon},{0,polygonWithVertexNearBoundingBoxWithHoles,pointCentroidOfPolygonWithNoHole},{0,polygonWithVertexNearBoundingBoxWithHoles,pointDisjointRegionCellNPolygon},{0,polygonWithVertexNearBoundingBoxWithHoles,pointBBVertexOutsidePolygon}},resultsUsingGeoIndex,EPSILON);
   sql="Select A.id, A.region, B.loc from BORDERS A, PLACES B " + "where NOT Contains(A.region, B.loc) and A.id = B.id and A.id = 0 " + "order by A.id, A.region, B.loc;";
   resultsFromNonGeoIndex=client.callProcedure("@AdHoc",sql).getResults()[0];
   prefixMsg="Assertion failed comparing results of Not Contains on fixed data set: ";
   resultsUsingGeoIndex.resetRowPosition();
   assertTablesAreEqual(prefixMsg,resultsUsingGeoIndex,resultsFromNonGeoIndex);
-  sql="Select A.id, A.region, B.loc from INDEXED_BORDERS A, INDEXED_PLACES B " + "where Contains(A.region, B.loc) and A.id = B.id " + "order by A.id, A.region, B.loc;";
-  resultsUsingGeoIndex=client.callProcedure("@AdHoc",sql).getResults()[0];
-  sql="Select A.id, A.region, B.loc from BORDERS A, PLACES B " + "where Contains(A.region, B.loc) and A.id = B.id " + "order by A.id, A.region, B.loc;";
-  resultsFromNonGeoIndex=client.callProcedure("@AdHoc",sql).getResults()[0];
-  prefixMsg="Assertion failed comparing results of Contains on indexed with non-indexed tables: ";
-  resultsUsingGeoIndex.resetRowPosition();
-  assertTablesAreEqual(prefixMsg,resultsFromNonGeoIndex,resultsUsingGeoIndex);
-  sql="Select A.id, A.region, B.loc from INDEXED_BORDERS A, INDEXED_PLACES B " + "where NOT Contains(A.region, B.loc) and A.id = B.id " + "order by A.id, A.region, B.loc;";
-  resultsUsingGeoIndex=client.callProcedure("@AdHoc",sql).getResults()[0];
-  sql="Select A.id, A.region, B.loc from BORDERS A, PLACES B " + "where NOT Contains(A.region, B.loc) and A.id = B.id " + "order by A.id, A.region, B.loc;";
-  resultsFromNonGeoIndex=client.callProcedure("@AdHoc",sql).getResults()[0];
-  prefixMsg="Assertion failed comparing results of Contains on indexed with non-indexed tables: ";
-  resultsUsingGeoIndex.resetRowPosition();
-  assertTablesAreEqual(prefixMsg,resultsFromNonGeoIndex,resultsUsingGeoIndex);
+  if (isValgrind()) {
+    sql="Select A.id, A.region, B.loc from INDEXED_BORDERS A, INDEXED_PLACES B " + "where Contains(A.region, B.loc) and A.id = B.id and A.id < 25 " + "order by A.id, A.region, B.loc;";
+    resultsUsingGeoIndex=client.callProcedure("@AdHoc",sql).getResults()[0];
+    sql="Select A.id, A.region, B.loc from BORDERS A, PLACES B " + "where Contains(A.region, B.loc) and A.id = B.id and A.id < 25 " + "order by A.id, A.region, B.loc;";
+    resultsFromNonGeoIndex=client.callProcedure("@AdHoc",sql).getResults()[0];
+    prefixMsg="Assertion failed comparing results of Contains on indexed with non-indexed tables: ";
+    assertTablesAreEqual(prefixMsg,resultsFromNonGeoIndex,resultsUsingGeoIndex);
+    sql="Select A.id, A.region, B.loc from INDEXED_BORDERS A, INDEXED_PLACES B " + "where Contains(A.region, B.loc) and A.id = B.id and A.id >= 25 " + "order by A.id, A.region, B.loc;";
+    resultsUsingGeoIndex=client.callProcedure("@AdHoc",sql).getResults()[0];
+    sql="Select A.id, A.region, B.loc from BORDERS A, PLACES B " + "where Contains(A.region, B.loc) and A.id = B.id and A.id >= 25 " + "order by A.id, A.region, B.loc;";
+    resultsFromNonGeoIndex=client.callProcedure("@AdHoc",sql).getResults()[0];
+    prefixMsg="Assertion failed comparing results of Contains on indexed with non-indexed tables: ";
+    assertTablesAreEqual(prefixMsg,resultsFromNonGeoIndex,resultsUsingGeoIndex);
+    prefixMsg="Assertion failed comparing results of Contains on indexed with non-indexed tables: ";
+    sql="Select A.id, A.region, B.loc from INDEXED_BORDERS A, INDEXED_PLACES B " + "where NOT Contains(A.region, B.loc) and A.id = B.id and A.id < 25 " + "order by A.id, A.region, B.loc;";
+    resultsUsingGeoIndex=client.callProcedure("@AdHoc",sql).getResults()[0];
+    sql="Select A.id, A.region, B.loc from BORDERS A, PLACES B " + "where NOT Contains(A.region, B.loc) and A.id = B.id and A.id < 25 " + "order by A.id, A.region, B.loc;";
+    resultsFromNonGeoIndex=client.callProcedure("@AdHoc",sql).getResults()[0];
+    resultsUsingGeoIndex.resetRowPosition();
+    assertTablesAreEqual(prefixMsg,resultsFromNonGeoIndex,resultsUsingGeoIndex);
+    sql="Select A.id, A.region, B.loc from INDEXED_BORDERS A, INDEXED_PLACES B " + "where NOT Contains(A.region, B.loc) and A.id = B.id and A.id >= 25 " + "order by A.id, A.region, B.loc;";
+    resultsUsingGeoIndex=client.callProcedure("@AdHoc",sql).getResults()[0];
+    sql="Select A.id, A.region, B.loc from BORDERS A, PLACES B " + "where NOT Contains(A.region, B.loc) and A.id = B.id and A.id >= 25 " + "order by A.id, A.region, B.loc;";
+    resultsFromNonGeoIndex=client.callProcedure("@AdHoc",sql).getResults()[0];
+    assertTablesAreEqual(prefixMsg,resultsFromNonGeoIndex,resultsUsingGeoIndex);
+  }
+ else {
+    sql="Select A.id, A.region, B.loc from INDEXED_BORDERS A, INDEXED_PLACES B " + "where Contains(A.region, B.loc) and A.id = B.id " + "order by A.id, A.region, B.loc;";
+    resultsUsingGeoIndex=client.callProcedure("@AdHoc",sql).getResults()[0];
+    sql="Select A.id, A.region, B.loc from BORDERS A, PLACES B " + "where Contains(A.region, B.loc) and A.id = B.id " + "order by A.id, A.region, B.loc;";
+    resultsFromNonGeoIndex=client.callProcedure("@AdHoc",sql).getResults()[0];
+    prefixMsg="Assertion failed comparing results of Contains on indexed with non-indexed tables: ";
+    assertTablesAreEqual(prefixMsg,resultsFromNonGeoIndex,resultsUsingGeoIndex);
+    sql="Select A.id, A.region, B.loc from INDEXED_BORDERS A, INDEXED_PLACES B " + "where NOT Contains(A.region, B.loc) and A.id = B.id " + "order by A.id, A.region, B.loc;";
+    resultsUsingGeoIndex=client.callProcedure("@AdHoc",sql).getResults()[0];
+    sql="Select A.id, A.region, B.loc from BORDERS A, PLACES B " + "where NOT Contains(A.region, B.loc) and A.id = B.id " + "order by A.id, A.region, B.loc;";
+    resultsFromNonGeoIndex=client.callProcedure("@AdHoc",sql).getResults()[0];
+    prefixMsg="Assertion failed comparing results of Contains on indexed with non-indexed tables: ";
+    assertTablesAreEqual(prefixMsg,resultsFromNonGeoIndex,resultsUsingGeoIndex);
+  }
   sql="Create procedure PointInPolygon as select A.region from INDEXED_BORDERS A " + "where Contains(A.region, ?) and A.id > 0;";
   client.callProcedure("@AdHoc",sql);
   for (  PolygonPoints polygonPoints : m_generatedPolygonPoints) {
     resultsUsingGeoIndex=client.callProcedure("PointInPolygon",polygonPoints.getInsidePoint()).getResults()[0];
     assertApproximateContentOfTable(new Object[][]{{polygonPoints.getPolygon()}},resultsUsingGeoIndex,EPSILON);
   }
+  System.out.println(" ... Completed tests for Contains().");
 }
