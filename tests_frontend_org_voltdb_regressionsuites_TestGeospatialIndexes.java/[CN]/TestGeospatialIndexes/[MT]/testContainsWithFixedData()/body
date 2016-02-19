@@ -1,0 +1,27 @@
+{
+  System.out.println("Starting tests Contains() with fixed data ... ");
+  VoltTable resultsUsingGeoIndex, resultsFromNonGeoIndex;
+  String sql;
+  String prefixMsg;
+  final double EPSILON=1.0e-12;
+  Client client=getClient();
+  populateGeoTableWithFixedData(client);
+  subTestVerifyBordersData(client);
+  sql="Select A.region, B.loc from INDEXED_BORDERS A, PLACES B " + "where Contains(A.region, B.loc) " + "order by A.region, B.loc;";
+  resultsUsingGeoIndex=client.callProcedure("@AdHoc",sql).getResults()[0];
+  assertApproximateContentOfTable(new Object[][]{{fixedPolygonWithVertexNearBoundingBox,fixedPointCentroidOfPolygonWithNoHole}},resultsUsingGeoIndex,EPSILON);
+  resultsUsingGeoIndex.resetRowPosition();
+  prefixMsg="Assertion failed comparing results of Contains on fixed data set: ";
+  sql="Select A.region, B.loc from BORDERS A, PLACES B " + "where Contains(A.region, B.loc) " + "order by A.region, B.loc;";
+  resultsFromNonGeoIndex=client.callProcedure("@AdHoc",sql).getResults()[0];
+  assertTablesAreEqual(prefixMsg,resultsUsingGeoIndex,resultsFromNonGeoIndex);
+  sql="Select A.region, B.loc from INDEXED_BORDERS A, PLACES B " + "where NOT Contains(A.region, B.loc) " + "order by A.region, B.loc;";
+  resultsUsingGeoIndex=client.callProcedure("@AdHoc",sql).getResults()[0];
+  assertApproximateContentOfTable(new Object[][]{{fixedPolygonWithVertexNearBoundingBox,fixedPointOutsidePolygon},{fixedPolygonWithVertexNearBoundingBox,fixedPointInDisjointRegionCellNPolygon},{fixedPolygonWithVertexNearBoundingBox,fixedPointOnBBVertexOutsidePolygon},{fixedPolygonWithHolesWithVertexNearBoundingBox,fixedPointOutsidePolygon},{fixedPolygonWithHolesWithVertexNearBoundingBox,fixedPointCentroidOfPolygonWithNoHole},{fixedPolygonWithHolesWithVertexNearBoundingBox,fixedPointInDisjointRegionCellNPolygon},{fixedPolygonWithHolesWithVertexNearBoundingBox,fixedPointOnBBVertexOutsidePolygon}},resultsUsingGeoIndex,EPSILON);
+  resultsUsingGeoIndex.resetRowPosition();
+  prefixMsg="Assertion failed comparing results of Not Contains on fixed data set: ";
+  sql="Select A.region, B.loc from BORDERS A, PLACES B " + "where NOT Contains(A.region, B.loc) " + "order by A.region, B.loc;";
+  resultsFromNonGeoIndex=client.callProcedure("@AdHoc",sql).getResults()[0];
+  assertTablesAreEqual(prefixMsg,resultsUsingGeoIndex,resultsFromNonGeoIndex);
+  System.out.println("... completed testing Contains() with fixed data");
+}
