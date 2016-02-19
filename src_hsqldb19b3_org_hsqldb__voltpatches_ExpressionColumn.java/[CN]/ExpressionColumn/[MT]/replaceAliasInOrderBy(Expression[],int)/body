@@ -9,22 +9,46 @@ switch (opType) {
 case OpTypes.COALESCE:
 case OpTypes.COLUMN:
 {
+      java.util.Set<SelectListAliasResolution> foundNames=new java.util.TreeSet<SelectListAliasResolution>();
+      Expression firstFoundExpr=null;
       for (int i=0; i < length; i++) {
-        SimpleName aliasName=columns[i].alias;
-        String alias=aliasName == null ? null : aliasName.name;
-        if (schema == null && tableName == null && columnName.equals(alias)) {
-          return columns[i];
+        ExpressionColumn ecol=(columns[i] instanceof ExpressionColumn) ? (ExpressionColumn)columns[i] : null;
+        String selectTableName=null;
+        String selectTableAlias=null;
+        String selectColumnName=null;
+        if (ecol != null) {
+          selectTableName=ecol.getTableName();
+          selectTableAlias=ecol.getTableAlias();
+          if (selectTableAlias == null) {
+            selectTableAlias=selectTableName;
+          }
+          selectColumnName=ecol.columnName;
+        }
+        SimpleName selectAliasName=columns[i].alias;
+        String selectAlias=selectAliasName == null ? null : selectAliasName.name;
+        if (selectAlias == null) {
+          selectAlias=selectColumnName;
+        }
+        if (schema == null) {
+          if (tableName == null) {
+            if (columnName.equals(selectAlias)) {
+              foundNames.add(new SelectListAliasResolution(columns[i],selectTableName,selectTableAlias,selectColumnName,selectAlias,i));
+              if (firstFoundExpr == null) {
+                firstFoundExpr=columns[i];
+              }
+            }
+          }
         }
       }
-      for (int i=0; i < length; i++) {
-        if (columns[i] instanceof ExpressionColumn) {
-          if (this.equals(columns[i])) {
-            return columns[i];
-          }
-          if (tableName == null && schema == null && columnName.equals(((ExpressionColumn)columns[i]).columnName)) {
-            return columns[i];
-          }
-        }
+      if (foundNames.size() == 1) {
+        return firstFoundExpr;
+      }
+ else       if (foundNames.size() > 1) {
+        StringBuffer sb=new StringBuffer();
+        sb.append(String.format("The name \"%s\" in an order by expression is ambiguous.  It's in columns: ",columnName));
+        appendNameList(sb,foundNames,"");
+        sb.append(".");
+        throw new HsqlException(sb.toString(),"",0);
       }
     }
 default :
