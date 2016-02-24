@@ -1,0 +1,31 @@
+{
+  String head_to_head_filters[][]={{"uniquehashable = ?","HASHUNIQUEHASH"},{"component1 = ? and component2unique = ?","COMPOUNDUNIQUE"},{"primarykey = ?","its primary"},{"contains(poly, ?)","POINTSPOLY"},{"component1 = ? and component2non = ?","COMPOUNDNON"},{"nonuniquekey = ?","NONUNIQUE"},{"component1 = ? and component2unique between ? and ?","COMPOUNDUNIQUE"},{"uniquekey between ? and ?","POLYPOINTS_UNIQUEKEY"},{"nonuniquekey between ? and ?",""},{"component1 = ? and component2unique > ?",""},{"component1 = ? and component2non > ?","COMPOUNDNON"},{"primarykey > ?",""},{"uniquekey > ?","UNIQUEKEY"},{"nonuniquekey > ?",""}};
+  final int ACCEPTABLE_SURPRISES=5;
+  int surprises=0;
+  StringBuffer surpriseDetails=new StringBuffer();
+  for (int ii=0; ii < head_to_head_filters.length; ++ii) {
+    String[] filter1=head_to_head_filters[ii];
+    for (int jj=ii + 1; jj < head_to_head_filters.length; ++jj) {
+      String[] filter2=head_to_head_filters[jj];
+      AbstractPlanNode pn=compile("select polys.point from polypoints polys " + "where " + filter1[0] + " and "+ filter2[0]+ " ;");
+      if (pn.toExplainPlanString().contains(filter1[1])) {
+        System.out.println();
+      }
+ else {
+        String detail="The query filtered by " + filter1[0] + " AND "+ filter2[0]+ " is not using "+ filter1[1]+ " index.";
+        surpriseDetails.append(detail).append("\n");
+        System.out.println("WARNING: " + ii + " vs. "+ jj+ " "+ detail);
+        ++surprises;
+      }
+    }
+  }
+  if (surprises != ACCEPTABLE_SURPRISES) {
+    System.out.println("DEBUG: total plan surprises: " + surprises + " out of "+ (head_to_head_filters.length * (head_to_head_filters.length - 1) / 2)+ ".");
+    System.out.println(surpriseDetails);
+    if (surprises < ACCEPTABLE_SURPRISES) {
+      System.out.println("DEBUG: consider further constraining the baseline number to:");
+      System.out.println("        final int ACCEPTABLE_SURPRISES = " + surprises + ";");
+    }
+    assertTrue(surprises < ACCEPTABLE_SURPRISES);
+  }
+}
