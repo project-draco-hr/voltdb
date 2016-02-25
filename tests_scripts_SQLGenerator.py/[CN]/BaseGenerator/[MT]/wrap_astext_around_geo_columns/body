@@ -1,17 +1,28 @@
 @classmethod
 def wrap_astext_around_geo_columns(cls, statement):
-    " Cannot compare Geo types (point and polygon, i.e., GEOGRAPHY_POINT\n            and GEOGRAPHY) against PostGIS, so, in a SELECT statement, we have\n            to get them in text form, instead; e.g., replace 'PT1' with\n            AsText(PT1) or 'A.POLY1' with AsText(A.POLY1), but only in the part\n            of a SELECT statement before 'FROM', or after 'ORDER BY', and only\n            if it is not already wrapped in one of the Geo functions, e.g.,\n            AsText(PT1), LONGITUDE(PT1), AREA(POLY1), DISTANCE(PT2,POLY3), etc.\n        "
+    " Cannot compare Geo types (point and polygon, i.e., GEOGRAPHY_POINT\n            and GEOGRAPHY) against PostGIS, so, in a SELECT statement, we have\n            to get them in text form, instead; e.g., replace 'PT1' with\n            AsText(PT1) or 'A.POLY1' with AsText(A.POLY1), but only in the\n            part of a SELECT statement before 'FROM', or after 'ORDER BY' (or\n            between the 'THEN' part of a CASE statement and a FROM that comes\n            after it), and only if it is not already wrapped in one of the Geo\n            functions, e.g., AsText(PT1), LONGITUDE(PT1), AREA(POLY1),\n            DISTANCE(PT2,POLY3), etc. (Note: this works for the CASE statements\n            currently used in SQLCoverage, but may not for all possible CASE\n            statements.)\n        "
     result = statement
     statement_upper = statement.upper()
     if (statement_upper.startswith('SELECT') and any(((x in statement) for x in BaseGenerator.__GEO_COLUMN_NAMES))):
-        from_index = statement_upper.find(' FROM ')
-        if (from_index > 0):
-            before_from = statement[0:from_index]
-            after_from = statement[from_index:]
-            result = (BaseGenerator.wrap_astext_around_geo_columns_in_fragment(before_from) + after_from)
-        order_by_index = result.upper().find(' ORDER BY ')
-        if (order_by_index > 0):
-            before_order_by = result[0:order_by_index]
-            after_order_by = result[order_by_index:]
-            result = (before_order_by + BaseGenerator.wrap_astext_around_geo_columns_in_fragment(after_order_by))
+        wrap_before_index = statement_upper.find(' FROM ')
+        wrap_after_index = statement_upper.find(' ORDER BY ')
+        wrap_between_index = (-1)
+        if ((' CASE ' in statement_upper) and (' WHEN ' in statement_upper) and (' THEN ' in statement_upper) and (' END ' in statement_upper)):
+            then_index = statement_upper.find(' THEN ')
+            if (wrap_before_index > then_index):
+                wrap_between_index = wrap_before_index
+                wrap_before_index = statement_upper.find(' CASE ')
+        if (wrap_after_index > 0):
+            before_text = result[0:wrap_after_index]
+            after_text = result[wrap_after_index:]
+            result = (before_text + BaseGenerator.wrap_astext_around_geo_columns_in_fragment(after_text))
+        if (wrap_between_index > 0):
+            before_text = result[0:then_index]
+            between_text = result[then_index:wrap_between_index]
+            after_text = result[wrap_between_index:]
+            result = ((before_text + BaseGenerator.wrap_astext_around_geo_columns_in_fragment(between_text)) + after_text)
+        if (wrap_before_index > 0):
+            before_text = result[0:wrap_before_index]
+            after_text = result[wrap_before_index:]
+            result = (BaseGenerator.wrap_astext_around_geo_columns_in_fragment(before_text) + after_text)
     return result
