@@ -1,0 +1,34 @@
+{
+  int neededCapacity=getNeededByteBufferCapacity(countsArrayLength);
+  if (intermediateUncompressedByteBuffer == null || intermediateUncompressedByteBuffer.capacity() < neededCapacity) {
+    intermediateUncompressedByteBuffer=ByteBuffer.allocate(neededCapacity).order(BIG_ENDIAN);
+  }
+  intermediateUncompressedByteBuffer.clear();
+  int initialTargetPosition=targetBuffer.position();
+  final int uncompressedLength=encodeIntoByteBuffer(intermediateUncompressedByteBuffer);
+  targetBuffer.putInt(getCompressedEncodingCookie());
+  targetBuffer.putInt(0);
+  Deflater compressor=new Deflater(compressionLevel);
+  compressor.setInput(intermediateUncompressedByteBuffer.array(),0,uncompressedLength);
+  compressor.finish();
+  byte[] targetArray;
+  if (targetBuffer.hasArray()) {
+    targetArray=targetBuffer.array();
+  }
+ else {
+    if (intermediateUncompressedByteArray == null || intermediateUncompressedByteArray.length < targetBuffer.capacity()) {
+      intermediateUncompressedByteArray=new byte[targetBuffer.capacity()];
+    }
+    targetArray=intermediateUncompressedByteArray;
+  }
+  int compressedTargetOffset=initialTargetPosition + 8;
+  int compressedDataLength=compressor.deflate(targetArray,compressedTargetOffset,targetArray.length - compressedTargetOffset);
+  compressor.end();
+  if (!targetBuffer.hasArray()) {
+    targetBuffer.put(targetArray,compressedTargetOffset,compressedDataLength);
+  }
+  targetBuffer.putInt(initialTargetPosition + 4,compressedDataLength);
+  int bytesWritten=compressedDataLength + 8;
+  targetBuffer.position(initialTargetPosition + bytesWritten);
+  return bytesWritten;
+}

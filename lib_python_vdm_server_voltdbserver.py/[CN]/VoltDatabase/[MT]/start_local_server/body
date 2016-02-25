@@ -1,0 +1,33 @@
+def start_local_server(self, sid, recover=False):
+    '\n        start a local server process. recover if recover is true else create.\n        '
+    server = [server for server in HTTPListener.Global.SERVERS if (server['id'] == sid)]
+    if (not server):
+        return 1
+    '\n        Gets deployment.xml for this database and starts voltdb server locally\n        '
+    deploymentcontents = DeploymentConfig.DeploymentConfiguration.get_database_deployment(self.database_id)
+    primary = self.get_first_hostname()
+    filename = os.path.join(HTTPListener.Global.PATH, 'deployment.xml')
+    deploymentfile = open(filename, 'w')
+    deploymentfile.write(deploymentcontents)
+    deploymentfile.close()
+    voltdb_dir = get_voltdb_dir()
+    verb = 'create'
+    if recover:
+        verb = 'recover'
+    voltdb_cmd = ['nohup', os.path.join(voltdb_dir, 'voltdb'), verb, '-d', filename, '-H', primary]
+    self.build_network_options(server[0], voltdb_cmd)
+    G.OUTFILE_COUNTER = (G.OUTFILE_COUNTER + 1)
+    outfilename = os.path.join(HTTPListener.Global.PATH, ('voltserver.output.%s.%u' % (G.OUTFILE_TIME, G.OUTFILE_COUNTER)))
+    voltserver = self.run_voltserver_process(voltdb_cmd, outfilename)
+    initialized = False
+    rfile = open(outfilename, 'r')
+    endtime = (time.time() + 2)
+    while (((endtime - time.time()) > 0) and (voltserver.returncode is None) and (not initialized)):
+        time.sleep(0.5)
+        voltserver.poll()
+        initialized = ('Server completed initialization' in rfile.readline())
+    rfile.close()
+    if (voltserver.returncode is None):
+        return 0
+    else:
+        return 1

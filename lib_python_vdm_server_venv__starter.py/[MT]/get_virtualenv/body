@@ -1,0 +1,33 @@
+def get_virtualenv():
+    '\n    Find the virtualenv runtime. Fall back to using one from\n    third_party/python/packages. Untar it under the working folder. Return a\n    command line argument list.\n    '
+    virtualenv = find_in_path('virtualenv', required=False)
+    if virtualenv:
+        return [virtualenv]
+    latest_version = []
+    latest_package_path = None
+    latest_package_name = None
+    for package_path in glob.glob(G.virtualenv_package_glob):
+        m = G.virtualenv_parse_re.match(package_path)
+        if m:
+            version = [int(i) for i in m.group(2).split('.')]
+            if (len(version) > len(latest_version)):
+                latest_version.extend(([0] * (len(version) - len(latest_version))))
+            elif (len(latest_version) > len(version)):
+                version.extend(([0] * (len(latest_version) - len(version))))
+            for iv in range(len(version)):
+                if (version[iv] > latest_version[iv]):
+                    latest_version = copy.copy(version)
+                    latest_package_path = package_path
+                    latest_package_name = m.group(1)
+                    break
+                elif (version[iv] < latest_version[iv]):
+                    break
+        else:
+            warning(('Failed to parse virtualenv package path: %s' % package_path))
+    if (not latest_package_path):
+        abort('virtualenv is missing.', 'See https://pypi.python.org/pypi/virtualenv.')
+    info('Unpacking the distribution copy of virtualenv:', [latest_package_path])
+    returncode = os.system(('tar xf "%s"' % latest_package_path))
+    if (returncode != 0):
+        abort('Failed to extract the virtualenv package.')
+    return ['python', os.path.join(os.getcwd(), latest_package_name, 'virtualenv.py')]

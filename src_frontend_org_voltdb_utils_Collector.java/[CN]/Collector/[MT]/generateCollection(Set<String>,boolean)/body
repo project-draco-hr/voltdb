@@ -1,0 +1,130 @@
+{
+  try {
+    String timestamp="";
+    String rootpath="";
+    if (copyToVEM) {
+      rootpath=m_config.voltdbroot;
+    }
+ else {
+      TimestampType ts=new TimestampType(new java.util.Date());
+      timestamp=ts.toString().replace(' ','-').replace(':','-');
+      timestamp=timestamp.substring(0,"YYYY-mm-DD-HH-MM-ss".length());
+      rootpath=System.getProperty("user.dir");
+    }
+    String folderBase=(m_config.prefix.isEmpty() ? "" : m_config.prefix + "_") + CoreUtils.getHostnameOrAddress() + "_voltlogs_"+ timestamp;
+    String folderPath=folderBase + File.separator;
+    String collectionFilePath=rootpath + File.separator + folderBase+ ".zip";
+    FileOutputStream collectionStream=new FileOutputStream(collectionFilePath);
+    ZipOutputStream zipStream=new ZipOutputStream(collectionStream);
+    Map<String,Integer> pathCounter=new HashMap<String,Integer>();
+    for (    String path : paths) {
+      if (Arrays.asList(cmdFilenames).contains(path.split(" ")[0])) {
+        continue;
+      }
+      File file=new File(path);
+      String filename=file.getName();
+      String entryPath=file.getName();
+      for (      String logPath : m_logPaths) {
+        if (filename.startsWith(new File(logPath).getName())) {
+          entryPath="voltdb_logs" + File.separator + file.getName();
+          break;
+        }
+      }
+      if (filename.startsWith("voltdb_crash")) {
+        entryPath="voltdb_crashfiles" + File.separator + file.getName();
+      }
+      if (filename.startsWith("syslog") || filename.equals("dmesg") || filename.equals("systemcheck")|| filename.startsWith("hs_err_pid")) {
+        entryPath="system_logs" + File.separator + file.getName();
+      }
+      if (filename.equals("deployment.xml") || filename.equals("catalog.jar") || filename.equals("config.json")) {
+        entryPath="voltdb_files" + File.separator + file.getName();
+      }
+      if (filename.endsWith(".hprof")) {
+        entryPath="heap_dumps" + File.separator + file.getName();
+      }
+      if (file.isFile() && file.canRead() && file.length() > 0) {
+        String zipPath=folderPath + entryPath;
+        if (pathCounter.containsKey(zipPath)) {
+          Integer pathCount=pathCounter.get(zipPath);
+          pathCounter.put(zipPath,pathCount + 1);
+          zipPath=zipPath.concat("(" + pathCount.toString() + ")");
+        }
+ else {
+          pathCounter.put(zipPath,1);
+        }
+        ZipEntry zEntry=new ZipEntry(zipPath);
+        zipStream.putNextEntry(zEntry);
+        FileInputStream in=new FileInputStream(path);
+        int len;
+        byte[] buffer=new byte[1024];
+        while ((len=in.read(buffer)) > 0) {
+          zipStream.write(buffer,0,len);
+        }
+        in.close();
+        zipStream.closeEntry();
+      }
+    }
+    String[] sarCmd={"bash","-c","sar -A"};
+    cmd(zipStream,sarCmd,folderPath + "system_logs" + File.separator,"sardata");
+    String[] dmesgCmd={"bash","-c","/bin/dmesg"};
+    cmd(zipStream,dmesgCmd,folderPath + "system_logs" + File.separator,"dmesgdata");
+    zipStream.close();
+    long sizeInByte=new File(collectionFilePath).length();
+    String sizeStringInKB=String.format("%5.2f",(double)sizeInByte / 1000);
+    if (!m_config.calledFromVEM) {
+      System.out.println("Collection file created at " + collectionFilePath + " size: "+ sizeStringInKB+ " KB");
+    }
+    boolean upload=false;
+    if (!m_config.host.isEmpty()) {
+      if (m_config.noprompt) {
+        upload=true;
+      }
+ else {
+        upload=getUserResponse("Upload via SFTP");
+      }
+    }
+    if (upload) {
+      if (org.voltdb.utils.MiscUtils.isPro()) {
+        if (m_config.username.isEmpty() && !m_config.noprompt) {
+          System.out.print("username: ");
+          m_config.username=System.console().readLine();
+        }
+        if (m_config.password.isEmpty() && !m_config.noprompt) {
+          System.out.print("password: ");
+          m_config.password=new String(System.console().readPassword());
+        }
+        try {
+          uploadToServer(collectionFilePath,m_config.host,m_config.username,m_config.password);
+          System.out.println("Uploaded " + new File(collectionFilePath).getName() + " via SFTP");
+          boolean delLocalCopy=false;
+          if (m_config.noprompt) {
+            delLocalCopy=true;
+          }
+ else {
+            delLocalCopy=getUserResponse("Delete local copy " + collectionFilePath);
+          }
+          if (delLocalCopy) {
+            try {
+              new File(collectionFilePath).delete();
+              if (!m_config.calledFromVEM) {
+                System.out.println("Local copy " + collectionFilePath + " deleted");
+              }
+            }
+ catch (            SecurityException e) {
+              System.err.println("Failed to delete local copy " + collectionFilePath + ". "+ e.getMessage());
+            }
+          }
+        }
+ catch (        Exception e) {
+          System.err.println(e.getMessage());
+        }
+      }
+ else {
+        System.out.println("Uploading is only available in the Enterprise Edition");
+      }
+    }
+  }
+ catch (  Exception e) {
+    System.err.println(e.getMessage());
+  }
+}

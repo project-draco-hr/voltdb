@@ -1,0 +1,59 @@
+{
+  try {
+    wrp.readerLock();
+    assert(countsArrayLength == activeCounts.length());
+    assert(countsArrayLength == inactiveCounts.length());
+    int newArrayLength=determineArrayLengthNeeded(newHighestTrackableValue);
+    int countsDelta=newArrayLength - countsArrayLength;
+    if (countsDelta <= 0) {
+      return;
+    }
+    int oldNormalizedZeroIndex=normalizeIndex(0,inactiveCounts.getNormalizingIndexOffset(),inactiveCounts.length());
+    AtomicLongArray oldInactiveCounts=inactiveCounts;
+    inactiveCounts=new AtomicLongArrayWithNormalizingOffset(newArrayLength,inactiveCounts.getNormalizingIndexOffset());
+    for (int i=0; i < oldInactiveCounts.length(); i++) {
+      inactiveCounts.lazySet(i,oldInactiveCounts.get(i));
+    }
+    if (oldNormalizedZeroIndex != 0) {
+      int newNormalizedZeroIndex=oldNormalizedZeroIndex + countsDelta;
+      int lengthToCopy=(newArrayLength - countsDelta) - oldNormalizedZeroIndex;
+      int src, dst;
+      for (src=oldNormalizedZeroIndex, dst=newNormalizedZeroIndex; src < oldNormalizedZeroIndex + lengthToCopy; src++, dst++) {
+        inactiveCounts.lazySet(dst,oldInactiveCounts.get(src));
+      }
+      for (dst=oldNormalizedZeroIndex; dst < newNormalizedZeroIndex; dst++) {
+        inactiveCounts.lazySet(dst,0);
+      }
+    }
+    AtomicLongArrayWithNormalizingOffset tmp=activeCounts;
+    activeCounts=inactiveCounts;
+    inactiveCounts=tmp;
+    wrp.flipPhase();
+    oldInactiveCounts=inactiveCounts;
+    inactiveCounts=new AtomicLongArrayWithNormalizingOffset(newArrayLength,inactiveCounts.getNormalizingIndexOffset());
+    for (int i=0; i < oldInactiveCounts.length(); i++) {
+      inactiveCounts.lazySet(i,oldInactiveCounts.get(i));
+    }
+    if (oldNormalizedZeroIndex != 0) {
+      int newNormalizedZeroIndex=oldNormalizedZeroIndex + countsDelta;
+      int lengthToCopy=(newArrayLength - countsDelta) - oldNormalizedZeroIndex;
+      int src, dst;
+      for (src=oldNormalizedZeroIndex, dst=newNormalizedZeroIndex; src < oldNormalizedZeroIndex + lengthToCopy; src++, dst++) {
+        inactiveCounts.lazySet(dst,oldInactiveCounts.get(src));
+      }
+      for (dst=oldNormalizedZeroIndex; dst < newNormalizedZeroIndex; dst++) {
+        inactiveCounts.lazySet(dst,0);
+      }
+    }
+    tmp=activeCounts;
+    activeCounts=inactiveCounts;
+    inactiveCounts=tmp;
+    wrp.flipPhase();
+    establishSize(newHighestTrackableValue);
+    assert(countsArrayLength == activeCounts.length());
+    assert(countsArrayLength == inactiveCounts.length());
+  }
+  finally {
+    wrp.readerUnlock();
+  }
+}
