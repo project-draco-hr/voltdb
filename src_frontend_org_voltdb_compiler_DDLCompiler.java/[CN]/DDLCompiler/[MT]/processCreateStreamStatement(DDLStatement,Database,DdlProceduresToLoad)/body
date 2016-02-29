@@ -1,0 +1,55 @@
+{
+  String statement=stmt.statement;
+  Matcher statementMatcher=SQLParser.matchCreateStream(statement);
+  if (statementMatcher.matches()) {
+    String tableName=checkIdentifierStart(statementMatcher.group(1),statement);
+    String targetName=null;
+    String columnName=null;
+    if ((statementMatcher.groupCount() > 1) && (statementMatcher.group(2) != null) && (!statementMatcher.group(2).isEmpty())) {
+      String clauses=statementMatcher.group(2);
+      Matcher matcher=SQLParser.matchAnyCreateStreamStatementClause(clauses);
+      int start=0;
+      while (matcher.find(start)) {
+        start=matcher.end();
+        if (matcher.group(1) != null) {
+          if (targetName != null) {
+            throw m_compiler.new VoltCompilerException("Only one Export clause is allowed for CREATE STREAM.");
+          }
+          targetName=matcher.group(1);
+        }
+ else {
+          if (columnName != null) {
+            throw m_compiler.new VoltCompilerException("Only one PARTITION clause is allowed for CREATE STREAM.");
+          }
+          columnName=matcher.group(2);
+        }
+      }
+    }
+    if (columnName != null) {
+      VoltXMLElement tableXML=m_schema.findChild("table",tableName.toUpperCase());
+      if (tableXML != null) {
+        tableXML.attributes.put("partitioncolumn",columnName.toUpperCase());
+        m_compiler.markTableAsDirty(tableName);
+      }
+ else {
+        throw m_compiler.new VoltCompilerException(String.format("Invalid PARTITION statement: table %s does not exist",tableName));
+      }
+    }
+    targetName=(targetName != null) ? checkIdentifierStart(targetName,statement) : Constants.DEFAULT_EXPORT_CONNECTOR_NAME;
+    VoltXMLElement tableXML=m_schema.findChild("table",tableName.toUpperCase());
+    if (tableXML != null) {
+      if (tableXML.attributes.containsKey("drTable") && tableXML.attributes.get("drTable").equals("ENABLE")) {
+        throw m_compiler.new VoltCompilerException(String.format("Invalid EXPORT statement: table %s is a DR table.",tableName));
+      }
+ else {
+        tableXML.attributes.put("export",targetName);
+      }
+    }
+ else {
+      throw m_compiler.new VoltCompilerException(String.format("Invalid EXPORT statement: table %s was not present in the catalog.",tableName));
+    }
+  }
+ else {
+    throw m_compiler.new VoltCompilerException(String.format("Invalid CREATE STREAM statement: \"%s\", " + "expected syntax: CREATE STREAM <table> [PARTITION ON COLUMN <column-name>] [EXPORT TO TARGET <target>] (column datatype, ...); ",statement.substring(0,statement.length() - 1)));
+  }
+}
