@@ -1,9 +1,11 @@
 {
-  voltQueueSQLExperimental("SELECT * FROM replicated r INNER JOIN dimension d ON r.cid=d.cid WHERE r.cid = ? ORDER BY r.cid, rid desc;",cid);
+  voltQueueSQLExperimental("SELECT * FROM replicated r INNER JOIN dimension d ON r.cid=d.cid WHERE r.cid = ? ORDER BY r.cid, r.rid desc;",cid);
   voltQueueSQLExperimental("SELECT * FROM adhocr ORDER BY ts DESC, id LIMIT 1");
+  voltQueueSQLExperimental("SELECT * FROM replview WHERE cid = ? ORDER BY cid desc;",cid);
   VoltTable[] results=voltExecuteSQL();
   VoltTable data=results[0];
   VoltTable adhoc=results[1];
+  VoltTable view=results[2];
   final long txnid=getUniqueId();
   final long ts=getTransactionTime().getTime();
   long prevtxnid=0;
@@ -19,17 +21,19 @@
     prevtxnid=row.getLong("txnid");
     prevrid=row.getLong("rid");
   }
-  validateCIDData(data,getClass().getName());
+  validateCIDData(data,view,getClass().getName());
   if (prevrid >= rid) {
     throw new VoltAbortException(getClass().getName() + " previous rid " + prevrid+ " >= than current rid "+ rid+ " for cid "+ cid);
   }
   voltQueueSQLExperimental("INSERT INTO replicated VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",txnid,prevtxnid,ts,cid,cidallhash,rid,cnt,adhocInc,adhocJmp,value);
   voltQueueSQLExperimental("INSERT INTO replicated_export VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",txnid,prevtxnid,ts,cid,cidallhash,rid,cnt,adhocInc,adhocJmp,value);
   voltQueueSQLExperimental("DELETE FROM replicated WHERE cid = ? and cnt < ?;",cid,cnt - 10);
-  voltQueueSQLExperimental("SELECT * FROM replicated r INNER JOIN dimension d ON r.cid=d.cid WHERE r.cid = ? ORDER BY r.cid, rid desc;",cid);
+  voltQueueSQLExperimental("SELECT * FROM replicated r INNER JOIN dimension d ON r.cid=d.cid WHERE r.cid = ? ORDER BY r.cid, r.rid desc;",cid);
+  voltQueueSQLExperimental("SELECT * FROM replview WHERE cid = ? ORDER BY cid desc;",cid);
   VoltTable[] retval=voltExecuteSQL();
   data=retval[3];
-  validateCIDData(data,getClass().getName());
+  view=retval[4];
+  validateCIDData(data,view,getClass().getName());
   VoltTableRow row=data.fetchRow(0);
   if (row.getVarbinary("value").length == 0)   throw new VoltAbortException("Value column contained no data in UpdateBaseProc");
   if (shouldRollback != 0) {

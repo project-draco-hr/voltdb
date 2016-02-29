@@ -1,0 +1,39 @@
+{
+  if (type == "delete") {
+    if (exview.getRowCount() == 0) {
+      return;
+    }
+ else {
+      throw new VoltAbortException("Export view has " + exview.getRowCount() + " rows for this id. Zero expected after delete");
+    }
+  }
+  if (exview.getRowCount() != 1)   throw new VoltAbortException("Export view has " + exview.getRowCount() + " entries of the same cid, that should not happen.");
+  VoltTableRow row0=exview.fetchRow(0);
+  long v_entries=row0.getLong("entries");
+  long v_max=row0.getLong("maximum");
+  long v_min=row0.getLong("minimum");
+  long v_sum=row0.getLong("summation");
+  if (shadowview.getRowCount() == 1) {
+    row0=shadowview.fetchRow(0);
+    long shadow_entries=row0.getLong("entries");
+    long shadow_max=row0.getLong("maximum");
+    long shadow_min=row0.getLong("minimum");
+    long shadow_sum=row0.getLong("summation");
+    if (type == "insert") {
+      shadow_entries++;
+      shadow_max=Math.max(shadow_max,v_max);
+      shadow_min=Math.min(shadow_min,v_min);
+      shadow_sum+=cnt;
+    }
+    if (v_entries != shadow_entries)     throw new VoltAbortException("View entries:" + v_entries + " materialized view aggregation does not match the number of shadow entries:"+ shadow_entries+ " for cid:"+ cid);
+    if (v_max != shadow_max)     throw new VoltAbortException("View v_max:" + v_max + " materialized view aggregation does not match the shadow max:"+ shadow_max+ " for cid:"+ cid);
+    if (v_min != shadow_min)     throw new VoltAbortException("View v_min:" + v_min + " materialized view aggregation does not match the shadow min:"+ shadow_min+ " for cid:"+ cid);
+    if (v_sum != shadow_sum)     throw new VoltAbortException("View v_sum:" + v_sum + " materialized view aggregation does not match the shadow sum:"+ shadow_sum+ " for cid:"+ cid);
+    voltQueueSQL(p_upsertExViewShadowData,cid,shadow_entries,shadow_max,shadow_min,shadow_sum);
+  }
+ else {
+    voltQueueSQL(p_upsertExViewShadowData,cid,v_entries,v_max,v_min,v_sum);
+  }
+  voltExecuteSQL();
+  return;
+}

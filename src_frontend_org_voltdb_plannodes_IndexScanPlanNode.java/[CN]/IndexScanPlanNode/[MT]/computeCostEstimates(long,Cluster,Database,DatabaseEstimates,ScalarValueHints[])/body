@@ -3,7 +3,7 @@
   double colCount=CatalogUtil.getCatalogIndexSize(m_catalogIndex);
   double keyWidth=m_searchkeyExpressions.size();
   assert(keyWidth <= colCount);
-  if (keyWidth > 0.0 && m_lookupType != IndexLookupType.EQ) {
+  if (keyWidth > 0.0 && m_lookupType != IndexLookupType.EQ && m_lookupType != IndexLookupType.GEO_CONTAINS) {
     keyWidth-=0.5;
   }
  else   if (keyWidth == 0.0 && m_endExpression != null) {
@@ -16,24 +16,34 @@
  else   if ((m_catalogIndex.getType() == IndexType.BALANCED_TREE.getValue()) || (m_catalogIndex.getType() == IndexType.BTREE.getValue())) {
     tuplesToRead=3;
   }
-  assert(tuplesToRead > 0);
-  if (!m_catalogIndex.getUnique() || (colCount > keyWidth)) {
-    tuplesToRead+=(int)(tableEstimates.maxTuples * 0.90 * Math.pow(0.10,keyWidth));
-    if (tuplesToRead < 4) {
-      tuplesToRead=4;
-    }
+ else   if (m_catalogIndex.getType() == IndexType.COVERING_CELL_INDEX.getValue()) {
+    tuplesToRead=3;
   }
-  m_estimatedOutputTupleCount=tuplesToRead;
-  m_estimatedProcessedTupleCount=tuplesToRead;
+  assert(tuplesToRead > 0);
   if (m_catalogIndex.getUnique() && (colCount == keyWidth)) {
     m_estimatedOutputTupleCount=1;
   }
-  if (!m_eliminatedPostFilterExpressions.isEmpty() && m_estimatedProcessedTupleCount > 3) {
-    double discount=1.0;
-    for (int i=0; i < m_eliminatedPostFilterExpressions.size(); ++i) {
-      discount-=Math.pow(0.1,i + 1);
+ else {
+    tuplesToRead+=(int)(tableEstimates.maxTuples * 0.90 * Math.pow(0.10,keyWidth));
+    if (m_catalogIndex.getType() == IndexType.COVERING_CELL_INDEX.getValue()) {
+      final double GEO_INDEX_ARTIFICIAL_TUPLE_DISCOUNT_FACTOR=0.08;
+      tuplesToRead*=GEO_INDEX_ARTIFICIAL_TUPLE_DISCOUNT_FACTOR;
     }
-    m_estimatedProcessedTupleCount*=discount;
+    if (tuplesToRead < 4) {
+      tuplesToRead=4;
+    }
+    m_estimatedOutputTupleCount=tuplesToRead;
+  }
+  m_estimatedProcessedTupleCount=tuplesToRead;
+  double discountFactor=1.0;
+  final double MAX_PER_POST_FILTER_DISCOUNT=0.1;
+  if (!m_eliminatedPostFilterExpressions.isEmpty() && m_estimatedProcessedTupleCount > 3) {
+    for (int i=0; i < m_eliminatedPostFilterExpressions.size(); ++i) {
+      discountFactor-=Math.pow(MAX_PER_POST_FILTER_DISCOUNT,i + 1);
+    }
+  }
+  if (discountFactor < 1.0) {
+    m_estimatedProcessedTupleCount*=discountFactor;
     if (m_estimatedProcessedTupleCount < 4) {
       m_estimatedProcessedTupleCount=4;
     }
