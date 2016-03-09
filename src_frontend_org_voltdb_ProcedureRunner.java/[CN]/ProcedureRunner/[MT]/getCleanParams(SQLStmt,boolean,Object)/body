@@ -1,0 +1,71 @@
+{
+  final int numParamTypes=stmt.statementParamJavaTypes.length;
+  final byte stmtParamTypes[]=stmt.statementParamJavaTypes;
+  final Object[] args=new Object[numParamTypes];
+  if (inArgs.length != numParamTypes) {
+    throw new VoltAbortException("Number of arguments provided was " + inArgs.length + " where "+ numParamTypes+ " was expected for statement "+ stmt.getText());
+  }
+  for (int ii=0; ii < numParamTypes; ii++) {
+    VoltType type=VoltType.get(stmtParamTypes[ii]);
+    if (inArgs[ii] != null) {
+      args[ii]=inArgs[ii];
+      VoltType argType=VoltType.INVALID;
+      boolean failForTypeConversion=false;
+      if (verifyTypeConv) {
+        final Class<?> argClass=args[ii].getClass();
+        if (argClass.isArray() && type != VoltType.VARBINARY) {
+          argType=VoltType.typeFromClass(args[ii].getClass().getComponentType());
+          if (argType == VoltType.TINYINT) {
+            argType=VoltType.typeFromClass(args[ii].getClass());
+          }
+        }
+ else {
+          argType=VoltType.typeFromClass(args[ii].getClass());
+        }
+        failForTypeConversion=!VoltTypeUtil.implicitTypeConvFeasible4Insert(argType,type);
+      }
+      if (failForTypeConversion) {
+        throw new VoltTypeException("Procedure" + m_procedureName + ": Incompatible parameter type: can not convert type '"+ argType.getName()+ "' to '"+ type.getName()+ "' for arg "+ ii+ " for SQL stmt: "+ stmt.getText()+ "."+ " Try explicitly using a "+ type.getName()+ " parameter.");
+      }
+      continue;
+    }
+switch (type) {
+case TINYINT:
+      args[ii]=Byte.MIN_VALUE;
+    break;
+case SMALLINT:
+  args[ii]=Short.MIN_VALUE;
+break;
+case INTEGER:
+args[ii]=Integer.MIN_VALUE;
+break;
+case BIGINT:
+args[ii]=Long.MIN_VALUE;
+break;
+case FLOAT:
+args[ii]=VoltType.NULL_FLOAT;
+break;
+case TIMESTAMP:
+args[ii]=new TimestampType(Long.MIN_VALUE);
+break;
+case STRING:
+args[ii]=VoltType.NULL_STRING_OR_VARBINARY;
+break;
+case VARBINARY:
+args[ii]=VoltType.NULL_STRING_OR_VARBINARY;
+break;
+case DECIMAL:
+args[ii]=VoltType.NULL_DECIMAL;
+break;
+case GEOGRAPHY_POINT:
+args[ii]=VoltType.NULL_POINT;
+break;
+case GEOGRAPHY:
+args[ii]=VoltType.NULL_GEOGRAPHY;
+break;
+default :
+throw new VoltAbortException("Unknown type " + type + " can not be converted to NULL representation for arg "+ ii+ " for SQL stmt: "+ stmt.getText());
+}
+}
+return ParameterSet.fromArrayNoCopy(args);
+}
