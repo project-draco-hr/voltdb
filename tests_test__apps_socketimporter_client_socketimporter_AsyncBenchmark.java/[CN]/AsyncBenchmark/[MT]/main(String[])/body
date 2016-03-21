@@ -34,7 +34,8 @@
     log.info("Starting CheckData methods. Queue size: " + queue.size());
     checkDB.processQueue();
   }
-  cdl.await();
+  log.info("-- waiting for socket writers.");
+  cdl.await(config.duration + config.warmup + 1,TimeUnit.SECONDS);
   for (  HostAndPort hap : haplist.keySet()) {
     OutputStream writer=haplist.get(hap);
     writer.flush();
@@ -48,10 +49,19 @@
     while (queueEndTime > System.currentTimeMillis()) {
       checkDB.processQueue();
     }
-    long outstandingRequests=UtilQueries.getImportOutstandingRequests(client);
-    if (outstandingRequests != 0) {
-      log.error("Importer outstanding requests is " + outstandingRequests + " after extended wait. Zero expected.");
+  }
+  long outstandingRequests=UtilQueries.getImportOutstandingRequests(client);
+  long prev_outstandingRequests=outstandingRequests;
+  int waitloops=10;
+  while (outstandingRequests != 0 && waitloops > 0) {
+    log.info("Importer outstanding requests is " + outstandingRequests + ". Waiting for zero.");
+    outstandingRequests=UtilQueries.getImportOutstandingRequests(client);
+    if (prev_outstandingRequests == outstandingRequests) {
+      log.info("Outstanding requests unchanged since last interval.");
+      waitloops--;
     }
+    prev_outstandingRequests=outstandingRequests;
+    Thread.sleep(config.displayinterval * 1000);
   }
   client.drain();
   client.close();
