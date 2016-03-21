@@ -1,0 +1,84 @@
+{
+  CatalogContext catalogContext=m_catalogContext.get();
+  if (!catalogContext.cluster.getUseddlschema()) {
+    return gracefulFailureResponse("Cannot restore catalog from snapshot when schema is set to catalog in the deployment.",task.clientHandle);
+  }
+  log.info("No schema found. Restoring schema and procedures from snapshot.");
+  try {
+    JSONObject jsObj=new JSONObject(task.getParams().getParam(0).toString());
+    final String path=jsObj.getString(SnapshotUtil.JSON_PATH);
+    final String nonce=jsObj.getString(SnapshotUtil.JSON_NONCE);
+    final File catalogFH=new VoltFile(path,nonce + ".jar");
+    log.info("STEBUG catalog file is " + catalogFH.getPath() + ", path is "+ path+ ", nonce is "+ nonce);
+    final byte[] catalog;
+    try {
+      catalog=MiscUtils.fileToBytes(catalogFH);
+    }
+ catch (    IOException e) {
+      log.warn("Unable to access catalog file " + catalogFH,e);
+      return unexpectedFailureResponse("Unable to access catalog file " + catalogFH,task.clientHandle);
+    }
+    final String dep=new String(catalogContext.getDeploymentBytes(),StandardCharsets.UTF_8);
+    final StoredProcedureInvocation catalogUpdateTask=new StoredProcedureInvocation();
+    catalogUpdateTask.setProcName("@UpdateApplicationCatalog");
+    catalogUpdateTask.setParams(catalog,dep);
+    final long alternateConnectionId=VoltProtocolHandler.getNextConnectionId();
+    SimpleClientResponseAdapter alternateAdapter=new SimpleClientResponseAdapter(alternateConnectionId,"Empty database snapshot restore catalog update");
+    InvocationClientHandler alternateHandler=new InvocationClientHandler(){
+      @Override public boolean isAdmin(){
+        return handler.isAdmin();
+      }
+      @Override public long connectionId(){
+        return alternateConnectionId;
+      }
+    }
+;
+    final long sourceHandle=task.clientHandle;
+    SimpleClientResponseAdapter.SyncCallback restoreCallback=new SimpleClientResponseAdapter.SyncCallback();
+    final ListenableFuture<ClientResponse> onRestoreComplete=restoreCallback.getResponseFuture();
+    onRestoreComplete.addListener(new Runnable(){
+      @Override public void run(){
+        ClientResponse r;
+        try {
+          r=onRestoreComplete.get();
+        }
+ catch (        ExecutionException|InterruptedException e) {
+          VoltDB.crashLocalVoltDB("Should never happen",true,e);
+          return;
+        }
+        transmitResponseMessage(r,ccxn,sourceHandle);
+      }
+    }
+,CoreUtils.SAMETHREADEXECUTOR);
+    task.setClientHandle(alternateAdapter.registerCallback(restoreCallback));
+    SimpleClientResponseAdapter.SyncCallback catalogUpdateCallback=new SimpleClientResponseAdapter.SyncCallback();
+    final ListenableFuture<ClientResponse> onCatalogUpdateComplete=catalogUpdateCallback.getResponseFuture();
+    onCatalogUpdateComplete.addListener(new Runnable(){
+      @Override public void run(){
+        ClientResponse r;
+        try {
+          r=onCatalogUpdateComplete.get();
+        }
+ catch (        ExecutionException|InterruptedException e) {
+          VoltDB.crashLocalVoltDB("Should never happen",true,e);
+          return;
+        }
+        if (r.getStatus() != ClientResponse.SUCCESS) {
+          transmitResponseMessage(r,ccxn,sourceHandle);
+          log.error("Received error response for updating catalog " + r.getStatusString());
+          return;
+        }
+        m_catalogContext.set(VoltDB.instance().getCatalogContext());
+        dispatch(task,alternateHandler,alternateAdapter,user);
+      }
+    }
+,CoreUtils.SAMETHREADEXECUTOR);
+    catalogUpdateTask.setClientHandle(alternateAdapter.registerCallback(catalogUpdateCallback));
+    VoltDB.instance().getClientInterface().bindAdapter(alternateAdapter,null);
+    dispatchUpdateApplicationCatalog(catalogUpdateTask,alternateHandler,alternateAdapter,user,false);
+  }
+ catch (  JSONException e) {
+    return unexpectedFailureResponse("Unable to parse parameters.",task.clientHandle);
+  }
+  return null;
+}

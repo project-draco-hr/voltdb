@@ -1,7 +1,6 @@
 {
   AuthenticationResult authResult=null;
   boolean suspended=false;
-  boolean forceClose=false;
   String jsonp=request.getHeader(JSONP);
   if (jsonp != null && jsonp.trim().isEmpty()) {
     jsonp=null;
@@ -105,20 +104,10 @@
         continuation.complete();
         return;
       }
-      if (queryTimeout == -1) {
-        success=authResult.m_client.callProcedure(cb,procName,paramSet.toArray());
-      }
- else {
-        success=authResult.m_client.callProcedureWithTimeout(cb,queryTimeout,procName,paramSet.toArray());
-      }
+      success=callProcedure(authResult,queryTimeout,cb,procName,paramSet.toArray());
     }
  else {
-      if (queryTimeout == -1) {
-        success=authResult.m_client.callProcedure(cb,procName);
-      }
- else {
-        success=authResult.m_client.callProcedureWithTimeout(cb,queryTimeout,procName);
-      }
+      success=callProcedure(authResult,queryTimeout,cb,procName);
     }
     if (!success) {
       ok(jsonp,"Server is not accepting work at this time.",response);
@@ -133,17 +122,11 @@
   }
  catch (  Exception e) {
     String msg=Throwables.getStackTraceAsString(e);
-    if (e instanceof IOException || e instanceof NoConnectionsException) {
-      forceClose=true;
-    }
     m_rate_limited_log.log(EstTime.currentTimeMillis(),Level.WARN,e,"JSON interface exception");
     ok(jsonp,msg,response);
     if (suspended) {
       continuation.complete();
     }
     request.setHandled(true);
-  }
- finally {
-    releaseClient(authResult,forceClose);
   }
 }
