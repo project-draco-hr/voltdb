@@ -1,4 +1,4 @@
-def start_server(self, server_id, recover=False):
+def start_server(self, server_id, recover=False, is_blocking=(-1)):
     '\n        Sends start request to the specified server\n        '
     members = []
     current_database = [database for database in HTTPListener.Global.DATABASES if (database['id'] == self.database_id)]
@@ -14,8 +14,21 @@ def start_server(self, server_id, recover=False):
     action = 'start'
     if recover:
         action = 'recover'
+    url = ('http://%s:%u/api/1.0/databases/%u/status/' % (server[0]['hostname'], HTTPListener.__PORT__, self.database_id))
+    response = requests.get(url)
+    is_running = response.json()['status'][0]['status']
+    server_ip = ''
+    if (is_running == 'running'):
+        for value in response.json()['serverDetails']:
+            for key in value:
+                status = value[key]['status']
+                if ((status == 'running') and (key != server[0]['hostname'])):
+                    server_ip = key
+                    action = 'rejoin'
     try:
         url = ('http://%s:%u/api/1.0/databases/%u/servers/%s?id=%u' % (server[0]['hostname'], HTTPListener.__PORT__, self.database_id, action, server_id))
+        if (action == 'rejoin'):
+            url += ('&server_ip=%s&is_blocking=%u' % (server_ip, is_blocking))
         response = requests.put(url)
         return create_response(json.loads(response.text)['statusstring'], response.status_code)
     except Exception as err:
