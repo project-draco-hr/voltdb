@@ -1,0 +1,24 @@
+def jenkins_open(self, req, add_crumb=True):
+    'Utility routine for opening an HTTP request to a Jenkins server.\n\n        This should only be used to extends the :class:`Jenkins` API.\n        '
+    try:
+        if self.auth:
+            req.add_header('Authorization', self.auth)
+        if add_crumb:
+            self.maybe_add_crumb(req)
+        response = urlopen(req, timeout=self.timeout).read()
+        if (response is None):
+            raise EmptyResponseException(('Error communicating with server[%s]: empty response' % self.server))
+        return response.decode('utf-8')
+    except HTTPError as e:
+        if (e.code in [401, 403, 500]):
+            raise JenkinsException(('Error in request. ' + ('Possibly authentication failed [%s]: %s' % (e.code, e.msg))))
+        elif (e.code == 404):
+            raise NotFoundException('Requested item could not be found')
+        else:
+            raise
+    except socket.timeout as e:
+        raise TimeoutException(('Error in request: %s' % e))
+    except URLError as e:
+        if (str(e.reason) == 'timed out'):
+            raise TimeoutException(('Error in request: %s' % e.reason))
+        raise JenkinsException(('Error in request: %s' % e.reason))

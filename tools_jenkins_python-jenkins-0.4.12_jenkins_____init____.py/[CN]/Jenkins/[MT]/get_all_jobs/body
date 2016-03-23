@@ -1,0 +1,17 @@
+def get_all_jobs(self, folder_depth=None):
+    'Get list of all jobs recursively to the given folder depth.\n\n        Each job is a dictionary with \'name\', \'url\', \'color\' and \'fullname\'\n        keys.\n\n        :param folder_depth: Number of levels to search, ``int``. By default\n            None, which will search all levels. 0 limits to toplevel.\n        :returns: list of jobs, ``[ { str: str} ]``\n\n        .. note::\n\n            On instances with many folders it may be more efficient to use the\n            run_script method to retrieve all jobs instead.\n\n            Example::\n\n                server.run_script("""\n                    import groovy.json.JsonBuilder;\n\n                    // get all projects excluding matrix configuration\n                    // as they are simply part of a matrix project.\n                    // there may be better ways to get just jobs\n                    items = Jenkins.instance.getAllItems(AbstractProject);\n                    items.removeAll {\n                      it instanceof hudson.matrix.MatrixConfiguration\n                    };\n\n                    def json = new JsonBuilder()\n                    def root = json {\n                      jobs items.collect {\n                        [\n                          name: it.name,\n                          url: Jenkins.instance.getRootUrl() + it.getUrl(),\n                          color: it.getIconColor().toString(),\n                          fullname: it.getFullName()\n                        ]\n                      }\n                    }\n\n                    // use json.toPrettyString() if viewing\n                    println json.toString()\n                    """)\n\n        '
+    jobs_list = []
+    jobs = [(0, '', self.get_info(query=JOBS_QUERY)['jobs'])]
+    for (lvl, root, lvl_jobs) in jobs:
+        if (not isinstance(lvl_jobs, list)):
+            lvl_jobs = [lvl_jobs]
+        for job in lvl_jobs:
+            if ('jobs' in job):
+                if ((folder_depth is None) or (lvl < folder_depth)):
+                    path = '/job/'.join((root, job[u'name']))
+                    jobs.append(((lvl + 1), path, self.get_info(path, query=JOBS_QUERY)['jobs']))
+            else:
+                if (u'fullname' not in job):
+                    job[u'fullname'] = '/'.join(([p for p in root.split('/') if (p and (p != 'job'))] + [job[u'name']]))
+                jobs_list.append(job)
+    return jobs_list
