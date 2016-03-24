@@ -1,5 +1,4 @@
 {
-  System.out.println("Hello there");
   Client client=getClient();
   client.callProcedure("T.Insert",1,1,1,1,1,new BigDecimal(1),"2012-12-01","hi","10",null,null);
   client.callProcedure("ProcToTestTypeConversion",ProcToTestTypeConversion.TestAllAllowedTypeConv,0,0);
@@ -14,16 +13,49 @@
         client.callProcedure("ProcToTestTypeConversion",ProcToTestTypeConversion.TestTypeConvWithInsertProc,colInd,typeToTest.getValue());
       }
  else {
+        errorMsg="Incompatible parameter type: can not convert type '" + typeToTest.getName() + "' to '"+ m_tableColTypeVal[colInd].getName()+ "' for arg "+ colInd+ " for SQL stmt";
         if (typeToTest == VoltType.TIMESTAMP && m_tableColTypeVal[colInd] == VoltType.DECIMAL) {
-          errorMsg="Type TIMESTAMP can't be cast as DECIMAL";
+          errorMsg="Type " + typeToTest.getName() + " can't be cast as "+ m_tableColTypeVal[colInd].getName();
         }
- else {
-          errorMsg="Incompatible parameter type: can not convert type '" + typeToTest.getName() + "' to '"+ m_tableColTypeVal[colInd].getName()+ "' for arg "+ colInd+ " for SQL stmt";
-        }
-        verifyProcFails(client,errorMsg,"ProcToTestTypeConversion",ProcToTestTypeConversion.TestTypeConvWithInsertProc,colInd,typeToTest.getValue());
-      }
-      colInd++;
+ else         if (typeToTest == VoltType.VARBINARY) {
+switch (m_tableColTypeVal[colInd]) {
+case TINYINT:
+case SMALLINT:
+case INTEGER:
+case BIGINT:
+case TIMESTAMP:
+case FLOAT:
+case DECIMAL:
+            errorMsg="Type " + typeToTest.getName() + " can't be cast as "+ m_tableColTypeVal[colInd].getName();
+          break;
+default :
+        break;
     }
-    rowId++;
   }
+  verifyProcFails(client,errorMsg,"ProcToTestTypeConversion",ProcToTestTypeConversion.TestTypeConvWithInsertProc,colInd,typeToTest.getValue());
+}
+colInd++;
+}
+rowId++;
+}
+rowId=0;
+for (boolean[] from : m_typeConversionMatrixInList) {
+int colInd=0;
+typeToTest=m_tableColTypeVal[rowId];
+for (boolean to : from) {
+if (rowId == 0) {
+  colInd++;
+  continue;
+}
+if (to) {
+  client.callProcedure("ProcToTestTypeConversion",ProcToTestTypeConversion.TestTypesInList,colInd,typeToTest.getValue());
+}
+ else {
+  errorMsg="Incompatible parameter type: can not convert type '" + typeToTest.getName() + "' to '"+ m_tableColTypeVal[colInd].getName()+ "' for arg 0 for SQL stmt";
+  verifyProcFails(client,errorMsg,"ProcToTestTypeConversion",ProcToTestTypeConversion.TestTypesInList,colInd,typeToTest.getValue());
+}
+colInd++;
+}
+rowId++;
+}
 }
