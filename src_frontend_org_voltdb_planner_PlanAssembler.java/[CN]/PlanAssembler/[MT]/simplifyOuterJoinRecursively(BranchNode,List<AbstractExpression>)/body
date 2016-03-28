@@ -3,27 +3,30 @@
   JoinNode leftNode=joinNode.getLeftNode();
   JoinNode rightNode=joinNode.getRightNode();
   if (joinNode.getJoinType() == JoinType.LEFT) {
-    if (isNullRejecting(rightNode.generateTableJoinOrder(),exprs)) {
-      joinNode.setJoinType(JoinType.INNER);
-    }
-  }
- else   if (joinNode.getJoinType() == JoinType.RIGHT) {
-    if (isNullRejecting(leftNode.generateTableJoinOrder(),exprs)) {
-      joinNode.setJoinType(JoinType.INNER);
-    }
-  }
- else   if (joinNode.getJoinType() == JoinType.FULL) {
-    if (isNullRejecting(leftNode.generateTableJoinOrder(),exprs)) {
-      joinNode.setJoinType(JoinType.LEFT);
-    }
-    if (isNullRejecting(rightNode.generateTableJoinOrder(),exprs)) {
-      if (JoinType.FULL == joinNode.getJoinType()) {
-        joinNode.setJoinType(JoinType.RIGHT);
+    for (    AbstractExpression expr : exprs) {
+      Collection<String> tableAliases=rightNode.generateTableJoinOrder();
+      boolean rejectNull=false;
+      for (      String tableAlias : tableAliases) {
+        if (ExpressionUtil.isNullRejectingExpression(expr,tableAlias)) {
+          joinNode.setJoinType(JoinType.INNER);
+          rejectNull=true;
+          break;
+        }
       }
+      if (rejectNull) {
+        break;
+      }
+    }
+  }
  else {
-        joinNode.setJoinType(JoinType.INNER);
-      }
-    }
+    assert(joinNode.getJoinType() == JoinType.INNER);
+  }
+  List<AbstractExpression> newExprs=new ArrayList<AbstractExpression>(exprs);
+  if (leftNode.getJoinExpression() != null) {
+    newExprs.add(leftNode.getJoinExpression());
+  }
+  if (rightNode.getJoinExpression() != null) {
+    newExprs.add(rightNode.getJoinExpression());
   }
   if (leftNode.getWhereExpression() != null) {
     exprs.add(leftNode.getWhereExpression());
@@ -31,41 +34,22 @@
   if (rightNode.getWhereExpression() != null) {
     exprs.add(rightNode.getWhereExpression());
   }
-  List<AbstractExpression> exprsForInnerNode=new ArrayList<AbstractExpression>(exprs);
-  if (leftNode.getJoinExpression() != null) {
-    exprsForInnerNode.add(leftNode.getJoinExpression());
+  if (joinNode.getJoinType() == JoinType.INNER) {
+    exprs.addAll(newExprs);
+    if (leftNode instanceof BranchNode) {
+      simplifyOuterJoinRecursively((BranchNode)leftNode,exprs);
+    }
+    if (rightNode instanceof BranchNode) {
+      simplifyOuterJoinRecursively((BranchNode)rightNode,exprs);
+    }
   }
-  if (rightNode.getJoinExpression() != null) {
-    exprsForInnerNode.add(rightNode.getJoinExpression());
+ else {
+    if (rightNode instanceof BranchNode) {
+      newExprs.addAll(exprs);
+      simplifyOuterJoinRecursively((BranchNode)rightNode,newExprs);
+    }
+    if (leftNode instanceof BranchNode) {
+      simplifyOuterJoinRecursively((BranchNode)leftNode,exprs);
+    }
   }
-  List<AbstractExpression> leftNodeExprs;
-  List<AbstractExpression> rightNodeExprs;
-switch (joinNode.getJoinType()) {
-case INNER:
-    leftNodeExprs=exprsForInnerNode;
-  rightNodeExprs=exprsForInnerNode;
-break;
-case LEFT:
-leftNodeExprs=exprs;
-rightNodeExprs=exprsForInnerNode;
-break;
-case RIGHT:
-leftNodeExprs=exprsForInnerNode;
-rightNodeExprs=exprs;
-break;
-case FULL:
-leftNodeExprs=exprs;
-rightNodeExprs=exprs;
-break;
-default :
-leftNodeExprs=null;
-rightNodeExprs=null;
-assert(false);
-}
-if (leftNode instanceof BranchNode) {
-simplifyOuterJoinRecursively((BranchNode)leftNode,leftNodeExprs);
-}
-if (rightNode instanceof BranchNode) {
-simplifyOuterJoinRecursively((BranchNode)rightNode,rightNodeExprs);
-}
 }
