@@ -1,0 +1,103 @@
+{
+  final Connection c=(Connection)result.clientData;
+  final ListenableFutureTask<?> ft=ListenableFutureTask.create(new Runnable(){
+    @Override public void run(){
+      if (result.errorMsg == null) {
+        if (result instanceof AdHocPlannedStmtBatch) {
+          final AdHocPlannedStmtBatch plannedStmtBatch=(AdHocPlannedStmtBatch)result;
+          ExplainMode explainMode=plannedStmtBatch.getExplainMode();
+          if ((plannedStmtBatch.getPlannedStatementCount() > 0) && (!plannedStmtBatch.getPlannedStatement(0).core.wasPlannedAgainstHash(m_catalogContext.get().getCatalogHash()))) {
+            LocalObjectMessage work=new LocalObjectMessage(AdHocPlannerWork.rework(plannedStmtBatch.work,m_adhocCompletionHandler));
+            m_mailbox.send(m_plannerSiteId,work);
+          }
+ else           if (explainMode == ExplainMode.EXPLAIN_ADHOC) {
+            processExplainPlannedStmtBatch(plannedStmtBatch);
+          }
+ else           if (explainMode == ExplainMode.EXPLAIN_DEFAULT_PROC) {
+            processExplainDefaultProc(plannedStmtBatch);
+          }
+ else {
+            try {
+              createAdHocTransaction(plannedStmtBatch,c);
+            }
+ catch (            VoltTypeException vte) {
+              String msg="Unable to execute adhoc sql statement(s): " + vte.getMessage();
+              writeResponseToConnection(gracefulFailureResponse(msg,result.clientHandle));
+            }
+          }
+        }
+ else         if (result instanceof CatalogChangeResult) {
+          final CatalogChangeResult changeResult=(CatalogChangeResult)result;
+          if (changeResult.encodedDiffCommands.trim().length() == 0) {
+            ClientResponseImpl shortcutResponse=new ClientResponseImpl(ClientResponseImpl.SUCCESS,new VoltTable[0],"Catalog update with no changes was skipped.",result.clientHandle);
+            writeResponseToConnection(shortcutResponse);
+          }
+ else {
+            StoredProcedureInvocation task=getUpdateCatalogExecutionTask(changeResult);
+            ClientResponseImpl error=null;
+            if ((error=m_permissionValidator.shouldAccept(task.procName,result.user,task,SystemProcedureCatalog.listing.get(task.procName).asCatalogProcedure())) != null) {
+              writeResponseToConnection(error);
+            }
+ else {
+              try {
+                task=MiscUtils.roundTripForCL(task);
+              }
+ catch (              Exception e) {
+                hostLog.fatal(e);
+                VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
+              }
+              createTransaction(changeResult.connectionId,task,false,false,false,0,task.getSerializedSize(),System.nanoTime());
+            }
+          }
+        }
+ else {
+          throw new RuntimeException("Should not be able to get here (ClientInterface.checkForFinishedCompilerWork())");
+        }
+      }
+ else {
+        ClientResponseImpl errorResponse=new ClientResponseImpl((result.errorCode == AsyncCompilerResult.UNINITIALIZED_ERROR_CODE) ? ClientResponse.GRACEFUL_FAILURE : result.errorCode,new VoltTable[0],result.errorMsg,result.clientHandle);
+        writeResponseToConnection(errorResponse);
+      }
+    }
+    private final void writeResponseToConnection(    ClientResponseImpl response){
+      ByteBuffer buf=ByteBuffer.allocate(response.getSerializedSize() + 4);
+      buf.putInt(buf.capacity() - 4);
+      response.flattenToBuffer(buf);
+      buf.flip();
+      c.writeStream().enqueue(buf);
+    }
+  }
+,null);
+  if (c != null) {
+    c.queueTask(ft);
+  }
+  ft.addListener(new Runnable(){
+    @Override public void run(){
+      try {
+        ft.get();
+      }
+ catch (      Exception e) {
+        String realReason=result.errorMsg;
+        if (realReason == null) {
+          StringWriter sw=new StringWriter();
+          PrintWriter pw=new PrintWriter(sw);
+          e.printStackTrace(pw);
+          Throwable cause=e.getCause();
+          if (cause != null) {
+            cause.printStackTrace(pw);
+          }
+          pw.flush();
+          realReason=sw.toString();
+        }
+        ClientResponseImpl errorResponse=new ClientResponseImpl(ClientResponseImpl.UNEXPECTED_FAILURE,new VoltTable[0],realReason,result.clientHandle);
+        ByteBuffer buf=ByteBuffer.allocate(errorResponse.getSerializedSize() + 4);
+        buf.putInt(buf.capacity() - 4);
+        errorResponse.flattenToBuffer(buf);
+        buf.flip();
+        c.writeStream().enqueue(buf);
+      }
+    }
+  }
+,CoreUtils.SAMETHREADEXECUTOR);
+  return ft;
+}

@@ -1,0 +1,97 @@
+{
+  final int MAX_PRINTABLE_CHARS=30;
+  final int MAX_PRINTABLE_CHARS_GEOGRAPHY=74;
+  final String ELLIPSIS="...";
+  final String DECIMAL_FORMAT="%01.12f";
+  StringBuffer sb=new StringBuffer();
+  int columnCount=getColumnCount();
+  int[] padding=new int[columnCount];
+  String[] fmt=new String[columnCount];
+  for (int i=0; i < columnCount; i++) {
+    padding[i]=getColumnName(i).length();
+  }
+  resetRowPosition();
+  while (advanceRow()) {
+    for (int i=0; i < columnCount; i++) {
+      VoltType colType=getColumnType(i);
+      Object value=get(i,colType);
+      int width;
+      if (wasNull()) {
+        width=4;
+      }
+ else       if (colType == VoltType.DECIMAL) {
+        BigDecimal bd=(BigDecimal)value;
+        String valueStr=String.format(DECIMAL_FORMAT,bd.doubleValue());
+        width=valueStr.length();
+      }
+ else {
+        if (colType == VoltType.VARBINARY) {
+          width=((byte[])value).length * 2;
+        }
+ else {
+          width=value.toString().length();
+        }
+        if (((colType == VoltType.GEOGRAPHY) && (width > MAX_PRINTABLE_CHARS_GEOGRAPHY)) || ((colType != VoltType.GEOGRAPHY) && (width > MAX_PRINTABLE_CHARS))) {
+          width=(colType == VoltType.GEOGRAPHY) ? MAX_PRINTABLE_CHARS_GEOGRAPHY : MAX_PRINTABLE_CHARS;
+        }
+      }
+      if (width > padding[i]) {
+        padding[i]=width;
+      }
+    }
+  }
+  String pad="";
+  for (int i=0; i < columnCount; i++) {
+    padding[i]+=1;
+    VoltType colType=getColumnType(i);
+    String justification=(colType.isVariableLength() || colType == VoltType.TIMESTAMP || colType == VoltType.GEOGRAPHY_POINT) ? "-" : "";
+    fmt[i]="%1$" + justification + padding[i]+ "s";
+    if (includeColumnNames) {
+      sb.append(pad).append(String.format("%1$-" + padding[i] + "s",getColumnName(i)));
+      pad=" ";
+    }
+  }
+  if (includeColumnNames) {
+    sb.append("\n");
+    pad="";
+    for (int i=0; i < columnCount; i++) {
+      char[] underline_array=new char[padding[i]];
+      Arrays.fill(underline_array,'-');
+      sb.append(pad).append(new String(underline_array));
+      pad=" ";
+    }
+    sb.append("\n");
+  }
+  resetRowPosition();
+  while (advanceRow()) {
+    pad="";
+    for (int i=0; i < columnCount; i++) {
+      VoltType colType=getColumnType(i);
+      Object value=get(i,colType);
+      String valueStr;
+      if (wasNull()) {
+        valueStr="NULL";
+      }
+ else       if (colType == VoltType.DECIMAL) {
+        BigDecimal bd=(BigDecimal)value;
+        valueStr=String.format(DECIMAL_FORMAT,bd.doubleValue());
+      }
+ else {
+        if (colType == VoltType.VARBINARY) {
+          valueStr=Encoder.hexEncode((byte[])value);
+          if (valueStr.length() > MAX_PRINTABLE_CHARS) {
+            valueStr=valueStr.substring(0,MAX_PRINTABLE_CHARS - ELLIPSIS.length()) + ELLIPSIS;
+          }
+        }
+ else {
+          valueStr=value.toString();
+        }
+      }
+      sb.append(pad).append(String.format(fmt[i],valueStr));
+      pad=" ";
+    }
+    sb.append("\n");
+  }
+  resetRowPosition();
+  return sb.toString();
+}
