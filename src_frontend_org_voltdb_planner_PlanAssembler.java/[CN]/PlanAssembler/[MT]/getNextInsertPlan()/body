@@ -24,9 +24,34 @@
     retval=new CompiledPlan();
   }
   retval.setReadOnly(false);
+  if (m_parsedInsert.m_isUpsert) {
+    boolean hasPrimaryKey=false;
+    for (    Constraint constraint : targetTable.getConstraints()) {
+      if (constraint.getType() != ConstraintType.PRIMARY_KEY.getValue()) {
+        continue;
+      }
+      hasPrimaryKey=true;
+      boolean targetsPrimaryKey=false;
+      for (      ColumnRef colRef : constraint.getIndex().getColumns()) {
+        int primary=colRef.getColumn().getIndex();
+        for (        Column targetCol : m_parsedInsert.m_columns.keySet()) {
+          if (targetCol.getIndex() == primary) {
+            targetsPrimaryKey=true;
+            break;
+          }
+        }
+        if (!targetsPrimaryKey) {
+          throw new PlanningErrorException("UPSERT on table \"" + targetTable.getTypeName() + "\" must specify a value for primary key \""+ colRef.getColumn().getTypeName()+ "\".");
+        }
+      }
+    }
+    if (!hasPrimaryKey) {
+      throw new PlanningErrorException("UPSERT is not allowed on table \"" + targetTable.getTypeName() + "\" that has no primary key.");
+    }
+  }
   CatalogMap<Column> targetTableColumns=targetTable.getColumns();
   for (  Column col : targetTableColumns) {
-    boolean needsValue=col.getNullable() == false && col.getDefaulttype() == 0;
+    boolean needsValue=(!m_parsedInsert.m_isUpsert) && (col.getNullable() == false) && (col.getDefaulttype() == 0);
     if (needsValue && !m_parsedInsert.m_columns.containsKey(col)) {
       throw new PlanningErrorException("Column " + col.getName() + " has no default and is not nullable.");
     }

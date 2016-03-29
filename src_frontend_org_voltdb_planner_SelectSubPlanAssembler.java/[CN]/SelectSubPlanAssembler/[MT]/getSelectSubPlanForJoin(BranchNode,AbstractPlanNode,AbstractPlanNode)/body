@@ -2,6 +2,9 @@
   ArrayList<AbstractExpression> whereClauses=new ArrayList<AbstractExpression>();
   whereClauses.addAll(joinNode.m_whereInnerList);
   whereClauses.addAll(joinNode.m_whereInnerOuterList);
+  if (joinNode.getJoinType() == JoinType.FULL) {
+    whereClauses.addAll(joinNode.m_whereOuterList);
+  }
   assert(joinNode.getRightNode() != null);
   JoinNode innerJoinNode=joinNode.getRightNode();
   AccessPath innerAccessPath=innerJoinNode.m_currentAccessPath;
@@ -18,6 +21,10 @@
   }
   if (needInnerSendReceive) {
     canHaveNLIJ=false;
+  }
+  if (joinNode.getJoinType() == JoinType.FULL && m_partitioning.requiresTwoFragments() && !outerPlan.hasReplicatedResult() && innerPlan.hasReplicatedResult()) {
+    canHaveNLIJ=false;
+    canHaveNLJ=false;
   }
   AbstractJoinPlanNode ajNode=null;
   if (canHaveNLJ) {
@@ -36,10 +43,10 @@
       }
       scanNode.setPredicate(innerExpr);
     }
- else     if (innerJoinNode instanceof BranchNode && joinNode.getJoinType() == JoinType.LEFT) {
+ else     if (innerJoinNode instanceof BranchNode && joinNode.getJoinType() != JoinType.INNER) {
       joinClauses.addAll(innerAccessPath.otherExprs);
     }
-    nljNode.setJoinPredicate(ExpressionUtil.combine(joinClauses));
+    nljNode.setJoinPredicate(ExpressionUtil.combinePredicates(joinClauses));
     nljNode.addAndLinkChild(outerPlan);
     if (needInnerSendReceive) {
       if (outerPlan.hasAnyNodeOfClass(AbstractReceivePlanNode.class) || innerPlan.hasAnyNodeOfClass(AbstractReceivePlanNode.class)) {
@@ -53,7 +60,7 @@
  else   if (canHaveNLIJ) {
     NestLoopIndexPlanNode nlijNode=new NestLoopIndexPlanNode();
     IndexScanPlanNode innerNode=(IndexScanPlanNode)innerPlan;
-    innerNode.setPredicate(innerAccessPath.otherExprs);
+    innerNode.setPredicate(innerAccessPath.joinExprs,innerAccessPath.otherExprs);
     nlijNode.addInlinePlanNode(innerPlan);
     nlijNode.addAndLinkChild(outerPlan);
     ajNode=nlijNode;
@@ -63,8 +70,8 @@
     return null;
   }
   ajNode.setJoinType(joinNode.getJoinType());
-  ajNode.setPreJoinPredicate(ExpressionUtil.combine(joinNode.m_joinOuterList));
-  ajNode.setWherePredicate(ExpressionUtil.combine(whereClauses));
+  ajNode.setPreJoinPredicate(ExpressionUtil.combinePredicates(joinNode.m_joinOuterList));
+  ajNode.setWherePredicate(ExpressionUtil.combinePredicates(whereClauses));
   ajNode.resolveSortDirection();
   return ajNode;
 }

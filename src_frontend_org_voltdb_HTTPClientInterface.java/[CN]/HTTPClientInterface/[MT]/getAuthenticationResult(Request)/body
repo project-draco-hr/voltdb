@@ -38,36 +38,6 @@
     password=request.getParameter(PARAM_PASSWORD);
   }
   String admin=request.getParameter(PARAM_ADMIN);
-  AuthenticatedConnectionCache connection_cache=m_connections.get();
-  while (connection_cache == null) {
-    if (m_oldCache != null) {
-      closeAllAsync(m_oldCache);
-    }
-    final Configuration config=getVoltDBConfig();
-    int port=config.m_port;
-    int adminPort=config.m_adminPort;
-    String externalInterface=config.m_externalInterface;
-    String adminInterface="localhost";
-    String clientInterface="localhost";
-    if (externalInterface != null && !externalInterface.isEmpty()) {
-      clientInterface=externalInterface;
-      adminInterface=externalInterface;
-    }
-    if (config.m_clientInterface.length() > 0) {
-      clientInterface=config.m_clientInterface;
-    }
-    if (config.m_adminInterface.length() > 0) {
-      adminInterface=config.m_adminInterface;
-    }
-    AuthenticatedConnectionCache newCache=new AuthenticatedConnectionCache(10,clientInterface,port,adminInterface,adminPort);
-    boolean setNewValue=m_connections.compareAndSet(null,newCache);
-    if (setNewValue) {
-      connection_cache=newCache;
-    }
- else {
-      connection_cache=m_connections.get();
-    }
-  }
   adminMode="true".equalsIgnoreCase(admin);
   byte[] hashedPasswordBytes=null;
   if (password != null) {
@@ -76,39 +46,35 @@
       hashedPasswordBytes=md.digest(password.getBytes(StandardCharsets.UTF_8));
     }
  catch (    Exception e) {
-      return new AuthenticationResult(null,null,null,adminMode,username,"JVM doesn't support SHA-256 hashing. Please use a supported JVM" + e);
+      return new AuthenticationResult(false,null,adminMode,username,"JVM doesn't support SHA-256 hashing. Please use a supported JVM" + e);
     }
   }
   if (hashedPassword != null) {
     if (hashedPassword.length() != 40 && hashedPassword.length() != 64) {
-      return new AuthenticationResult(null,null,null,adminMode,username,"Hashedpassword must be a 40-byte hex-encoded SHA-1 hash (20 bytes unencoded). " + "or 64-byte hex-encoded SHA-256 hash (32 bytes unencoded)");
+      return new AuthenticationResult(false,null,adminMode,username,"Hashedpassword must be a 40-byte hex-encoded SHA-1 hash (20 bytes unencoded). " + "or 64-byte hex-encoded SHA-256 hash (32 bytes unencoded)");
     }
     try {
       hashedPasswordBytes=Encoder.hexDecode(hashedPassword);
     }
  catch (    Exception e) {
-      return new AuthenticationResult(null,null,null,adminMode,username,"Hashedpassword must be a 40-byte hex-encoded SHA-1 hash (20 bytes unencoded). " + "or 64-byte hex-encoded SHA-256 hash (32 bytes unencoded)");
+      return new AuthenticationResult(false,null,adminMode,username,"Hashedpassword must be a 40-byte hex-encoded SHA-1 hash (20 bytes unencoded). " + "or 64-byte hex-encoded SHA-256 hash (32 bytes unencoded)");
     }
   }
   assert((hashedPasswordBytes == null) || (hashedPasswordBytes.length == 20) || (hashedPasswordBytes.length == 32));
-  AuthenticatedConnectionCache.ClientWithHashScheme clientWithScheme;
-  try {
-    if (m_spnegoEnabled) {
-      clientWithScheme=connection_cache.getClient(spnegoLogin(token),adminMode);
-      if (clientWithScheme == null) {
-        return new AuthenticationResult(null,null,null,adminMode,username,"Failed to get SPNEGO authenticated client.");
-      }
-      return new AuthenticationResult(clientWithScheme.m_client,connection_cache,clientWithScheme.m_scheme,adminMode,username,"");
+  if (m_spnegoEnabled) {
+    final String principal=spnegoLogin(token);
+    AuthenticationRequest authReq=getAuthSystem().new SpnegoPassthroughRequest(principal);
+    if (!authReq.authenticate(ClientAuthScheme.SPNEGO)) {
+      return new AuthenticationResult(false,null,adminMode,principal,"User " + principal + " failed to authorize");
     }
- else {
-      clientWithScheme=connection_cache.getClient(username,password,hashedPasswordBytes,adminMode);
-      if (clientWithScheme != null && clientWithScheme.m_client != null && clientWithScheme.m_scheme != null) {
-        return new AuthenticationResult(clientWithScheme.m_client,connection_cache,clientWithScheme.m_scheme,adminMode,username,"");
-      }
-      return new AuthenticationResult(null,null,null,adminMode,username,"Failed to get client.");
-    }
+    return new AuthenticationResult(true,ClientAuthScheme.SPNEGO,adminMode,principal,"");
   }
- catch (  IOException ex) {
-    return new AuthenticationResult(null,null,null,adminMode,username,ex.getMessage());
+ else {
+    AuthenticationRequest authReq=getAuthSystem().new HashAuthenticationRequest(username,hashedPasswordBytes);
+    ClientAuthScheme scheme=hashedPasswordBytes != null ? ClientAuthScheme.getByUnencodedLength(hashedPasswordBytes.length) : ClientAuthScheme.HASH_SHA256;
+    if (!authReq.authenticate(scheme)) {
+      return new AuthenticationResult(false,null,adminMode,username,"User " + username + " failed to authorize");
+    }
+    return new AuthenticationResult(true,scheme,adminMode,username,"");
   }
 }
