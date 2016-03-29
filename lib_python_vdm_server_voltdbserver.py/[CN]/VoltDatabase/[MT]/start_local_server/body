@@ -1,6 +1,6 @@
 def start_local_server(self, sid, recover=False, is_blocking=(-1)):
     '\n        start a local server process. recover if recover is true else create.\n        '
-    server = [server for server in HTTPListener.Global.SERVERS if (server['id'] == sid)]
+    server = HTTPListener.Global.SERVERS.get(sid)
     if (not server):
         return 1
     '\n        Gets deployment.xml for this database and starts voltdb server locally\n        '
@@ -12,9 +12,8 @@ def start_local_server(self, sid, recover=False, is_blocking=(-1)):
     deploymentfile.close()
     voltdb_dir = get_voltdb_dir()
     verb = 'create'
-    server = [server for server in HTTPListener.Global.SERVERS if (server['id'] == sid)]
     if server:
-        url = ('http://%s:%u/api/1.0/databases/%u/status/' % (server[0]['hostname'], HTTPListener.__PORT__, self.database_id))
+        url = ('http://%s:%u/api/1.0/databases/%u/status/' % (server['hostname'], HTTPListener.__PORT__, self.database_id))
         response = requests.get(url)
         is_running = response.json()['status'][0]['status']
         server_ip = ''
@@ -23,7 +22,7 @@ def start_local_server(self, sid, recover=False, is_blocking=(-1)):
             for value in response.json()['serverDetails']:
                 for key in value:
                     status = value[key]['status']
-                    if ((status == 'running') and (key != server[0]['hostname'])):
+                    if ((status == 'running') and (key != server['hostname'])):
                         server_ip = key
                         rejoin = True
     if recover:
@@ -36,7 +35,7 @@ def start_local_server(self, sid, recover=False, is_blocking=(-1)):
         voltdb_cmd = ['nohup', os.path.join(voltdb_dir, 'voltdb'), verb, '-d', filename, '-H', primary, '--blocking', ('--host=' + server_ip)]
     else:
         voltdb_cmd = ['nohup', os.path.join(voltdb_dir, 'voltdb'), verb, '-d', filename, '-H', primary, ('--host=' + server_ip)]
-    self.build_network_options(server[0], voltdb_cmd)
+    self.build_network_options(server, voltdb_cmd)
     G.OUTFILE_COUNTER = (G.OUTFILE_COUNTER + 1)
     outfilename = os.path.realpath(os.path.join(HTTPListener.Global.CONFIG_PATH, ('voltserver.output.%s.%u' % (G.OUTFILE_TIME, G.OUTFILE_COUNTER))))
     server_data_path = self.get_volt_server_data_folder(sid)
