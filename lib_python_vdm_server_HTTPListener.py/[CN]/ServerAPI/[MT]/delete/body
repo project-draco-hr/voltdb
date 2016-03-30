@@ -1,26 +1,26 @@
 @staticmethod
 def delete(database_id, server_id):
     '\n        Delete the server with specified server_id.\n        Args:\n            server_id (int): The first parameter.\n        Returns:\n            True if the server is deleted otherwise the error message.\n        '
-    database = [database for database in Global.DATABASES if (database['id'] == database_id)]
-    if (len(database) == 0):
+    database = Global.DATABASES.get(database_id)
+    if (database is None):
         return make_response(jsonify({'statusstring': ('No database found for id: %u' % database_id), }), 404)
     else:
-        members = database[0]['members']
+        members = database['members']
     if (server_id in members):
-        server = [server for server in Global.SERVERS if (server['id'] == server_id)]
-        if (len(server) == 0):
+        server = Global.SERVERS.get(server_id)
+        if (server is None):
             return make_response(jsonify({'statusstring': ('No server found for id: %u in database %u' % (server_id, database_id)), }), 404)
-        url = ('http://%s:%u/api/1.0/databases/%u/servers/%u/status' % (server[0]['hostname'], __PORT__, database_id, server_id))
+        url = ('http://%s:%u/api/1.0/databases/%u/servers/%u/status' % (server['hostname'], __PORT__, database_id, server_id))
         response = requests.get(url)
         if (response.json()['status'] == 'running'):
             return make_response(jsonify({'statusstring': 'Cannot delete a running server', }), 403)
         else:
-            current_database = [database for database in Global.DATABASES if (database['id'] == database_id)]
-            current_database[0]['members'].remove(server_id)
-            Global.DELETED_HOSTNAME = server[0]['hostname']
-            Global.SERVERS.remove(server[0])
+            current_database = Global.DATABASES.get(database_id)
+            current_database['members'].remove(server_id)
+            Global.DELETED_HOSTNAME = server['hostname']
+            del Global.SERVERS[server_id]
             sync_configuration()
-            write_configuration_file()
+            Configuration.write_configuration_file()
             return ('', 204)
     else:
         return make_response(jsonify({'statusstring': ('No server found for id: %u in database %u' % (server_id, database_id)), }), 404)

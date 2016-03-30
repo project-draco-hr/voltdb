@@ -33,7 +33,7 @@
       if (filename.startsWith("voltdb_crash")) {
         entryPath="voltdb_crashfiles" + File.separator + file.getName();
       }
-      if (filename.startsWith("syslog") || filename.equals("dmesg") || filename.equals("systemcheck")|| filename.startsWith("hs_err_pid")) {
+      if (filename.startsWith("syslog") || filename.equals("dmesg") || filename.equals("systemcheck")|| filename.startsWith("hs_err_pid")|| path.startsWith("/var/log/")) {
         entryPath="system_logs" + File.separator + file.getName();
       }
       if (filename.equals("deployment.xml") || filename.equals("catalog.jar") || filename.equals("config.json")) {
@@ -44,6 +44,7 @@
       }
       if (file.isFile() && file.canRead() && file.length() > 0) {
         String zipPath=folderPath + entryPath;
+        System.out.println(zipPath + "...");
         if (pathCounter.containsKey(zipPath)) {
           Integer pathCount=pathCounter.get(zipPath);
           pathCounter.put(zipPath,pathCount + 1);
@@ -64,10 +65,29 @@
         zipStream.closeEntry();
       }
     }
-    String[] sarCmd={"bash","-c","sar -A"};
-    cmd(zipStream,sarCmd,folderPath + "system_logs" + File.separator,"sardata");
-    String[] dmesgCmd={"bash","-c","/bin/dmesg"};
-    cmd(zipStream,dmesgCmd,folderPath + "system_logs" + File.separator,"dmesgdata");
+    String duCommand=m_systemStats.getProperty("dudata");
+    if (duCommand != null) {
+      String[] duVoltdbrootCmd={"bash","-c",duCommand + " " + m_config.voltdbroot};
+      cmd(zipStream,duVoltdbrootCmd,folderPath + "system_logs" + File.separator,"duvoltdbrootdata");
+      String drOverflowPath=m_config.voltdbroot + File.separator + "dr_overflow";
+      String exportOverflowPath=m_config.voltdbroot + File.separator + "export_overflow";
+      DeploymentType deployment=CatalogPasswordScrambler.getDeployment(new File(m_deploymentPath));
+      PathsType deploymentPaths=deployment.getPaths();
+      if (deploymentPaths != null) {
+        PathsType.Droverflow drPath=deploymentPaths.getDroverflow();
+        if (drPath != null)         drOverflowPath=drPath.getPath();
+        PathsType.Exportoverflow exportPath=deploymentPaths.getExportoverflow();
+        if (exportPath != null)         exportOverflowPath=exportPath.getPath();
+      }
+      String[] duDrOverflowCmd={"bash","-c",duCommand + " " + drOverflowPath};
+      cmd(zipStream,duDrOverflowCmd,folderPath + "system_logs" + File.separator,"dudroverflowdata");
+      String[] duExportOverflowCmd={"bash","-c",duCommand + " " + exportOverflowPath};
+      cmd(zipStream,duExportOverflowCmd,folderPath + "system_logs" + File.separator,"duexportoverflowdata");
+    }
+    for (    String fileName : m_systemStats.stringPropertyNames()) {
+      String[] statsCmd={"bash","-c",m_systemStats.getProperty(fileName)};
+      cmd(zipStream,statsCmd,folderPath + "system_logs" + File.separator,fileName);
+    }
     zipStream.close();
     long sizeInByte=new File(collectionFilePath).length();
     String sizeStringInKB=String.format("%5.2f",(double)sizeInByte / 1000);
