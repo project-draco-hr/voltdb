@@ -1,0 +1,41 @@
+{
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println(" Setup & Initialization");
+  System.out.println(HORIZONTAL_RULE);
+  connect(client,config.servers);
+  for (long i=0; i < config.tuples; i++) {
+    ClientResponse response=client.callProcedure("Init",i,i);
+    if (response.getStatus() != ClientResponse.SUCCESS) {
+      System.exit(-1);
+    }
+  }
+  System.out.print("\n\n" + HORIZONTAL_RULE);
+  System.out.println(" Starting Benchmark");
+  System.out.println(HORIZONTAL_RULE);
+  System.out.println("\nWarming up...");
+  final long warmupEndTime=System.currentTimeMillis() + (1000l * config.warmup);
+  while (warmupEndTime > System.currentTimeMillis()) {
+    increment();
+  }
+  incrementCount.set(0);
+  lastPeriod.set(0);
+  failureCount.set(0);
+  lastStatsReportTS=System.currentTimeMillis();
+  benchmarkStartTS=System.currentTimeMillis();
+  TimerTask statsPrinting=new TimerTask(){
+    @Override public void run(){
+      printStatistics();
+    }
+  }
+;
+  Timer timer=new Timer();
+  timer.scheduleAtFixedRate(statsPrinting,config.displayinterval * 1000,config.displayinterval * 1000);
+  System.out.println("\nRunning benchmark...");
+  final long benchmarkEndTime=System.currentTimeMillis() + (1000l * config.duration);
+  while (benchmarkEndTime > System.currentTimeMillis()) {
+    increment();
+  }
+  timer.cancel();
+  client.drain();
+  client.close();
+}

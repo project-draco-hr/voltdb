@@ -6,24 +6,23 @@ def post():
     inputs = DatabaseInputs(request)
     if (not inputs.validate()):
         return jsonify(success=False, errors=inputs.errors)
-    database = [database for database in Global.DATABASES if (database['name'] == request.json['name'])]
-    if (len(database) != 0):
+    databases = [(v if (type(v) is list) else [v]) for v in Global.DATABASES.values()]
+    if (request.json['name'] in [d['name'] for item in databases for d in item]):
         return make_response(jsonify({'error': 'database name already exists', }), 404)
     if (not Global.DATABASES):
         database_id = 1
     else:
-        database_id = (Global.DATABASES[(-1)]['id'] + 1)
-    database = {'id': database_id, 'name': request.json['name'], 'members': [], }
-    Global.DATABASES.append(database)
+        database_id = (len(Global.DATABASES) + 1)
+    Global.DATABASES[database_id] = {'id': database_id, 'name': request.json['name'], 'members': [], }
     app_root = os.path.dirname(os.path.abspath(__file__))
     with open(os.path.join(app_root, 'deployment.json')) as json_file:
         deployment = json.load(json_file)
         deployment['databaseid'] = database_id
         is_pro_version(deployment)
-    Global.DEPLOYMENT.append(deployment)
+    Global.DEPLOYMENT[database_id] = deployment
     sync_configuration()
     Configuration.write_configuration_file()
     url = ('http://%s:%u/api/1.0/databases/%u' % (__IP__, __PORT__, database_id))
-    resp = make_response(jsonify({'status': 201, 'statusString': 'OK', 'database': database, }), 201)
+    resp = make_response(jsonify({'status': 201, 'statusString': 'OK', 'database': Global.DATABASES.get(database_id), }), 201)
     resp.headers['Location'] = url
     return resp

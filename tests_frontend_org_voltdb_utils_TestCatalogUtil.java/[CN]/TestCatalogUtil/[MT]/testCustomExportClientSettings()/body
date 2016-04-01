@@ -8,7 +8,7 @@
   final String withBuiltinKafkaExport="<?xml version='1.0' encoding='UTF-8' standalone='no'?>" + "<deployment>" + "<cluster hostcount='3' kfactor='1' sitesperhost='2'/>"+ "    <export enabled='true' target='kafka'>"+ "        <configuration>"+ "            <property name=\"metadata.broker.list\">uno,due,tre</property>"+ "            <property name=\"type\">CSV</property>"+ "            <property name=\"with-schema\">false</property>"+ "        </configuration>"+ "    </export>"+ "</deployment>";
   final String withBuiltinElasticSearchExportNew="<?xml version='1.0' encoding='UTF-8' standalone='no'?>" + "<deployment>" + "<cluster hostcount='3' kfactor='1' sitesperhost='2'/>"+ "    <export>"+ "        <configuration target='default' enabled='true' type='elasticsearch'>"+ "            <property name=\"endpoint\">http://localhost:9200/index_%t/type_%p</property>"+ "        </configuration>"+ "    </export>"+ "</deployment>";
   final String withBuiltinElasticSearchExportOld="<?xml version='1.0' encoding='UTF-8' standalone='no'?>" + "<deployment>" + "<cluster hostcount='3' kfactor='1' sitesperhost='2'/>"+ "    <export enabled='true' target='elasticsearch'>"+ "        <configuration>"+ "            <property name=\"endpoint\">http://localhost:9200/index_%t/type_%p</property>"+ "        </configuration>"+ "    </export>"+ "</deployment>";
-  final String ddl="CREATE TABLE export_data ( id BIGINT default 0 , value BIGINT DEFAULT 0 );\n" + "EXPORT TABLE export_data;";
+  final String ddl="CREATE STREAM export_data ( id BIGINT default 0 , value BIGINT DEFAULT 0 );";
   final File tmpDdl=VoltProjectBuilder.writeStringToTempFile(ddl);
   final File tmpBad=VoltProjectBuilder.writeStringToTempFile(withBadCustomExport);
   DeploymentType bad_deployment=CatalogUtil.getDeployment(new FileInputStream(tmpBad));
@@ -25,6 +25,16 @@
   Database db=cat2.getClusters().get("cluster").getDatabases().get("database");
   org.voltdb.catalog.Connector catconn=db.getConnectors().get(Constants.DEFAULT_EXPORT_CONNECTOR_NAME);
   assertNotNull(catconn);
+  boolean foundStream=false;
+  for (  Table catalog_tbl : db.getTables()) {
+    if (catalog_tbl.getTypeName().equalsIgnoreCase("export_data")) {
+      StringBuilder sb=new StringBuilder();
+      CatalogSchemaTools.toSchema(sb,catalog_tbl,null,Constants.DEFAULT_EXPORT_CONNECTOR_NAME);
+      assertTrue(sb.toString().startsWith("CREATE STREAM " + catalog_tbl.getTypeName()));
+      foundStream=true;
+    }
+  }
+  assertTrue(foundStream);
   assertTrue(good_deployment.getExport().getConfiguration().get(0).isEnabled());
   assertEquals(good_deployment.getExport().getConfiguration().get(0).getType(),ServerExportEnum.CUSTOM);
   assertEquals(good_deployment.getExport().getConfiguration().get(0).getExportconnectorclass(),"org.voltdb.exportclient.NoOpTestExportClient");

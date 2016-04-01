@@ -1,0 +1,41 @@
+{
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println(" Setup & Initialization");
+  System.out.println(HORIZONTAL_RULE);
+  connect(config.servers);
+  System.out.println();
+  if (config.preload) {
+    System.out.println("Preloading data store...");
+    for (int i=0; i < config.poolsize; i++) {
+      client.callProcedure(new NullCallback(),"Put",String.format(processor.KeyFormat,i),processor.generateForStore().getStoreValue());
+    }
+    client.drain();
+    System.out.println("Preloading complete.\n");
+  }
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println(" Starting Benchmark");
+  System.out.println(HORIZONTAL_RULE);
+  PoolingHttpClientConnectionManager cm=new PoolingHttpClientConnectionManager();
+  cm.setMaxTotal(config.threads * 2);
+  cm.setDefaultMaxPerRoute(config.threads);
+  CloseableHttpClient httpclient=HttpClients.custom().setConnectionManager(cm).build();
+  String[] servers=config.servers.split(",");
+  Thread[] kvThreads=new Thread[config.threads];
+  for (int i=0; i < config.threads; ++i) {
+    HttpPost httppost=new HttpPost("http://" + servers[i % servers.length] + ":8080/api/1.0/");
+    kvThreads[i]=new Thread(new KVThread(httpclient,httppost));
+    kvThreads[i].start();
+  }
+  System.out.println("Warming up...");
+  Thread.sleep(1000l * config.warmup);
+  warmupComplete.set(true);
+  System.out.println("\nRunning benchmark...");
+  Thread.sleep(1000l * config.duration);
+  benchmarkComplete.set(true);
+  client.drain();
+  for (  Thread t : kvThreads) {
+    t.join();
+  }
+  printResults();
+  client.close();
+}
