@@ -2,26 +2,24 @@
 def delete(database_id):
     '\n        Delete the database with specified database_id.\n        Args:\n        database_id (int): The first parameter.\n        Returns:\n        True if the server is deleted otherwise the error message.\n        '
     members = []
-    current_database = [database for database in Global.DATABASES if (database['id'] == database_id)]
-    if (len(current_database) == 0):
+    current_database = Global.DATABASES.get(database_id)
+    if (current_database is None):
         abort(404)
     else:
-        members = current_database[0]['members']
+        members = current_database['members']
     for server_id in members:
-        is_server_associated = False
-        for database in Global.DATABASES:
-            if (database['id'] == database_id):
-                continue
-            if (server_id in database['members']):
-                is_server_associated = True
-        if (not is_server_associated):
-            server = [server for server in Global.SERVERS if (server['id'] == server_id)]
-            if (len(server) == 0):
-                continue
-            Global.SERVERS.remove(server[0])
-    Global.DATABASES.remove(current_database[0])
-    deployment = [deployment for deployment in Global.DEPLOYMENT if (deployment['databaseid'] == database_id)]
-    Global.DEPLOYMENT.remove(deployment[0])
+        del Global.SERVERS[server_id]
+    del Global.DATABASES[database_id]
+    del Global.DEPLOYMENT[database_id]
+    user_Id = []
+    try:
+        for (key, value) in Global.DEPLOYMENT_USERS.iteritems():
+            if (value['databaseid'] == database_id):
+                user_Id.append(int(value['userid']))
+        for id in user_Id:
+            del Global.DEPLOYMENT_USERS[id]
+    except Exception as Err:
+        print Err
     sync_configuration()
     Configuration.write_configuration_file()
-    return jsonify({'result': True, })
+    return ('', 204)
