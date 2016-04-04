@@ -23,31 +23,28 @@
   for (  AbstractExpression expr : exprs) {
     ExpressionUtil.resolveSubqueryExpressionColumnIndexes(expr);
   }
-  TreeMap<Integer,SchemaColumn> sort_cols=new TreeMap<Integer,SchemaColumn>();
-  for (  SchemaColumn col : m_outputSchemaPreInlineAgg.getColumns()) {
+  for (int i=0; i < m_outputSchemaPreInlineAgg.size(); ++i) {
+    SchemaColumn col=m_outputSchemaPreInlineAgg.getColumns().get(i);
     assert(col.getExpression() instanceof TupleValueExpression);
     TupleValueExpression tve=(TupleValueExpression)col.getExpression();
-    int index=outer_schema.getIndexOfTve(tve);
-    int tableIdx=0;
-    if (index == -1) {
-      index=tve.resolveColumnIndexesUsingSchema(complete_schema_of_inner_table);
-      if (index == -1) {
-        throw new RuntimeException("Unable to find index for column: " + col.toString());
-      }
-      sort_cols.put(index + outer_schema.size(),col);
-      tableIdx=1;
+    int index;
+    int tableIdx;
+    if (i < outer_schema.size()) {
+      index=outer_schema.getIndexOfTve(tve);
+      tableIdx=0;
     }
  else {
-      sort_cols.put(index,col);
+      index=tve.resolveColumnIndexesUsingSchema(complete_schema_of_inner_table);
+      tableIdx=1;
+    }
+    if (index == -1) {
+      throw new RuntimeException("Unable to find index for column: " + col.toString());
     }
     tve.setColumnIndex(index);
     tve.setTableIndex(tableIdx);
   }
-  NodeSchema new_output_schema=new NodeSchema();
-  for (  SchemaColumn col : sort_cols.values()) {
-    new_output_schema.addColumn(col);
-  }
-  m_outputSchemaPreInlineAgg=new_output_schema;
+  m_outputSchemaPreInlineAgg.sortByTveIndex(0,outer_schema.size());
+  m_outputSchemaPreInlineAgg.sortByTveIndex(outer_schema.size(),m_outputSchemaPreInlineAgg.size());
   m_hasSignificantOutputSchema=true;
   resolveRealOutputSchema();
 }

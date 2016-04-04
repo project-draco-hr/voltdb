@@ -9,28 +9,24 @@
   resolvePredicate(m_preJoinPredicate,outer_schema,inner_schema);
   resolvePredicate(m_joinPredicate,outer_schema,inner_schema);
   resolvePredicate(m_wherePredicate,outer_schema,inner_schema);
-  TreeMap<Integer,SchemaColumn> sort_cols=new TreeMap<Integer,SchemaColumn>();
-  for (  SchemaColumn col : m_outputSchemaPreInlineAgg.getColumns()) {
+  for (int i=0; i < m_outputSchemaPreInlineAgg.size(); ++i) {
+    SchemaColumn col=m_outputSchemaPreInlineAgg.getColumns().get(i);
     assert(col.getExpression() instanceof TupleValueExpression);
     TupleValueExpression tve=(TupleValueExpression)col.getExpression();
-    int index=tve.resolveColumnIndexesUsingSchema(outer_schema);
-    if (index == -1) {
-      index=tve.resolveColumnIndexesUsingSchema(inner_schema);
-      if (index == -1) {
-        throw new RuntimeException("Unable to find index for column: " + col.toString());
-      }
-      sort_cols.put(index + outer_schema.size(),col);
+    int index;
+    if (i < outer_schema.size()) {
+      index=tve.resolveColumnIndexesUsingSchema(outer_schema);
     }
  else {
-      sort_cols.put(index,col);
+      index=tve.resolveColumnIndexesUsingSchema(inner_schema);
+    }
+    if (index == -1) {
+      throw new RuntimeException("Unable to find index for column: " + col.toString());
     }
     tve.setColumnIndex(index);
   }
-  NodeSchema new_output_schema=new NodeSchema();
-  for (  SchemaColumn col : sort_cols.values()) {
-    new_output_schema.addColumn(col);
-  }
-  m_outputSchemaPreInlineAgg=new_output_schema;
+  m_outputSchemaPreInlineAgg.sortByTveIndex(0,outer_schema.size());
+  m_outputSchemaPreInlineAgg.sortByTveIndex(outer_schema.size(),m_outputSchemaPreInlineAgg.size());
   m_hasSignificantOutputSchema=true;
   resolvePredicate(m_preJoinPredicate,outer_schema,inner_schema);
   resolvePredicate(m_joinPredicate,outer_schema,inner_schema);
