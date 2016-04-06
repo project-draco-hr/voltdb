@@ -1,0 +1,29 @@
+{
+  voltQueueSQL(findOpenCall,EXPECT_ZERO_OR_ONE_ROW,call_id,agent_id,phone_no);
+  voltQueueSQL(findCompletedCall,EXPECT_ZERO_OR_ONE_ROW,call_id,agent_id,phone_no);
+  VoltTable[] results=voltExecuteSQL();
+  boolean completedCall=results[1].getRowCount() > 0;
+  if (completedCall) {
+    return -1;
+  }
+  VoltTable openRowTable=results[0];
+  if (openRowTable.getRowCount() > 0) {
+    VoltTableRow existingCall=openRowTable.fetchRow(0);
+    existingCall.getTimestampAsTimestamp("start_ts");
+    if (existingCall.wasNull() == false) {
+      return -1;
+    }
+    TimestampType end_ts=existingCall.getTimestampAsTimestamp("end_ts");
+    if (existingCall.wasNull() == false) {
+      int durationms=(int)((end_ts.getTime() - start_ts.getTime()) / 1000);
+      computeRunningStdDev(agent_id,end_ts,durationms);
+      voltQueueSQL(deleteOpenCall,EXPECT_SCALAR_MATCH(1),call_id,agent_id,phone_no);
+      voltQueueSQL(insertCompletedCall,EXPECT_SCALAR_MATCH(1),call_id,agent_id,phone_no,start_ts,end_ts,durationms);
+      voltExecuteSQL(true);
+      return 0;
+    }
+  }
+  voltQueueSQL(upsertOpenCall,EXPECT_SCALAR_MATCH(1),call_id,agent_id,phone_no,start_ts);
+  voltExecuteSQL(true);
+  return 0;
+}
