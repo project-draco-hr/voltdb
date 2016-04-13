@@ -32,7 +32,7 @@
             unlockLocalState();
           }
  else {
-            m_zk.create(m_myPartiticpantsPath,null,Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL);
+            m_zk.create(m_myParticipantPath,null,Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL);
             m_pendingProposal=existingAndProposedStates.m_proposal;
             ByteBuffer proposedState=m_pendingProposal.asReadOnlyBuffer();
             assert(existingAndProposedStates.m_previousState.equals(m_synchronizedState));
@@ -46,10 +46,28 @@
             }
             unlockLocalState();
             if (type == REQUEST_TYPE.STATE_CHANGE_REQUEST) {
-              stateChangeProposed(proposedState);
+              try {
+                stateChangeProposed(proposedState);
+              }
+ catch (              Exception e) {
+                if (m_log.isDebugEnabled()) {
+                  m_log.debug("Error in StateMachineInstance callbacks.",e);
+                }
+                m_initializationCompleted=false;
+                m_shared_es.submit(new CallbackExceptionHandler(this));
+              }
             }
  else {
-              taskRequested(proposedState);
+              try {
+                taskRequested(proposedState);
+              }
+ catch (              Exception e) {
+                if (m_log.isDebugEnabled()) {
+                  m_log.debug("Error in StateMachineInstance callbacks.",e);
+                }
+                m_initializationCompleted=false;
+                m_shared_es.submit(new CallbackExceptionHandler(this));
+              }
             }
           }
         }
@@ -59,7 +77,16 @@
         if (m_currentRequestType == REQUEST_TYPE.CORRELATED_COORDINATED_TASK || m_currentRequestType == REQUEST_TYPE.UNCORRELATED_COORDINATED_TASK) {
           ByteBuffer taskRequest=m_pendingProposal.asReadOnlyBuffer();
           unlockLocalState();
-          taskRequested(taskRequest);
+          try {
+            taskRequested(taskRequest);
+          }
+ catch (          Exception e) {
+            if (m_log.isDebugEnabled()) {
+              m_log.debug("Error in StateMachineInstance callbacks.",e);
+            }
+            m_initializationCompleted=false;
+            m_shared_es.submit(new CallbackExceptionHandler(this));
+          }
         }
  else {
           unlockLocalState();
@@ -89,7 +116,7 @@ catch (  InterruptedException e) {
     unlockLocalState();
   }
 catch (  Exception e) {
-    org.voltdb.VoltDB.crashLocalVoltDB("Unexepected failure in StateMachine.",true,e);
+    org.voltdb.VoltDB.crashLocalVoltDB("Unexpected failure in StateMachine.",true,e);
   }
   assert(!debugIsLocalStateLocked());
 }

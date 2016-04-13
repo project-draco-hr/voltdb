@@ -38,6 +38,7 @@
       if (existingAndProposedStates.m_requestType != REQUEST_TYPE.INITIALIZING) {
         staleTask=existingAndProposedStates.m_proposal.asReadOnlyBuffer();
       }
+      m_initializationCompleted=true;
       cancelDistributedLock();
       m_lockWaitingOn="bogus";
       checkForBarrierParticipantsChange();
@@ -53,12 +54,30 @@ catch (  InterruptedException e) {
     m_log.debug(m_stateMachineId + ": Received InterruptedException in initializeFromActiveCommunity");
   }
 catch (  Exception e) {
-    org.voltdb.VoltDB.crashLocalVoltDB("Unexepected failure in StateMachine.",true,e);
+    org.voltdb.VoltDB.crashLocalVoltDB("Unexpected failure in StateMachine.",true,e);
   }
   if (readOnlyResult != null) {
-    setInitialState(readOnlyResult);
+    try {
+      setInitialState(readOnlyResult);
+    }
+ catch (    Exception e) {
+      if (m_log.isDebugEnabled()) {
+        m_log.debug("Error in StateMachineInstance callbacks.",e);
+      }
+      m_initializationCompleted=false;
+      m_shared_es.submit(new CallbackExceptionHandler(this));
+    }
   }
   if (staleTask != null) {
-    staleTaskRequestNotification(staleTask);
+    try {
+      staleTaskRequestNotification(staleTask);
+    }
+ catch (    Exception e) {
+      if (m_log.isDebugEnabled()) {
+        m_log.debug("Error in StateMachineInstance callbacks.",e);
+      }
+      m_initializationCompleted=false;
+      m_shared_es.submit(new CallbackExceptionHandler(this));
+    }
   }
 }
