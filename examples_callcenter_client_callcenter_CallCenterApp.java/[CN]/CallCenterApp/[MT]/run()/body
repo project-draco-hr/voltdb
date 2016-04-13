@@ -1,0 +1,56 @@
+{
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println(" Setup & Initialization");
+  System.out.println(HORIZONTAL_RULE);
+  connect(config.servers);
+  System.out.print(HORIZONTAL_RULE);
+  System.out.println(" Starting Benchmark");
+  System.out.println(HORIZONTAL_RULE);
+  System.out.println("Warming up...");
+  final long warmupEndTime=System.currentTimeMillis() + (1000l * config.warmup);
+  long now=System.currentTimeMillis();
+  while (warmupEndTime > now) {
+    CallEvent call=networkTransformer.next(now);
+    if (call == null) {
+      try {
+        Thread.sleep(1);
+      }
+ catch (      InterruptedException e) {
+      }
+    }
+ else {
+      sendEvent(call);
+    }
+    now=System.currentTimeMillis();
+  }
+  fullStatsContext.fetchAndResetBaseline();
+  periodicStatsContext.fetchAndResetBaseline();
+  benchmarkStartTS=System.currentTimeMillis();
+  schedulePeriodicStats();
+  System.out.println("\nRunning benchmark...");
+  final long benchmarkEndTime=System.currentTimeMillis() + (1000l * config.duration);
+  now=System.currentTimeMillis();
+  while (benchmarkEndTime > now) {
+    CallEvent call=networkTransformer.next(now);
+    if (call == null) {
+      try {
+        Thread.sleep(1);
+      }
+ catch (      InterruptedException e) {
+      }
+    }
+ else {
+      sendEvent(call);
+    }
+    now=System.currentTimeMillis();
+  }
+  timer.cancel();
+  CallEvent call=null;
+  while ((call=networkTransformer.drain()) != null) {
+    sendEvent(call);
+  }
+  client.drain();
+  callSimulator.printSummary();
+  printResults();
+  client.close();
+}

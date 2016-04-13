@@ -4,7 +4,6 @@
     Boolean success=false;
     m_term=createTerm(m_messenger.getZK(),m_partitionId,getInitiatorHSId(),m_initiatorMailbox,m_whoami);
     m_term.start();
-    long localSpUniqueId=Long.MIN_VALUE;
     while (!success) {
       RepairAlgo repair=m_initiatorMailbox.constructRepairAlgo(m_term.getInterestingHSIds(),m_whoami);
       if (!m_initiatorMailbox.acceptPromotion()) {
@@ -13,12 +12,9 @@
         return;
       }
       long txnid=Long.MIN_VALUE;
-      DRLogSegmentId drLogInfo=null;
       try {
         RepairResult res=repair.start().get();
         txnid=res.m_txnId;
-        drLogInfo=res.m_binaryLogInfo;
-        localSpUniqueId=res.m_localDrUniqueId;
         success=true;
       }
  catch (      CancellationException e) {
@@ -29,9 +25,6 @@
         tmLog.info(m_whoami + "finished leader promotion. Took " + (System.currentTimeMillis() - startTime)+ " ms.");
         LeaderCacheWriter iv2masters=new LeaderCache(m_messenger.getZK(),m_zkMailboxNode);
         iv2masters.put(m_partitionId,m_initiatorMailbox.getHSId());
-        if (m_consumerDRGateway != null) {
-          m_consumerDRGateway.beginPromotePartition(m_partitionId,drLogInfo,localSpUniqueId);
-        }
       }
  else {
         tmLog.info(m_whoami + "interrupted during leader promotion after " + (System.currentTimeMillis() - startTime)+ " ms. of "+ "trying. Retrying.");
