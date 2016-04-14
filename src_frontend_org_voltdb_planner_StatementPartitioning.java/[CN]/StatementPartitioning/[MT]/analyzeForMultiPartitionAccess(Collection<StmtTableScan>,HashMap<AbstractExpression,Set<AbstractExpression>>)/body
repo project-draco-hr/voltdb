@@ -2,7 +2,7 @@
   TupleValueExpression tokenPartitionKey=null;
   Set<Set<AbstractExpression>> eqSets=new HashSet<Set<AbstractExpression>>();
   int unfilteredPartitionKeyCount=0;
-  m_joinValid=true;
+  setJoinValid(true,null);
   boolean subqueryHasReceiveNode=false;
   boolean hasPartitionedTableJoin=false;
   for (  StmtTableScan tableScan : collection) {
@@ -16,7 +16,7 @@
       CompiledPlan subqueryPlan=subScan.getBestCostPlan();
       if ((!subScan.canRunInOneFragment()) || ((subqueryPlan != null) && subqueryPlan.rootPlanGraph.hasAnyNodeOfClass(AbstractReceivePlanNode.class))) {
         if (subqueryHasReceiveNode) {
-          m_joinValid=false;
+          setJoinValid(false,"This multipartition query is not plannable.  " + "It has a subquery which cannot be single partition.");
           break;
         }
         subqueryHasReceiveNode=true;
@@ -52,10 +52,10 @@
   }
   m_countOfIndependentlyPartitionedTables=eqSets.size() + unfilteredPartitionKeyCount;
   if (m_countOfIndependentlyPartitionedTables > 1) {
-    m_joinValid=false;
+    setJoinValid(false,"This query is not plannable.  " + "The planner cannot guarantee that all rows would be in a single partition.");
   }
   if (subqueryHasReceiveNode && hasPartitionedTableJoin) {
-    m_joinValid=false;
+    setJoinValid(false,"This query is not plannable.  It has a subquery which needs cross-partition access.");
   }
   if ((unfilteredPartitionKeyCount == 0) && (eqSets.size() == 1)) {
     for (    Set<AbstractExpression> partitioningValues : eqSets) {
