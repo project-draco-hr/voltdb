@@ -1,14 +1,19 @@
 {
-  DRCatalogDiffEngine diffEngine=new DRCatalogDiffEngine(m_context.catalog,context.catalog);
-  boolean incompatibleCatalogChange=false;
-  if (!diffEngine.supported()) {
-    incompatibleCatalogChange=true;
-  }
   m_context=context;
   m_ee.setBatchTimeout(m_context.cluster.getDeployment().get("deployment").getSystemsettings().get("systemsettings").getQuerytimeout());
   m_loadedProcedures.loadProcedures(m_context,m_backend,csp);
   if (isMPI) {
     return true;
+  }
+  boolean DRCatalogChange=false;
+  CatalogMap<Table> tables=m_context.catalog.getClusters().get("cluster").getDatabases().get("database").getTables();
+  for (  Table t : tables) {
+    if (t.getIsdred()) {
+      DRCatalogChange|=diffCmds.contains("tables#" + t.getTypeName());
+      if (DRCatalogChange) {
+        break;
+      }
+    }
   }
   if (requiresSnapshotIsolationboolean && m_snapshotter.isEESnapshotting()) {
     hostLog.info(String.format("Site %d performing schema change operation must block until snapshot is locally complete.",CoreUtils.getSiteIdFromHSId(m_siteId)));
@@ -22,5 +27,9 @@
   }
   m_ee.quiesce(m_lastCommittedSpHandle);
   m_ee.updateCatalog(m_context.m_uniqueId,diffCmds);
+  if (DRCatalogChange) {
+    final Pair<Long,String> catalogCommands=DRCatalogDiffEngine.serializeCatalogCommandsForDr(m_context.catalog);
+    generateDREvent(EventType.CATALOG_UPDATE,uniqueId,m_lastCommittedSpHandle,spHandle,catalogCommands.getSecond().getBytes(Charsets.UTF_8));
+  }
   return true;
 }
