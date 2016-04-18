@@ -75,9 +75,34 @@ return exp;
 exp.attributes.put("value",valueData.toString());
 return exp;
 case OpTypes.COLUMN:
-case OpTypes.COALESCE:
 ExpressionColumn ec=(ExpressionColumn)this;
 return ec.voltAnnotateColumnXML(exp);
+case OpTypes.COALESCE:
+assert(dataType != null);
+exp.attributes.put("valuetype",dataType.getNameString());
+VoltXMLElement isnull_expr=prototypes.get(OpTypes.IS_NULL);
+if (isnull_expr == null) {
+throwForUnsupportedExpression(exprOp);
+}
+isnull_expr=isnull_expr.duplicate();
+isnull_expr.attributes.put("id",this.getUniqueId(session));
+assert(exp.children.size() == 2);
+isnull_expr.children.add(exp.children.get(0).duplicate());
+VoltXMLElement alt_expr=prototypes.get(OpTypes.ALTERNATIVE);
+if (alt_expr == null) {
+throwForUnsupportedExpression(exprOp);
+}
+alt_expr=alt_expr.duplicate();
+alt_expr.attributes.put("id",this.getUniqueId(session));
+alt_expr.attributes.put("valuetype",dataType.getNameString());
+alt_expr.children.add(exp.children.get(1));
+alt_expr.children.add(exp.children.get(0));
+exp.children.clear();
+exp.children.add(isnull_expr);
+exp.children.add(alt_expr);
+exp.attributes.put("alias",alt_expr.children.get(0).attributes.get("alias"));
+exp.attributes.put("column",alt_expr.children.get(0).attributes.get("column"));
+return exp;
 case OpTypes.SQL_FUNCTION:
 FunctionSQL fn=(FunctionSQL)this;
 return fn.voltAnnotateFunctionXML(exp);
