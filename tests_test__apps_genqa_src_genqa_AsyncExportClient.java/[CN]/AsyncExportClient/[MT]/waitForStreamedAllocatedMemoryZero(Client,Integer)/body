@@ -1,0 +1,45 @@
+{
+  boolean passed=false;
+  Instant maxTime=Instant.now().plusSeconds(timeout);
+  VoltTable stats=null;
+  try {
+    System.out.println(client.callProcedure("@Quiesce").getResults()[0]);
+  }
+ catch (  Exception ex) {
+  }
+  while (true) {
+    if (Instant.now().isAfter(maxTime)) {
+      throw new Exception("Test Timeout waiting for non-null Statistics");
+    }
+    try {
+      stats=client.callProcedure("@Statistics","table",0).getResults()[0];
+    }
+ catch (    Exception ex) {
+    }
+    if (stats == null) {
+      Thread.sleep(5000);
+      continue;
+    }
+    boolean passedThisTime=true;
+    while (stats.advanceRow()) {
+      if (Instant.now().isAfter(maxTime)) {
+        throw new Exception("Test Timeout expecting non-zero TUPLE_ALLOCATED_MEMORY");
+      }
+      String ttype=stats.getString("TABLE_TYPE");
+      if (ttype.equals("StreamedTable")) {
+        if (0 != stats.getLong("TUPLE_ALLOCATED_MEMORY")) {
+          passedThisTime=false;
+          System.out.println("Partition Not Zero.");
+          break;
+        }
+      }
+    }
+    if (passedThisTime) {
+      passed=true;
+      break;
+    }
+    Thread.sleep(5000);
+  }
+  System.out.println("Passed is: " + passed);
+  System.out.println(stats);
+}
