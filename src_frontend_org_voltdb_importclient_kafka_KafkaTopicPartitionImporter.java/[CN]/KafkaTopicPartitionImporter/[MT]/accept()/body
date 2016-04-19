@@ -69,12 +69,19 @@
         }
         ByteBuffer payload=messageAndOffset.message().payload();
         String line=new String(payload.array(),payload.arrayOffset(),payload.limit(),StandardCharsets.UTF_8);
-        Invocation invocation=new Invocation(m_config.getProcedure(),formatter.transform(line));
-        TopicPartitionInvocationCallback cb=new TopicPartitionInvocationCallback(messageAndOffset.nextOffset(),cbcnt,m_gapTracker,m_dead,invocation);
-        if (!callProcedure(invocation,cb)) {
-          if (isDebugEnabled()) {
-            debug(null,"Failed to process Invocation possibly bad data: " + line);
+        try {
+          Invocation invocation=new Invocation(m_config.getProcedure(),formatter.transform(line));
+          TopicPartitionInvocationCallback cb=new TopicPartitionInvocationCallback(messageAndOffset.nextOffset(),cbcnt,m_gapTracker,m_dead,invocation);
+          if (!callProcedure(invocation,cb)) {
+            if (isDebugEnabled()) {
+              debug(null,"Failed to process Invocation possibly bad data: " + line);
+            }
+            m_gapTracker.commit(currentOffset);
           }
+        }
+ catch (        FormatException e) {
+          rateLimitedLog(Level.ERROR,e,"Failed to tranform data: " + line);
+          messageAndOffset.nextOffset();
           m_gapTracker.commit(currentOffset);
         }
         submitCount++;
