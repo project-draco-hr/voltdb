@@ -1,0 +1,30 @@
+def main():
+    build_tag = None
+    master_tag = None
+    if (len(sys.argv) < 2):
+        usage()
+        exit((-1))
+    path = sys.argv[1]
+    if (not os.path.exists(path)):
+        print path, ' save path does not exist'
+        exit((-1))
+    if (len(sys.argv) >= 3):
+        build_tag = str(sys.argv[2])
+    if (len(sys.argv) >= 4):
+        master_tag = str(sys.argv[3])
+    conn = FastSerializer(STATS_SERVER, 21212)
+    latestMaster = getLatestKitBuildTag(conn, master_tag, 'YCSB-%-master')
+    latestAnticache = getLatestKitBuildTag(conn, build_tag, 'YCSB-Anticache-%')
+    print ('master kit:' + latestMaster)
+    print ('workload kit:' + latestAnticache)
+    (stats, mindate, maxdate) = get_stats(conn, latestAnticache)
+    (masterstats, mastermindate, mastermaxdate) = get_stats(conn, latestMaster)
+    conn.close()
+    workBuckets = getBucketsByWorkload(stats, mindate, maxdate)
+    masterWorkBuckets = getBucketsByWorkload(masterstats, mindate, maxdate)
+    for build in workBuckets:
+        for workload in workBuckets[build]:
+            for mbuild in masterWorkBuckets:
+                if (workload in masterWorkBuckets[mbuild]):
+                    workBuckets[build][workload]['master'] = masterWorkBuckets[mbuild][workload]['master']
+    plotByWorkload(workBuckets, path, title=((latestMaster + ' vs ') + latestAnticache))
