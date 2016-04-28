@@ -1,22 +1,31 @@
 {
-  VoltType argType=VoltType.INVALID;
-  boolean isArray=false;
-  if (argClass.isArray() && expectedType != VoltType.VARBINARY) {
-    argType=VoltType.typeFromClass(argClass.getComponentType());
-    isArray=true;
+  if (argClass.isArray()) {
+    if (expectedType.acceptsArray(argClass)) {
+      return;
+    }
   }
  else {
-    if (argClass.isArray() && (argClass.getComponentType().isArray() || argClass != byte[].class)) {
-      assert(expectedType == VoltType.VARBINARY);
-      argClass=argClass.getComponentType();
-      isArray=true;
+    VoltType argType=VoltType.typeFromClass(argClass);
+    if (argType == expectedType) {
+      return;
     }
-    argType=VoltType.typeFromClass(argClass);
-  }
-  if (!VoltTypeUtil.implicitTypeConversionFeasible(argType,expectedType,isArray)) {
-    if (isArray && argType == VoltType.TINYINT) {
-      argType=VoltType.VARBINARY;
+    if (argType == VoltType.STRING) {
+      if (expectedType.isNumber() || expectedType == VoltType.TIMESTAMP) {
+        return;
+      }
     }
-    throw new VoltTypeException("Procedure " + m_procedureName + ": Incompatible parameter type: can not convert type '"+ argType.getName()+ "' to '"+ expectedType.getName()+ "' for arg "+ argInd+ " for SQL stmt: "+ stmt.getText()+ "."+ " Try explicitly using a "+ expectedType.getName()+ " parameter.");
+ else     if (argType.isNumber()) {
+      if (expectedType.isNumber() || expectedType == VoltType.STRING || expectedType == VoltType.TIMESTAMP) {
+        return;
+      }
+    }
+ else     if (argType.isBackendIntegerType()) {
+      if (expectedType.isNumber() || expectedType == VoltType.STRING) {
+        return;
+      }
+    }
   }
+  String argTypeName=argClass.getSimpleName();
+  String preferredType=expectedType.getMostCompatibleJavaTypeName();
+  throw new VoltTypeException("Procedure " + m_procedureName + ": Incompatible parameter type: can not convert type '"+ argTypeName+ "' to '"+ expectedType.getName()+ "' for arg "+ argInd+ " for SQL stmt: "+ stmt.getText()+ "."+ " Try explicitly using a "+ preferredType+ " parameter.");
 }

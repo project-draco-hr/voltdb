@@ -2,60 +2,60 @@
   Client client=getClient();
   client.callProcedure("T.Insert",1,1,1,1,1,new BigDecimal(1),"2012-12-01","hi","10",null,null);
   client.callProcedure("ProcToTestTypeConversion",ProcToTestTypeConversion.TestAllAllowedTypeConv,0,0);
-  int rowId=0;
   VoltType typeToTest=VoltType.INVALID;
   String errorMsg=null;
-  for (  boolean[] fromType : m_typeConversionMatrix) {
-    int colInd=0;
-    typeToTest=m_tableColTypeVal[rowId];
-    for (    boolean toType : fromType) {
-      if (toType) {
-        client.callProcedure("ProcToTestTypeConversion",ProcToTestTypeConversion.TestTypeConvWithInsertProc,colInd,typeToTest.getValue());
+  for (int fromType=0; fromType < m_tableColTypeVal.length; ++fromType) {
+    boolean[] supportedFromType=m_typeConversionMatrix[fromType];
+    typeToTest=m_tableColTypeVal[fromType];
+    for (int toType=0; toType < m_tableColTypeVal.length; ++toType) {
+      if (supportedFromType[toType]) {
+        client.callProcedure("ProcToTestTypeConversion",ProcToTestTypeConversion.TestTypeConvWithInsertProc,toType,typeToTest.getValue());
       }
  else {
-        errorMsg="Incompatible parameter type: can not convert type '" + typeToTest.getName() + "' to '"+ m_tableColTypeVal[colInd].getName()+ "' for arg "+ colInd+ " for SQL stmt";
-        if (typeToTest == VoltType.TIMESTAMP && m_tableColTypeVal[colInd] == VoltType.DECIMAL) {
-          errorMsg="Type " + typeToTest.getName() + " can't be cast as "+ m_tableColTypeVal[colInd].getName();
+        String typeTriedByInsert=m_javaTypeNamePatternForInsertTest[fromType];
+        if (typeToTest == VoltType.TIMESTAMP && m_tableColTypeVal[toType] == VoltType.DECIMAL) {
+          errorMsg="Type " + typeToTest.getName() + " can't be cast as "+ m_tableColTypeVal[toType].getName();
         }
- else         if (typeToTest == VoltType.VARBINARY) {
-switch (m_tableColTypeVal[colInd]) {
-case TINYINT:
-case SMALLINT:
-case INTEGER:
-case BIGINT:
-case TIMESTAMP:
-case FLOAT:
-case DECIMAL:
-            errorMsg="Type " + typeToTest.getName() + " can't be cast as "+ m_tableColTypeVal[colInd].getName();
-          break;
-default :
-        break;
+ else {
+          errorMsg="Incompatible parameter type: can not convert type '" + typeTriedByInsert + "' to '"+ m_tableColTypeVal[toType].getName()+ "' for arg "+ toType+ " for SQL stmt";
+        }
+        verifyProcFails(client,errorMsg,"ProcToTestTypeConversion",ProcToTestTypeConversion.TestTypeConvWithInsertProc,toType,typeToTest.getValue());
+      }
+      if (typeToTest == VoltType.TINYINT && m_tableColTypeVal[fromType] == VoltType.TINYINT) {
+        continue;
+      }
+      String typeTriedByCompare=m_javaTypeNamePatternForInListTest[fromType];
+      errorMsg="Incompatible parameter type: can not convert type '" + typeTriedByCompare + "' to '"+ m_tableColTypeVal[toType].getName()+ "' for arg 0 for SQL stmt";
+      verifyProcFails(client,errorMsg,"ProcToTestTypeConversion",ProcToTestTypeConversion.TestFailingArrayTypeCompare,toType,typeToTest.getValue());
     }
   }
-  verifyProcFails(client,errorMsg,"ProcToTestTypeConversion",ProcToTestTypeConversion.TestTypeConvWithInsertProc,colInd,typeToTest.getValue());
-}
-colInd++;
-}
-rowId++;
-}
-rowId=0;
-for (boolean[] fromType : m_typeConversionMatrixInList) {
-int colInd=0;
-typeToTest=m_tableColTypeVal[rowId];
-for (boolean toType : fromType) {
-if (rowId == 0) {
-  colInd++;
-  continue;
-}
-if (toType) {
-  client.callProcedure("ProcToTestTypeConversion",ProcToTestTypeConversion.TestTypesInList,colInd,typeToTest.getValue());
-}
+  for (int fromType=1; fromType < m_tableColTypeVal.length; ++fromType) {
+    boolean[] supportedForFromType=m_typeConversionMatrixInList[fromType];
+    String typeTriedByInListQuery=m_javaTypeNamePatternForInListTest[fromType];
+    typeToTest=m_tableColTypeVal[fromType];
+    for (int toType=0; toType < m_tableColTypeVal.length; ++toType) {
+      VoltType inListType=m_tableColInListTypeVal[toType];
+      if (supportedForFromType[toType]) {
+        client.callProcedure("ProcToTestTypeConversion",ProcToTestTypeConversion.TestTypesInList,toType,typeToTest.getValue());
+        if (inListType == null) {
+          continue;
+        }
+      }
  else {
-  errorMsg="Incompatible parameter type: can not convert type '" + typeToTest.getName() + "' to '"+ m_tableColTypeVal[colInd].getName()+ "' for arg 0 for SQL stmt";
-  verifyProcFails(client,errorMsg,"ProcToTestTypeConversion",ProcToTestTypeConversion.TestTypesInList,colInd,typeToTest.getValue());
-}
-colInd++;
-}
-rowId++;
-}
+        if (inListType == null) {
+          continue;
+        }
+        errorMsg="Incompatible parameter type: can not convert type '" + typeTriedByInListQuery + "' to '"+ inListType.getName()+ "' for arg 0 for SQL stmt";
+        verifyProcFails(client,errorMsg,"ProcToTestTypeConversion",ProcToTestTypeConversion.TestTypesInList,toType,typeToTest.getValue());
+      }
+      String typeExpectedToFailInListQuery=m_javaTypeNamePatternForInListFailureTest[fromType];
+      if (typeExpectedToFailInListQuery.endsWith("]") && inListType == VoltType.INLIST_OF_BIGINT) {
+        errorMsg="rhs of IN expression is of a non-list type varbinary";
+      }
+ else {
+        errorMsg="Incompatible parameter type: can not convert type '" + typeExpectedToFailInListQuery + "' to '"+ inListType.getName()+ "' for arg 0 for SQL stmt";
+      }
+      verifyProcFails(client,errorMsg,"ProcToTestTypeConversion",ProcToTestTypeConversion.TestFailingTypesInList,toType,typeToTest.getValue());
+    }
+  }
 }
