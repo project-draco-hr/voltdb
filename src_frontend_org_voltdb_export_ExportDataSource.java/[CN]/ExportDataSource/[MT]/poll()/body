@@ -1,29 +1,25 @@
 {
   final SettableFuture<BBContainer> fut=SettableFuture.create();
-  try {
-    m_es.execute(new Runnable(){
-      @Override public void run(){
-        try {
-          if (m_pollFuture != null) {
-            fut.setException(new RuntimeException("Should not poll more than once"));
-            return;
-          }
-          if (!m_es.isShutdown()) {
-            pollImpl(fut);
-          }
+  RunnableWithES runnable=new RunnableWithES(){
+    @Override public void run(){
+      try {
+        if (m_pollFuture != null) {
+          fut.setException(new RuntimeException("Should not poll more than once"));
+          return;
         }
- catch (        Exception e) {
-          exportLog.error("Exception polling export buffer",e);
-        }
-catch (        Error e) {
-          VoltDB.crashLocalVoltDB("Error polling export buffer",true,e);
+        if (!getLocalExecutorService().isShutdown()) {
+          pollImpl(fut);
         }
       }
+ catch (      Exception e) {
+        exportLog.error("Exception polling export buffer",e);
+      }
+catch (      Error e) {
+        VoltDB.crashLocalVoltDB("Error polling export buffer",true,e);
+      }
     }
-);
   }
- catch (  RejectedExecutionException e) {
-    exportLog.info("Polling from export data source rejected, this should be harmless");
-  }
+;
+  stashOrSubmitTask(runnable,true);
   return fut;
 }

@@ -37,7 +37,7 @@ synchronized (m_startAndStopLock) {
     m_recoveryStartTime=System.currentTimeMillis();
     m_hostIdWithStartupCatalog=0;
     m_pathToStartupCatalog=m_config.m_pathToCatalog;
-    m_replicationActive=false;
+    m_replicationActive=new AtomicBoolean(false);
     m_configLogger=null;
     ActivePlanRepository.clear();
     final int computationThreads=Math.max(2,CoreUtils.availableProcessors() / 4);
@@ -281,7 +281,7 @@ synchronized (m_startAndStopLock) {
         Class<?> ndrgwClass=null;
         ndrgwClass=Class.forName("org.voltdb.dr2.DRProducer");
         Constructor<?> ndrgwConstructor=ndrgwClass.getConstructor(File.class,File.class,boolean.class,int.class,int.class);
-        m_producerDRGateway=(ProducerDRGateway)ndrgwConstructor.newInstance(new File(m_catalogContext.cluster.getDroverflow()),getSnapshotPath(m_catalogContext),m_replicationActive,m_configuredNumberOfPartitions,m_catalogContext.getDeployment().getCluster().getHostcount());
+        m_producerDRGateway=(ProducerDRGateway)ndrgwConstructor.newInstance(new File(m_catalogContext.cluster.getDroverflow()),getSnapshotPath(m_catalogContext),m_replicationActive.get(),m_configuredNumberOfPartitions,m_catalogContext.getDeployment().getCluster().getHostcount());
         m_producerDRGateway.start();
         m_producerDRGateway.blockOnDRStateConvergence();
       }
@@ -299,7 +299,7 @@ synchronized (m_startAndStopLock) {
           createMpDRGateway=false;
         }
       }
-      boolean expectSyncSnapshot=m_config.m_replicationRole == ReplicationRole.REPLICA;
+      boolean expectSyncSnapshot=m_config.m_replicationRole == ReplicationRole.REPLICA && config.m_startAction == StartAction.CREATE;
       m_leaderAppointer=new LeaderAppointer(m_messenger,m_configuredNumberOfPartitions,m_catalogContext.getDeployment().getCluster().getKfactor(),m_catalogContext.cluster.getNetworkpartition(),m_catalogContext.cluster.getFaultsnapshots().get("CLUSTER_PARTITION"),usingCommandLog,topo,m_MPI,kSafetyStats,expectSyncSnapshot);
       m_globalServiceElector.registerService(m_leaderAppointer);
     }

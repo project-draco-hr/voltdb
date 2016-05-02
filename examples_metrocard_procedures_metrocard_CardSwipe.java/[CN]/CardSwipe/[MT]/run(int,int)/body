@@ -1,0 +1,53 @@
+{
+  voltQueueSQL(checkCard,EXPECT_ZERO_OR_ONE_ROW,cardId);
+  voltQueueSQL(checkStationFare,EXPECT_ONE_ROW,stationId);
+  VoltTable[] checks=voltExecuteSQL();
+  VoltTable cardInfo=checks[0];
+  VoltTable stationInfo=checks[1];
+  if (cardInfo.getRowCount() == 0) {
+    return buildResult(0,"Card Invalid");
+  }
+  cardInfo.advanceRow();
+  int enabled=(int)cardInfo.getLong(0);
+  int cardType=(int)cardInfo.getLong(1);
+  int balance=(int)cardInfo.getLong(2);
+  TimestampType expires=cardInfo.getTimestampAsTimestamp(3);
+  String owner=cardInfo.getString(4);
+  String phone=cardInfo.getString(5);
+  String email=cardInfo.getString(6);
+  int notify=(int)cardInfo.getLong(7);
+  stationInfo.advanceRow();
+  int fare=(int)stationInfo.getLong(0);
+  String stationName=stationInfo.getString(1);
+  if (enabled == 0) {
+    return buildResult(0,"Card Disabled");
+  }
+  if (cardType == 0) {
+    if (balance > fare) {
+      voltQueueSQL(chargeCard,balance - fare,cardId);
+      voltQueueSQL(insertActivity,cardId,getTransactionTime(),stationId,1,fare);
+      voltExecuteSQL(true);
+      return buildResult(1,"Remaining Balance: " + intToCurrency(balance - fare));
+    }
+ else {
+      voltQueueSQL(insertActivity,cardId,getTransactionTime(),stationId,0,0);
+      if (notify != 0) {
+        voltQueueSQL(exportActivity,cardId,getTransactionTime().getTime(),stationName,owner,phone,email,notify,"Insufficient Balance");
+      }
+      voltExecuteSQL(true);
+      return buildResult(0,"Card has insufficient balance: " + intToCurrency(balance));
+    }
+  }
+ else {
+    if (expires.compareTo(new TimestampType(getTransactionTime())) > 0) {
+      voltQueueSQL(insertActivity,cardId,getTransactionTime(),stationId,1,0);
+      voltExecuteSQL(true);
+      return buildResult(1,"Card Expires: " + expires.toString());
+    }
+ else {
+      voltQueueSQL(insertActivity,cardId,getTransactionTime(),stationId,0,0);
+      voltExecuteSQL(true);
+      return buildResult(0,"Card Expired");
+    }
+  }
+}
