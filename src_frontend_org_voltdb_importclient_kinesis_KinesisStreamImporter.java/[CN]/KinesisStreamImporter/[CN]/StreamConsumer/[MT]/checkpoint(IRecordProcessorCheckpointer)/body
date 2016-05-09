@@ -1,0 +1,36 @@
+{
+  if (null == m_largestExtendedSequenceNumber) {
+    return;
+  }
+  if (isDebugEnabled()) {
+    info(null,"Checking point Kninesis record on on shard %s. Current sequence num: %s",m_shardId,m_largestExtendedSequenceNumber.getSequenceNumber());
+  }
+  int failCount=1;
+  for (int i=0; i < NUM_RETRIES; i++) {
+    if (!shouldRun()) {
+      break;
+    }
+    try {
+      checkpointer.checkpoint(m_largestExtendedSequenceNumber.getSequenceNumber());
+      break;
+    }
+ catch (    ShutdownException se) {
+      rateLimitedLog(Level.ERROR,se,"Caught shutdown exception, skipping checkpoint. shard id: %s, sequence number: %s.",m_shardId,m_largestExtendedSequenceNumber.getSequenceNumber());
+      break;
+    }
+catch (    ThrottlingException e) {
+      if (i >= (NUM_RETRIES - 1)) {
+        rateLimitedLog(Level.ERROR,e,"Checkpoint failed after %s attempts: shard id: %s, sequence number: %s.",(i + 1),m_shardId,m_largestExtendedSequenceNumber.getSequenceNumber());
+        break;
+      }
+ else {
+        rateLimitedLog(Level.INFO,null,"Transient issue when checkpointing - attempt %s of %s",(i + 1),NUM_RETRIES);
+      }
+    }
+catch (    InvalidStateException|KinesisClientLibDependencyException e) {
+      rateLimitedLog(Level.ERROR,e,"Cannot save checkpoint to the DynamoDB table used by the Amazon Kinesis Client Library. shard id: %s, sequence number: %s.",m_shardId,m_largestExtendedSequenceNumber.getSequenceNumber());
+      break;
+    }
+    failCount=backoffSleep(failCount);
+  }
+}

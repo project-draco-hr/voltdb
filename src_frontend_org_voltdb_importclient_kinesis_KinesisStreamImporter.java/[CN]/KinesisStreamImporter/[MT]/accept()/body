@@ -1,0 +1,27 @@
+{
+  info(null,"Starting  kinesis stream importer for  %s",m_config.getResourceID().toString());
+  if (m_eos.get())   return;
+  AtomicBoolean workerStatus=new AtomicBoolean(true);
+  while (shouldRun()) {
+    if (workerStatus.get() && !m_eos.get()) {
+      workerStatus.compareAndSet(true,false);
+      try {
+        KinesisClientLibConfiguration kclConfig=new KinesisClientLibConfiguration(m_config.getAppName(),m_config.getStreamName(),credentials(),UUID.randomUUID().toString());
+        kclConfig.withRegionName(m_config.getRegion()).withMaxRecords(m_config.getMaxReadBatchSize()).withInitialPositionInStream(InitialPositionInStream.TRIM_HORIZON).withIdleTimeBetweenReadsInMillis(m_config.getIdleTimeBetweenReads()).withTaskBackoffTimeMillis(m_config.getTaskBackoffTimeMillis()).withKinesisClientConfig(KinesisStreamImporterConfig.getClientConfigWithUserAgent(m_config.getAppName()));
+        m_worker=new Worker.Builder().recordProcessorFactory(new RecordProcessorFactory()).config(kclConfig).build();
+        info(null,"Starting worker for Kinesis stream  %s",m_config.getStreamName());
+        m_worker.run();
+      }
+ catch (      Exception e) {
+        rateLimitedLog(Level.ERROR,e,"Error in Kinesis stream importer %s",m_config.getResourceID());
+        if (null != m_worker)         m_worker.shutdown();
+        if (shouldRun()) {
+          backoffSleep(2);
+          workerStatus.compareAndSet(false,true);
+        }
+      }
+    }
+  }
+  m_eos.compareAndSet(false,true);
+  info(null,"Stop kinesis stream importer for %s",m_config.getResourceID().toString());
+}

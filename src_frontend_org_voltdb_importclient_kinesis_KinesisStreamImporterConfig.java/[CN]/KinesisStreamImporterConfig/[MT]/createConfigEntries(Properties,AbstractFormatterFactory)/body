@@ -1,0 +1,25 @@
+{
+  String appName=getProperty(props,"app.name","");
+  String streamName=getProperty(props,"stream.name","");
+  String region=getProperty(props,"region","");
+  String procedure=getProperty(props,"procedure","");
+  String secretKey=getProperty(props,"secret.key","");
+  String accessKey=getProperty(props,"access.key","");
+  String readInterval=getProperty(props,"idle.time.between.reads",Long.toString(1000L));
+  String maxReadBatchSize=getProperty(props,"max.read.batch.size",Integer.toString(10000));
+  String taskBackoffTimeMillis=getProperty(props,"task.backoff.time.millis",Long.toString(500L));
+  List<Shard> shards=discoverShards(region,streamName,accessKey,secretKey,appName);
+  if (shards == null || shards.isEmpty()) {
+    throw new IllegalArgumentException("Kinesis stream " + streamName + " does not have any shards.");
+  }
+  Map<URI,ImporterConfig> configs=new HashMap<>();
+  int shardCnt=0;
+  for (  Shard shard : shards) {
+    StringBuilder builder=new StringBuilder(128);
+    builder.append("kinesis://").append(region).append("/").append(streamName).append("/").append("shard-").append(shardCnt++).append("/").append(appName);
+    URI uri=URI.create(builder.toString());
+    ImporterConfig config=new KinesisStreamImporterConfig(appName,region,streamName,procedure,secretKey,accessKey,Long.parseLong(readInterval),Integer.parseInt(maxReadBatchSize),uri,Long.parseLong(taskBackoffTimeMillis),formatterFactory);
+    configs.put(uri,config);
+  }
+  return configs;
+}

@@ -1,0 +1,47 @@
+{
+  AtomicLong cbcnt=new AtomicLong(records.getRecords().size());
+  if (cbcnt.get() < 1) {
+    return;
+  }
+  BigInteger seq=BigInteger.ZERO;
+  for (  Record record : records.getRecords()) {
+    if (isDebugEnabled()) {
+      BigInteger curr=new BigInteger(record.getSequenceNumber());
+      if (curr.compareTo(seq) < 0) {
+        info(null,"Record is out of sequence on shard %s. Current sequence num: %s",m_shardId,record.getSequenceNumber());
+      }
+ else {
+        seq=curr;
+      }
+    }
+    ExtendedSequenceNumber extendedSequenceNumber=new ExtendedSequenceNumber(record.getSequenceNumber(),record instanceof UserRecord ? ((UserRecord)record).getSubSequenceNumber() : null);
+    if (null == m_largestExtendedSequenceNumber || m_largestExtendedSequenceNumber.compareTo(extendedSequenceNumber) < 0) {
+      m_largestExtendedSequenceNumber=extendedSequenceNumber;
+    }
+    String data=null;
+    try {
+      data=new String(record.getData().array(),"UTF-8");
+      if (isDebugEnabled()) {
+        info(null,"Processing Kninesis record on shard %s. Current sequence num: %s",m_shardId,record.getSequenceNumber());
+      }
+    }
+ catch (    UnsupportedEncodingException e) {
+      rateLimitedLog(Level.ERROR,e,"Error in Kinesis stream importer on shard %s, data:",m_shardId,data);
+      continue;
+    }
+    try {
+      Invocation invocation=new Invocation(m_config.getProcedure(),m_formatter.transform(data));
+      StreamInvocationCallback callBack=new StreamInvocationCallback(cbcnt);
+      if (!callProcedure(invocation,callBack)) {
+        rateLimitedLog(Level.ERROR,null,"Error in Kinesis stream importer in shard %s",m_shardId);
+      }
+    }
+ catch (    Exception e) {
+      rateLimitedLog(Level.ERROR,e,"Procedure error with data %s on shard %s",data,m_shardId);
+    }
+    if (!shouldRun()) {
+      break;
+    }
+  }
+  checkpoint(records.getCheckpointer());
+}
