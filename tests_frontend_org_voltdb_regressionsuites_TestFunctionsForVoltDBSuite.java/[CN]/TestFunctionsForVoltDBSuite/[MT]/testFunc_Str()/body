@@ -1,0 +1,48 @@
+{
+  System.out.println("STARTING testFunc_Str");
+  Client client=getClient();
+  ClientResponse cr=null;
+  VoltTable result;
+  String str;
+  cr=client.callProcedure("@AdHoc","Delete from D1;");
+  assertEquals(cr.getStatus(),ClientResponse.SUCCESS);
+  cr=client.callProcedure("@AdHoc","Delete from R3;");
+  assertEquals(cr.getStatus(),ClientResponse.SUCCESS);
+  String[] decimal_strs={"123456.64565","-123456.64565","1123456785.555","-1123456785.555","0.0","-0.0","0","-0","99999999999999999999999999.999999999999","-99999999999999999999999999.99999999999","1500","2500","8223372036854775807.123456789125","8223372036854775807.123456789175"};
+  for (int i=0; i < decimal_strs.length; i++) {
+    BigDecimal bd=new BigDecimal(decimal_strs[i]);
+    cr=client.callProcedure("D1.insert",i,bd);
+    assertEquals(cr.getStatus(),ClientResponse.SUCCESS);
+  }
+  cr=client.callProcedure("R3.insert",1,1,1,1,1,1.1,"2013-07-18 02:00:00.123457","IBM",1);
+  assertEquals(cr.getStatus(),ClientResponse.SUCCESS);
+  cr=client.callProcedure("@AdHoc","select STR(DEC, 12, 1), STR(DEC, 12, 2)," + "STR(DEC, 12, 3), STR(DEC, 12, 4)," + "STR(DEC, 12, 0) from D1 where id = 0");
+  assertEquals(cr.getStatus(),ClientResponse.SUCCESS);
+  result=cr.getResults()[0];
+  assertEquals(1,result.getRowCount());
+  assertTrue(result.advanceRow());
+  str=result.getString(0);
+  assertEquals(str,"123456.6");
+  str=result.getString(1);
+  assertEquals(str,"123456.65");
+  str=result.getString(2);
+  assertEquals(str,"123456.646");
+  str=result.getString(3);
+  assertEquals(str,"123456.6456");
+  str=result.getString(4);
+  assertEquals(str,"123457");
+  cr=client.callProcedure("@AdHoc","select STR(DEC,15, 1), STR(DEC, 10, 2)," + "STR(DEC,10), STR(DEC) from D1 where id = 2");
+  assertEquals(cr.getStatus(),ClientResponse.SUCCESS);
+  result=cr.getResults()[0];
+  assertEquals(1,result.getRowCount());
+  assertTrue(result.advanceRow());
+  str=result.getString(0);
+  assertEquals(str,"1123456785.6");
+  str=result.getString(1);
+  assertEquals(str,"**********");
+  str=result.getString(2);
+  assertEquals(str,"1123456786");
+  str=result.getString(3);
+  assertEquals(str,"1123456786");
+  verifyStmtFails(client,"select STR(DEC, -19) from D1 where id = 12","the second parameter should be <= 38 and > 0");
+}
