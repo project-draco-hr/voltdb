@@ -1,0 +1,26 @@
+{
+  Map<URI,ImporterConfig> configs=new HashMap<>();
+  String appName=getProperty(props,"app.name","");
+  String streamName=getProperty(props,"stream.name","");
+  String region=getProperty(props,"region","");
+  String procedure=getProperty(props,"procedure","");
+  String secretKey=getProperty(props,"secret.key","");
+  String accessKey=getProperty(props,"access.key","");
+  long readInterval=getPropertyAsLong(props,"idle.time.between.reads",1000);
+  long maxReadBatchSize=getPropertyAsLong(props,"max.read.batch.size",10000);
+  long taskBackoffTimeMillis=getPropertyAsLong(props,"task.backoff.time.millis",500);
+  List<Shard> shards=discoverShards(region,streamName,accessKey,secretKey,appName);
+  if (shards == null || shards.isEmpty()) {
+    LOGGER.warn(String.format("Kinesis stream %s or regions %s are not configured.",streamName,region));
+    return configs;
+  }
+  int shardCnt=0;
+  for (  Shard shard : shards) {
+    StringBuilder builder=new StringBuilder(128);
+    builder.append("kinesis://").append(region).append("/").append(streamName).append("/").append("shard-").append(shardCnt++).append("/").append(appName);
+    URI uri=URI.create(builder.toString());
+    ImporterConfig config=new KinesisStreamImporterConfig(appName,region,streamName,procedure,secretKey,accessKey,readInterval,maxReadBatchSize,uri,taskBackoffTimeMillis,formatterFactory,formatProps,formatName);
+    configs.put(uri,config);
+  }
+  return configs;
+}
