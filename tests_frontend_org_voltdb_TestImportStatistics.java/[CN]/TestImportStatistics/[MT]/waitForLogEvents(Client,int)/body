@@ -1,11 +1,39 @@
 {
-  long end=System.currentTimeMillis() + 40000;
+  long end=System.currentTimeMillis() + 60000;
+  int successCount=0;
+  Map<String,Boolean> expectedInovcations=new HashMap<>();
+{
+    expectedInovcations.put("TestImportStatistics$TestStatsProcedure7",false);
+    expectedInovcations.put("TestImportStatistics$TestStatsProcedure11",false);
+    expectedInovcations.put("log_events.insert",false);
+  }
+  ;
   while (System.currentTimeMillis() < end) {
-    ClientResponse response=client.callProcedure("@AdHoc","select count(*) from log_events");
+    ClientResponse response=client.callProcedure("@Statistics","INITIATOR",0);
     assertEquals(ClientResponse.SUCCESS,response.getStatus());
-    if (count == response.getResults()[0].asScalarLong()) {
+    VoltTable stats=response.getResults()[0];
+    for (int i=0; i < stats.getRowCount(); i++) {
+      VoltTableRow row=stats.fetchRow(i);
+      String name=row.getString(CONN_HOST_COL);
+      if (!expectedImporters.contains(name)) {
+        continue;
+      }
+      String proc=row.getString(PROC_NAME_COL);
+      assert(expectedInovcations.containsKey(proc));
+      if (!expectedInovcations.get(proc)) {
+        long invocations=row.getLong(INVOCATIONS_COL);
+        if (count == invocations) {
+          expectedInovcations.put(proc,true);
+          successCount+=1;
+        }
+      }
+    }
+    if (successCount == expectedInovcations.size()) {
       break;
     }
     Thread.sleep(50);
+  }
+  if (successCount < expectedInovcations.size()) {
+    fail("fail to get out backpressure for 40 Sec");
   }
 }
