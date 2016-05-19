@@ -1,0 +1,35 @@
+{
+  URI uri=URI.create("https://localhost:" + m_port + "/api/1.0/");
+  SSLContext sslContext=new SSLContextBuilder().loadTrustMaterial(null,new TrustStrategy(){
+    public boolean isTrusted(    X509Certificate[] arg0,    String arg1) throws CertificateException {
+      return true;
+    }
+  }
+).build();
+  SSLConnectionSocketFactory sf=new SSLConnectionSocketFactory(sslContext,SSLConnectionSocketFactory.ALLOW_ALL_HOSTNAME_VERIFIER);
+  Registry<ConnectionSocketFactory> socketFactoryRegistry=RegistryBuilder.<ConnectionSocketFactory>create().register("http",PlainConnectionSocketFactory.getSocketFactory()).register("https",sf).build();
+  PoolingHttpClientConnectionManager connMgr=new PoolingHttpClientConnectionManager(socketFactoryRegistry);
+  HttpClientBuilder b=HttpClientBuilder.create();
+  b.setSslcontext(sslContext);
+  b.setConnectionManager(connMgr);
+  try (CloseableHttpClient httpclient=b.build()){
+    HttpPost post=new HttpPost(uri);
+    RequestConfig rc=RequestConfig.copy(RequestConfig.DEFAULT).setExpectContinueEnabled(true).build();
+    post.setProtocolVersion(HttpVersion.HTTP_1_1);
+    post.setConfig(rc);
+    post.setEntity(new StringEntity(varString,utf8ApplicationFormUrlEncoded));
+    ResponseHandler<String> rh=new ResponseHandler<String>(){
+      @Override public String handleResponse(      final HttpResponse response) throws ClientProtocolException, IOException {
+        int status=response.getStatusLine().getStatusCode();
+        assertEquals(expectedCode,status);
+        if ((status >= 200 && status < 300) || status == 400) {
+          HttpEntity entity=response.getEntity();
+          return entity != null ? EntityUtils.toString(entity) : null;
+        }
+        return null;
+      }
+    }
+;
+    return httpclient.execute(post,rh);
+  }
+ }
