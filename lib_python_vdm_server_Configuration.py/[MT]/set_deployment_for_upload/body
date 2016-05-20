@@ -21,6 +21,12 @@ def set_deployment_for_upload(database_id, request):
                 result = check_validation_deployment(req)
                 if (('status' in result) and (result['status'] == 'error')):
                     return {'status': 'failure', 'error': result['error'], }
+                is_duplicate_user = check_duplicate_users(req)
+                if (not is_duplicate_user):
+                    return {'status': 'failure', 'error': 'Duplicate users not allowed.', }
+                is_invalid_roles = check_invalid_roles(req)
+                if (not is_invalid_roles):
+                    return {'status': 'failure', 'error': 'Invalid user roles.', }
                 HTTPListener.map_deployment(req, database_id)
                 deployment_user = [(v if (type(v) is list) else [v]) for v in HTTPListener.Global.DEPLOYMENT_USERS.values()]
                 if (deployment_user is not None):
@@ -33,7 +39,8 @@ def set_deployment_for_upload(database_id, request):
                             user_id = 1
                         else:
                             user_id = (HTTPListener.Global.DEPLOYMENT_USERS.keys()[(-1)] + 1)
-                        HTTPListener.Global.DEPLOYMENT_USERS[user_id] = {'name': user['name'], 'roles': user['roles'], 'password': user['password'], 'plaintext': user['plaintext'], 'databaseid': database_id, 'userid': user_id, }
+                        user_roles = ','.join(Set(user['roles'].split(',')))
+                        HTTPListener.Global.DEPLOYMENT_USERS[user_id] = {'name': user['name'], 'roles': user_roles, 'password': user['password'], 'plaintext': user['plaintext'], 'databaseid': database_id, 'userid': user_id, }
                 HTTPListener.sync_configuration()
                 write_configuration_file()
             else:

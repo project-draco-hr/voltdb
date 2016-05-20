@@ -76,7 +76,7 @@ def map_deployment(request, database_id):
     if (('systemsettings' in request.json) and ('resourcemonitor' in request.json['systemsettings'])):
         if (('resourcemonitor' not in deployment['systemsettings']) or (deployment['systemsettings']['resourcemonitor'] is None)):
             deployment['systemsettings']['resourcemonitor'] = {}
-        if ('memorylimit' in request.json['systemsettings']['resourcemonitor']):
+        if (('memorylimit' in request.json['systemsettings']['resourcemonitor']) and request.json['systemsettings']['resourcemonitor']['memorylimit']):
             deployment['systemsettings']['resourcemonitor']['memorylimit'] = {}
             if (('systemsettings' in request.json) and ('resourcemonitor' in request.json['systemsettings']) and ('memorylimit' in request.json['systemsettings']['resourcemonitor']) and ('size' in request.json['systemsettings']['resourcemonitor']['memorylimit'])):
                 if (request.json['systemsettings']['resourcemonitor']['memorylimit']['size'] != ''):
@@ -87,8 +87,8 @@ def map_deployment(request, database_id):
         if (('resourcemonitor' not in deployment['systemsettings']) or (deployment['systemsettings']['resourcemonitor'] is None)):
             deployment['systemsettings']['resourcemonitor'] = {}
         if ('disklimit' in request.json['systemsettings']['resourcemonitor']):
-            deployment['systemsettings']['resourcemonitor']['disklimit'] = {}
             if ('feature' in request.json['systemsettings']['resourcemonitor']['disklimit']):
+                deployment['systemsettings']['resourcemonitor']['disklimit'] = {}
                 deployment['systemsettings']['resourcemonitor']['disklimit']['feature'] = []
                 if request.json['systemsettings']['resourcemonitor']['disklimit']['feature']:
                     for feature in request.json['systemsettings']['resourcemonitor']['disklimit']['feature']:
@@ -110,13 +110,17 @@ def map_deployment(request, database_id):
         deployment['import']['configuration'] = []
         i = 0
         for configuration in request.json['import']['configuration']:
-            deployment['import']['configuration'].append({'enabled': configuration['enabled'], 'module': configuration['module'], 'type': configuration['type'], 'format': configuration['format'], 'property': [], })
+            if ('module' not in configuration):
+                module = ''
+            else:
+                module = configuration['module']
+            deployment['import']['configuration'].append({'enabled': configuration['enabled'], 'module': module, 'type': configuration['type'], 'format': configuration['format'], 'property': [], })
             if ('property' in configuration):
                 for property in configuration['property']:
                     deployment['import']['configuration'][i]['property'].append({'name': property['name'], 'value': property['value'], })
                 i += 1
     if ('export' in request.json):
-        if (('export' not in deployment) or (deployment['export'] is None) or (deployment['import'] == 'None')):
+        if (('export' not in deployment) or (deployment['export'] is None) or (deployment['export'] == 'None')):
             deployment['export'] = {}
     if (('export' in request.json) and ('configuration' in request.json['export'])):
         try:
@@ -125,7 +129,11 @@ def map_deployment(request, database_id):
             print err
         i = 0
         for configuration in request.json['export']['configuration']:
-            deployment['export']['configuration'].append({'enabled': configuration['enabled'], 'stream': configuration['stream'], 'type': configuration['type'], 'exportconnectorclass': configuration['exportconnectorclass'], 'property': [], })
+            if ('exportconnectorclass' not in configuration):
+                export_connector_class = ''
+            else:
+                export_connector_class = configuration['exportconnectorclass']
+            deployment['export']['configuration'].append({'enabled': configuration['enabled'], 'stream': configuration['stream'], 'type': configuration['type'], 'exportconnectorclass': export_connector_class, 'property': [], })
             if ('property' in configuration):
                 for property in configuration['property']:
                     deployment['export']['configuration'][i]['property'].append({'name': property['name'], 'value': property['value'], })
@@ -136,26 +144,29 @@ def map_deployment(request, database_id):
         for user in request.json['users']['user']:
             deployment['users']['user'].append({'name': user['name'], 'roles': user['roles'], 'password': user['password'], 'plaintext': user['plaintext'], })
     if ('dr' in request.json):
-        if (('dr' not in deployment) or (deployment['dr'] is None)):
+        if (not request.json['dr']):
             deployment['dr'] = {}
-    if (('dr' in request.json) and ('connection' in request.json['dr'])):
-        if (not hasattr(deployment['dr'], 'connection')):
-            deployment['dr']['connection'] = {}
-    if (('dr' in request.json) and ('connection' in request.json['dr']) and ('source' not in request.json['dr']['connection'])):
-        deployment['dr']['connection'] = None
-    if (('dr' in request.json) and ('id' in request.json['dr'])):
-        deployment['dr']['id'] = request.json['dr']['id']
-    if (('dr' in request.json) and ('listen' in request.json['dr'])):
-        deployment['dr']['listen'] = request.json['dr']['listen']
-    if (('dr' in request.json) and request.json['dr']):
-        if ('port' in request.json['dr']):
-            deployment['dr']['port'] = request.json['dr']['port']
         else:
-            deployment['dr']['port'] = None
-    if (('dr' in request.json) and ('connection' in request.json['dr']) and ('source' in request.json['dr']['connection'])):
-        deployment['dr']['connection']['source'] = request.json['dr']['connection']['source']
-    if (('dr' in request.json) and (not request.json['dr'])):
-        deployment['dr'] = {}
-    if (('dr' in request.json) and ('connection' in request.json['dr']) and (not request.json['dr']['connection'])):
-        deployment['dr']['connection'] = {}
+            if (('dr' not in deployment) or (deployment['dr'] is None)):
+                deployment['dr'] = {}
+            if (('connection' in request.json['dr']) and request.json['dr']['connection']):
+                if (not hasattr(deployment['dr'], 'connection')):
+                    deployment['dr']['connection'] = {}
+                if (('source' not in request.json['dr']['connection']) or (('source' in request.json['dr']['connection']) and (request.json['dr']['connection']['source'].strip() == ''))):
+                    deployment['dr']['connection'] = None
+                else:
+                    deployment['dr']['connection']['source'] = request.json['dr']['connection']['source']
+            else:
+                deployment['dr']['connection'] = None
+            if ('id' in request.json['dr']):
+                deployment['dr']['id'] = request.json['dr']['id']
+            if ('listen' in request.json['dr']):
+                deployment['dr']['listen'] = request.json['dr']['listen']
+            else:
+                deployment['dr']['listen'] = True
+            if request.json['dr']:
+                if ('port' in request.json['dr']):
+                    deployment['dr']['port'] = request.json['dr']['port']
+                else:
+                    deployment['dr']['port'] = None
     return deployment

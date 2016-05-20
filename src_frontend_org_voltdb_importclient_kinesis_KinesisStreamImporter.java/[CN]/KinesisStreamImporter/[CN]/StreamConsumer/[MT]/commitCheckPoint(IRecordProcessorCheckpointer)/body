@@ -1,0 +1,30 @@
+{
+  int retries=1;
+  while (retries < 4 && shouldRun()) {
+    final BigInteger safe=m_gapTracker.getSafeCommitPoint();
+    if (safe == null) {
+      break;
+    }
+    if (isDebugEnabled()) {
+      debug(null,"New checkpoint %s, last checkpoint %s on shard %s",safe.toString(),m_lastFetchCommittedSequenceNumber.toString(),m_shardId);
+    }
+    if (safe.compareTo(m_lastFetchCommittedSequenceNumber) > 0) {
+      if (isDebugEnabled()) {
+        debug(null,"Trying to checkpoint %s on shard %s",safe.toString(),m_shardId);
+      }
+      try {
+        checkpointer.checkpoint(safe.toString());
+        m_lastFetchCommittedSequenceNumber=safe;
+        break;
+      }
+ catch (      ThrottlingException e) {
+        rateLimitedLog(Level.INFO,null,"Checkpoint attempt  %d on shard %s",retries,m_shardId);
+      }
+catch (      Exception e) {
+        rateLimitedLog(Level.WARN,e,"Skipping checkpoint %s on shard %s. Reason: %s",safe.toString(),m_shardId,e.getMessage());
+        break;
+      }
+    }
+    backoffSleep(retries++);
+  }
+}

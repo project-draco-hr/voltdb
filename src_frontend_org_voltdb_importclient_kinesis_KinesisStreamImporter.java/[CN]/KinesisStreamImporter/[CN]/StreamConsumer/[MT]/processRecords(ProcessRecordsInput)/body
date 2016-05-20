@@ -1,0 +1,43 @@
+{
+  if (records.getRecords().isEmpty()) {
+    return;
+  }
+  BigInteger seq=BigInteger.ZERO;
+  m_gapTracker.resetTo();
+  int offset=0;
+  for (  Record record : records.getRecords()) {
+    m_submitCount.incrementAndGet();
+    BigInteger seqNum=new BigInteger(record.getSequenceNumber());
+    if (seqNum.compareTo(m_lastFetchCommittedSequenceNumber) < 0) {
+      continue;
+    }
+    if (isDebugEnabled()) {
+      debug(null,"last committed seq: %s, current seq:%s shard %s",m_lastFetchCommittedSequenceNumber.toString(),record.getSequenceNumber(),m_shardId);
+      if (seqNum.compareTo(seq) < 0) {
+        debug(null,"Record %d is out of sequence on shard %s",seqNum,m_shardId);
+      }
+ else {
+        seq=seqNum;
+      }
+    }
+    String data=null;
+    try {
+      data=new String(record.getData().array(),StandardCharsets.UTF_8);
+      Invocation invocation=new Invocation(m_config.getProcedure(),m_formatter.transform(data));
+      StreamProcedureCallback cb=new StreamProcedureCallback(m_gapTracker,offset,seqNum,m_cbcnt);
+      if (!callProcedure(invocation,cb)) {
+        rateLimitedLog(Level.ERROR,null,"Call procedure error on shard %s",m_shardId);
+        m_gapTracker.commit(offset,seqNum);
+      }
+    }
+ catch (    FormatException e) {
+      rateLimitedLog(Level.ERROR,e,"Data error on shard %s, data: %s",m_shardId,data);
+      m_gapTracker.commit(offset,seqNum);
+    }
+    if (!shouldRun()) {
+      break;
+    }
+    offset++;
+  }
+  commitCheckPoint(records.getCheckpointer());
+}
