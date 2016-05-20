@@ -1,0 +1,35 @@
+{
+  AbstractExpression predicate=null;
+  if (childNode instanceof AbstractScanPlanNode) {
+    predicate=((AbstractScanPlanNode)childNode).getPredicate();
+  }
+ else   if (childNode instanceof NestLoopPlanNode) {
+    predicate=((NestLoopPlanNode)childNode).getWherePredicate();
+  }
+ else   if (childNode instanceof NestLoopIndexPlanNode) {
+    AbstractPlanNode inlineIndexScan=((NestLoopIndexPlanNode)childNode).getInlinePlanNode(PlanNodeType.INDEXSCAN);
+    assert(inlineIndexScan != null);
+    predicate=((AbstractScanPlanNode)inlineIndexScan).getPredicate();
+  }
+ else {
+    return childNode.getEstimatedProcessedTupleCount();
+  }
+  if (predicate == null) {
+    return childNode.getEstimatedProcessedTupleCount();
+  }
+  List<AbstractExpression> predicateExprs=ExpressionUtil.uncombinePredicate(predicate);
+  int eqCount=0;
+  int otherCount=0;
+  final double MAX_EQ_POST_FILTER_DISCOUNT=0.09;
+  final double MAX_OTHER_POST_FILTER_DISCOUNT=0.045;
+  double discountCountFactor=1.0;
+  for (  AbstractExpression predicateExpr : predicateExprs) {
+    if (ExpressionType.COMPARE_EQUAL == predicateExpr.getExpressionType()) {
+      discountCountFactor-=Math.pow(MAX_EQ_POST_FILTER_DISCOUNT,++eqCount);
+    }
+ else {
+      discountCountFactor-=Math.pow(MAX_OTHER_POST_FILTER_DISCOUNT,++otherCount);
+    }
+  }
+  return (long)(childNode.getEstimatedProcessedTupleCount() * discountCountFactor);
+}

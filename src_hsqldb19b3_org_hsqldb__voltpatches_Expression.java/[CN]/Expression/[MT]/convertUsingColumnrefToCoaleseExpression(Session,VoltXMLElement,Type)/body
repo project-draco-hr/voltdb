@@ -1,0 +1,59 @@
+{
+  assert(dataType != null);
+  exp.attributes.put("valuetype",dataType.getNameString());
+  HashSet<String> tables=new HashSet<>();
+  ArrayDeque<VoltXMLElement> uniqueColumnrefs=new ArrayDeque<>();
+  for (  VoltXMLElement columnref : exp.children) {
+    String table=columnref.attributes.get("table");
+    String tableAlias=columnref.attributes.get("tablealias");
+    assert(table != null);
+    String tableOrAlias=(tableAlias == null) ? table : tableAlias;
+    if (tables.contains(tableOrAlias)) {
+      continue;
+    }
+    tables.add(tableOrAlias);
+    uniqueColumnrefs.add(columnref);
+  }
+  exp.children.clear();
+  assert(uniqueColumnrefs.size() > 1);
+  VoltXMLElement lastAlternativeExpr=null;
+  VoltXMLElement resultColaesceExpr=null;
+  while (true) {
+    VoltXMLElement next=uniqueColumnrefs.pop();
+    if (uniqueColumnrefs.isEmpty()) {
+      assert(lastAlternativeExpr != null);
+      lastAlternativeExpr.children.add(0,next);
+      break;
+    }
+    VoltXMLElement isnull_expr=prototypes.get(OpTypes.IS_NULL);
+    if (isnull_expr == null) {
+      throwForUnsupportedExpression(OpTypes.IS_NULL);
+    }
+    isnull_expr=isnull_expr.duplicate();
+    isnull_expr.attributes.put("id",this.getUniqueId(session));
+    isnull_expr.children.add(next);
+    VoltXMLElement alt_expr=prototypes.get(OpTypes.ALTERNATIVE);
+    if (alt_expr == null) {
+      throwForUnsupportedExpression(OpTypes.ALTERNATIVE);
+    }
+    alt_expr=alt_expr.duplicate();
+    alt_expr.attributes.put("id",this.getUniqueId(session));
+    alt_expr.attributes.put("valuetype",dataType.getNameString());
+    alt_expr.children.add(next);
+    VoltXMLElement coalesceExpr=exp.duplicate();
+    coalesceExpr.attributes.put("alias",next.attributes.get("alias"));
+    coalesceExpr.attributes.put("column",next.attributes.get("column"));
+    coalesceExpr.children.add(isnull_expr);
+    coalesceExpr.children.add(alt_expr);
+    if (resultColaesceExpr == null) {
+      resultColaesceExpr=coalesceExpr;
+    }
+ else {
+      assert(lastAlternativeExpr != null);
+      lastAlternativeExpr.children.add(0,coalesceExpr);
+    }
+    lastAlternativeExpr=alt_expr;
+  }
+  assert(resultColaesceExpr != null);
+  return resultColaesceExpr;
+}
