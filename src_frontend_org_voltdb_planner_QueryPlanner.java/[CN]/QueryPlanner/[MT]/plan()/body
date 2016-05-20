@@ -17,21 +17,28 @@
         }
       }
     }
- catch (    Exception e) {
+ catch (    Exception|StackOverflowError e) {
       m_hasExceptionWhenParameterized=true;
       m_recentErrorMsg=null;
       m_partitioning.resetAnalysisState();
     }
   }
-  CompiledPlan plan=compileFromXML(m_xmlSQL,null);
-  if (plan == null) {
-    if (m_debuggingStaticModeToRetryOnError) {
-      plan=compileFromXML(m_xmlSQL,null);
+  CompiledPlan plan=null;
+  try {
+    plan=compileFromXML(m_xmlSQL,null);
+    if (plan == null) {
+      if (m_debuggingStaticModeToRetryOnError) {
+        plan=compileFromXML(m_xmlSQL,null);
+      }
+      throw new PlanningErrorException(m_recentErrorMsg);
     }
-    throw new PlanningErrorException(m_recentErrorMsg);
+    if (m_isUpsert) {
+      replacePlanForUpsert(plan);
+    }
   }
-  if (m_isUpsert) {
-    replacePlanForUpsert(plan);
+ catch (  StackOverflowError error) {
+    String msg="Encountered stack overflow error. " + "Try reducing the number of predicate expressions in the query.";
+    throw new PlanningErrorException(msg);
   }
   return plan;
 }
