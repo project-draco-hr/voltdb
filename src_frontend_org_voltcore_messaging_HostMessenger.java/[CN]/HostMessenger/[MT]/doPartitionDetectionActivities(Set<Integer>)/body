@@ -1,0 +1,25 @@
+{
+  Preconditions.checkState(!m_partitionDetected,"Partition detection triggered twice.");
+  boolean isPartitionDetectionEnabled=false;
+  try {
+    isPartitionDetectionEnabled=VoltDB.instance().getCatalogContext().cluster.getNetworkpartition();
+  }
+ catch (  Exception e) {
+    m_tmLog.fatal("Couldn't load partititon detection configuration during a partition event.");
+  }
+  Set<Integer> previousHosts=m_foreignHosts.keySet();
+  Set<Integer> currentHosts=new HashSet<>(previousHosts);
+  currentHosts.removeAll(failedHostIds);
+  boolean partitionDetected=makePPDDecision(previousHosts,currentHosts);
+  if (partitionDetected) {
+    if (isPartitionDetectionEnabled) {
+      m_tmLog.fatal("PARTITION DETECTION: This process will kill itself to ensure against split-brains.");
+      m_tmLog.warn("If command logging or periodic snapshots are enabled, the will be in the " + "voltdb root folder for this node and may be used for recovery if needed.");
+      m_partitionDetected=true;
+      VoltDB.crashGlobalVoltDB("This process will kill itself to ensure against split-brains. " + "There may be additional info in the full logs.",false,null);
+    }
+ else {
+      m_tmLog.error("PARTITION DETECTION: This process will continue running only because " + "Partition Detection has been disabled for this cluster. It is possible that " + "the previous cluster has split into multiple viable clusters with diverging "+ "data. There may be additional info in the full logs.");
+    }
+  }
+}
