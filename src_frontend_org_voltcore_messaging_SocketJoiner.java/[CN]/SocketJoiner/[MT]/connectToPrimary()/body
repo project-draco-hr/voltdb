@@ -37,6 +37,7 @@
     if (!m_internalInterface.isEmpty()) {
       jsObj.put("address",m_internalInterface);
     }
+    jsObj.put("paused",m_paused.get());
     byte jsBytes[]=jsObj.toString(4).getBytes(Constants.UTF8ENCODING);
     ByteBuffer requestHostIdBuffer=ByteBuffer.allocate(4 + jsBytes.length);
     requestHostIdBuffer.putInt(jsBytes.length);
@@ -44,7 +45,10 @@
     while (requestHostIdBuffer.hasRemaining()) {
       socket.write(requestHostIdBuffer);
     }
-    processVersionJSONResponse(socket,remoteAddress,localVersionString,localBuildString,activeVersions);
+    boolean paused=processVersionJSONResponse(socket,remoteAddress,localVersionString,localBuildString,activeVersions);
+    if (paused) {
+      m_joinHandler.notifyAsPaused();
+    }
     JSONObject jsonObj=readJSONObjFromWire(socket,remoteAddress);
     m_localHostId=jsonObj.getInt("newHostId");
     m_reportedInternalInterface=jsonObj.getString("reportedAddress");
@@ -93,6 +97,7 @@
       jsObj.put("port",m_internalPort);
       jsObj.put("address",m_internalInterface.isEmpty() ? m_reportedInternalInterface : m_internalInterface);
       jsObj.put("versionString",VoltDB.instance().getVersionString());
+      jsObj.put("paused",m_paused.get());
       jsBytes=jsObj.toString(4).getBytes("UTF-8");
       ByteBuffer pushHostId=ByteBuffer.allocate(4 + jsBytes.length);
       pushHostId.putInt(jsBytes.length);
@@ -103,7 +108,10 @@
       hostIds[ii]=hostId;
       hostSockets[ii]=hostSocket;
       listeningAddresses[ii]=hostAddr;
-      processVersionJSONResponse(hostSocket,remoteAddress,localVersionString,localBuildString,activeVersions);
+      paused=processVersionJSONResponse(hostSocket,remoteAddress,localVersionString,localBuildString,activeVersions);
+      if (paused) {
+        m_joinHandler.notifyAsPaused();
+      }
     }
     checkClockSkew(skews);
     if (activeVersions.size() > 2) {
