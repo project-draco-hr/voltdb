@@ -1,0 +1,53 @@
+{
+  Integer hostId=selectNewHostId(socket.socket().getInetAddress().getHostAddress());
+  prepSocketChannel(socket);
+  ForeignHost fhost=null;
+  try {
+    try {
+      final boolean shouldAcceptMember;
+      final StringBuilder errMsg=new StringBuilder();
+      if (m_membershipAcceptor != null) {
+        shouldAcceptMember=m_membershipAcceptor.shouldAccept(hostId,request,errMsg);
+      }
+ else {
+        shouldAcceptMember=true;
+      }
+      writeRequestJoinResponse(hostId,shouldAcceptMember,errMsg.toString(),socket);
+      if (!shouldAcceptMember) {
+        socket.close();
+        return;
+      }
+      ByteBuffer finishedJoining=ByteBuffer.allocate(1);
+      socket.configureBlocking(false);
+      long start=System.currentTimeMillis();
+      while (finishedJoining.hasRemaining() && System.currentTimeMillis() - start < 120000) {
+        int read=socket.read(finishedJoining);
+        if (read == -1) {
+          m_networkLog.info("New connection was unable to establish mesh");
+          socket.close();
+          return;
+        }
+ else         if (read < 1) {
+          Thread.sleep(5);
+        }
+      }
+      fhost=new ForeignHost(this,hostId,socket,m_config.deadHostTimeout,listeningAddress,new PicoNetwork(socket));
+      putForeignHost(hostId,fhost);
+      fhost.enableRead(VERBOTEN_THREADS);
+    }
+ catch (    Exception e) {
+      m_networkLog.error("Error joining new node",e);
+      addFailedHost(hostId);
+      removeForeignHost(hostId);
+      socket.close();
+      return;
+    }
+    long hsId=CoreUtils.getHSIdFromHostAndSite(hostId,AGREEMENT_SITE_ID);
+    if (!m_agreementSite.requestJoin(hsId).await(60,TimeUnit.SECONDS)) {
+      reportForeignHostFailed(hostId);
+    }
+  }
+ catch (  Throwable e) {
+    org.voltdb.VoltDB.crashLocalVoltDB("",true,e);
+  }
+}
