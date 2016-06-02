@@ -1,0 +1,140 @@
+{
+  List<Long> skews=new ArrayList<Long>();
+  Set<String> activeVersions=new TreeSet<String>();
+  SocketChannel socket=null;
+  try {
+    LOG.debug("Non-Primary Starting & Connecting to Primary");
+    while (socket == null) {
+      try {
+        socket=SocketChannel.open(m_coordIp);
+      }
+ catch (      java.net.ConnectException e) {
+        LOG.warn("Joining primary failed: " + e.getMessage() + " retrying..");
+        try {
+          Thread.sleep(250);
+        }
+ catch (        InterruptedException ex) {
+        }
+      }
+    }
+    socket.socket().setTcpNoDelay(true);
+    socket.socket().setPerformancePreferences(0,2,1);
+    final String remoteAddress=socket.socket().getRemoteSocketAddress().toString();
+    ByteBuffer currentTimeBuf=ByteBuffer.allocate(8);
+    while (currentTimeBuf.hasRemaining()) {
+      socket.read(currentTimeBuf);
+    }
+    currentTimeBuf.flip();
+    long skew=System.currentTimeMillis() - currentTimeBuf.getLong();
+    skews.add(skew);
+    String localVersionString=VoltDB.instance().getVersionString();
+    String localBuildString=VoltDB.instance().getBuildString();
+    activeVersions.add(localVersionString);
+    JSONObject jsObj=new JSONObject();
+    jsObj.put("type","REQUEST_HOSTID");
+    jsObj.put("request",request);
+    jsObj.put("versionString",localVersionString);
+    jsObj.put("port",m_internalPort);
+    if (!m_internalInterface.isEmpty()) {
+      jsObj.put("address",m_internalInterface);
+    }
+    jsObj.put("paused",m_paused.get());
+    byte jsBytes[]=jsObj.toString(4).getBytes(Constants.UTF8ENCODING);
+    ByteBuffer requestHostIdBuffer=ByteBuffer.allocate(4 + jsBytes.length);
+    requestHostIdBuffer.putInt(jsBytes.length);
+    requestHostIdBuffer.put(jsBytes).flip();
+    while (requestHostIdBuffer.hasRemaining()) {
+      socket.write(requestHostIdBuffer);
+    }
+    boolean paused=processVersionJSONResponse(socket,remoteAddress,localVersionString,localBuildString,activeVersions);
+    if (paused) {
+      m_joinHandler.notifyAsPaused();
+    }
+    JSONObject jsonObj=readJSONObjFromWire(socket,remoteAddress);
+    if (!jsonObj.optBoolean("accepted",true)) {
+      socket.close();
+      throw new CoreUtils.RetryException(jsonObj.getString("reason"));
+    }
+    m_localHostId=jsonObj.getInt("newHostId");
+    m_reportedInternalInterface=jsonObj.getString("reportedAddress");
+    JSONArray otherHosts=jsonObj.getJSONArray("hosts");
+    int hostIds[]=new int[otherHosts.length()];
+    SocketChannel hostSockets[]=new SocketChannel[hostIds.length];
+    InetSocketAddress listeningAddresses[]=new InetSocketAddress[hostIds.length];
+    for (int ii=0; ii < otherHosts.length(); ii++) {
+      JSONObject host=otherHosts.getJSONObject(ii);
+      String address=host.getString("address");
+      int port=host.getInt("port");
+      final int hostId=host.getInt("hostId");
+      LOG.info("Leader provided address " + address + ":"+ port);
+      InetSocketAddress hostAddr=new InetSocketAddress(address,port);
+      if (ii == 0) {
+        hostIds[ii]=hostId;
+        listeningAddresses[ii]=hostAddr;
+        hostSockets[ii]=socket;
+        continue;
+      }
+      SocketChannel hostSocket=null;
+      while (hostSocket == null) {
+        try {
+          hostSocket=SocketChannel.open(hostAddr);
+        }
+ catch (        java.net.ConnectException e) {
+          LOG.warn("Joining host failed: " + e.getMessage() + " retrying..");
+          try {
+            Thread.sleep(250);
+          }
+ catch (          InterruptedException ex) {
+          }
+        }
+      }
+      currentTimeBuf.clear();
+      while (currentTimeBuf.hasRemaining()) {
+        hostSocket.read(currentTimeBuf);
+      }
+      currentTimeBuf.flip();
+      skew=System.currentTimeMillis() - currentTimeBuf.getLong();
+      assert(currentTimeBuf.remaining() == 0);
+      skews.add(skew);
+      jsObj=new JSONObject();
+      jsObj.put("type","PUBLISH_HOSTID");
+      jsObj.put("hostId",m_localHostId);
+      jsObj.put("port",m_internalPort);
+      jsObj.put("address",m_internalInterface.isEmpty() ? m_reportedInternalInterface : m_internalInterface);
+      jsObj.put("versionString",VoltDB.instance().getVersionString());
+      jsObj.put("paused",m_paused.get());
+      jsBytes=jsObj.toString(4).getBytes("UTF-8");
+      ByteBuffer pushHostId=ByteBuffer.allocate(4 + jsBytes.length);
+      pushHostId.putInt(jsBytes.length);
+      pushHostId.put(jsBytes).flip();
+      while (pushHostId.hasRemaining()) {
+        hostSocket.write(pushHostId);
+      }
+      hostIds[ii]=hostId;
+      hostSockets[ii]=hostSocket;
+      listeningAddresses[ii]=hostAddr;
+      paused=processVersionJSONResponse(hostSocket,remoteAddress,localVersionString,localBuildString,activeVersions);
+      if (paused) {
+        m_joinHandler.notifyAsPaused();
+      }
+    }
+    checkClockSkew(skews);
+    if (activeVersions.size() > 2) {
+      String versions="";
+      for (      String version : activeVersions) {
+        if (!version.equals(localVersionString)) {
+          versions+=version + ", ";
+        }
+      }
+      versions=versions.substring(0,versions.length() - 2);
+      VoltDB.crashLocalVoltDB("Cluster already is running mixed voltdb versions (" + versions + ").\n"+ "Adding version "+ localVersionString+ " would add a third version.\n"+ "VoltDB hotfix support supports only two unique versions simulaniously.",false,null);
+    }
+    ByteBuffer joinCompleteBuffer=ByteBuffer.allocate(1);
+    while (joinCompleteBuffer.hasRemaining()) {
+      hostSockets[0].write(joinCompleteBuffer);
+    }
+    m_joinHandler.notifyOfHosts(m_localHostId,hostIds,hostSockets,listeningAddresses);
+  }
+ catch (  ClosedByInterruptException e) {
+  }
+}
