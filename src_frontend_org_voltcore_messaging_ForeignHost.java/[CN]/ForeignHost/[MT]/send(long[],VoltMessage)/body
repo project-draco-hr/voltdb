@@ -2,28 +2,30 @@
   if (destinations.length == 0) {
     return;
   }
-  m_network.enqueue(new DeferredSerialization(){
-    @Override public final void serialize(    final ByteBuffer buf) throws IOException {
-      buf.putInt(buf.capacity() - 4);
-      buf.putLong(message.m_sourceHSId);
-      buf.putInt(destinations.length);
-      for (int ii=0; ii < destinations.length; ii++) {
-        buf.putLong(destinations[ii]);
+  if (!m_linkCutForTest.get()) {
+    m_network.enqueue(new DeferredSerialization(){
+      @Override public final void serialize(      final ByteBuffer buf) throws IOException {
+        buf.putInt(buf.capacity() - 4);
+        buf.putLong(message.m_sourceHSId);
+        buf.putInt(destinations.length);
+        for (int ii=0; ii < destinations.length; ii++) {
+          buf.putLong(destinations[ii]);
+        }
+        message.flattenToBuffer(buf);
+        buf.flip();
       }
-      message.flattenToBuffer(buf);
-      buf.flip();
+      @Override public final void cancel(){
+      }
+      @Override public String toString(){
+        return message.getClass().getName();
+      }
+      @Override public int getSerializedSize(){
+        final int len=4 + 8 + 4+ 8 * destinations.length + message.getSerializedSize();
+        return len;
+      }
     }
-    @Override public final void cancel(){
-    }
-    @Override public String toString(){
-      return message.getClass().getName();
-    }
-    @Override public int getSerializedSize(){
-      final int len=4 + 8 + 4+ 8 * destinations.length + message.getSerializedSize();
-      return len;
-    }
-  }
 );
+  }
   long current_time=EstTime.currentTimeMillis();
   long current_delta=current_time - m_lastMessageMillis.get();
   if (current_delta > m_logRate) {
