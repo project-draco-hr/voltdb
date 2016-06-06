@@ -1,0 +1,31 @@
+{
+  String sql;
+  VoltTable vt;
+  client.callProcedure(tb + ".insert",1,5,1,"2013-06-18 02:00:00.123457");
+  client.callProcedure(tb + ".insert",2,10,1,"2013-07-18 10:40:01.123457");
+  client.callProcedure(tb + ".insert",3,10,2,"2013-08-18 02:00:00.123457");
+  sql="select T1.ID from " + tb + " T1 "+ "where exists "+ "      (select max(ID) from R2) "+ "order by ID;";
+  validateTableOfLongs(client,sql,new long[][]{{1},{2},{3}});
+  if (!isHSQL()) {
+    sql="select T1.ID from " + tb + " T1 "+ "where exists "+ "      (select max(id) from R2 limit 0)";
+    validateTableOfLongs(client,sql,EMPTY_TABLE);
+    sql="select T1.ID from " + tb + " T1 "+ "where exists "+ "      (select count(*) from R2 limit 0)";
+    validateTableOfLongs(client,sql,EMPTY_TABLE);
+    vt=client.callProcedure("@AdHoc","select T1.ID from " + tb + " T1 "+ "where exists "+ "      (select count(id) from R2 limit ?)",0).getResults()[0];
+    validateTableOfLongs(vt,EMPTY_TABLE);
+  }
+  vt=client.callProcedure("@AdHoc","select T1.ID from " + tb + " T1 "+ "where exists "+ "      (select count(*) from R2 limit ?) "+ "order by id;",1).getResults()[0];
+  validateTableOfLongs(vt,new long[][]{{1},{2},{3}});
+  sql="select T1.ID from " + tb + " T1 "+ "where exists "+ "      (select max(ID) from R2 offset 1);";
+  validateTableOfLongs(client,sql,EMPTY_TABLE);
+  sql="select T1.ID from " + tb + " T1 "+ "where exists "+ "      (select count(*) from R2 offset 1);";
+  validateTableOfLongs(client,sql,EMPTY_TABLE);
+  sql="select T1.ID " + "from " + tb + " T1 join R1 T2 "+ "    ON exists "+ "       (select max(ID) from R2 offset 1)"+ "    and T1.ID = 1;";
+  validateTableOfLongs(client,sql,EMPTY_TABLE);
+  sql="select T1.ID " + "from " + tb + " T1 join R1 T2 "+ "     ON exists "+ "        (select max(ID) from R2)"+ "     or T1.ID = 25 "+ "order by 1;";
+  validateTableOfLongs(client,sql,new long[][]{{1},{1},{1},{2},{2},{2},{3},{3},{3}});
+  sql="select max(ID), WAGE from " + tb + " T1 "+ "group by WAGE "+ "having exists "+ "       (select max(ID) from R2)"+ "    or max(ID) = 25 "+ "order by max(ID) asc";
+  validateTableOfLongs(client,sql,new long[][]{{1},{3}});
+  sql="select max(ID), WAGE from " + tb + " T1 "+ "group by WAGE "+ "having exists "+ "       (select max(ID) from R2 offset 1)"+ "    and max(ID) > 0 "+ "order by max(ID) asc";
+  validateTableOfLongs(client,sql,EMPTY_TABLE);
+}
