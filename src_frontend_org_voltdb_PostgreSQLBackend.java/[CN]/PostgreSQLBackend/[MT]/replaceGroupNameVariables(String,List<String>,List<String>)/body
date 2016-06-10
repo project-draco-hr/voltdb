@@ -1,0 +1,116 @@
+{
+  if (str == null || groupNames == null || groupValues == null || str.isEmpty() || groupNames.isEmpty() || groupValues.isEmpty()) {
+    return str;
+  }
+  String table=null;
+  int index=groupNames.indexOf("table");
+  if (index > -1 && index < groupValues.size()) {
+    table=groupValues.get(index);
+  }
+ else {
+    return str;
+  }
+  List<String> columnValues=null;
+  index=groupNames.indexOf("values");
+  if (index > -1 && index < groupValues.size()) {
+    columnValues=new ArrayList<String>(Arrays.asList(groupValues.get(index).split(",")));
+  }
+ else {
+    return str;
+  }
+  List<String> primaryKeyColumns=getPrimaryKeys(table);
+  List<String> nonPrimaryKeyColumns=getNonPrimaryKeyColumns(table);
+  List<String> allColumns=getAllColumns(table);
+  List<String> selectTables=null;
+  index=groupNames.indexOf("selecttables");
+  if (index > -1 && index < groupValues.size()) {
+    String selectTablesStr=groupValues.get(index).toUpperCase();
+    if (selectTablesStr.contains(" JOIN ")) {
+      selectTables=new ArrayList<String>(Arrays.asList(selectTablesStr.split(" JOIN ")));
+    }
+ else {
+      selectTables=new ArrayList<String>(Arrays.asList(groupValues.get(index).split(",")));
+    }
+  }
+ else {
+    selectTables=Arrays.asList(table);
+  }
+  List<String> columns=null;
+  index=groupNames.indexOf("columns");
+  if (index > -1 && index < groupValues.size() && groupValues.get(index) != null) {
+    columns=Arrays.asList(groupValues.get(index).split(","));
+    for (int i=0; i < columns.size(); i++) {
+      columns.set(i,columns.get(i).trim().toLowerCase());
+    }
+    List<String> temp=new ArrayList<String>(columns);
+    temp.retainAll(primaryKeyColumns);
+    primaryKeyColumns=temp;
+    temp=new ArrayList<String>(columns);
+    temp.retainAll(nonPrimaryKeyColumns);
+    nonPrimaryKeyColumns=temp;
+  }
+ else {
+    columns=getAllColumns(table);
+  }
+  for (int i=columnValues.size() - 1; i >= 0; i--) {
+    if (columnValues.get(i).trim().equals("*")) {
+      columnValues.remove(i);
+      for (int t=selectTables.size() - 1; t >= 0; t--) {
+        columnValues.addAll(i,getAllColumns(selectTables.get(t).trim()));
+      }
+    }
+  }
+  List<String> pkColumnValues=new ArrayList<String>();
+  for (int i=Math.min(columnValues.size(),columns.size()) - 1; i >= 0; i--) {
+    if (primaryKeyColumns.contains(columns.get(i))) {
+      pkColumnValues.add(0,columnValues.get(i));
+      columnValues.remove(i);
+    }
+  }
+  String pkWhereClause="EMPTY";
+  if (groupNames.indexOf("where") > -1 && pkColumnValues.size() > 0 && primaryKeyColumns.size() > 0) {
+    pkWhereClause="WHERE " + pkColumnValues.get(0) + "=_TMP."+ primaryKeyColumns.get(0)+ " ";
+    for (int i=1; i < pkColumnValues.size(); i++) {
+      pkWhereClause+="AND " + pkColumnValues.get(i) + "=_TMP."+ primaryKeyColumns.get(i)+ " ";
+    }
+  }
+  StringBuffer modified_str=new StringBuffer();
+  Matcher matcher=groupNameVariables.matcher(str);
+  while (matcher.find()) {
+    String groupName=matcher.group("groupName");
+    String columnType=matcher.group("columnType");
+    if ("pk".equalsIgnoreCase(columnType)) {
+      if ("columns".equalsIgnoreCase(groupName)) {
+        matcher.appendReplacement(modified_str,String.join(", ",primaryKeyColumns));
+      }
+ else       if ("where".equalsIgnoreCase(groupName)) {
+        matcher.appendReplacement(modified_str,pkWhereClause);
+      }
+ else {
+        matcher.appendReplacement(modified_str,"{" + groupName + ":pk}");
+      }
+    }
+ else     if ("npk".equalsIgnoreCase(columnType)) {
+      if ("columns".equalsIgnoreCase(groupName)) {
+        matcher.appendReplacement(modified_str,String.join(", ",nonPrimaryKeyColumns));
+      }
+ else       if ("values".equalsIgnoreCase(groupName)) {
+        matcher.appendReplacement(modified_str,String.join(", ",columnValues));
+      }
+ else {
+        matcher.appendReplacement(modified_str,"{" + groupName + ":npk}");
+      }
+    }
+ else {
+      index=groupNames.indexOf(groupName);
+      if (index > -1 && index < groupValues.size()) {
+        matcher.appendReplacement(modified_str,groupValues.get(index));
+      }
+ else {
+        matcher.appendReplacement(modified_str,"{" + groupName + "}");
+      }
+    }
+  }
+  matcher.appendTail(modified_str);
+  return modified_str.toString();
+}

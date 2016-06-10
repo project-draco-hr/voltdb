@@ -1,15 +1,7 @@
 {
-  assert(serializedBatchData != null);
-  ByteBuffer buf=ByteBuffer.wrap(serializedBatchData);
-  AdHocPlannedStatement[] statements=null;
-  Object[] userparams=null;
-  try {
-    userparams=AdHocPlannedStmtBatch.userParamsFromBuffer(buf);
-    statements=AdHocPlannedStmtBatch.planArrayFromBuffer(buf);
-  }
- catch (  IOException e) {
-    throw new VoltAbortException(e);
-  }
+  Pair<Object[],AdHocPlannedStatement[]> data=decodeSerializedBatchData(serializedBatchData);
+  Object[] userparams=data.getFirst();
+  AdHocPlannedStatement[] statements=data.getSecond();
   if (statements.length == 0) {
     return new VoltTable[]{};
   }
@@ -24,13 +16,7 @@
       collectorFragId=ActivePlanRepository.loadOrAddRefPlanFragment(statement.core.collectorHash,statement.core.collectorFragment,null);
     }
     SQLStmt stmt=SQLStmtAdHocHelper.createWithPlan(statement.sql,aggFragId,statement.core.aggregatorHash,true,collectorFragId,statement.core.collectorHash,true,statement.core.isReplicatedTableDML,statement.core.readOnly,statement.core.parameterTypes,m_site);
-    Object[] params;
-    if (userparams.length > 0) {
-      params=userparams;
-    }
- else {
-      params=statement.extractedParamArray();
-    }
+    Object[] params=paramsForStatment(statement,userparams);
     voltQueueSQL(stmt,params);
   }
   return voltExecuteSQL(true);

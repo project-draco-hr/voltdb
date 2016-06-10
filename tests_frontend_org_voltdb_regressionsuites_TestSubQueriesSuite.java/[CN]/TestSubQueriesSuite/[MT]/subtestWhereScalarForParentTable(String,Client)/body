@@ -1,0 +1,37 @@
+{
+  VoltTable vt;
+  String sql;
+  vt=client.callProcedure("@AdHoc","select T1.ID from " + tb + " T1 "+ "where T1.ID = "+ "      (select ID from R2 where ID = ?);",2).getResults()[0];
+  validateTableOfLongs(vt,new long[][]{{2}});
+  sql="select T1.ID from " + tb + " T1 "+ "where T1.ID = "+ "      (select ID/2 from R2 where ID = T1.ID * 2) "+ "order by id;";
+  validateTableOfLongs(client,sql,new long[][]{{1},{2}});
+  vt=client.callProcedure("@AdHoc","select T1.ID from " + tb + " T1 "+ "where T1.DEPT = "+ "      (select DEPT from R2 where ID = ?) "+ "order by id;",1).getResults()[0];
+  validateTableOfLongs(vt,new long[][]{{1},{2},{3}});
+  sql="select T1.ID from " + tb + " T1 "+ "where T1.DEPT = "+ "      (select DEPT from R2 where ID = T1.ID * 2);";
+  validateTableOfLongs(client,sql,new long[][]{{1}});
+  sql="select T1.ID from " + tb + " T1 "+ "where T1.DEPT > "+ "      (select DEPT from R2 where ID = 3) "+ "order by id;";
+  validateTableOfLongs(client,sql,new long[][]{{4},{5}});
+  sql="select T1.ID from " + tb + " T1 "+ "where (select DEPT from R2 where ID = 3) != "+ "      T1.DEPT "+ "order by id;";
+  validateTableOfLongs(client,sql,new long[][]{{4},{5}});
+  vt=client.callProcedure("@AdHoc","select T1.ID, R2.ID from " + tb + " T1, R2 "+ "where T1.DEPT = "+ "      R2.DEPT + (select DEPT from R2 where ID = ?) "+ "order by T1.ID, R2.ID limit 2;",1).getResults()[0];
+  validateTableOfLongs(vt,new long[][]{{4,1},{4,2}});
+  sql="select T1.ID, R2.ID from " + tb + " T1, R2 "+ "where R2.ID = "+ "      (select ID from R2 where ID = T1.ID) "+ "order by T1.ID;";
+  validateTableOfLongs(client,sql,new long[][]{{1,1},{2,2},{3,3},{4,4},{5,5}});
+  sql="select T1.ID, R2.ID from " + tb + " T1, R2 "+ "where R2.DEPT = (select DEPT from R2 where ID = T1.ID + 4) "+ "order by T1.ID, R2.ID;";
+  validateTableOfLongs(client,sql,new long[][]{{1,4},{1,5}});
+  sql="select max(T1.ID) from " + tb + " T1 "+ "group by T1.DEPT "+ "having count(*) = "+ "       (select R2.ID from R2 where R2.ID = ?);";
+  verifyAdHocFails(client,TestPlansInExistsSubQueries.HavingErrorMsg,sql,2);
+  sql="select max(T1.ID) from " + tb + " T1 "+ "group by T1.DEPT "+ "having count(*) = "+ "       (select R2.ID from R2 where R2.ID = T1.DEPT);";
+  verifyStmtFails(client,sql,TestPlansInExistsSubQueries.HavingErrorMsg);
+  sql="select DEPT, max(T1.ID) from " + tb + " T1 "+ "group by T1.DEPT "+ "having count(*) = "+ "       (select R2.ID from R2 where R2.ID = T1.DEPT);";
+  verifyStmtFails(client,sql,TestPlansInExistsSubQueries.HavingErrorMsg);
+  try {
+    sql="select T1.ID from " + tb + " T1 where T1.ID = (select ID from R2);";
+    client.callProcedure("@AdHoc",sql);
+    fail("Did not get expected cardinality violation from: " + sql);
+  }
+ catch (  ProcCallException ex) {
+    String errMsg=(isHSQL()) ? "cardinality violation" : "More than one row returned by a scalar/row subquery";
+    assertTrue(ex.getMessage().contains(errMsg));
+  }
+}

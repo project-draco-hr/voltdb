@@ -4,16 +4,20 @@
   try {
     cs=sessionProxy.compileStatement(sql);
   }
- catch (  HsqlException hex) {
-switch (hex.getErrorCode()) {
+ catch (  HsqlException caught) {
+switch (caught.getErrorCode()) {
 case -ErrorCode.X_42581:
-      throw new HSQLParseException("SQL Syntax error in \"" + sql + "\" "+ hex.getMessage());
+      throw new HSQLParseException("SQL Syntax error in \"" + sql + "\" "+ caught.getMessage(),caught);
 default :
-    throw new HSQLParseException(hex.getMessage());
+    throw new HSQLParseException("Error in \"" + sql + "\" "+ caught.getMessage(),caught);
 }
 }
-catch (Throwable t) {
-throw new HSQLParseException(t.getMessage());
+catch (StackOverflowError caught) {
+throw caught;
+}
+catch (Throwable caught) {
+m_logger.error("Unexpected error in the SQL parser for statement \"" + sql + "\" ",caught);
+throw new HSQLParseException("An unexpected system error was logged by the SQL parser for statement \"" + sql + "\" ",caught);
 }
 Result result=Result.newPrepareResponse(cs);
 if (result.hasError()) {
@@ -28,9 +32,9 @@ try {
   m_logger.debug(String.format("HSQLDB:\n%s",(cs == null) ? "<NULL>" : cs.describe(sessionProxy)));
   m_logger.debug(String.format("VOLTDB:\n%s",(xml == null) ? "<NULL>" : xml));
 }
- catch (Exception ex) {
-  System.out.printf("Exception: %s\n",ex.getMessage());
-  ex.printStackTrace(System.out);
+ catch (Exception caught) {
+  m_logger.warn("Unexpected error in the SQL parser",caught);
+  caught.printStackTrace(System.out);
 }
 }
 sessionProxy.sessionData.persistentStoreCollection.clearAllTables();

@@ -6,9 +6,17 @@
     Throwables.propagate(e);
   }
   ListeningExecutorService es=getExecutorService();
-  assert(es != null);
   if (es == null) {
-    exportLog.error("Push export buffer called before the generation is active. This push will be ignored");
+    try {
+      pushExportBufferImpl(uso,buffer,sync,endOfStream,false);
+    }
+ catch (    Throwable t) {
+      VoltDB.crashLocalVoltDB("Error pushing export  buffer",true,t);
+    }
+ finally {
+      m_bufferPushPermits.release();
+    }
+    exportLog.warn("Push export buffer called before the generation is active.");
     return;
   }
   if (es.isShutdown()) {
@@ -20,7 +28,7 @@
       @Override public void run(){
         try {
           if (!es.isShutdown()) {
-            pushExportBufferImpl(uso,buffer,sync,endOfStream);
+            pushExportBufferImpl(uso,buffer,sync,endOfStream,true);
           }
         }
  catch (        Throwable t) {
