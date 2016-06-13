@@ -1,0 +1,18 @@
+{
+  AbstractPlanNode node=compile("SELECT BBB.B, RANK() OVER (PARTITION BY A ORDER BY A, B ) AS ARANK FROM (select A, B, C from AAA where A < B) ALPHA, BBB WHERE ALPHA.C <> BBB.C;");
+  assertTrue(node instanceof SendPlanNode);
+  AbstractPlanNode projectionPlanNode=node.getChild(0);
+  assertTrue(projectionPlanNode instanceof ProjectionPlanNode);
+  AbstractPlanNode partitionByPlanNode=projectionPlanNode.getChild(0);
+  assertTrue(partitionByPlanNode instanceof PartitionByPlanNode);
+  AbstractPlanNode orderByPlanNode=partitionByPlanNode.getChild(0);
+  assertTrue(orderByPlanNode instanceof OrderByPlanNode);
+  NodeSchema input_schema=orderByPlanNode.getOutputSchema();
+  AbstractPlanNode scanNode=orderByPlanNode.getChild(0);
+  assertTrue(scanNode instanceof NestLoopPlanNode);
+  NodeSchema schema=partitionByPlanNode.getOutputSchema();
+  SchemaColumn column=schema.getColumns().get(0);
+  assertTrue(column.getExpression() instanceof WindowedExpression);
+  assertEquals("ARANK",column.getColumnAlias());
+  validateTVEs(input_schema,(PartitionByPlanNode)partitionByPlanNode);
+}

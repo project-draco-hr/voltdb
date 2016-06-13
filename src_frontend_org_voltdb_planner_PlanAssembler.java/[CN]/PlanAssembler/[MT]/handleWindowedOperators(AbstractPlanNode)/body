@@ -1,0 +1,33 @@
+{
+  ParsedColInfo colInfo=m_parsedSelect.getWindowedColinfo();
+  assert(colInfo != null);
+  SchemaColumn windowedSchemaColumn=colInfo.asSchemaColumn();
+  PartitionByPlanNode pnode=new PartitionByPlanNode();
+  pnode.setWindowedColumn(windowedSchemaColumn);
+  OrderByPlanNode onode=new OrderByPlanNode();
+  WindowedExpression windowedExpression=(WindowedExpression)windowedSchemaColumn.getExpression();
+  List<AbstractExpression> partitionByExpressions=windowedExpression.getPartitionByExpressions();
+  boolean dontsort[]=new boolean[windowedExpression.getOrderbySize()];
+  List<AbstractExpression> orderByExpressions=windowedExpression.getOrderByExpressions();
+  List<SortDirectionType> orderByDirections=windowedExpression.getOrderByDirections();
+  for (int idx=0; idx < windowedExpression.getPartitionbySize(); idx+=1) {
+    SortDirectionType pdir=SortDirectionType.ASC;
+    AbstractExpression partitionByExpression=partitionByExpressions.get(idx);
+    int sidx=windowedExpression.getSortIndexOfOrderByExpression(partitionByExpression);
+    if (0 <= sidx) {
+      pdir=orderByDirections.get(sidx);
+      dontsort[sidx]=true;
+    }
+    onode.addSort(partitionByExpression,pdir);
+  }
+  for (int idx=0; idx < windowedExpression.getOrderbySize(); idx+=1) {
+    if (!dontsort[idx]) {
+      AbstractExpression orderByExpr=orderByExpressions.get(idx);
+      SortDirectionType orderByDir=orderByDirections.get(idx);
+      onode.addSort(orderByExpr,orderByDir);
+    }
+  }
+  onode.addAndLinkChild(root);
+  pnode.addAndLinkChild(onode);
+  return pnode;
+}
