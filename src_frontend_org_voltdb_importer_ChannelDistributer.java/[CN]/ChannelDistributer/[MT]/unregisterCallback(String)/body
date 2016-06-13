@@ -1,0 +1,31 @@
+{
+  if (importer == null || !m_callbacks.getReference().containsKey(importer) || m_unregistered.getReference().contains(importer)) {
+    return;
+  }
+  if (m_done.get())   return;
+  int[] rstamp=new int[]{0};
+  NavigableMap<String,ChannelChangeCallback> rprev=null;
+  NavigableMap<String,ChannelChangeCallback> rnext=null;
+  int[] ustamp=new int[]{0};
+  NavigableSet<String> uprev=null;
+  NavigableSet<String> unext=null;
+synchronized (m_undispatched) {
+    do {
+      rprev=m_callbacks.get(rstamp);
+      rnext=ImmutableSortedMap.<String,ChannelChangeCallback>naturalOrder().putAll(Maps.filterKeys(rprev,not(equalTo(importer)))).build();
+    }
+ while (rprev.containsKey(importer) && !m_callbacks.compareAndSet(rprev,rnext,rstamp[0],rstamp[0] + 1));
+    do {
+      uprev=m_unregistered.get(ustamp);
+      unext=ImmutableSortedSet.<String>naturalOrder().addAll(Sets.filter(uprev,not(equalTo(importer)))).add(importer).build();
+    }
+ while (!uprev.contains(importer) && m_unregistered.compareAndSet(uprev,unext,ustamp[0],ustamp[0] + 1));
+    Iterator<ImporterChannelAssignment> itr=m_undispatched.iterator();
+    while (itr.hasNext()) {
+      final ImporterChannelAssignment assignment=itr.next();
+      if (unext.contains(assignment.getImporter())) {
+        itr.remove();
+      }
+    }
+  }
+}
