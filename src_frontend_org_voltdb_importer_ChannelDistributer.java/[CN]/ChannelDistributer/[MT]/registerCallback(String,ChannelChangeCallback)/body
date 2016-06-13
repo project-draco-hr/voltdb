@@ -1,5 +1,6 @@
 {
   Preconditions.checkArgument(importer != null && !importer.trim().isEmpty(),"importer is null or empty");
+  Preconditions.checkArgument(!m_unregistered.getReference().contains(importer),"cannot re-register importer %s as it was already unregistered",importer);
   callback=checkNotNull(callback,"callback is null");
   if (m_done.get())   return;
   int[] stamp=new int[]{0};
@@ -16,6 +17,7 @@ synchronized (m_undispatched) {
     }
  while (!m_callbacks.compareAndSet(prev,next,stamp[0],stamp[0] + 1));
     NavigableSet<String> registered=next.navigableKeySet();
+    NavigableSet<String> unregistered=m_unregistered.getReference();
     Iterator<ImporterChannelAssignment> itr=m_undispatched.iterator();
     while (itr.hasNext()) {
       final ImporterChannelAssignment assignment=itr.next();
@@ -28,6 +30,12 @@ synchronized (m_undispatched) {
         }
 );
         itr.remove();
+      }
+ else       if (unregistered.contains(assignment.getImporter())) {
+        itr.remove();
+        if (!assignment.getAdded().isEmpty()) {
+          LOG.warn("(" + m_hostId + ") discarding assignment to unregistered importer "+ assignment);
+        }
       }
     }
   }
