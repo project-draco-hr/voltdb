@@ -1,7 +1,8 @@
 {
+  WindowedExpression we=makeWindowedExpression();
+  SchemaColumn col=new SchemaColumn("TMP","TMP","TC","TC",we);
   PartitionByPlanNode pn=new PartitionByPlanNode();
-  addPartitionByExpressions(pn);
-  addSortExpressions(pn);
+  pn.setWindowedColumn(col);
   JSONStringer stringer=new JSONStringer();
   stringer.object();
   try {
@@ -16,10 +17,19 @@
   JSONObject jobj=new JSONObject(new JSONTokener(json));
   PartitionByPlanNode pn2=new PartitionByPlanNode();
   pn2.loadFromJSONObject(jobj,m_voltdb.getDatabase());
-  assertEquals(pn.numberSortExpressions(),pn2.numberSortExpressions());
-  for (int idx=0; idx < pn2.numberSortExpressions(); idx+=1) {
-    assertEquals(pn2.getSortExpression(idx),pn.getSortExpression(idx));
-    assertEquals(pn2.getSortDirection(idx),pn.getSortDirection(idx));
+  int oldCount=pn.getNumberOfPartitionByExpressions();
+  int newCount=pn2.getNumberOfPartitionByExpressions();
+  assertEquals(oldCount,newCount);
+  for (int idx=0; idx < pn2.getNumberOfPartitionByExpressions(); idx+=1) {
+    AbstractExpression ae2=pn2.getPartitionByExpression(idx);
+    AbstractExpression ae=pn.getPartitionByExpression(idx);
+    assertTrue(ae2 instanceof TupleValueExpression);
+    assertTrue(ae instanceof TupleValueExpression);
+    TupleValueExpression tve2=(TupleValueExpression)ae2;
+    TupleValueExpression tve=(TupleValueExpression)ae;
+    assertEquals(tve.getValueSize(),tve2.getValueSize());
+    assertEquals(tve.getValueType(),tve2.getValueType());
+    assertEquals(tve.getColumnIndex(),tve2.getColumnIndex());
   }
   assertEquals(SortDirectionType.ASC,pn.getSortDirection(0));
   assertEquals(SortDirectionType.DESC,pn.getSortDirection(1));
