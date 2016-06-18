@@ -1,4 +1,4 @@
-def plot(title, xlabel, ylabel, filename, width, height, app, data, series, mindate, maxdate, polarity):
+def plot(title, xlabel, ylabel, filename, width, height, app, data, series, mindate, maxdate, polarity, analyze):
     global mc
     plot_data = dict()
     for run in data:
@@ -8,59 +8,126 @@ def plot(title, xlabel, ylabel, filename, width, height, app, data, series, mind
             value = (run['tps'] / run['nodes'])
         else:
             value = run[series]
-        datenum = matplotlib.dates.date2num(run['date'])
-        plot_data[run['branch']][series].append((datenum, value))
+        if (value != 0.0):
+            datenum = matplotlib.dates.date2num(run['date'])
+            plot_data[run['branch']][series].append((datenum, value))
     if (len(plot_data) == 0):
         return
+    runs = 0
+    for run in plot_data.itervalues():
+        runs += len(run.values()[0])
+    if (runs == 0):
+        pl = Plot(title, xlabel, ylabel, filename, width, height, mindate, maxdate, series)
+        pl.ax.annotate('Intentionally blank', xy=(0.5, 0.5), xycoords='axes fraction', horizontalalignment='center', verticalalignment='center')
+        pl.close()
+        return
+    branches_sort = sorted(plot_data.keys())
+    height = ((height or HEIGHT) + (APY * len(branches_sort)))
     pl = Plot(title, xlabel, ylabel, filename, width, height, mindate, maxdate, series)
     flag = dict()
-    for (b, bd) in plot_data.items():
-        for (k, v) in bd.items():
-            if (k not in flag.keys()):
-                flag[k] = []
-            v = sorted(v, key=(lambda x: x[0]))
-            u = zip(*v)
-            if (b not in mc):
-                mc[b] = (COLORS[(len(mc.keys()) % len(COLORS))], MARKERS[(len(mc.keys()) % len(MARKERS))])
-            pl.plot(u[0], u[1], mc[b][0], mc[b][1], b, '-')
-            ma = [None]
-            if ((b == 'master') and (len(u[0]) >= 10)):
-                (ma, mstd) = moving_average(u[1], 10)
-                pl.plot(u[0], ma, mc[b][0], None, None, ':')
-                median = np.median(ma)
-                failed = 0
-                if (polarity == 1):
-                    cv = np.nanmin(ma)
-                    rp = (u[0][np.nanargmin(ma)], cv)
-                    if ((b == 'master') and (ma[(-1)] > (median * 1.05))):
-                        failed = 1
-                else:
-                    cv = np.nanmax(ma)
-                    rp = (u[0][np.nanargmax(ma)], cv)
-                    if ((b == 'master') and (ma[(-1)] < (median * 0.95))):
-                        failed = 1
-                twosigma = np.sum([np.convolve(mstd, (polarity * 2)), ma], axis=0)
-                pl.plot(u[0], twosigma, mc[b][0], None, None, '-.')
-                pl.ax.annotate('$2\\sigma$', xy=(u[0][(-1)], twosigma[(-1)]), xycoords='data', xytext=(20, 0), textcoords='offset points', ha='right')
-                twntypercent = np.sum([np.convolve(ma, (polarity * 0.2)), ma], axis=0)
-                pl.plot(u[0], twntypercent, mc[b][0], None, None, '-.')
-                pl.ax.annotate('20%', xy=(u[0][(-1)], twntypercent[(-1)]), xycoords='data', xytext=(20, 0), textcoords='offset points', ha='right')
-                p = (((ma[(-1)] - rp[1]) / rp[1]) * 100.0)
-                q = (((ma[(-1)] - median) / median) * 100.0)
-                if (failed != 0):
-                    if (abs(p) < 10):
-                        color = 'yellow'
+    try:
+        branches_sort.remove('master')
+    except:
+        print ('WARN: has no master: %s' % title)
+        return
+    branches_master_first = (['master'] + branches_sort)
+    with open('vis_stats.txt', 'wb') as f:
+        writer = csv.writer(f)
+        z = dict()
+        bn = 0
+        for b in branches_master_first:
+            bd = plot_data[b]
+            bn += 1
+            for (k, v) in bd.items():
+                if (k not in flag.keys()):
+                    flag[k] = []
+                v = sorted(v, key=(lambda x: x[0]))
+                u = zip(*v)
+                if (b not in mc):
+                    mc[b] = (COLORS[(len(mc.keys()) % len(COLORS))], MARKERS[(len(mc.keys()) % len(MARKERS))])
+                if (not u):
+                    continue
+                pl.plot(u[0], u[1], mc[b][0], mc[b][1], b, '-')
+                iref = None
+                ma = [None]
+                if (b == 'master'):
+                    iref = (-1)
+                    '\n                    for i in range(-1, 0-len(v),-1):\n                        date,measurement = v[i]\n                        # C5 last run on volt3\'s 735973.874306 2016-01-10 20:59:00+00:00\n                        #print type(date), date, measurement\n                        if str(date) == "735973.874306":\n                            iref = i\n                            #print matplotlib.dates.num2date(date),date,measurement,i\n                    '
+                    if (iref is None):
+                        print ('reference not found for ' + title)
+                    master = dict(avg=np.average(u[1]), med=np.median(u[1]), std=np.std(u[1]))
+                    if iref:
+                        analyze.append([b, title, u[1][iref], None, None])
                     else:
-                        color = 'red'
-                    flag[k].append((b, p))
-                    for pos in ['top', 'bottom', 'right', 'left']:
-                        pl.ax.spines[pos].set_edgecolor(color)
-                    pl.ax.set_axis_bgcolor(color)
-                    pl.ax.patch.set_alpha(0.1)
-                pl.ax.annotate(('%.2f' % cv), xy=rp, xycoords='data', xytext=(0, ((-10) * polarity)), textcoords='offset points', ha='center')
-                pl.ax.annotate(('%.2f' % ma[(-1)]), xy=(u[0][(-1)], ma[(-1)]), xycoords='data', xytext=(5, (+ 5)), textcoords='offset points', ha='left')
-                pl.ax.annotate(('(%+.2f%%)' % p), xy=(u[0][(-1)], ma[(-1)]), xycoords='data', xytext=(5, (-5)), textcoords='offset points', ha='left')
-                pl.ax.annotate(('ma: %.2f median: %.2f (%+.2f) cv: %.2f (%+.2f%%)' % (ma[(-1)], median, q, cv, p)), xy=(0.07, 0.06), xycoords='figure fraction', horizontalalignment='left', verticalalignment='top')
-            '\n            #pl.ax.annotate(b, xy=(u[0][-1],u[1][-1]), xycoords=\'data\',\n            #        xytext=(0, 0), textcoords=\'offset points\') #, arrowprops=dict(arrowstyle="->"))\n            x = u[0][-1]\n            y = u[1][-1]\n            pl.ax.annotate(str(y), xy=(x,y), xycoords=\'data\', xytext=(5,0),\n                textcoords=\'offset points\', ha=\'left\')\n            xmin, ymin = [(u[0][i],y) for i,y in enumerate(u[1]) if y == min(u[1])][-1]\n            xmax, ymax= [(u[0][i],y) for i,y in enumerate(u[1]) if y == max(u[1])][-1]\n            if ymax != ymin:\n                if xmax != x:\n                    pl.ax.annotate(str(ymax), xy=(xmax,ymax),\n                        textcoords=\'offset points\', ha=\'center\', va=\'bottom\', xytext=(0,5))\n                if xmin != x:\n                    pl.ax.annotate(str(ymin), xy=(xmin,ymin),\n                        textcoords=\'offset points\', ha=\'center\', va=\'top\', xytext=(0,-5))\n            '
+                        analyze.append([b, title, None, None, None])
+                    if (len(u[0]) >= 10):
+                        (ma, mstd) = moving_average(u[1], 10)
+                        if (iref and ma[iref]):
+                            analyze[(-1)][3] = ma[iref]
+                            analyze[(-1)][4] = mstd[iref]
+                        pl.plot(u[0], ma, mc[b][0], None, None, ':')
+                        median = np.median(u[1])
+                        failed = 0
+                        if (polarity == 1):
+                            cv = np.nanmin(ma)
+                            rp = (u[0][np.nanargmin(ma)], cv)
+                            if ((b == 'master') and (ma[(-1)] > (median * 1.05))):
+                                failed = 1
+                        else:
+                            cv = np.nanmax(ma)
+                            rp = (u[0][np.nanargmax(ma)], cv)
+                            if ((b == 'master') and (ma[(-1)] < (median * 0.95))):
+                                failed = 1
+                        twosigma = np.sum([np.convolve(mstd, (polarity * 2)), ma], axis=0)
+                        pl.plot(u[0], twosigma, mc[b][0], None, None, '-.')
+                        pl.ax.annotate('$2\\sigma$', xy=(u[0][(-1)], twosigma[(-1)]), xycoords='data', xytext=(20, 0), textcoords='offset points', ha='right', color=mc[b][0], alpha=0.5)
+                        twntypercent = np.sum([np.convolve(ma, (polarity * 0.2)), ma], axis=0)
+                        pl.plot(u[0], twntypercent, mc[b][0], None, None, '-.')
+                        pl.ax.annotate('20%', xy=(u[0][(-1)], twntypercent[(-1)]), xycoords='data', xytext=(20, 0), textcoords='offset points', ha='right', color=mc[b][0], alpha=0.5)
+                        p = (((ma[(-1)] - rp[1]) / rp[1]) * 100.0)
+                        q = (((ma[(-1)] - median) / median) * 100.0)
+                        if (failed != 0):
+                            if (abs(p) < 10):
+                                color = 'yellow'
+                            else:
+                                color = 'red'
+                            flag[k].append((b, p))
+                            for pos in ['top', 'bottom', 'right', 'left']:
+                                pl.ax.spines[pos].set_edgecolor(color)
+                            pl.ax.set_axis_bgcolor(color)
+                            pl.ax.patch.set_alpha(0.1)
+                        pl.ax.annotate(('%.2f' % cv), xy=rp, xycoords='data', xytext=(0, ((-10) * polarity)), textcoords='offset points', ha='center', color=mc[b][0], alpha=0.5)
+                        pl.ax.annotate(('%.2f' % ma[(-1)]), xy=(u[0][(-1)], ma[(-1)]), xycoords='data', xytext=(5, (+ 5)), textcoords='offset points', ha='left', alpha=0.5)
+                        pl.ax.annotate(('(%+.2f%%)' % p), xy=(u[0][(-1)], ma[(-1)]), xycoords='data', xytext=(5, (-5)), textcoords='offset points', ha='left', alpha=0.5)
+                        master.update(ma=ma[(-1)], median=median, pctmed=q, cv=cv, pctmm=p, mstd=mstd[(-1)])
+                        pl.ax.annotate((mc[b][1] + (' master: n: %d avg: %.2f med: %.2f sdev: %.2f (%.2f%%) ma: %.2f ma-med: %.2f (%+.2f%%) ma-best: %.2f (%+.2f%%) ma-std: %.2f' % (len(u[1]), master['avg'], master['med'], master['std'], ((master['std'] / master['avg']) * 100.0), master['ma'], median, q, cv, p, mstd[(-1)]))), xy=(APX, (APY * bn)), xycoords='figure points', horizontalalignment='left', verticalalignment='top', color=mc[b][0], fontsize=10, alpha=1.0)
+                    else:
+                        master.update(ma=None, median=None, pctmed=None, cv=None, pctmm=None, mstd=None)
+                        pl.ax.annotate((mc[b][1] + (' master: n: %d avg: %.2f med: %.2f sdev: %.2f (%.2f%%)' % (len(u[1]), master['avg'], master['med'], master['std'], ((master['std'] / master['avg']) * 100.0)))), xy=(APX, (APY * bn)), xycoords='figure points', horizontalalignment='left', verticalalignment='top', color=mc[b][0], fontsize=10, alpha=1.0)
+                    visstats = master
+                    '"\n                    # analyze master data\n                    d = analyze[-1]\n                    if d[1] == title:\n                        if d[3]: # ma values are present\n                            # compute number of stdev\'s its off by\n                            #nb polarity==1 increasing is bad\n                            # diff of mvavg[iref] and latest as nstdev\n                            d.extend([u[1][-1], (d[2]-u[1][-1])/d[3]*polarity])\n                        else:\n                            d.extend([u[1][-1], None])\n                    else:\n                        d.extend([title, None, None, None, u[1][-1], None])\n                    '
+                else:
+                    if (len(u[0]) >= 10):
+                        (ma, mstd) = moving_average(u[1], 10)
+                        pl.plot(u[0], ma, mc[b][0], None, None, ':')
+                    if (len(analyze[(-1)]) > 5):
+                        analyze.append(analyze[(-1)][0:5])
+                    analyze[(-1)][0] = b
+                    branch = [np.average(u[1]), np.median(u[1]), np.std(u[1]), None, None, None, None, None]
+                    nstdv = float('NaN')
+                    if master['ma']:
+                        nstdv = (((master['ma'] - branch[1]) / master['mstd']) * polarity)
+                    pl.ax.annotate((mc[b][1] + (' %s: n: %d avg: %.2f med: %.2f sdev: %.2f (%.2f%%) no-std-master-ma: %.2f' % (b, len(u[1]), branch[0], branch[1], branch[2], ((branch[2] / branch[0]) * 100.0), nstdv))), xy=(APX, (APY * bn)), xycoords='figure points', horizontalalignment='left', verticalalignment='top', color=mc[b][0], fontsize=10, alpha=1.0)
+                    if (True or (b == 'pr160123_perf_volt16s_notest')):
+                        d = analyze[(-1)]
+                        if (d[1] == title):
+                            if (d[4] >= 0):
+                                d.extend([u[1][(-1)], (((u[1][(-1)] - d[3]) / d[4]) * polarity), ((((u[1][(-1)] - d[3]) / d[3]) * 100.0) * polarity)])
+                            else:
+                                d.extend([u[1][(-1)], None, None])
+                        else:
+                            d.extend([title, None, None, None, u[1][(-1)], None, None])
+                '\n                #pl.ax.annotate(b, xy=(u[0][-1],u[1][-1]), xycoords=\'data\',\n                #        xytext=(0, 0), textcoords=\'offset points\') #, arrowprops=dict(arrowstyle="->"))\n                x = u[0][-1]\n                y = u[1][-1]\n                pl.ax.annotate(str(y), xy=(x,y), xycoords=\'data\', xytext=(5,0),\n                    textcoords=\'offset points\', ha=\'left\')\n                xmin, ymin = [(u[0][i],y) for i,y in enumerate(u[1]) if y == min(u[1])][-1]\n                xmax, ymax= [(u[0][i],y) for i,y in enumerate(u[1]) if y == max(u[1])][-1]\n                if ymax != ymin:\n                    if xmax != x:\n                        pl.ax.annotate(str(ymax), xy=(xmax,ymax),\n                            textcoords=\'offset points\', ha=\'center\', va=\'bottom\', xytext=(0,5))\n                    if xmin != x:\n                        pl.ax.annotate(str(ymin), xy=(xmin,ymin),\n                            textcoords=\'offset points\', ha=\'center\', va=\'top\', xytext=(0,-5))\n                '
+        pl.ax.annotate(datetime.datetime.today().strftime('%Y/%m/%d %H:%M:%S'), xy=(0.08, 0.95), xycoords='figure fraction', horizontalalignment='left', verticalalignment='top', fontsize=8)
     pl.close()
     return flag
