@@ -4,19 +4,19 @@
     assert(expr.m_left != null && expr.m_right != null);
     return isNullRejectingExpression(expr.m_left,tableAlias) || isNullRejectingExpression(expr.m_right,tableAlias);
   }
- else   if (exprType == ExpressionType.CONJUNCTION_OR) {
+  if (exprType == ExpressionType.CONJUNCTION_OR) {
     assert(expr.m_left != null && expr.m_right != null);
     return isNullRejectingExpression(expr.m_left,tableAlias) && isNullRejectingExpression(expr.m_right,tableAlias);
   }
- else   if (exprType == ExpressionType.COMPARE_NOTDISTINCT) {
+  if (exprType == ExpressionType.COMPARE_NOTDISTINCT) {
     return false;
   }
- else   if (exprType == ExpressionType.OPERATOR_NOT) {
+  if (exprType == ExpressionType.OPERATOR_NOT) {
     assert(expr.m_left != null);
     if (expr.m_left.getExpressionType() == ExpressionType.OPERATOR_IS_NULL) {
       return containsMatchingTVE(expr,tableAlias);
     }
- else     if (expr.m_left.getExpressionType() == ExpressionType.CONJUNCTION_AND || expr.m_left.getExpressionType() == ExpressionType.CONJUNCTION_OR) {
+    if (expr.m_left.getExpressionType() == ExpressionType.CONJUNCTION_AND || expr.m_left.getExpressionType() == ExpressionType.CONJUNCTION_OR) {
       assert(expr.m_left.m_left != null && expr.m_left.m_right != null);
       AbstractExpression tempLeft=null;
       if (expr.m_left.m_left.getExpressionType() != ExpressionType.OPERATOR_NOT) {
@@ -38,18 +38,22 @@
       AbstractExpression tempExpr=new OperatorExpression(type,tempLeft,tempRight);
       return isNullRejectingExpression(tempExpr,tableAlias);
     }
- else     if (expr.m_left.getExpressionType() == ExpressionType.OPERATOR_NOT) {
+    if (expr.m_left.getExpressionType() == ExpressionType.OPERATOR_NOT) {
       assert(expr.m_left.m_left != null);
       return isNullRejectingExpression(expr.m_left.m_left,tableAlias);
     }
- else {
-      return isNullRejectingExpression(expr.m_left,tableAlias);
-    }
+    return isNullRejectingExpression(expr.m_left,tableAlias);
   }
- else   if (exprType == ExpressionType.OPERATOR_IS_NULL) {
+  if (exprType == ExpressionType.OPERATOR_IS_NULL) {
     return false;
   }
- else {
-    return containsMatchingTVE(expr,tableAlias);
+  if (expr.hasAnySubexpressionOfClass(OperatorExpression.class)) {
+    List<OperatorExpression> coalesceExprs=expr.findAllSubexpressionsOfClass(OperatorExpression.class);
+    for (    OperatorExpression coalesceExpr : coalesceExprs) {
+      if ((coalesceExpr.getExpressionType() == ExpressionType.OPERATOR_ALTERNATIVE) && containsMatchingTVE(coalesceExpr,tableAlias)) {
+        return false;
+      }
+    }
   }
+  return containsMatchingTVE(expr,tableAlias);
 }
