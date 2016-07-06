@@ -10,8 +10,8 @@ def main():
     ndays = 2000
     if (len(sys.argv) >= 4):
         ndays = int(sys.argv[3])
-    width = None
-    height = None
+    width = WIDTH
+    height = HEIGHT
     if (len(sys.argv) >= 5):
         width = int(sys.argv[4])
     if (len(sys.argv) >= 6):
@@ -24,43 +24,53 @@ def main():
     iorder = 0
     analyze = []
     for (group, data) in stats.iteritems():
-        (app, nodes) = group
-        app = app.replace('/', '')
+        (study, nodes) = group
+        study = study.replace('/', '')
         conn = FastSerializer(STATS_SERVER, 21212)
         proc = VoltProcedure(conn, '@AdHoc', [FastSerializer.VOLTTYPE_STRING])
-        resp = proc.call([("select chart_order, series, chart_heading, x_label, y_label, polarity from charts where appname = '%s' order by chart_order" % app)])
+        resp = proc.call([("select chart_order, series, chart_heading, x_label, y_label, polarity from charts where appname = '%s' order by chart_order" % study)])
         conn.close()
-        app = (app + (' %d %s' % (nodes, ['node', 'nodes'][(nodes > 1)])))
+        app = (study + (' %d %s' % (nodes, ['node', 'nodes'][(nodes > 1)])))
         legend = {1: dict(series='lat95', heading='95tile latency', xlabel='Time', ylabel='Latency (ms)', polarity=1), 2: dict(series='lat99', heading='99tile latency', xlabel='Time', ylabel='Latency (ms)', polarity=1), 3: dict(series='tppn', heading='avg throughput per node', xlabel='Time', ylabel='ops/sec per node', polarity=(-1)), }
         for r in resp.tables[0].tuples:
             legend[r[0]] = dict(series=r[1], heading=r[2], xlabel=r[3], ylabel=r[4], polarity=r[5])
         fns = [app]
-        flags = dict()
+        tocs = dict()
         for r in legend.itervalues():
+            aanalyze = []
             title = ((app + ' ') + r['heading'])
             fn = (('_' + title.replace(' ', '_')) + '.png')
             fns.append((prefix + fn))
-            z = len(analyze)
-            f = plot(title, r['xlabel'], r['ylabel'], (path + fn), width, height, app, data, r['series'], mindate, maxdate, r['polarity'], analyze)
-            try:
-                if (len(analyze[(-1)]) < 7):
-                    analyze[(-1)].extend(([None] * (7 - len(analyze[(-1)]))))
-            except IndexError:
-                pass
-            if f:
-                flags.update(f)
+            toc = plot(title, r['xlabel'], r['ylabel'], (path + fn), width, height, app, data, r['series'], mindate, maxdate, r['polarity'], aanalyze)
+            master = Bdata()
+            if len(aanalyze):
+                master = aanalyze[0]
+            for branch in aanalyze:
+                analyze.append(tuple([branch['branch'], branch['bgcolor'], branch['title'], master['last'], master['ma'][last], master['stdev'], branch['last'], branch['mnstddiff'], branch['pctmadiff']]))
+            if toc:
+                tocs.update(toc)
         fns.append(iorder)
-        fns.append(flags)
+        fns.append(tocs)
         filenames.append(tuple(fns))
-    fa = open((root_path + '_analyze.csv'), 'wb')
-    writer = csv.writer(fa)
-    header = 'branch,chart,master-value-at-ref,master-ma-at-ref,master-mstd-at-ref,branch-value-last,no-stdev-vs-master(neg=worse),pct-vs-master(neg=worse)'
-    writer.writerows(sorted(analyze, key=(lambda x: (x[6] or 99999999.0))))
-    fa.close()
+    filenames.append(('KVBenchmark-five9s-nofail-latency', '', '', 'http://ci/job/performance-nextrelease-5nines-nofail/lastSuccessfulBuild/artifact/pro/tests/apptests/savedlogs/5nines-histograms.png', iorder))
     filenames.append(('KVBenchmark-five9s-nofail-nocl-latency', '', '', 'http://ci/job/performance-nextrelease-5nines-nofail-nocl/lastSuccessfulBuild/artifact/pro/tests/apptests/savedlogs/5nines-histograms.png', iorder))
     filenames.append(('KVBenchmark-five9s-nofail-nocl-kvm-latency', '', '', 'http://ci/job/performance-nextrelease-5nines-nofail-nocl-kvm/lastSuccessfulBuild/artifact/pro/tests/apptests/savedlogs/5nines-histograms.png', iorder))
     filenames.append(('Openet-Shocker-three9s-latency', '', '', 'http://ci/job/performance-nextrelease-shocker/lastSuccessfulBuild/artifact/pro/tests/apptests/savedlogs/3nines-histograms.png', iorder))
+    filenames.append(('Openet-Shocker-three9s-4x2-latency', '', '', 'http://ci/job/performance-nextrelease-shocker-4x2/lastSuccessfulBuild/artifact/pro/tests/apptests/savedlogs/3nines-histograms.png', iorder))
+    with open((root_path + '-analyze.csv'), 'wb') as f:
+        writer = csv.writer(f, delimiter='|')
+        writer.writerows(DATA_HEADER)
+        aa = np.array(analyze, dtype=[('branch-name', 'S99'), ('bgcolor', 'S99'), ('file', 'S99'), ('master', float), ('ma', float), ('std', float), ('branch-last', float), ('nstd', float), ('pct', float)])
+        branches = []
+        sanalyze = np.sort(aa, order=['branch-name', 'nstd'])
+        for r in sanalyze:
+            if (r[0] not in branches):
+                branches.append(r[0])
+        writer.writerows(sanalyze)
+    branches = '\n'.join([(((((('<a href=' + prefix) + '-analyze.html#') + b) + '>') + b) + '</a><br>') for b in sorted(np.unique(branches))])
+    with open((root_path + '-analyze.html'), 'w') as data_file:
+        data_file.write(generate_data_file(sanalyze, branches, prefix))
     index_file = open((root_path + '-index.html'), 'w')
     sorted_filenames = sorted(filenames, key=(lambda f: (f[0].lower() + str(f[1]))))
-    index_file.write(generate_index_file(sorted_filenames))
+    index_file.write(generate_index_file(sorted_filenames, branches))
     index_file.close()
