@@ -1,0 +1,90 @@
+{
+  String deprootFN=dt.getPaths().getVoltdbroot().getPath();
+  File deprootFH=new VoltFile(deprootFN);
+  File cnfrootFH=config.m_voltdbRoot;
+  boolean differingRoots=false;
+  if (!cnfrootFH.exists() && !cnfrootFH.mkdirs()) {
+    VoltDB.crashLocalVoltDB("Unable to create the voltdbroot directory in " + cnfrootFH,false,null);
+  }
+  try {
+    File depcanoFH=null;
+    try {
+      depcanoFH=deprootFH.getCanonicalFile();
+    }
+ catch (    IOException e) {
+      depcanoFH=deprootFH;
+    }
+    File cnfcanoFH=cnfrootFH.getCanonicalFile();
+    if (!cnfcanoFH.equals(depcanoFH)) {
+      differingRoots=true;
+      dt.getPaths().getVoltdbroot().setPath(cnfrootFH.getPath());
+    }
+    if (!VoltDB.DBROOT.equals(deprootFN) && differingRoots) {
+      consoleLog.info("Ignoring voltdbroot \"" + deprootFN + "\"specified in the deployment file");
+      hostLog.info("Ignoring voltdbroot \"" + deprootFN + "\"specified in the deployment file");
+    }
+  }
+ catch (  IOException e) {
+    VoltDB.crashLocalVoltDB("Unable to resolve voltdbroot location: " + config.m_voltdbRoot,false,e);
+    return;
+  }
+  List<String> nonEmptyPaths=managedPathsWithFiles(dt);
+  if (!nonEmptyPaths.isEmpty()) {
+    StringBuilder crashMessage=new StringBuilder("Files from a previous database session exist in the managed directories:");
+    for (    String nonEmptyPath : nonEmptyPaths) {
+      crashMessage.append("\n  - " + nonEmptyPath);
+    }
+    crashMessage.append("\nUse the start command to start the initialized database or use init --force" + " to initialize a new database session overwriting existing files.");
+    VoltDB.crashLocalVoltDB(crashMessage.toString());
+    return;
+  }
+  File confDH=getConfigLogDirectory(config);
+  if (!confDH.exists() && !confDH.mkdirs()) {
+    VoltDB.crashLocalVoltDB("Unable to create the config directory " + confDH);
+    return;
+  }
+  if (config.m_isEnterprise) {
+    List<String> failed=new ArrayList<>();
+    List<File> paths=ImmutableList.<File>builder().add(new VoltFile(dt.getPaths().getCommandlog().getPath())).add(new VoltFile(dt.getPaths().getCommandlogsnapshot().getPath())).add(new VoltFile(dt.getPaths().getSnapshots().getPath())).add(new VoltFile(dt.getPaths().getExportoverflow().getPath())).add(new VoltFile(dt.getPaths().getDroverflow().getPath())).build();
+    for (    File path : paths) {
+      if (!path.isAbsolute()) {
+        path=new VoltFile(config.m_voltdbRoot,path.getPath());
+      }
+      if (!path.exists() && !path.mkdirs()) {
+        failed.add("Unabled to create \"" + path + "\"");
+        continue;
+      }
+      if (!path.isDirectory() || !path.canRead() || !path.canWrite()|| !path.canExecute()) {
+        failed.add("Unable to access \"" + path + "\"");
+      }
+    }
+    if (!failed.isEmpty()) {
+      String msg="Unable to access or create the following directories:\n    " + Joiner.on("\n    ").join(failed);
+      VoltDB.crashLocalVoltDB(msg);
+      return;
+    }
+  }
+  if (differingRoots) {
+    File depFH=getConfigLogDeployment(config);
+    try (FileWriter fw=new FileWriter(depFH)){
+      fw.write(CatalogUtil.getDeployment(dt,true));
+    }
+ catch (    IOException|RuntimeException e) {
+      VoltDB.crashLocalVoltDB("Unable to marshal deployment configuration to " + depFH,false,e);
+      return;
+    }
+  }
+ else {
+    File optFH=new VoltFile(config.m_pathToDeployment);
+    File depFH=getConfigLogDeployment(config);
+    try {
+      if (!depFH.getCanonicalFile().equals(optFH.getCanonicalFile())) {
+        Files.copy(optFH,depFH);
+      }
+    }
+ catch (    IOException e) {
+      VoltDB.crashLocalVoltDB("Unable to set up deployment configuration in " + depFH,false,e);
+      return;
+    }
+  }
+}

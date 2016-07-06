@@ -1,0 +1,34 @@
+{
+  MeshProber.Builder jcb=MeshProber.builder().coordinators(coordinators(3)).startAction(StartAction.PROBE).nodeState(NodeState.INITIALIZING).bare(true).kfactor(1);
+  MeshProber paused=jcb.paused(true).build();
+  MeshProber unpaused=jcb.paused(false).build();
+  HostMessenger hm1=createHostMessenger(0,jcb.prober(unpaused).build(),true);
+  HostMessenger hm2=createHostMessenger(1,paused,false);
+  HostMessenger hm3=createHostMessenger(2,jcb.prober(unpaused).build(),false);
+  final AtomicReference<Exception> exception=new AtomicReference<Exception>();
+  HostMessengerThread hm2Start=new HostMessengerThread(hm2,exception);
+  HostMessengerThread hm3Start=new HostMessengerThread(hm3,exception);
+  hm2Start.start();
+  hm3Start.start();
+  hm2Start.join();
+  hm3Start.join();
+  if (exception.get() != null) {
+    fail(exception.get().toString());
+  }
+  Determination dtm=prober(hm1).waitForDetermination();
+  assertEquals(StartAction.CREATE,dtm.startAction);
+  assertEquals(3,dtm.hostCount);
+  assertEquals(dtm,prober(hm2).waitForDetermination());
+  assertEquals(dtm,prober(hm3).waitForDetermination());
+  assertTrue(dtm.paused);
+  List<String> root1=hm1.getZK().getChildren("/",false);
+  List<String> root2=hm2.getZK().getChildren("/",false);
+  List<String> root3=hm3.getZK().getChildren("/",false);
+  assertTrue(root1.equals(root2));
+  assertTrue(root2.equals(root3));
+  List<String> hostids1=hm1.getZK().getChildren(CoreZK.hostids,false);
+  List<String> hostids2=hm2.getZK().getChildren(CoreZK.hostids,false);
+  List<String> hostids3=hm3.getZK().getChildren(CoreZK.hostids,false);
+  assertTrue(hostids1.equals(hostids2));
+  assertTrue(hostids2.equals(hostids3));
+}

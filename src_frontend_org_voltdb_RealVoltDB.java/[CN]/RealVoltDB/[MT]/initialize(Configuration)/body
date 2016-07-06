@@ -1,0 +1,445 @@
+{
+  ShutdownHooks.enableServerStopLogging();
+synchronized (m_startAndStopLock) {
+    if (System.getProperty("java.vm.name").contains("64") == false) {
+      hostLog.fatal("You are running on an unsupported (probably 32 bit) JVM. Exiting.");
+      System.exit(-1);
+    }
+    readBuildInfo(config.m_isEnterprise ? "Enterprise Edition" : "Community Edition");
+    StringBuilder sb=new StringBuilder(2048).append("Command line arguments: ");
+    sb.append(System.getProperty("sun.java.command","[not available]"));
+    hostLog.info(sb.toString());
+    List<String> iargs=ManagementFactory.getRuntimeMXBean().getInputArguments();
+    sb.delete(0,sb.length()).append("Command line JVM arguments:");
+    for (    String iarg : iargs)     sb.append(" ").append(iarg);
+    if (iargs.size() > 0)     hostLog.info(sb.toString());
+ else     hostLog.info("No JVM command line args known.");
+    sb.delete(0,sb.length()).append("Command line JVM classpath: ");
+    sb.append(System.getProperty("java.class.path","[not available]"));
+    hostLog.info(sb.toString());
+    m_statusTracker=new NodeStateTracker();
+    consoleLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_StartupString.name(),null);
+    if (config.m_startAction == StartAction.INITIALIZE) {
+      if (config.m_forceVoltdbCreate) {
+        deleteEverythingButLogs(config.m_voltdbRoot);
+      }
+    }
+    if (config.m_pathToDeployment == null) {
+      try {
+        config.m_pathToDeployment=setupDefaultDeployment(hostLog,config.m_voltdbRoot);
+        config.m_deploymentDefault=true;
+      }
+ catch (      IOException e) {
+        VoltDB.crashLocalVoltDB("Failed to write default deployment.",false,null);
+        return;
+      }
+    }
+    ReadDeploymentResults readDepl=readPrimedDeployment(config);
+    if (config.m_startAction == StartAction.INITIALIZE) {
+      stageDeploymemtFileForInitialize(config,readDepl.deployment);
+      stageInitializedMarker(config);
+      hostLog.info("Initialized VoltDB on " + config.m_voltdbRoot.getPath());
+      consoleLog.info("Initialized VoltDB on " + config.m_voltdbRoot.getPath());
+      VoltDB.exit(0);
+    }
+    if (config.m_startAction.isLegacy()) {
+      File rootFH=CatalogUtil.getVoltDbRoot(readDepl.deployment.getPaths());
+      File inzFH=new VoltFile(rootFH,VoltDB.INITIALIZED_MARKER);
+      if (inzFH.exists()) {
+        VoltDB.crashLocalVoltDB("cannot use legacy start action " + config.m_startAction + " on voltdbroot "+ rootFH+ " that was initialized with the init command");
+        return;
+      }
+    }
+    if (config.m_hostCount == VoltDB.UNDEFINED) {
+      config.m_hostCount=readDepl.deployment.getCluster().getHostcount();
+    }
+    m_mode=OperationMode.INITIALIZING;
+    m_config=config;
+    m_startMode=null;
+    m_safeMpTxnId=Long.MAX_VALUE;
+    m_lastSeenMpTxnId=Long.MIN_VALUE;
+    m_clientInterface=null;
+    m_adminListener=null;
+    m_commandLog=new DummyCommandLog();
+    m_messenger=null;
+    m_opsRegistrar=new OpsRegistrar();
+    m_asyncCompilerAgent=null;
+    m_snapshotCompletionMonitor=null;
+    m_catalogContext=null;
+    m_partitionCountStats=null;
+    m_ioStats=null;
+    m_memoryStats=null;
+    m_commandLogStats=null;
+    m_statsManager=null;
+    m_restoreAgent=null;
+    m_recoveryStartTime=System.currentTimeMillis();
+    m_hostIdWithStartupCatalog=0;
+    m_pathToStartupCatalog=m_config.m_pathToCatalog;
+    m_replicationActive=new AtomicBoolean(false);
+    m_configLogger=null;
+    ActivePlanRepository.clear();
+    final int computationThreads=Math.max(2,CoreUtils.availableProcessors() / 4);
+    m_computationService=CoreUtils.getListeningExecutorService("Computation service thread",computationThreads,m_config.m_computationCoreBindings);
+    try {
+      System.setOut(new PrintStream(System.out,true,"UTF-8"));
+      System.setErr(new PrintStream(System.err,true,"UTF-8"));
+    }
+ catch (    UnsupportedEncodingException e) {
+      hostLog.fatal("Support for the UTF-8 encoding is required for VoltDB. This means you are likely running an unsupported JVM. Exiting.");
+      VoltDB.exit(-1);
+    }
+    m_snapshotCompletionMonitor=new SnapshotCompletionMonitor();
+    if (m_config.m_versionStringOverrideForTest != null) {
+      m_versionString=m_config.m_versionStringOverrideForTest;
+    }
+    if (m_config.m_versionCompatibilityRegexOverrideForTest != null) {
+      m_hotfixableRegexPattern=m_config.m_versionCompatibilityRegexOverrideForTest;
+    }
+    if (m_config.m_buildStringOverrideForTest != null) {
+      m_buildString=m_config.m_buildStringOverrideForTest;
+    }
+    MeshProber.Determination determination=buildClusterMesh(readDepl);
+    if (m_config.m_startAction == StartAction.PROBE) {
+      String action="Starting a new database cluster";
+      if (determination.startAction.doesRejoin()) {
+        action="Rejoining a running cluster";
+      }
+ else       if (determination.startAction.doesRecover()) {
+        action="Restarting the database cluster from the command logs";
+      }
+      hostLog.info(action);
+      consoleLog.info(action);
+    }
+    m_config.m_startAction=determination.startAction;
+    m_config.m_hostCount=determination.hostCount;
+    modifyIfNecessaryDeploymentHostCount(m_config,readDepl.deployment,determination.hostCount);
+    boolean isRejoin=m_config.m_startAction.doesRejoin();
+    m_rejoining=isRejoin;
+    m_rejoinDataPending=m_config.m_startAction.doesJoin();
+    m_joining=m_config.m_startAction == StartAction.JOIN;
+    if (isRejoin || m_joining) {
+      m_statusTracker.setNodeState(NodeState.REJOINING);
+    }
+    m_opsRegistrar.registerMailboxes(m_messenger);
+    final Future<?> buildStringValidation=validateBuildString(getBuildString(),m_messenger.getZK());
+    m_messenger.getZK().create(VoltZK.start_action,null,Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT,new ZKUtil.StringCallback(),null);
+    VoltZK.createStartActionNode(m_messenger.getZK(),m_messenger.getHostId(),m_config.m_startAction);
+    validateStartAction();
+    Map<Integer,String> hostGroups=null;
+    final int numberOfNodes=readDeploymentAndCreateStarterCatalogContext();
+    if (config.m_isEnterprise && m_config.m_startAction.doesRequireEmptyDirectories() && !config.m_forceVoltdbCreate) {
+      managedPathsEmptyCheck();
+    }
+    if (!isRejoin && !m_joining) {
+      hostGroups=m_messenger.waitForGroupJoin(numberOfNodes);
+    }
+    if (m_messenger.isPaused() || m_config.m_isPaused) {
+      setStartMode(OperationMode.PAUSED);
+    }
+    m_periodicWorkThread=CoreUtils.getScheduledThreadPoolExecutor("Periodic Work",1,CoreUtils.SMALL_STACK_SIZE);
+    m_periodicPriorityWorkThread=CoreUtils.getScheduledThreadPoolExecutor("Periodic Priority Work",1,CoreUtils.SMALL_STACK_SIZE);
+    Class<?> snapshotIOAgentClass=MiscUtils.loadProClass("org.voltdb.SnapshotIOAgentImpl","Snapshot",true);
+    if (snapshotIOAgentClass != null) {
+      try {
+        m_snapshotIOAgent=(SnapshotIOAgent)snapshotIOAgentClass.getConstructor(HostMessenger.class,long.class).newInstance(m_messenger,m_messenger.getHSIdForLocalSite(HostMessenger.SNAPSHOT_IO_AGENT_ID));
+        m_messenger.createMailbox(m_snapshotIOAgent.getHSId(),m_snapshotIOAgent);
+      }
+ catch (      Exception e) {
+        VoltDB.crashLocalVoltDB("Failed to instantiate snapshot IO agent",true,e);
+      }
+    }
+    if (m_config.m_pathToLicense == null) {
+      m_licenseApi=MiscUtils.licenseApiFactory();
+      if (m_licenseApi == null) {
+        hostLog.fatal("Unable to open license file in default directories");
+      }
+    }
+ else {
+      m_licenseApi=MiscUtils.licenseApiFactory(m_config.m_pathToLicense);
+      if (m_licenseApi == null) {
+        hostLog.fatal("Unable to open license file in provided path: " + m_config.m_pathToLicense);
+      }
+    }
+    if (m_licenseApi == null) {
+      hostLog.fatal("Please contact sales@voltdb.com to request a license.");
+      VoltDB.crashLocalVoltDB("Failed to initialize license verifier. " + "See previous log message for details.",false,null);
+    }
+    m_asyncCompilerAgent=new AsyncCompilerAgent(m_licenseApi);
+    try {
+      SimpleDateFormat sdf=new SimpleDateFormat("EEE MMM d, yyyy");
+      JSONObject jo=new JSONObject();
+      jo.put("trial",m_licenseApi.isTrial());
+      jo.put("hostcount",m_licenseApi.maxHostcount());
+      jo.put("commandlogging",m_licenseApi.isCommandLoggingAllowed());
+      jo.put("wanreplication",m_licenseApi.isDrReplicationAllowed());
+      jo.put("expiration",sdf.format(m_licenseApi.expires().getTime()));
+      m_licenseInformation=jo.toString();
+    }
+ catch (    JSONException ex) {
+    }
+    m_globalServiceElector=new GlobalServiceElector(m_messenger.getZK(),m_messenger.getHostId());
+    try {
+      m_globalServiceElector.start();
+    }
+ catch (    Exception e) {
+      VoltDB.crashLocalVoltDB("Unable to start GlobalServiceElector",true,e);
+    }
+    if (m_config.m_isEnterprise) {
+      long elasticHSId=m_messenger.getHSIdForLocalSite(HostMessenger.REBALANCE_SITE_ID);
+      m_messenger.createMailbox(elasticHSId,new SiteMailbox(m_messenger,elasticHSId));
+    }
+    if (m_joining) {
+      Class<?> elasticJoinCoordClass=MiscUtils.loadProClass("org.voltdb.join.ElasticJoinNodeCoordinator","Elastic",false);
+      try {
+        Constructor<?> constructor=elasticJoinCoordClass.getConstructor(HostMessenger.class,String.class);
+        m_joinCoordinator=(JoinCoordinator)constructor.newInstance(m_messenger,m_catalogContext.cluster.getVoltroot());
+        m_messenger.registerMailbox(m_joinCoordinator);
+        m_joinCoordinator.initialize(m_catalogContext.getDeployment().getCluster().getKfactor());
+      }
+ catch (      Exception e) {
+        VoltDB.crashLocalVoltDB("Failed to instantiate join coordinator",true,e);
+      }
+    }
+    JSONObject topo=getTopology(config.m_startAction,hostGroups,m_joinCoordinator);
+    m_partitionsToSitesAtStartupForExportInit=new ArrayList<Integer>();
+    try {
+      ClusterConfig clusterConfig=new ClusterConfig(topo);
+      m_configuredReplicationFactor=clusterConfig.getReplicationFactor();
+      m_cartographer=new Cartographer(m_messenger,m_configuredReplicationFactor,m_catalogContext.cluster.getNetworkpartition());
+      List<Integer> partitions=null;
+      if (isRejoin) {
+        m_configuredNumberOfPartitions=m_cartographer.getPartitionCount();
+        partitions=m_cartographer.getIv2PartitionsToReplace(m_configuredReplicationFactor,clusterConfig.getSitesPerHost());
+        if (partitions.size() == 0) {
+          VoltDB.crashLocalVoltDB("The VoltDB cluster already has enough nodes to satisfy " + "the requested k-safety factor of " + m_configuredReplicationFactor + ".\n"+ "No more nodes can join.",false,null);
+        }
+      }
+ else {
+        m_configuredNumberOfPartitions=clusterConfig.getPartitionCount();
+        partitions=ClusterConfig.partitionsForHost(topo,m_messenger.getHostId());
+      }
+      for (int ii=0; ii < partitions.size(); ii++) {
+        Integer partition=partitions.get(ii);
+        m_iv2InitiatorStartingTxnIds.put(partition,TxnEgo.makeZero(partition).getTxnId());
+      }
+      m_iv2Initiators=createIv2Initiators(partitions,m_config.m_startAction,m_partitionsToSitesAtStartupForExportInit);
+      m_iv2InitiatorStartingTxnIds.put(MpInitiator.MP_INIT_PID,TxnEgo.makeZero(MpInitiator.MP_INIT_PID).getTxnId());
+      List<Long> localHSIds=new ArrayList<Long>();
+      for (      Initiator ii : m_iv2Initiators.values()) {
+        localHSIds.add(ii.getInitiatorHSId());
+      }
+      m_MPI=new MpInitiator(m_messenger,localHSIds,getStatsAgent());
+      m_iv2Initiators.put(MpInitiator.MP_INIT_PID,m_MPI);
+      Map<Integer,Long> partsToHSIdsToRejoin=new HashMap<Integer,Long>();
+      for (      Initiator init : m_iv2Initiators.values()) {
+        if (init.isRejoinable()) {
+          partsToHSIdsToRejoin.put(init.getPartitionId(),init.getInitiatorHSId());
+        }
+      }
+      OnDemandBinaryLogger.path=m_catalogContext.cluster.getVoltroot();
+      if (isRejoin) {
+        SnapshotSaveAPI.recoveringSiteCount.set(partsToHSIdsToRejoin.size());
+        hostLog.info("Set recovering site count to " + partsToHSIdsToRejoin.size());
+        m_joinCoordinator=new Iv2RejoinCoordinator(m_messenger,partsToHSIdsToRejoin.values(),m_catalogContext.cluster.getVoltroot(),m_config.m_startAction == StartAction.LIVE_REJOIN);
+        m_joinCoordinator.initialize(m_catalogContext.getDeployment().getCluster().getKfactor());
+        m_messenger.registerMailbox(m_joinCoordinator);
+        if (m_config.m_startAction == StartAction.LIVE_REJOIN) {
+          hostLog.info("Using live rejoin.");
+        }
+ else {
+          hostLog.info("Using blocking rejoin.");
+        }
+      }
+ else       if (m_joining) {
+        m_joinCoordinator.setPartitionsToHSIds(partsToHSIdsToRejoin);
+      }
+    }
+ catch (    Exception e) {
+      VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
+    }
+    Inits inits=new Inits(m_statusTracker,this,1);
+    inits.doInitializationWork();
+    checkHeapSanity(MiscUtils.isPro(),m_catalogContext.tables.size(),(m_iv2Initiators.size() - 1),m_configuredReplicationFactor);
+    if (m_joining && m_config.m_replicationRole == ReplicationRole.REPLICA) {
+      VoltDB.crashLocalVoltDB("Elastic join is prohibited on a replica cluster.",false,null);
+    }
+    collectLocalNetworkMetadata();
+    final CatalogSpecificPlanner csp=new CatalogSpecificPlanner(m_asyncCompilerAgent,m_catalogContext);
+    m_ioStats=new IOStats();
+    getStatsAgent().registerStatsSource(StatsSelector.IOSTATS,0,m_ioStats);
+    m_memoryStats=new MemoryStats();
+    getStatsAgent().registerStatsSource(StatsSelector.MEMORY,0,m_memoryStats);
+    getStatsAgent().registerStatsSource(StatsSelector.TOPO,0,m_cartographer);
+    m_partitionCountStats=new PartitionCountStats(m_cartographer);
+    getStatsAgent().registerStatsSource(StatsSelector.PARTITIONCOUNT,0,m_partitionCountStats);
+    m_initiatorStats=new InitiatorStats(m_myHostId);
+    m_liveClientsStats=new LiveClientsStats();
+    getStatsAgent().registerStatsSource(StatsSelector.LIVECLIENTS,0,m_liveClientsStats);
+    m_latencyStats=new LatencyStats(m_myHostId);
+    getStatsAgent().registerStatsSource(StatsSelector.LATENCY,0,m_latencyStats);
+    m_latencyHistogramStats=new LatencyHistogramStats(m_myHostId);
+    getStatsAgent().registerStatsSource(StatsSelector.LATENCY_HISTOGRAM,0,m_latencyHistogramStats);
+    BalancePartitionsStatistics rebalanceStats=new BalancePartitionsStatistics();
+    getStatsAgent().registerStatsSource(StatsSelector.REBALANCE,0,rebalanceStats);
+    KSafetyStats kSafetyStats=new KSafetyStats();
+    getStatsAgent().registerStatsSource(StatsSelector.KSAFETY,0,kSafetyStats);
+    m_cpuStats=new CpuStats();
+    getStatsAgent().registerStatsSource(StatsSelector.CPU,0,m_cpuStats);
+    m_commandLogStats=new CommandLogStats(m_commandLog);
+    getStatsAgent().registerStatsSource(StatsSelector.COMMANDLOG,0,m_commandLogStats);
+    if ((m_commandLog != null) && (m_commandLog.needsInitialization())) {
+      consoleLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_StayTunedForLogging.name(),null);
+    }
+ else {
+      consoleLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_StayTunedForNoLogging.name(),null);
+    }
+    if (m_commandLog != null && (isRejoin || m_joining)) {
+      m_commandLog.initForRejoin(m_catalogContext.cluster.getLogconfig().get("log").getLogsize(),Long.MIN_VALUE,m_configuredNumberOfPartitions,true,m_config.m_commandLogBinding,m_iv2InitiatorStartingTxnIds);
+    }
+    try {
+      InetAddress clientIntf=null;
+      InetAddress adminIntf=null;
+      if (!m_config.m_externalInterface.trim().equals("")) {
+        clientIntf=InetAddress.getByName(m_config.m_externalInterface);
+        adminIntf=clientIntf;
+      }
+      if (m_config.m_clientInterface != null && m_config.m_clientInterface.trim().length() > 0) {
+        clientIntf=InetAddress.getByName(m_config.m_clientInterface);
+      }
+      if (m_config.m_adminInterface != null && m_config.m_adminInterface.trim().length() > 0) {
+        adminIntf=InetAddress.getByName(m_config.m_adminInterface);
+      }
+      m_clientInterface=ClientInterface.create(m_messenger,m_catalogContext,m_config.m_replicationRole,m_cartographer,m_configuredNumberOfPartitions,clientIntf,config.m_port,adminIntf,config.m_adminPort,m_config.m_timestampTestingSalt);
+    }
+ catch (    Exception e) {
+      VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
+    }
+    boolean usingCommandLog=m_config.m_isEnterprise && m_catalogContext.cluster.getLogconfig().get("log").getEnabled();
+    String clSnapshotPath=null;
+    if (m_catalogContext.cluster.getLogconfig().get("log").getEnabled()) {
+      clSnapshotPath=m_catalogContext.cluster.getLogconfig().get("log").getInternalsnapshotpath();
+    }
+    if (m_config.m_isEnterprise) {
+      try {
+        Class<?> ndrgwClass=null;
+        ndrgwClass=Class.forName("org.voltdb.dr2.DRProducer");
+        Constructor<?> ndrgwConstructor=ndrgwClass.getConstructor(File.class,File.class,boolean.class,int.class,int.class);
+        m_producerDRGateway=(ProducerDRGateway)ndrgwConstructor.newInstance(new File(m_catalogContext.cluster.getDroverflow()),getSnapshotPath(m_catalogContext),m_replicationActive.get(),m_configuredNumberOfPartitions,m_catalogContext.getDeployment().getCluster().getHostcount());
+        m_producerDRGateway.start();
+        m_producerDRGateway.blockOnDRStateConvergence();
+      }
+ catch (      Exception e) {
+        VoltDB.crashLocalVoltDB("Unable to load DR system",true,e);
+      }
+    }
+ else {
+      getStatsAgent().registerStatsSource(StatsSelector.DRPRODUCERNODE,0,new DRProducerStatsBase.DRProducerNodeStatsBase());
+      getStatsAgent().registerStatsSource(StatsSelector.DRPRODUCERPARTITION,0,new DRProducerStatsBase.DRProducerPartitionStatsBase());
+    }
+    createDRConsumerIfNeeded();
+    try {
+      final String serializedCatalog=m_catalogContext.catalog.serialize();
+      boolean createMpDRGateway=true;
+      for (      Initiator iv2init : m_iv2Initiators.values()) {
+        iv2init.configure(getBackendTargetType(),m_catalogContext,serializedCatalog,m_catalogContext.getDeployment().getCluster().getKfactor(),csp,m_configuredNumberOfPartitions,m_config.m_startAction,getStatsAgent(),m_memoryStats,m_commandLog,m_producerDRGateway,iv2init != m_MPI && createMpDRGateway,m_config.m_executionCoreBindings.poll());
+        if (iv2init != m_MPI) {
+          createMpDRGateway=false;
+        }
+      }
+      boolean expectSyncSnapshot=m_config.m_replicationRole == ReplicationRole.REPLICA && config.m_startAction == StartAction.CREATE;
+      m_leaderAppointer=new LeaderAppointer(m_messenger,m_configuredNumberOfPartitions,m_catalogContext.getDeployment().getCluster().getKfactor(),m_catalogContext.cluster.getFaultsnapshots().get("CLUSTER_PARTITION"),topo,m_MPI,kSafetyStats,expectSyncSnapshot);
+      m_globalServiceElector.registerService(m_leaderAppointer);
+    }
+ catch (    Exception e) {
+      Throwable toLog=e;
+      if (e instanceof ExecutionException) {
+        toLog=((ExecutionException)e).getCause();
+      }
+      VoltDB.crashLocalVoltDB("Error configuring IV2 initiator.",true,toLog);
+    }
+    m_statsManager=null;
+    try {
+      final Class<?> statsManagerClass=MiscUtils.loadProClass("org.voltdb.management.JMXStatsManager","JMX",true);
+      if (statsManagerClass != null && !DISABLE_JMX) {
+        m_statsManager=(StatsManager)statsManagerClass.newInstance();
+        m_statsManager.initialize();
+      }
+    }
+ catch (    Exception e) {
+    }
+    try {
+      m_snapshotCompletionMonitor.init(m_messenger.getZK());
+    }
+ catch (    Exception e) {
+      hostLog.fatal("Error initializing snapshot completion monitor",e);
+      VoltDB.crashLocalVoltDB("Error initializing snapshot completion monitor",true,e);
+    }
+    try {
+      buildStringValidation.get();
+    }
+ catch (    Exception e) {
+      VoltDB.crashLocalVoltDB("Failed to validate cluster build string",false,e);
+    }
+    if (!isRejoin && !m_joining) {
+      try {
+        m_messenger.waitForAllHostsToBeReady(m_catalogContext.getDeployment().getCluster().getHostcount());
+      }
+ catch (      Exception e) {
+        hostLog.fatal("Failed to announce ready state.");
+        VoltDB.crashLocalVoltDB("Failed to announce ready state.",false,null);
+      }
+    }
+    if (!m_joining && (m_cartographer.getPartitionCount()) != m_configuredNumberOfPartitions) {
+      for (      Map.Entry<Integer,ImmutableList<Long>> entry : getSiteTrackerForSnapshot().m_partitionsToSitesImmutable.entrySet()) {
+        hostLog.info(entry.getKey() + " -- " + CoreUtils.hsIdCollectionToString(entry.getValue()));
+      }
+      VoltDB.crashGlobalVoltDB("Mismatch between configured number of partitions (" + m_configuredNumberOfPartitions + ") and actual ("+ m_cartographer.getPartitionCount()+ ")",true,null);
+    }
+    schedulePeriodicWorks();
+    m_clientInterface.schedulePeriodicWorks();
+    logDebuggingInfo(m_config.m_adminPort,m_config.m_httpPort,m_httpPortExtraLogMessage,m_jsonEnabled);
+    if (m_configuredReplicationFactor == 0) {
+      consoleLog.warn("This is not a highly available cluster. K-Safety is set to 0.");
+    }
+    if (!usingCommandLog) {
+      boolean usingPeridoicSnapshots=false;
+      for (      SnapshotSchedule ss : m_catalogContext.database.getSnapshotschedule()) {
+        if (ss.getEnabled()) {
+          usingPeridoicSnapshots=true;
+        }
+      }
+      if (usingPeridoicSnapshots) {
+        consoleLog.warn("Durability is limited to periodic snapshots. Command logging is off.");
+      }
+ else {
+        consoleLog.warn("Durability is turned off. Command logging is off.");
+      }
+    }
+    if ((m_catalogContext.cluster.getNetworkpartition() == false) && (m_configuredReplicationFactor > 0)) {
+      hostLog.warn("Running a redundant (k-safe) cluster with network " + "partition detection disabled is not recommended for production use.");
+    }
+    assert(m_clientInterface != null);
+    m_clientInterface.initializeSnapshotDaemon(m_messenger,m_globalServiceElector);
+    try {
+      if (m_config.m_isEnterprise && TheHashinator.getCurrentConfig().type == HashinatorType.ELASTIC) {
+        Class<?> elasticServiceClass=MiscUtils.loadProClass("org.voltdb.join.ElasticJoinCoordinator","Elastic join",false);
+        if (elasticServiceClass == null) {
+          VoltDB.crashLocalVoltDB("Missing the ElasticJoinCoordinator class file in the enterprise " + "edition",false,null);
+        }
+        Constructor<?> constructor=elasticServiceClass.getConstructor(HostMessenger.class,ClientInterface.class,Cartographer.class,BalancePartitionsStatistics.class,String.class,int.class);
+        m_elasticJoinService=(ElasticJoinService)constructor.newInstance(m_messenger,m_clientInterface,m_cartographer,rebalanceStats,clSnapshotPath,m_catalogContext.getDeployment().getCluster().getKfactor());
+        m_elasticJoinService.updateConfig(m_catalogContext);
+      }
+    }
+ catch (    Exception e) {
+      VoltDB.crashLocalVoltDB("Failed to instantiate elastic join service",false,e);
+    }
+    if (m_restoreAgent != null) {
+      m_restoreAgent.setInitiator(new Iv2TransactionCreator(m_clientInterface));
+    }
+    m_opsRegistrar.setDummyMode(false);
+    m_configLogger=new Thread(new ConfigLogging());
+    m_configLogger.start();
+    scheduleDailyLoggingWorkInNextCheckTime();
+  }
+}
