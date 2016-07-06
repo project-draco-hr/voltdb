@@ -1,9 +1,6 @@
-def session(self):
+def listen(self):
     '\n        Establishes session and responds to commands\n        '
     help_text = ['See which tests are failing the most since this build:\n\ttest-leaderboard <job> <build>\n', 'See which tests are failing in the past x days:\n\tdays <job> <days>\n', 'Failing the most in this build range:\n\tbuild-range <job> <build #>-<build #>\n', 'Most recent failure on master:\n\ttest-on-master <job> <testname> (testname is full test name including the suite)\n', 'All failures for a job:\n\tall-failures <job>\n', 'For any <job>, you can specify "pro" or "com" for the master jobs\n', 'help\n']
-    if (not self.client.rtm_connect()):
-        print 'Connection failed for Real Time Messaging, invalid token?'
-        return
     while True:
         try:
             incoming = list(self.client.rtm_read())
@@ -25,32 +22,37 @@ def session(self):
                     if ('test-on-master' in text):
                         args = text.split(' ')
                         params = {'job': job, 'test': args[2], }
-                        self.query_and_response(TOM_QUERY, params, [channel], 'testonmaster.txt')
+                        self.query_and_response(TOM_QUERY, params, [channel], ('%s-testonmaster.txt' % args[2]))
                     elif ('all-failures' in text):
                         params = {'job': job, }
-                        self.query_and_response(AF_QUERY, params, [channel], 'allfailures.txt')
+                        self.query_and_response(AF_QUERY, params, [channel], ('%s-allfailures.txt' % job))
                     elif ('days' in text):
                         args = text.split(' ')
                         params = {'job': job, 'days': args[2], }
-                        self.query_and_response(D_QUERY, params, [channel], ('%s-leaderboard-%s.txt' % args[2]))
+                        self.query_and_response(D_QUERY, params, [channel], ('%s-leaderboard-past-%s.txt' % (job, args[2])))
                     elif ('test-leaderboard' in text):
                         args = text.split(' ')
                         params = {'job': job, 'beginning': args[2], }
-                        self.query_and_response(TL_QUERY, params, [channel], 'testleaderboard.txt')
+                        self.query_and_response(TL_QUERY, params, [channel], ('%s-testleaderboard-from-%s.txt' % (job, args[2])))
                     elif ('build-range' in text):
                         args = text.split(' ')
-                        builds = args[2]
+                        builds = args[2].split('-')
                         params = {'job': job, 'build_low': builds[0], 'build_high': builds[1], }
-                        self.query_and_response(BR_QUERY, params, [channel], 'buildrange.txt')
+                        self.query_and_response(BR_QUERY, params, [channel], ('%s-buildrange-%s-to-%s.txt' % (job, builds[0], builds[1])))
             time.sleep(1)
         except (KeyboardInterrupt, SystemExit):
-            break
+            self.log('Turning off the bot')
+            return
         except IndexError as error:
-            print error
+            self.log(error)
             self.post_message(channel, ('Incorrect number of arguments\n\n' + ''.join(help_text)))
         except MySQLError as error:
-            print error
+            self.log(error)
             self.post_message(channel, 'Something went wrong with the query.')
         except Exception as error:
-            print error
-        sys.stdout.flush()
+            self.log('Something unexpected went wrong')
+            self.log(error)
+            if (not self.connect()):
+                self.log('Could not connect to Slack')
+                self.log('Turning off the bot')
+                return

@@ -1,21 +1,27 @@
-def query_and_response(self, query, params, channels, filename):
+def query_and_response(self, query, params, channels, filename, retry=False):
     '\n        Make a query then upload a text file with tables to the channels.\n        '
     try:
-        database = mysql.connector.connect(host=os.environ.get('dbhost', None), user=os.environ.get('dbuser', None), password=os.environ.get('dbpass', None), database=os.environ.get('dbdb', None))
-        cursor = database.cursor()
-    except MySQLError as error:
-        print 'Could not connect to database'
-        print error
-        self.post_message(channel, 'Something went wrong with the query.')
-        return
-    cursor.execute(query, params)
-    headers = list(cursor.column_names)
-    table = cursor.fetchall()
-    if (query == L_QUERY):
-        for (i, row) in enumerate(table):
-            table[i] = list(row)
-            table[i][0] = table[i][0].replace('branch-2-', '')
-            table[i][1] = table[i][1].replace('org.voltdb.', '')
-    self.client.api_call('files.upload', channels=channels, content=tabulate(table, headers), filetype='text', filename=filename)
-    cursor.close()
-    database.close()
+        try:
+            database = mysql.connector.connect(host=os.environ.get('dbhost', None), user=os.environ.get('dbuser', None), password=os.environ.get('dbpass', None), database=os.environ.get('dbdb', None))
+            cursor = database.cursor()
+            cursor.execute(query, params)
+            headers = list(cursor.column_names)
+            table = cursor.fetchall()
+            if (query == L_QUERY):
+                for (i, row) in enumerate(table):
+                    table[i] = list(row)
+                    table[i][0] = table[i][0].replace('branch-2-', '')
+                    table[i][1] = table[i][1].replace('org.voltdb.', '')
+            self.client.api_call('files.upload', channels=channels, content=tabulate(table, headers), filetype='text', filename=filename)
+        except MySQLError as error:
+            self.log('Could not connect to database')
+            self.log(error)
+            self.post_message(channel, 'Something went wrong with the query.')
+        except Exception as error:
+            self.log('Something unexpected went wrong')
+            self.log(error)
+            if (self.connect() and (retry == False)):
+                self.query_and_response(query, params, channels, filename, retry=True)
+    finally:
+        cursor.close()
+        database.close()
