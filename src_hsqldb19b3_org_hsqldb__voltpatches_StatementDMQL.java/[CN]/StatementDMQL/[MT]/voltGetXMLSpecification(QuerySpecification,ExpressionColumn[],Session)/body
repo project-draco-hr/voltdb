@@ -1,28 +1,11 @@
 {
   VoltXMLElement query=new VoltXMLElement("select");
-  if (select.isDistinctSelect)   query.attributes.put("distinct","true");
+  if (select.isDistinctSelect) {
+    query.attributes.put("distinct","true");
+  }
   List<VoltXMLElement> limitOffsetXml=voltGetLimitOffsetXMLFromSortAndSlice(session,select.sortAndSlice);
   for (  VoltXMLElement elem : limitOffsetXml) {
     query.children.add(elem);
-  }
-  org.hsqldb_voltpatches.lib.HsqlList col_list=new org.hsqldb_voltpatches.lib.HsqlArrayList();
-  select.collectAllExpressions(col_list,Expression.columnExpressionSet,Expression.emptyExpressionSet);
-  if (select.queryCondition != null) {
-    Expression.collectAllExpressions(col_list,select.queryCondition,Expression.columnExpressionSet,Expression.emptyExpressionSet);
-  }
-  for (int i=0; i < select.exprColumns.length; i++) {
-    Expression.collectAllExpressions(col_list,select.exprColumns[i],Expression.columnExpressionSet,Expression.emptyExpressionSet);
-  }
-  for (  RangeVariable rv : select.rangeVariables) {
-    if (rv.indexCondition != null) {
-      Expression.collectAllExpressions(col_list,rv.indexCondition,Expression.columnExpressionSet,Expression.emptyExpressionSet);
-    }
-    if (rv.indexEndCondition != null) {
-      Expression.collectAllExpressions(col_list,rv.indexEndCondition,Expression.columnExpressionSet,Expression.emptyExpressionSet);
-    }
-    if (rv.nonIndexJoinCondition != null) {
-      Expression.collectAllExpressions(col_list,rv.nonIndexJoinCondition,Expression.columnExpressionSet,Expression.emptyExpressionSet);
-    }
   }
   VoltXMLElement cols=new VoltXMLElement("columns");
   query.children.add(cols);
@@ -54,7 +37,7 @@
     }
  else     if (expr.equals(select.getHavingCondition())) {
       if (!(expr instanceof ExpressionLogical && expr.isAggregate)) {
-        throw new org.hsqldb_voltpatches.HSQLInterface.HSQLParseException("VoltDB does not support HAVING clause without aggregation. " + "Consider using WHERE clause if possible");
+        throw new HSQLParseException("VoltDB does not support HAVING clause without aggregation. " + "Consider using WHERE clause if possible");
       }
     }
  else     if (expr.opType != OpTypes.SIMPLE_COLUMN || (expr.isAggregate && expr.alias != null)) {
@@ -64,20 +47,20 @@
   for (  Pair<Integer,HsqlNameManager.SimpleName> alias : aliases) {
     select.exprColumns[alias.getFirst()].alias=alias.getSecond();
   }
-  java.util.Set<Integer> ignoredColsIndexes=new java.util.HashSet<Integer>();
+  SimpleColumnContext context=new SimpleColumnContext(session,select.displayCols);
   Expression havingCondition=select.getHavingCondition();
   if (havingCondition != null) {
     VoltXMLElement having=new VoltXMLElement("having");
     query.children.add(having);
-    VoltXMLElement havingExpr=havingCondition.voltGetXML(session,select.displayCols,ignoredColsIndexes,0);
+    VoltXMLElement havingExpr=havingCondition.voltGetXML(context.withStartKey(0),null);
     having.children.add(havingExpr);
   }
   for (int jj=0; jj < select.displayCols.size(); ++jj) {
     Expression expr=select.displayCols.get(jj);
-    if (ignoredColsIndexes.contains(jj)) {
+    if (context.disabledTheColumnForDisplay(jj)) {
       continue;
     }
-    VoltXMLElement xml=expr.voltGetXML(session,select.displayCols,ignoredColsIndexes,jj);
+    VoltXMLElement xml=expr.voltGetXML(context.withStartKey(jj),null);
     cols.children.add(xml);
     assert(xml != null);
   }
@@ -93,7 +76,7 @@
     query.children.add(groupCols);
     for (int jj=0; jj < groupByCols.size(); ++jj) {
       Expression expr=groupByCols.get(jj);
-      VoltXMLElement xml=expr.voltGetXML(session,select.displayCols,ignoredColsIndexes,jj);
+      VoltXMLElement xml=expr.voltGetXML(context.withStartKey(jj),null);
       groupCols.children.add(xml);
     }
   }
@@ -102,12 +85,14 @@
     query.children.add(orderCols);
     for (int jj=0; jj < orderByCols.size(); ++jj) {
       Expression expr=orderByCols.get(jj);
-      VoltXMLElement xml=expr.voltGetXML(session,select.displayCols,ignoredColsIndexes,jj);
+      VoltXMLElement xml=expr.voltGetXML(context.withStartKey(jj),null);
       orderCols.children.add(xml);
     }
   }
-  java.util.List<VoltXMLElement> exprCols=new java.util.ArrayList<VoltXMLElement>();
-  extractColumnReferences(query,exprCols);
-  resolveUsingColumns(exprCols,select.rangeVariables);
+  if (scans.children.size() > 1) {
+    java.util.List<VoltXMLElement> exprCols=new java.util.ArrayList<VoltXMLElement>();
+    extractColumnReferences(query,exprCols);
+    resolveUsingColumns(exprCols,select.rangeVariables);
+  }
   return query;
 }

@@ -1,0 +1,29 @@
+{
+  AbstractPlanNode node=compile(windowedQuery);
+  assertTrue(node instanceof SendPlanNode);
+  AbstractPlanNode projPlanNode=node.getChild(0);
+  assertTrue(projPlanNode instanceof ProjectionPlanNode);
+  AbstractPlanNode partitionByPlanNode=projPlanNode.getChild(0);
+  assertTrue(partitionByPlanNode instanceof PartitionByPlanNode);
+  AbstractPlanNode abstractOrderByNode=partitionByPlanNode.getChild(0);
+  assertTrue(abstractOrderByNode instanceof OrderByPlanNode);
+  OrderByPlanNode orderByNode=(OrderByPlanNode)abstractOrderByNode;
+  NodeSchema input_schema=orderByNode.getOutputSchema();
+  assertNotNull(input_schema);
+  AbstractPlanNode seqScanNode=orderByNode.getChild(0);
+  assertTrue(seqScanNode instanceof SeqScanPlanNode);
+  PartitionByPlanNode pbPlanNode=(PartitionByPlanNode)partitionByPlanNode;
+  NodeSchema schema=pbPlanNode.getOutputSchema();
+  assertEquals(nSorts,orderByNode.getSortExpressions().size());
+  int sortIndex=0;
+  for (  SortDirectionType direction : orderByNode.getSortDirections()) {
+    SortDirectionType expected=(sortIndex == descSortIndex) ? SortDirectionType.DESC : SortDirectionType.ASC;
+    assertEquals(expected,direction);
+    ++sortIndex;
+  }
+  SchemaColumn column=schema.getColumns().get(0);
+  assertTrue(column.getExpression() instanceof WindowedExpression);
+  assertEquals("ARANK",column.getColumnAlias());
+  assertEquals(2,pbPlanNode.getNumberOfPartitionByExpressions());
+  validateTVEs(input_schema,pbPlanNode);
+}

@@ -1,4 +1,12 @@
 {
-  failToCompile("SELECT RANK() OVER (PARTITION BY A ORDER BY B ) FROM AAA GROUP BY A;","Use of both windowed operations and GROUP BY is not supported.");
-  failToCompile("SELECT RANK() OVER (PARTITION BY A ORDER BY B ) AS R1, " + "       RANK() OVER (PARTITION BY B ORDER BY A ) AS R2  " + "FROM AAA;","At most one windowed display column is supported.");
+  boolean savedGuard=PlanAssembler.HANDLE_WINDOWED_OPERATORS;
+  PlanAssembler.HANDLE_WINDOWED_OPERATORS=true;
+  try {
+    failToCompile("SELECT RANK() OVER (PARTITION BY A ORDER BY B ) FROM AAA GROUP BY A;","Use of both windowed operations and GROUP BY is not supported.");
+    failToCompile("SELECT RANK() OVER (PARTITION BY A ORDER BY B ) AS R1, " + "       RANK() OVER (PARTITION BY B ORDER BY A ) AS R2  " + "FROM AAA;","At most one windowed display column is supported.");
+    failToCompile("SELECT RANK() OVER (PARTITION BY A ORDER BY A, B) AS ARANK " + "FROM (select A, B, C from AAA where A < B) ALPHA, BBB " + "WHERE ALPHA.C <> BBB.C;","Column \"A\" is ambiguous.  It\'s in tables: ALPHA, BBB");
+  }
+  finally {
+    PlanAssembler.HANDLE_WINDOWED_OPERATORS=savedGuard;
+  }
 }
