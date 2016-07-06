@@ -1,4 +1,4 @@
-def start_database(self, recover=False):
+def start_database(self, is_pause, recover=False):
     '\n        Starts voltdb servers on all nodes configured for this database.\n        Returns reponse with HTTP status code and error details json.\n        '
     HTTPListener.sync_configuration()
     members = []
@@ -9,6 +9,9 @@ def start_database(self, recover=False):
         members = current_database['members']
     if (not members):
         return create_response(('No servers configured for the database: %u' % self.database_id), 404)
+    result = self.check_other_database_status(self.database_id)
+    if (not result):
+        return make_response(jsonify({'status': 404, 'statusString': 'Error', }), 404)
     for server_id in members:
         server = HTTPListener.Global.SERVERS.get(server_id)
         if (not server):
@@ -22,7 +25,7 @@ def start_database(self, recover=False):
         server = HTTPListener.Global.SERVERS.get(server_id)
         curr = server
         try:
-            url = ('http://%s:%u/api/1.0/databases/%u/servers/%s?id=%u' % (curr['hostname'], HTTPListener.__PORT__, self.database_id, action, server_id))
+            url = ('http://%s:%u/api/1.0/databases/%u/servers/%s?id=%u&pause=%s' % (curr['hostname'], HTTPListener.__PORT__, self.database_id, action, server_id, is_pause))
             response = requests.put(url)
             if (response.status_code != requests.codes.ok):
                 failed = True

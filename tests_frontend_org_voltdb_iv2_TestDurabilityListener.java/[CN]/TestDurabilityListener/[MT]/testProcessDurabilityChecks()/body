@@ -1,0 +1,38 @@
+{
+  SiteTaskerQueue stq=mock(SiteTaskerQueue.class);
+  SnapshotCompletionMonitor scm=mock(SnapshotCompletionMonitor.class);
+  SpScheduler sched=spy(new SpScheduler(1,stq,scm));
+  sched.setLock(new Object());
+  TransactionTaskQueue taskQueue=mock(TransactionTaskQueue.class);
+  SimpleListener listener=new SimpleListener();
+  SpDurabilityListener dut=new SpDurabilityListener(sched,taskQueue);
+  dut.setUniqueIdListener(listener);
+  int cnt=0;
+  ArgumentCaptor<SiteTasker.SiteTaskerRunnable> captor=ArgumentCaptor.forClass(SiteTasker.SiteTaskerRunnable.class);
+  for (  boolean isSync : new boolean[]{false,true}) {
+    dut.createFirstCompletionCheck(isSync,true);
+    CompletionChecks completionChecks=dut.startNewTaskList(dut.getNumberOfTasks());
+    dut.processDurabilityChecks(completionChecks);
+    verify(sched,never()).processDurabilityChecks(completionChecks);
+    final List<Long> spUniqIds=logSp(dut,taskQueue,0,1,2);
+    completionChecks=dut.startNewTaskList(dut.getNumberOfTasks());
+    dut.processDurabilityChecks(completionChecks);
+    verify(sched).processDurabilityChecks(completionChecks);
+    cnt++;
+    verify(stq,times(cnt)).offer(captor.capture());
+    captor.getValue().run();
+    assertEquals(spUniqIds.get(2).longValue(),listener.m_spUniqueId);
+    assertEquals(Long.MIN_VALUE,listener.m_mpUniqueId);
+    assertTrue(listener.m_notified);
+    final List<Long> mpUniqIds=logMp(dut,taskQueue,0,1,2);
+    completionChecks=dut.startNewTaskList(dut.getNumberOfTasks());
+    dut.processDurabilityChecks(completionChecks);
+    verify(sched).processDurabilityChecks(completionChecks);
+    cnt++;
+    verify(stq,times(cnt)).offer(captor.capture());
+    captor.getValue().run();
+    assertEquals(spUniqIds.get(2).longValue(),listener.m_spUniqueId);
+    assertEquals(mpUniqIds.get(2).longValue(),listener.m_mpUniqueId);
+    assertTrue(listener.m_notified);
+  }
+}
