@@ -1,19 +1,9 @@
 {
   int exprOp=getType();
   if (exprOp == OpTypes.SIMPLE_COLUMN) {
-    if (displayCols == null) {
-      if (this instanceof ExpressionColumn == false) {
-        throw new org.hsqldb_voltpatches.HSQLInterface.HSQLParseException("VoltDB does not support this complex query currently.");
-      }
-    }
- else {
-      for (int ii=startKey + 1; ii < displayCols.size(); ++ii) {
-        Expression otherCol=displayCols.get(ii);
-        if (otherCol != null && (otherCol.opType != OpTypes.SIMPLE_COLUMN) && (otherCol.columnIndex == this.columnIndex) && !(otherCol instanceof ExpressionColumn)) {
-          ignoredDisplayColIndexes.add(ii);
-          return otherCol.voltGetXML(session,displayCols,ignoredDisplayColIndexes,startKey,getAlias());
-        }
-      }
+    VoltXMLElement asResolved=context.resolveSimpleColumn(this);
+    if (asResolved != null) {
+      return asResolved;
     }
     opType=OpTypes.COLUMN;
     exprOp=OpTypes.COLUMN;
@@ -23,7 +13,7 @@
     throwForUnsupportedExpression(exprOp);
   }
   exp=exp.duplicate();
-  exp.attributes.put("id",this.getUniqueId(session));
+  exp.attributes.put("id",getUniqueId(context.m_session));
   if (realAlias != null) {
     exp.attributes.put("alias",realAlias);
   }
@@ -38,7 +28,7 @@
   }
   for (  Expression expr : nodes) {
     if (expr != null) {
-      VoltXMLElement vxmle=expr.voltGetXML(session,displayCols,ignoredDisplayColIndexes,startKey);
+      VoltXMLElement vxmle=expr.voltGetXML(context,null);
       exp.children.add(vxmle);
       assert(vxmle != null);
     }
@@ -46,11 +36,8 @@
 switch (exprOp) {
 case OpTypes.VALUE:
     if (valueData == null) {
-      if (dataType == null) {
-        exp.attributes.put("valuetype","NULL");
-        return exp;
-      }
-      exp.attributes.put("valuetype",Types.getTypeName(dataType.typeCode));
+      String valueType=(dataType == null) ? "NULL" : Types.getTypeName(dataType.typeCode);
+      exp.attributes.put("valuetype",valueType);
       return exp;
     }
   exp.attributes.put("valuetype",Types.getTypeName(dataType.typeCode));
@@ -91,7 +78,7 @@ exp.attributes.put("desc","true");
 return exp;
 case OpTypes.CAST:
 if (dataType == null) {
-throw new org.hsqldb_voltpatches.HSQLInterface.HSQLParseException("VoltDB could not determine the type in a CAST operation");
+throw new HSQLParseException("VoltDB could not determine the type in a CAST operation");
 }
 exp.attributes.put("valuetype",dataType.getNameString());
 return exp;
@@ -100,7 +87,7 @@ if (subQuery == null || subQuery.queryExpression == null) {
 throw new HSQLParseException("VoltDB could not determine the subquery");
 }
 ExpressionColumn parameters[]=new ExpressionColumn[0];
-exp.children.add(StatementQuery.voltGetXMLExpression(subQuery.queryExpression,parameters,session));
+exp.children.add(StatementQuery.voltGetXMLExpression(subQuery.queryExpression,parameters,context.m_session));
 return exp;
 case OpTypes.ALTERNATIVE:
 assert(nodes.length == 2);
@@ -115,9 +102,10 @@ assert(dataType != null);
 exp.attributes.put("valuetype",dataType.getNameString());
 return exp;
 case OpTypes.RANK:
-exp.attributes.put("valuetype",Type.SQL_NUMERIC.getNameString());
+assert(dataType != null);
+exp.attributes.put("valuetype",dataType.getNameString());
 ExpressionRank erank=(ExpressionRank)this;
-return erank.voltAnnotateRankXML(exp,session);
+return erank.voltAnnotateRankXML(exp,context);
 default :
 return exp;
 }
