@@ -1,0 +1,29 @@
+{
+  int preNumClientReaper=0;
+  Map<Thread,StackTraceElement[]> preStMap=Thread.getAllStackTraces();
+  for (  Thread t : preStMap.keySet()) {
+    if (t.getName().contains("VoltDB Client Reaper Thread")) {
+      preNumClientReaper++;
+    }
+  }
+  ClientConfig config=new ClientConfig();
+  Client client=ClientFactory.createClient(config);
+  client.createConnection("localhost");
+  client.close();
+  ClientFactory.decreaseClientNum();
+  Thread.sleep(2000);
+  Map<Thread,StackTraceElement[]> stMap=Thread.getAllStackTraces();
+  int postNumClientReaper=0;
+  for (  Entry<Thread,StackTraceElement[]> e : stMap.entrySet()) {
+    Thread t=e.getKey();
+    if (t == Thread.currentThread()) {
+      continue;
+    }
+    String threadName=t.getName();
+    if (threadName.contains("VoltDB Client Reaper Thread")) {
+      postNumClientReaper++;
+    }
+    assertFalse(threadName.contains("Reverse DNS lookups") || threadName.contains("Async Logger") || threadName.contains("Estimated Time Updater"));
+  }
+  assertEquals(preNumClientReaper,postNumClientReaper);
+}
