@@ -1,0 +1,23 @@
+{
+  JSONObject jsonResponse=readJSONObjFromWire(sc,remoteAddress);
+  VersionChecker versionChecker=m_acceptor.getVersionChecker();
+  String remoteVersionString=jsonResponse.getString(VERSION_STRING);
+  String remoteBuildString=jsonResponse.getString(BUILD_STRING);
+  boolean remoteAcceptsLocalVersion=jsonResponse.getBoolean(VERSION_COMPATIBLE);
+  if (remoteVersionString.equals(versionChecker.getVersionString())) {
+    if (!versionChecker.getBuildString().equals(remoteBuildString)) {
+      if (!versionChecker.getBuildString().equals("VoltDB") && !remoteBuildString.equals("VoltDB")) {
+        org.voltdb.VoltDB.crashLocalVoltDB("For VoltDB version " + versionChecker.getVersionString() + " git tag/hash is not identical across the cluster. Node join failed.\n"+ "  joining build string:  "+ versionChecker.getBuildString()+ "\n"+ "  existing build string: "+ remoteBuildString,false,null);
+        return null;
+      }
+    }
+  }
+ else   if (!remoteAcceptsLocalVersion) {
+    if (!versionChecker.isCompatibleVersionString(remoteVersionString)) {
+      org.voltdb.VoltDB.crashLocalVoltDB("Cluster contains nodes running VoltDB version " + remoteVersionString + " which is incompatibile with local version "+ versionChecker.getVersionString()+ ".\n",false,null);
+      return null;
+    }
+  }
+  activeVersions.add(remoteVersionString);
+  return jsonResponse;
+}

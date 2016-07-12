@@ -1,0 +1,46 @@
+{
+  NodeStateRef upNodesState=new NodeStateRef(NodeState.INITIALIZING);
+  MeshProber.Builder jcb=MeshProber.builder().coordinators(coordinators(2)).hostCount(3).startAction(StartAction.PROBE).nodeStateSupplier(upNodesState).kfactor(1).paused(false).bare(true);
+  HostMessenger hm1=createHostMessenger(0,jcb.build(),false);
+  HostMessenger hm2=createHostMessenger(1,jcb.build(),false);
+  HostMessenger hm3=createHostMessenger(2,jcb.build(),false);
+  final AtomicReference<Exception> exception=new AtomicReference<Exception>();
+  HostMessengerThread hm1Start=new HostMessengerThread(hm1,exception);
+  HostMessengerThread hm2Start=new HostMessengerThread(hm2,exception);
+  HostMessengerThread hm3Start=new HostMessengerThread(hm3,exception);
+  hm1Start.start();
+  hm2Start.start();
+  hm3Start.start();
+  hm1Start.join();
+  hm2Start.join();
+  hm3Start.join();
+  if (exception.get() != null) {
+    fail(exception.get().toString());
+  }
+  Determination dtm=prober(hm1).waitForDetermination();
+  assertEquals(StartAction.CREATE,dtm.startAction);
+  assertEquals(3,dtm.hostCount);
+  assertEquals(dtm,prober(hm2).waitForDetermination());
+  assertEquals(dtm,prober(hm3).waitForDetermination());
+  assertTrue(upNodesState.compareAndSet(NodeState.INITIALIZING,NodeState.UP));
+  jcb.nodeState(NodeState.INITIALIZING).bare(true).addAllowed(true).hostCount(5);
+  HostMessenger hm4=createHostMessenger(3,jcb.build(),false);
+  hm4.start();
+  dtm=prober(hm4).waitForDetermination();
+  assertEquals(StartAction.JOIN,dtm.startAction);
+  assertEquals(5,dtm.hostCount);
+  List<String> root1=hm1.getZK().getChildren("/",false);
+  List<String> root2=hm2.getZK().getChildren("/",false);
+  List<String> root3=hm3.getZK().getChildren("/",false);
+  List<String> root4=hm4.getZK().getChildren("/",false);
+  assertTrue(root1.equals(root2));
+  assertTrue(root2.equals(root3));
+  assertTrue(root3.equals(root4));
+  List<String> hostids1=hm1.getZK().getChildren(CoreZK.hostids,false);
+  List<String> hostids2=hm2.getZK().getChildren(CoreZK.hostids,false);
+  List<String> hostids3=hm3.getZK().getChildren(CoreZK.hostids,false);
+  List<String> hostids4=hm4.getZK().getChildren(CoreZK.hostids,false);
+  assertTrue(hostids1.equals(hostids2));
+  assertTrue(hostids2.equals(hostids3));
+  assertTrue(hostids3.equals(hostids4));
+}

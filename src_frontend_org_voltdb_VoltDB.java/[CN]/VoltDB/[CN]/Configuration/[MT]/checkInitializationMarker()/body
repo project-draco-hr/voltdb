@@ -1,0 +1,66 @@
+{
+  File inzFH=new VoltFile(m_voltdbRoot,VoltDB.INITIALIZED_MARKER);
+  File deploymentFH=new VoltFile(new VoltFile(m_voltdbRoot,CONFIG_DIR),"deployment.xml");
+  File configCFH=null;
+  File optCFH=null;
+  if (m_pathToDeployment != null && !m_pathToDeployment.trim().isEmpty()) {
+    try {
+      configCFH=deploymentFH.getCanonicalFile();
+    }
+ catch (    IOException e) {
+      hostLog.fatal("Could not resolve file location " + deploymentFH,e);
+      referToDocAndExit();
+    }
+    try {
+      optCFH=new VoltFile(m_pathToDeployment).getCanonicalFile();
+    }
+ catch (    IOException e) {
+      hostLog.fatal("Could not resolve file location " + optCFH,e);
+      referToDocAndExit();
+    }
+    if (!configCFH.equals(optCFH)) {
+      hostLog.fatal("In probe startup mode you may only specify " + deploymentFH + " for deployment");
+      referToDocAndExit();
+    }
+  }
+ else {
+    m_pathToDeployment=deploymentFH.getPath();
+  }
+  if (!inzFH.exists() || !inzFH.isFile() || !inzFH.canRead()) {
+    hostLog.fatal("Probe startup mode requires an already initialized VoltDB instance");
+    referToDocAndExit();
+  }
+  String stagedName=null;
+  try (BufferedReader br=new BufferedReader(new FileReader(inzFH))){
+    stagedName=br.readLine();
+  }
+ catch (  IOException e) {
+    hostLog.fatal("Unable to access initialization marker at " + inzFH,e);
+    referToDocAndExit();
+  }
+  if (m_clusterName != null && !m_clusterName.equals(stagedName)) {
+    hostLog.fatal("Cluster name " + m_clusterName + " does not match the name given at initialization "+ stagedName);
+    referToDocAndExit();
+  }
+ else {
+    m_clusterName=stagedName;
+  }
+  try {
+    if (m_meshBrokers == null || m_meshBrokers.trim().isEmpty()) {
+      File meshFH=new VoltFile(m_voltdbRoot,VoltDB.STAGED_MESH);
+      if (meshFH.exists() && meshFH.isFile() && meshFH.canRead()) {
+        try (BufferedReader br=new BufferedReader(new FileReader(meshFH))){
+          m_meshBrokers=br.readLine();
+        }
+ catch (        IOException e) {
+          hostLog.fatal("Unable to read cluster name given at initialization from " + inzFH,e);
+          referToDocAndExit();
+        }
+      }
+    }
+  }
+ catch (  IllegalArgumentException e) {
+    hostLog.fatal("Unable to validate mesh argument \"" + m_meshBrokers + "\"",e);
+    referToDocAndExit();
+  }
+}

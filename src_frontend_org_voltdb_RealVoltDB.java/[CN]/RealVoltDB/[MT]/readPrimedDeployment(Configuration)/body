@@ -1,0 +1,89 @@
+{
+  try {
+    byte deploymentBytes[]=null;
+    try {
+      deploymentBytes=org.voltcore.utils.CoreUtils.urlToBytes(config.m_pathToDeployment);
+    }
+ catch (    Exception ex) {
+    }
+    if (deploymentBytes == null) {
+      hostLog.error("Deployment information could not be obtained from cluster node or locally");
+      VoltDB.crashLocalVoltDB("No such deployment file: " + config.m_pathToDeployment,false,null);
+    }
+    DeploymentType deployment=CatalogUtil.getDeployment(new ByteArrayInputStream(deploymentBytes));
+    if (deployment == null) {
+      hostLog.error("Not a valid XML deployment file at URL: " + config.m_pathToDeployment);
+      VoltDB.crashLocalVoltDB("Not a valid XML deployment file at URL: " + config.m_pathToDeployment,false,null);
+      return new ReadDeploymentResults(deploymentBytes,deployment);
+    }
+    if (config.m_startAction == StartAction.PROBE) {
+      if (config.m_hostCount == VoltDB.UNDEFINED) {
+        config.m_hostCount=1;
+      }
+      Optional<byte[]> changed=modifyIfNecessaryDeploymentHostCount(config,deployment,config.m_hostCount);
+      if (changed.isPresent()) {
+        deploymentBytes=changed.get();
+      }
+    }
+ else {
+      config.m_hostCount=deployment.getCluster().getHostcount();
+    }
+    File optrootFH=config.m_voltdbRoot;
+    File dplrootFH=CatalogUtil.getVoltDbRoot(deployment.getPaths());
+    if (config.m_startAction.isLegacy()) {
+      if (!optrootFH.getCanonicalFile().equals(dplrootFH.getCanonicalFile())) {
+        config.m_voltdbRoot=dplrootFH;
+      }
+    }
+ else     if (!optrootFH.getCanonicalFile().equals(dplrootFH.getCanonicalFile())) {
+      if (config.m_startAction == StartAction.PROBE) {
+        String msg="VoltDB root specified in the command line \"" + optrootFH + "\" diverges from the one specified at initialization \""+ dplrootFH+ "\"";
+        hostLog.fatal(msg);
+        VoltDB.crashLocalVoltDB(msg);
+        return new ReadDeploymentResults(deploymentBytes,deployment);
+      }
+    }
+    if (!config.m_isEnterprise) {
+      boolean shutdownDeployment=false;
+      boolean shutdownAction=false;
+      if ((deployment.getCluster() != null) && (deployment.getCluster().getKfactor() > 0)) {
+        consoleLog.error("K-Safety is not supported " + "in the community edition of VoltDB.");
+        shutdownDeployment=true;
+      }
+      if ((deployment.getSnapshot() != null) && (deployment.getSnapshot().isEnabled())) {
+        consoleLog.error("Snapshots are not supported " + "in the community edition of VoltDB.");
+        shutdownDeployment=true;
+      }
+      if ((deployment.getCommandlog() != null) && (deployment.getCommandlog().isEnabled())) {
+        consoleLog.error("Command logging is not supported " + "in the community edition of VoltDB.");
+        shutdownDeployment=true;
+      }
+      if ((deployment.getExport() != null) && Boolean.TRUE.equals(deployment.getExport().isEnabled())) {
+        consoleLog.error("Export is not supported " + "in the community edition of VoltDB.");
+        shutdownDeployment=true;
+      }
+      if (m_config.m_startAction != StartAction.CREATE) {
+        consoleLog.error("Start action \"" + m_config.m_startAction.getClass().getSimpleName() + "\" is not supported in the community edition of VoltDB.");
+        shutdownAction=true;
+      }
+      if (shutdownAction || shutdownDeployment) {
+        String msg="This process will exit. Please run VoltDB with ";
+        if (shutdownDeployment) {
+          msg+="a deployment file compatible with the community edition";
+        }
+        if (shutdownDeployment && shutdownAction) {
+          msg+=" and ";
+        }
+        if (shutdownAction && !shutdownDeployment) {
+          msg+="the CREATE start action";
+        }
+        msg+=".";
+        VoltDB.crashLocalVoltDB(msg,false,null);
+      }
+    }
+    return new ReadDeploymentResults(deploymentBytes,deployment);
+  }
+ catch (  Exception e) {
+    throw new RuntimeException(e);
+  }
+}

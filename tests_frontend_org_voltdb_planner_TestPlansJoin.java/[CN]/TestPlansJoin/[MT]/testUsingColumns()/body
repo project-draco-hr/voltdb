@@ -1,0 +1,58 @@
+{
+  AbstractPlanNode pn=compile("SELECT MAX(R1.A), C FROM R1 FULL JOIN R2 USING (C) WHERE C > 0 GROUP BY C ORDER BY C");
+  pn=pn.getChild(0);
+  assertEquals(PlanNodeType.ORDERBY,pn.getPlanNodeType());
+  List<AbstractExpression> s=((OrderByPlanNode)pn).getSortExpressions();
+  assertEquals(1,s.size());
+  assertEquals(ExpressionType.VALUE_TUPLE,s.get(0).getExpressionType());
+  pn=pn.getChild(0);
+  assertEquals(PlanNodeType.NESTLOOP,pn.getPlanNodeType());
+  AbstractExpression f=((NestLoopPlanNode)pn).getWherePredicate();
+  assertNotNull(f);
+  assertEquals(ExpressionType.OPERATOR_CASE_WHEN,f.getLeft().getExpressionType());
+  AbstractPlanNode aggr=pn.getInlinePlanNode(PlanNodeType.HASHAGGREGATE);
+  assertNotNull(aggr);
+  List<AbstractExpression> g=((AggregatePlanNode)aggr).getGroupByExpressions();
+  assertEquals(1,g.size());
+  assertEquals(ExpressionType.OPERATOR_CASE_WHEN,g.get(0).getExpressionType());
+  pn=compile("SELECT C FROM R1 FULL JOIN R2 USING (C) FULL JOIN R3 USING (C)");
+  pn=pn.getChild(0);
+  NodeSchema ns=pn.getOutputSchema();
+  assertEquals(1,ns.getColumns().size());
+  SchemaColumn col=ns.getColumns().get(0);
+  assertEquals("C",col.getColumnAlias());
+  AbstractExpression colExp=col.getExpression();
+  assertEquals(ExpressionType.OPERATOR_CASE_WHEN,colExp.getExpressionType());
+  List<OperatorExpression> caseWhenExprs=colExp.findAllSubexpressionsOfClass(OperatorExpression.class);
+  int caseWhenCount=0;
+  for (  OperatorExpression caseWhen : caseWhenExprs) {
+    if (caseWhen.getExpressionType() == ExpressionType.OPERATOR_CASE_WHEN) {
+      ++caseWhenCount;
+    }
+  }
+  assertEquals(2,caseWhenCount);
+  pn=compile("SELECT C FROM R1 JOIN R2 USING (C) JOIN R3 USING (C)");
+  pn=pn.getChild(0);
+  ns=pn.getOutputSchema();
+  assertEquals(1,ns.getColumns().size());
+  col=ns.getColumns().get(0);
+  assertEquals("C",col.getColumnAlias());
+  colExp=col.getExpression();
+  assertEquals(ExpressionType.VALUE_TUPLE,colExp.getExpressionType());
+  pn=compile("SELECT C FROM R1 LEFT JOIN R2 USING (C)");
+  pn=pn.getChild(0);
+  ns=pn.getOutputSchema();
+  assertEquals(1,ns.getColumns().size());
+  col=ns.getColumns().get(0);
+  assertEquals("C",col.getColumnAlias());
+  colExp=col.getExpression();
+  assertEquals(ExpressionType.VALUE_TUPLE,colExp.getExpressionType());
+  pn=compile("SELECT C FROM R1 RIGHT JOIN R2 USING (C)");
+  pn=pn.getChild(0);
+  ns=pn.getOutputSchema();
+  assertEquals(1,ns.getColumns().size());
+  col=ns.getColumns().get(0);
+  assertEquals("C",col.getColumnAlias());
+  colExp=col.getExpression();
+  assertEquals(ExpressionType.VALUE_TUPLE,colExp.getExpressionType());
+}
