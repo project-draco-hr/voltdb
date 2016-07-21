@@ -8,6 +8,11 @@ from slackclient import SlackClient
 from tabulate import tabulate
 COMMUNITY = os.environ.get('community', None)
 PRO = os.environ.get('pro', None)
+VDM = os.environ.get('vdm', None)
+MEMVALDEBUG = os.environ.get('memvaldebug', None)
+DEBUG = os.environ.get('debug', None)
+MEMVAL = os.environ.get('memval', None)
+FULLMEMCHECK = os.environ.get('fullmemcheck', None)
 ADMIN_CHANNEL = os.environ.get('admin', None)
 GENERAL_CHANNEL = os.environ.get('general', None)
 RANDOM_CHANNEL = os.environ.get('random', None)
@@ -15,7 +20,8 @@ TL_QUERY = "\n  SELECT tf.name AS 'Long test name',\n         COUNT(*) AS 'Failu
 D_QUERY = "\n  SELECT tf.name AS 'Long test name',\n         COUNT(*) AS 'Failures'\n    FROM `junit-test-failures` AS tf\n   WHERE NOT tf.status='FIXED' AND\n         NOW() - INTERVAL %(days)s DAY <= tf.stamp AND\n         tf.job=%(job)s\nGROUP BY tf.name\nORDER BY 2 DESC\n"
 BR_QUERY = "\n    SELECT tf.name AS 'Long test name',\n           COUNT(*) AS 'Number of failures in this build range'\n      FROM `junit-test-failures` AS tf\nINNER JOIN `junit-builds` AS jr\n        ON NOT tf.status='FIXED' AND\n           jr.name=tf.job AND\n           jr.build=tf.build AND\n           jr.name=%(job)s AND\n           %(build_low)s <= jr.build AND\n           jr.build <= %(build_high)s\n  GROUP BY tf.name,\n           tf.job\n  ORDER BY 2 DESC\n"
 TOM_QUERY = "\n    SELECT MAX(tf.build) AS 'Most recent failure on master',\n           MAX(jr.build) AS 'Most recent build of master'\n      FROM `junit-test-failures` AS tf\nRIGHT JOIN `junit-builds` AS jr\n        ON NOT tf.status='FIXED' AND\n           jr.name=tf.job AND\n           tf.name=%(test)s AND\n           jr.name=%(job)s\n"
-ML_QUERY = '\n  SELECT job AS \'Job name\',\n         name AS \'Long test name\',\n         fails AS \'Fails\',\n         total AS \'Total\',\n         fails/total*100. AS "Fail %",\n         latest AS \'Latest Failure\'\n    FROM\n        (\n           SELECT job,\n                  name,\n                  (\n                   SELECT COUNT(*)\n                     FROM `junit-builds` AS jr\n                    WHERE jr.name = tf.job AND\n                          NOW() - INTERVAL 30 DAY <= jr.stamp\n                  ) AS total,\n                  COUNT(*) AS fails,\n                  MAX(tf.stamp) AS latest\n             FROM `junit-test-failures` AS tf\n            WHERE NOT status=\'FIXED\' AND\n                  (job=%(jobA)s OR job=%(jobB)s) AND\n                  NOW() - INTERVAL 30 DAY <= tf.stamp\n         GROUP BY job,\n                  name,\n                  total\n        ) AS intermediate\nORDER BY 5 DESC\n'
+ML_QUERY = '\n  SELECT job AS \'Job name\',\n         name AS \'Long test name\',\n         fails AS \'Fails\',\n         total AS \'Total\',\n         fails/total*100. AS "Fail %",\n         latest AS \'Latest failure\'\n    FROM\n        (\n           SELECT job,\n                  name,\n                  (\n                   SELECT COUNT(*)\n                     FROM `junit-builds` AS jr\n                    WHERE jr.name = tf.job AND\n                          NOW() - INTERVAL 30 DAY <= jr.stamp\n                  ) AS total,\n                  COUNT(*) AS fails,\n                  MAX(tf.stamp) AS latest\n             FROM `junit-test-failures` AS tf\n            WHERE NOT status=\'FIXED\' AND\n                  (job=%(jobA)s OR job=%(jobB)s OR job=%(jobC)s) AND\n                  NOW() - INTERVAL 30 DAY <= tf.stamp\n         GROUP BY job,\n                  name,\n                  total\n        ) AS intermediate\nORDER BY 5 DESC\n'
+CL_QUERY = '\n  SELECT job AS \'Job name\',\n         name AS \'Long test name\',\n         fails AS \'Fails\',\n         total AS \'Total\',\n         fails/total*100. AS "Fail %",\n         latest AS \'Latest failure\'\n    FROM\n        (\n           SELECT job,\n                  name,\n                  (\n                   SELECT COUNT(*)\n                     FROM `junit-builds` AS jr\n                    WHERE jr.name = tf.job AND\n                          NOW() - INTERVAL 10 DAY <= jr.stamp\n                  ) AS total,\n                  COUNT(*) AS fails,\n                  MAX(tf.stamp) AS latest\n             FROM `junit-test-failures` AS tf\n            WHERE NOT status=\'FIXED\' AND\n                  (job=%(jobA)s OR job=%(jobB)s OR job=%(jobC)s OR job=%(jobD)s) AND\n                  NOW() - INTERVAL 10 DAY <= tf.stamp\n         GROUP BY job,\n                  name,\n                  total\n        ) AS intermediate\nORDER BY 5 DESC\n'
 AF_QUERY = "\n  SELECT tf.name AS 'Long test name',\n         tf.build as 'Build',\n         tf.stamp AS 'Time'\n    FROM `junit-test-failures` AS tf\n   WHERE NOT STATUS='FIXED' AND\n         tf.job=%(job)s\nORDER BY 2 DESC\n"
 if (__name__ == '__main__'):
     jenkinsbot = JenkinsBot()
@@ -25,4 +31,7 @@ if (__name__ == '__main__'):
             jenkinsbot.listen()
         elif (sys.argv[1] == 'master-leaderboard'):
             jenkinsbot.logfile = sys.argv[2]
-            jenkinsbot.query_and_response(ML_QUERY, {'jobA': PRO, 'jobB': COMMUNITY, }, ['#junit'], 'leaderboard-past30days.txt')
+            jenkinsbot.query_and_response(ML_QUERY, {'jobA': PRO, 'jobB': COMMUNITY, 'jobC': VDM, }, ['#junit'], 'master-past30days.txt')
+        elif (sys.argv[1] == 'core-leaderboard'):
+            jenkinsbot.logfile = sys.argv[2]
+            jenkinsbot.query_and_response(RL_QUERY, {'jobA': MEMVALDEBUG, 'jobB': DEBUG, 'jobC': MEMVAL, 'jobD': FULLMEMCHECK, }, ['#junit'], 'coreextended-past10days.txt')
