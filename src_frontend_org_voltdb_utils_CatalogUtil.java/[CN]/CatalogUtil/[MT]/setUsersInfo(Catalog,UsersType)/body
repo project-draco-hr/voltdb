@@ -5,6 +5,7 @@
   Database db=catalog.getClusters().get("cluster").getDatabases().get("database");
   SecureRandom sr=new SecureRandom();
   for (  UsersType.User user : users.getUser()) {
+    Set<String> roles=extractUserRoles(user);
     String sha1hex=user.getPassword();
     String sha256hex=user.getPassword();
     if (user.isPlaintext()) {
@@ -17,8 +18,8 @@
       sha256hex=sha256hex.substring(sha1len);
     }
  else {
-      hostLog.fatal("Invalid masked password in deployment file. Please re-run voltdb mask on the original deployment file using current version of software.");
-      System.exit(-1);
+      hostLog.warn("User \"" + user.getName() + "\" has invalid masked password in deployment file.");
+      throw new RuntimeException("User \"" + user.getName() + "\" has invalid masked password in deployment file");
     }
     org.voltdb.catalog.User catUser=db.getUsers().add(user.getName());
     String saltGen=BCrypt.gensalt(BCrypt.GENSALT_DEFAULT_LOG2_ROUNDS,sr);
@@ -26,7 +27,7 @@
     String hashedPW256=BCrypt.hashpw(sha256hex,saltGen);
     catUser.setShadowpassword(hashedPW);
     catUser.setSha256shadowpassword(hashedPW256);
-    for (    final String role : extractUserRoles(user)) {
+    for (    final String role : roles) {
       final Group catalogGroup=db.getGroups().get(role);
       if (catalogGroup != null) {
         final GroupRef groupRef=catUser.getGroups().add(role);
