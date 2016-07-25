@@ -2,7 +2,7 @@
   String deprootFN=dt.getPaths().getVoltdbroot().getPath();
   File deprootFH=new VoltFile(deprootFN);
   File cnfrootFH=config.m_voltdbRoot;
-  boolean differingRoots=false;
+  boolean writeGeneratedDF=false;
   if (!cnfrootFH.exists() && !cnfrootFH.mkdirs()) {
     VoltDB.crashLocalVoltDB("Unable to create the voltdbroot directory in " + cnfrootFH,false,null);
   }
@@ -16,12 +16,16 @@
     }
     File cnfcanoFH=cnfrootFH.getCanonicalFile();
     if (!cnfcanoFH.equals(depcanoFH)) {
-      differingRoots=true;
+      writeGeneratedDF=true;
       dt.getPaths().getVoltdbroot().setPath(cnfrootFH.getPath());
     }
-    if (!VoltDB.DBROOT.equals(deprootFN) && differingRoots) {
+    if (!VoltDB.DBROOT.equals(deprootFN) && writeGeneratedDF) {
       consoleLog.info("Ignoring voltdbroot \"" + deprootFN + "\"specified in the deployment file");
       hostLog.info("Ignoring voltdbroot \"" + deprootFN + "\"specified in the deployment file");
+    }
+    if (dt.getAdminMode().isAdminstartup()) {
+      dt.getAdminMode().setAdminstartup(false);
+      writeGeneratedDF=true;
     }
   }
  catch (  IOException e) {
@@ -64,7 +68,9 @@
       return;
     }
   }
-  if (differingRoots) {
+  consoleLog.info("When using the INIT command, some deployment file settings (hostcount, voltdbroot path, " + "and admin-mode) are ignored");
+  hostLog.info("When using the INIT command, some deployment file settings (hostcount, voltdbroot path, " + "and admin-mode) are ignored");
+  if (writeGeneratedDF) {
     File depFH=getConfigLogDeployment(config);
     try (FileWriter fw=new FileWriter(depFH)){
       fw.write(CatalogUtil.getDeployment(dt,true));
