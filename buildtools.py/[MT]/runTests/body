@@ -9,11 +9,12 @@ def runTests(CTX):
     tests = []
     for dir in CTX.TESTS.keys():
         input = CTX.TESTS[dir].split()
-        tests += [((((TEST_PREFIX + '/') + dir) + '/') + x) for x in input]
+        tests += [(dir, ((((TEST_PREFIX + '/') + dir) + '/') + x)) for x in input]
     successes = 0
     failures = 0
     noValgrindTests = ['CompactionTest', 'CopyOnWriteTest', 'harness_test', 'serializeio_test']
-    for test in tests:
+    for (dir, test) in tests:
+        expectNoMemLeaks = (not (dir == 'memleaktests'))
         (binname, objectname, sourcename) = namesForTestCode(test)
         targetpath = ((OUTPUT_PREFIX + '/') + binname)
         retval = 0
@@ -28,24 +29,17 @@ def runTests(CTX):
                     isValgrindTest = False
             if ((CTX.PLATFORM == 'Linux') and isValgrindTest):
                 process = Popen(executable='valgrind', args=['valgrind', '--leak-check=full', '--show-reachable=yes', '--error-exitcode=-1', ('--suppressions=' + os.path.join(TEST_PREFIX, 'test_utils/vdbsuppressions.supp')), targetpath], stderr=PIPE, bufsize=(-1))
-                allHeapBlocksFreed = False
-                otherValgrindError = True
                 out_err = process.stderr.readlines()
                 retval = process.wait()
-                for str in out_err:
-                    if (str.find('All heap blocks were freed') != (-1)):
-                        allHeapBlocksFreed = True
-                    if (str.find('ERROR SUMMARY: 0 errors from 0 contexts') != (-1)):
-                        otherValgrindError = False
-                if (not allHeapBlocksFreed):
-                    print 'Not all heap blocks were freed...'
-                    retval = (-1)
-                elif otherValgrindError:
-                    print 'Valgrind reported errors...'
+                errorState = ErrorState(expectNoMemLeaks)
+                for line in out_err:
+                    errorState.processErrorString(line)
+                if (not errorState.isExpectedState()):
+                    print errorState.errorMessage()
                     retval = (-1)
                 if (retval == (-1)):
                     for str in out_err:
-                        print str
+                        print str.rstrip('\n')
                 sys.stdout.flush()
             else:
                 retval = os.system(targetpath)
