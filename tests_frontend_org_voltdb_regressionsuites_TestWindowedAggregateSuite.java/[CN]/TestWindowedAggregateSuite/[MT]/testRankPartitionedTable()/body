@@ -1,0 +1,49 @@
+{
+  Client client=getClient();
+  long input[][]=expected.clone();
+  shuffleArrayOfLongs(input);
+  ClientResponse cr;
+  VoltTable vt;
+  for (  long[] row : input) {
+    cr=client.callProcedure("T_PA.insert",row[colA],row[colB],row[colC]);
+    assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+    cr=client.callProcedure("T_PB.insert",row[colA],row[colB],row[colC]);
+    assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+    cr=client.callProcedure("T_PC.insert",row[colA],row[colB],row[colC]);
+    assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+  }
+  String sql;
+  sql="select A, B, C, rank() over (partition by A order by B) as R from T_PA ORDER BY A, B, C, R;";
+  cr=client.callProcedure("@AdHoc",sql);
+  assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+  vt=cr.getResults()[0];
+  for (int rowIdx=0; vt.advanceRow(); rowIdx+=1) {
+    String msg=String.format("Row %d:",rowIdx);
+    assertEquals(msg,expected[rowIdx][colA],vt.getLong(0));
+    assertEquals(msg,expected[rowIdx][colB],vt.getLong(1));
+    assertEquals(msg,expected[rowIdx][colC],vt.getLong(2));
+    assertEquals(msg,expected[rowIdx][colR1],vt.getLong(3));
+  }
+  sql="select A, B, C, rank() over (partition by A order by B) as R from T_PB ORDER BY A, B, C, R;";
+  cr=client.callProcedure("@AdHoc",sql);
+  assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+  vt=cr.getResults()[0];
+  for (int rowIdx=0; vt.advanceRow(); rowIdx+=1) {
+    String msg=String.format("Row %d:",rowIdx);
+    assertEquals(msg,expected[rowIdx][colA],vt.getLong(0));
+    assertEquals(msg,expected[rowIdx][colB],vt.getLong(1));
+    assertEquals(msg,expected[rowIdx][colC],vt.getLong(2));
+    assertEquals(msg,expected[rowIdx][colR1],vt.getLong(3));
+  }
+  sql="select A, B, C, rank() over (partition by A order by B) as R from T_PC ORDER BY A, B, C, R;";
+  cr=client.callProcedure("@AdHoc",sql);
+  assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+  vt=cr.getResults()[0];
+  for (int rowIdx=0; vt.advanceRow(); rowIdx+=1) {
+    String msg=String.format("Row %d:",rowIdx);
+    assertEquals(msg,expected[rowIdx][colA],vt.getLong(0));
+    assertEquals(msg,expected[rowIdx][colB],vt.getLong(1));
+    assertEquals(msg,expected[rowIdx][colC],vt.getLong(2));
+    assertEquals(msg,expected[rowIdx][colR1],vt.getLong(3));
+  }
+}
