@@ -1,10 +1,10 @@
 import logging
-from logging import handlers
 import os
 import sys
 import time
-from datetime import datetime
 import mysql.connector
+from jira import JIRA
+from logging import handlers
 from mysql.connector.errors import Error as MySQLError
 from slackclient import SlackClient
 from tabulate import tabulate
@@ -18,6 +18,10 @@ FULLMEMCHECK = os.environ.get('fullmemcheck', None)
 ADMIN_CHANNEL = os.environ.get('admin', None)
 GENERAL_CHANNEL = os.environ.get('general', None)
 RANDOM_CHANNEL = os.environ.get('random', None)
+JIRA_USER = os.environ.get('jirauser', None)
+JIRA_PASS = os.environ.get('jirapass', None)
+JIRA_PROJECT = os.environ.get('jiraproject', None)
+TOLERANCE = 2
 TL_QUERY = "\n  SELECT tf.name AS 'Test name',\n         COUNT(*) AS 'Failures'\n    FROM `junit-test-failures` AS tf\n   WHERE NOT tf.status='FIXED' AND\n         tf.build >= %(beginning)s AND\n         tf.job=%(job)s\nGROUP BY tf.name\nORDER BY 2 DESC\n"
 D_QUERY = "\n  SELECT tf.name AS 'Test name',\n         COUNT(*) AS 'Failures'\n    FROM `junit-test-failures` AS tf\n   WHERE NOT tf.status='FIXED' AND\n         NOW() - INTERVAL %(days)s DAY <= tf.stamp AND\n         tf.job=%(job)s\nGROUP BY tf.name\nORDER BY 2 DESC\n"
 BR_QUERY = "\n    SELECT tf.name AS 'Test name',\n           COUNT(*) AS 'Number of failures in this build range'\n      FROM `junit-test-failures` AS tf\nINNER JOIN `junit-builds` AS jr\n        ON NOT tf.status='FIXED' AND\n           jr.name=tf.job AND\n           jr.build=tf.build AND\n           jr.name=%(job)s AND\n           %(build_low)s <= jr.build AND\n           jr.build <= %(build_high)s\n  GROUP BY tf.name,\n           tf.job\n  ORDER BY 2 DESC\n"
