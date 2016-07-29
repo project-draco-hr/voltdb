@@ -113,13 +113,24 @@ catch (      Throwable t) {
         return retval;
       }
     }
-    result=CatalogUtil.compileDeploymentString(newCatalog,deploymentString,false);
+    DeploymentType dt=CatalogUtil.parseDeploymentFromString(deploymentString);
+    if (dt == null) {
+      retval.errorMsg="Unable to update deployment configuration: Error parsing deployment string";
+      return retval;
+    }
+    result=CatalogUtil.compileDeployment(newCatalog,dt,false);
     if (result != null) {
       retval.errorMsg="Unable to update deployment configuration: " + result;
       return retval;
     }
-    retval.deploymentString=deploymentString;
-    retval.deploymentHash=CatalogUtil.makeDeploymentHash(deploymentString.getBytes(Constants.UTF8ENCODING));
+    if (!VoltDB.instance().isRunningWithOldVerbs() && dt.getAdminMode().isAdminstartup()) {
+      dt.getAdminMode().setAdminstartup(false);
+      retval.deploymentString=CatalogUtil.getDeployment(dt,true);
+    }
+ else {
+      retval.deploymentString=deploymentString;
+    }
+    retval.deploymentHash=CatalogUtil.makeDeploymentHash(retval.deploymentString.getBytes(Constants.UTF8ENCODING));
     retval.expectedCatalogVersion=context.catalogVersion;
     CatalogDiffEngine diff=new CatalogDiffEngine(context.catalog,newCatalog);
     if (!diff.supported()) {

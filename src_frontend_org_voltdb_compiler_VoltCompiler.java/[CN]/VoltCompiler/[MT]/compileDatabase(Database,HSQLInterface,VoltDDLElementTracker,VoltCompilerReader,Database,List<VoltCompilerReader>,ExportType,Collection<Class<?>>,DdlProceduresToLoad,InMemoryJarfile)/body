@@ -18,78 +18,31 @@
   }
   ddlcompiler.loadAutogenExportTableSchema(db,previousDBIfAny,whichProcs);
   ddlcompiler.compileToCatalog(db);
-  String msg="In database, ";
-  final CatalogMap<Table> tables=db.getTables();
-  for (  Table table : tables) {
-    String tableName=table.getTypeName();
-    if (voltDdlTracker.m_partitionMap.containsKey(tableName.toLowerCase())) {
-      String colName=voltDdlTracker.m_partitionMap.get(tableName.toLowerCase());
-      if (colName != null) {
-        assert(tables.getIgnoreCase(tableName) != null);
-        if (table.getMaterializer() != null) {
-          msg+="the materialized view is automatically partitioned based on its source table. " + "Invalid PARTITION statement on view table " + tableName + ".";
-          throw new VoltCompilerException(msg);
-        }
-        final Column partitionCol=table.getColumns().getIgnoreCase(colName);
-        if (partitionCol == null) {
-          msg+="PARTITION has unknown COLUMN '" + colName + "'";
-          throw new VoltCompilerException(msg);
-        }
-        if (partitionCol.getNullable() == true) {
-          msg+="Partition column '" + tableName + "."+ colName+ "' is nullable. "+ "Partition columns must be constrained \"NOT NULL\".";
-          throw new VoltCompilerException(msg);
-        }
-        VoltType pcolType=VoltType.get((byte)partitionCol.getType());
-switch (pcolType) {
-case TINYINT:
-case SMALLINT:
-case INTEGER:
-case BIGINT:
-case STRING:
-case VARBINARY:
-          break;
-default :
-        msg+="Partition column '" + tableName + "."+ colName+ "' is not a valid type. "+ "Partition columns must be an integer, varchar or varbinary type.";
-      throw new VoltCompilerException(msg);
+  addDatabaseEstimatesInfo(m_estimates,db);
+  NavigableMap<String,NavigableSet<String>> exportTables=voltDdlTracker.getExportedTables();
+  for (  Entry<String,NavigableSet<String>> e : exportTables.entrySet()) {
+    String targetName=e.getKey();
+    for (    String tableName : e.getValue()) {
+      addExportTableToConnector(targetName,tableName,db);
+    }
   }
-  table.setPartitioncolumn(partitionCol);
-  table.setIsreplicated(false);
-  for (  Index index : table.getIndexes()) {
-    checkValidPartitionTableIndex(index,partitionCol,tableName);
+  ddlcompiler.processMaterializedViewWarnings(db);
+  if (export != null) {
+    compileExport(export,db);
   }
-  final CatalogMap<MaterializedViewInfo> views=table.getViews();
-  for (  final MaterializedViewInfo mvi : views) {
-    mvi.getDest().setIsreplicated(false);
-    setGroupedTablePartitionColumn(mvi,partitionCol);
+  for (  Entry<String,String> drNode : voltDdlTracker.getDRedTables().entrySet()) {
+    compileDRTable(drNode,db);
   }
-}
-}
-}
-addDatabaseEstimatesInfo(m_estimates,db);
-NavigableMap<String,NavigableSet<String>> exportTables=voltDdlTracker.getExportedTables();
-for (Entry<String,NavigableSet<String>> e : exportTables.entrySet()) {
-String targetName=e.getKey();
-for (String tableName : e.getValue()) {
-addExportTableToConnector(targetName,tableName,db);
-}
-}
-ddlcompiler.processMaterializedViewWarnings(db);
-if (export != null) {
-compileExport(export,db);
-}
-for (Entry<String,String> drNode : voltDdlTracker.getDRedTables().entrySet()) {
-compileDRTable(drNode,db);
-}
-if (whichProcs != DdlProceduresToLoad.NO_DDL_PROCEDURES) {
-Collection<ProcedureDescriptor> allProcs=voltDdlTracker.getProcedureDescriptors();
-CatalogMap<Procedure> previousProcsIfAny=null;
-if (previousDBIfAny != null) {
-previousProcsIfAny=previousDBIfAny.getProcedures();
-}
-compileProcedures(db,hsql,allProcs,classDependencies,whichProcs,previousProcsIfAny,jarOutput);
-}
-m_addedClasses=voltDdlTracker.m_extraClassses.toArray(new String[0]);
-m_importLines=ImmutableSet.copyOf(voltDdlTracker.m_importLines);
-addExtraClasses(jarOutput);
-compileRowLimitDeleteStmts(db,hsql,ddlcompiler.getLimitDeleteStmtToXmlEntries());
+  if (whichProcs != DdlProceduresToLoad.NO_DDL_PROCEDURES) {
+    Collection<ProcedureDescriptor> allProcs=voltDdlTracker.getProcedureDescriptors();
+    CatalogMap<Procedure> previousProcsIfAny=null;
+    if (previousDBIfAny != null) {
+      previousProcsIfAny=previousDBIfAny.getProcedures();
+    }
+    compileProcedures(db,hsql,allProcs,classDependencies,whichProcs,previousProcsIfAny,jarOutput);
+  }
+  m_addedClasses=voltDdlTracker.m_extraClassses.toArray(new String[0]);
+  m_importLines=ImmutableSet.copyOf(voltDdlTracker.m_importLines);
+  addExtraClasses(jarOutput);
+  compileRowLimitDeleteStmts(db,hsql,ddlcompiler.getLimitDeleteStmtToXmlEntries());
 }
