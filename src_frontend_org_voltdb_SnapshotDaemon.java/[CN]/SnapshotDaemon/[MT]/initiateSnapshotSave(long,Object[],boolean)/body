@@ -18,6 +18,7 @@
       final JSONObject jsObj=new JSONObject(jsString);
       boolean initiateSnapshot;
       VoltMessage msg=new SnapshotCheckRequestMessage(jsString);
+      SnapshotPathType pathType=SnapshotPathType.valueOf(jsObj.getString(SnapshotUtil.JSON_PATH_TYPE));
       Set<Integer> liveHosts=VoltDB.instance().getHostMessenger().getLiveHostIds();
       for (      int hostId : liveHosts) {
         m_mb.send(CoreUtils.getHSIdFromHostAndSite(hostId,HostMessenger.SNAPSHOT_IO_AGENT_ID),msg);
@@ -27,7 +28,19 @@
       final long endTime=System.currentTimeMillis() + timeoutMs;
       SnapshotCheckResponseMessage response;
       while ((response=(SnapshotCheckResponseMessage)m_mb.recvBlocking(timeoutMs)) != null) {
-        if (jsObj.getString("path").equals(response.getPath()) && jsObj.getString("nonce").equals(response.getNonce())) {
+        final String nonce=jsObj.getString(SnapshotUtil.JSON_NONCE);
+        boolean nonceFound=false;
+        if (pathType == SnapshotPathType.SNAP_PATH) {
+          if (nonce.equals(response.getNonce()) && response.getPath().equals(jsObj.getString(SnapshotUtil.JSON_PATH))) {
+            nonceFound=true;
+          }
+        }
+ else {
+          if (nonce.equals(response.getNonce()) && response.getSnapshotPathType() == pathType) {
+            nonceFound=true;
+          }
+        }
+        if (nonceFound) {
           responses.put(CoreUtils.getHostIdFromHSId(response.m_sourceHSId),response.getResponse());
         }
         if (responses.size() == liveHosts.size() || System.currentTimeMillis() > endTime) {
