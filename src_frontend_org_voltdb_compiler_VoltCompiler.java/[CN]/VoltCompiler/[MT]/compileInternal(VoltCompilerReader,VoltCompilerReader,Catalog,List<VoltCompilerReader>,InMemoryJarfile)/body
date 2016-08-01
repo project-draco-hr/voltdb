@@ -20,15 +20,22 @@
   String ddlWithBatchSupport=CatalogSchemaTools.toSchema(catalog,m_importLines);
   m_canonicalDDL=CatalogSchemaTools.toSchemaWithoutInlineBatches(ddlWithBatchSupport);
   try {
-    m_report=ReportMaker.report(m_catalog,m_warnings,ddlWithBatchSupport);
+    VoltDBInterface voltdb=VoltDB.instance();
+    CatalogContext catalogContext=voltdb != null ? voltdb.getCatalogContext() : null;
+    int tableCount=catalogContext != null ? catalogContext.tables.size() : 0;
+    Deployment deployment=catalogContext != null ? catalogContext.cluster.getDeployment().get("deployment") : null;
+    int hostcount=deployment != null ? deployment.getHostcount() : 1;
+    int kfactor=deployment != null ? deployment.getKfactor() : 0;
+    int sitesPerHost=deployment != null ? deployment.getSitesperhost() : 8;
+    boolean isPro=MiscUtils.isPro();
+    long minHeapRqt=RealVoltDB.computeMinimumHeapRqt(isPro,tableCount,sitesPerHost,kfactor);
+    m_report=ReportMaker.report(m_catalog,minHeapRqt,isPro,hostcount,sitesPerHost,kfactor,m_warnings,ddlWithBatchSupport);
     m_reportPath=null;
     File file=null;
     if (standaloneCompiler) {
       file=new File("catalog-report.html");
     }
  else {
-      VoltDBInterface voltdb=VoltDB.instance();
-      CatalogContext catalogContext=voltdb != null ? voltdb.getCatalogContext() : null;
       if (catalogContext != null) {
         file=new File(VoltDB.instance().getVoltDBRootPath(),"catalog-report.html");
       }
