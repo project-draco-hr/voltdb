@@ -18,6 +18,7 @@ FULLMEMCHECK = os.environ.get('fullmemcheck', None)
 ADMIN_CHANNEL = os.environ.get('admin', None)
 GENERAL_CHANNEL = os.environ.get('general', None)
 RANDOM_CHANNEL = os.environ.get('random', None)
+JUNIT = os.environ.get('junit', None)
 JIRA_USER = os.environ.get('jirauser', None)
 JIRA_PASS = os.environ.get('jirapass', None)
 JIRA_PROJECT = os.environ.get('jiraproject', None)
@@ -29,13 +30,13 @@ ML_QUERY = '\n  SELECT job AS \'Job name\',\n         name AS \'Test name\',\n  
 CL_QUERY = '\n  SELECT job AS \'Job name\',\n         name AS \'Test name\',\n         fails AS \'Fails\',\n         total AS \'Total\',\n         fails/total*100. AS "Fail %",\n         latest AS \'Latest failure\'\n    FROM\n        (\n           SELECT job,\n                  name,\n                  (\n                   SELECT COUNT(*)\n                     FROM `junit-builds` AS jr\n                    WHERE jr.name = tf.job AND\n                          NOW() - INTERVAL 2 DAY <= jr.stamp\n                  ) AS total,\n                  COUNT(*) AS fails,\n                  MAX(tf.stamp) AS latest\n             FROM `junit-test-failures` AS tf\n            WHERE NOT status=\'FIXED\' AND\n                  (job=%(jobA)s OR job=%(jobB)s OR job=%(jobC)s OR job=%(jobD)s) AND\n                  NOW() - INTERVAL 2 DAY <= tf.stamp\n         GROUP BY job,\n                  name,\n                  total\n        ) AS intermediate\nORDER BY 5 DESC\n'
 AF_QUERY = "\n  SELECT tf.name AS 'Test name',\n         tf.build AS 'Build',\n         tf.stamp AS 'Time'\n    FROM `junit-test-failures` AS tf\n   WHERE NOT STATUS='FIXED' AND\n         tf.job=%(job)s\nORDER BY 2 DESC\n"
 AA_QUERY = '\n    INSERT INTO `jenkinsbot-user-aliases`\n                (slack_user_id, command, alias)\n         VALUES (%(slack_user_id)s, %(command)s, %(alias)s)\n'
-GA_QUERY = '\n    SELECT command\n      FROM `jenkinsbot-user-aliases`\n     WHERE alias=%(alias)s AND\n           slack_user=%(slack_user_id)s\n'
+GA_QUERY = '\n    SELECT command\n      FROM `jenkinsbot-user-aliases`\n     WHERE alias=%(alias)s AND\n           slack_user_id=%(slack_user_id)s\n'
 if (__name__ == '__main__'):
     jenkinsbot = JenkinsBot()
     if (jenkinsbot.connect_to_slack() and (len(sys.argv) == 2)):
         if (sys.argv[1] == 'listen'):
             jenkinsbot.listen()
         elif (sys.argv[1] == 'master-leaderboard'):
-            jenkinsbot.query_and_response(ML_QUERY, {'jobA': PRO, 'jobB': COMMUNITY, 'jobC': VDM, }, ['#junit'], 'master-past30days.txt')
+            jenkinsbot.query_and_response(ML_QUERY, {'jobA': PRO, 'jobB': COMMUNITY, 'jobC': VDM, }, [JUNIT], 'master-past30days.txt')
         elif (sys.argv[1] == 'core-leaderboard'):
-            jenkinsbot.query_and_response(CL_QUERY, {'jobA': MEMVALDEBUG, 'jobB': DEBUG, 'jobC': MEMVAL, 'jobD': FULLMEMCHECK, }, ['#junit'], 'coreextended-past2days.txt')
+            jenkinsbot.query_and_response(CL_QUERY, {'jobA': MEMVALDEBUG, 'jobB': DEBUG, 'jobC': MEMVAL, 'jobD': FULLMEMCHECK, }, [JUNIT], 'coreextended-past2days.txt')
