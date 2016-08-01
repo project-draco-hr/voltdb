@@ -1,53 +1,32 @@
 def listen(self):
     '\n        Establishes session and responds to commands\n        '
-    help_text = ['*help*\n', 'See which tests are failing the most since this build:\n\t*test-leaderboard* <job> <build #>\n', 'See which tests are failing in the past x days:\n\t*days* <job> <days> \n', 'Failing the most in this build range:\n\t*build-range* <job> <build #>-<build #>\n', 'Most recent failure on master:\n\t*test-on-master* <job> <testname> (ex. testname: org.voltdb.iv2..)\n', 'All failures for a job:\n\t*all-failures* <job>\n', 'Display this help:\n\t*help*\nFor any <job>, you can specify *"pro"* or *"com"* for the master jobs\n', 'Examples: test-leaderboard pro 860, days com 14\n']
     while True:
         channel = ''
         try:
             incoming = list(self.client.rtm_read())
             if self.can_reply(incoming):
-                text = incoming[0]['text']
-                channel = incoming[0]['channel']
+                text = incoming[0].get('text', None)
+                channel = incoming[0].get('channel', None)
+                user = incoming[0].get('user', None)
                 if ('end-session' in text):
                     self.post_message(channel, 'Leaving...')
                     sys.exit(0)
                 elif ('help' in text):
-                    self.post_message(channel, ''.join(help_text))
+                    self.post_message(channel, ''.join(self.help_text))
                 else:
-                    if ('pro' in text):
-                        job = PRO
-                    elif ('com' in text):
-                        job = COMMUNITY
-                    elif (len(text) > 1):
-                        job = text.split(' ')[1]
-                    if ('test-on-master' in text):
-                        args = text.split(' ')
-                        params = {'job': job, 'test': args[2], }
-                        self.query_and_response(TOM_QUERY, params, [channel], ('%s-testonmaster.txt' % args[2]))
-                    elif ('all-failures' in text):
-                        params = {'job': job, }
-                        self.query_and_response(AF_QUERY, params, [channel], ('%s-allfailures.txt' % job))
-                    elif ('days' in text):
-                        args = text.split(' ')
-                        params = {'job': job, 'days': args[2], }
-                        self.query_and_response(D_QUERY, params, [channel], ('%s-leaderboard-past-%s-days.txt' % (job, args[2])))
-                    elif ('test-leaderboard' in text):
-                        args = text.split(' ')
-                        params = {'job': job, 'beginning': args[2], }
-                        self.query_and_response(TL_QUERY, params, [channel], ('%s-testleaderboard-from-%s.txt' % (job, args[2])))
-                    elif ('build-range' in text):
-                        args = text.split(' ')
-                        builds = args[2].split('-')
-                        params = {'job': job, 'build_low': builds[0], 'build_high': builds[1], }
-                        self.query_and_response(BR_QUERY, params, [channel], ('%s-buildrange-%s-to-%s.txt' % (job, builds[0], builds[1])))
+                    (query, params, filename) = self.parse_text(text, channel, user)
+                    if (query and params and filename):
+                        self.query_and_response(query, params, [channel], filename)
+                    elif (query and params):
+                        self.query([channel], query, params, insert=True)
         except (KeyboardInterrupt, SystemExit):
-            self.logger.exception('Turning off the bot due to "end-session command"')
-            self.post_message(ADMIN_CHANNEL, 'Turning off the bot due to "end-session command"')
+            self.logger.info('Turning off the bot due to "end-session" command')
+            self.post_message(ADMIN_CHANNEL, 'Turning off the bot due to "end-session" command')
             return
         except IndexError:
             self.logger.exception('Incorrect number or formatting of arguments')
             if channel:
-                self.post_message(channel, ('Incorrect number or formatting of arguments\n\n' + ''.join(help_text)))
+                self.post_message(channel, ('Incorrect number or formatting of arguments\n\n' + ''.join(self.help_text)))
         except:
             self.logger.exception('Something unexpected went wrong')
             if (not self.connect_to_slack()):
