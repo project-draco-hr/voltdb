@@ -2,7 +2,7 @@
   List<SnapshotResultRow> results=new ArrayList<SnapshotResultRow>();
   List<File> relevantFiles=retrieveRelevantFiles(path);
   if (relevantFiles == null) {
-    results.add(new SnapshotResultRow(m_messenger.getHostId(),m_hostname,"","",0,0,"","FALSE",0,"","",0,"","FAILURE",m_errorString));
+    results.add(new SnapshotResultRow(m_messenger.getHostId(),m_hostname,"",SnapshotPathType.SNAP_PATH.toString(),"",0,0,"","FALSE",0,"","",0,"","FAILURE",m_errorString));
   }
  else {
     for (    final File f : relevantFiles) {
@@ -21,7 +21,14 @@
             if (partitions.startsWith(",")) {
               partitions=partitions.substring(1);
             }
-            results.add(new SnapshotResultRow(m_messenger.getHostId(),m_hostname,f.getParent(),f.getName(),savefile.getTxnId(),savefile.getTimestamp(),savefile.getTableName(),savefile.getCompleted() ? "TRUE" : "FALSE",f.length(),savefile.isReplicated() ? "TRUE" : "FALSE",partitions,savefile.getTotalPartitions(),f.canRead() ? "TRUE" : "FALSE","SUCCESS",""));
+            SnapshotPathType stype=SnapshotPathType.SNAP_PATH;
+            if (f.getParent().equals(VoltDB.instance().getCommandLogSnapshotPath())) {
+              stype=SnapshotPathType.SNAP_CL;
+            }
+ else             if (f.getParent().equals(VoltDB.instance().getSnapshotPath())) {
+              stype=SnapshotPathType.SNAP_AUTO;
+            }
+            results.add(new SnapshotResultRow(m_messenger.getHostId(),m_hostname,f.getParent(),stype.toString(),f.getName(),savefile.getTxnId(),savefile.getTimestamp(),savefile.getTableName(),savefile.getCompleted() ? "TRUE" : "FALSE",f.length(),savefile.isReplicated() ? "TRUE" : "FALSE",partitions,savefile.getTotalPartitions(),f.canRead() ? "TRUE" : "FALSE","SUCCESS",""));
           }
  catch (          IOException e) {
             SNAP_LOG.warn(e);
@@ -35,7 +42,14 @@
         }
       }
  else {
-        results.add(new SnapshotResultRow(m_messenger.getHostId(),m_hostname,f.getParent(),f.getName(),0L,f.lastModified(),"","FALSE",f.length(),"FALSE","",-1,f.canRead() ? "TRUE" : "FALSE","SUCCESS",""));
+        SnapshotPathType stype=SnapshotPathType.SNAP_PATH;
+        if (f.getParent().equals(VoltDB.instance().getCommandLogSnapshotPath())) {
+          stype=SnapshotPathType.SNAP_CL;
+        }
+ else         if (f.getParent().equals(VoltDB.instance().getSnapshotPath())) {
+          stype=SnapshotPathType.SNAP_AUTO;
+        }
+        results.add(new SnapshotResultRow(m_messenger.getHostId(),m_hostname,f.getParent(),stype.toString(),f.getName(),0L,f.lastModified(),"","FALSE",f.length(),"FALSE","",-1,f.canRead() ? "TRUE" : "FALSE","SUCCESS",""));
       }
     }
   }
@@ -47,7 +61,7 @@
 );
   VoltTable sortedResults=constructFragmentResultsTable();
   for (  SnapshotResultRow row : results) {
-    sortedResults.addRow(row.hostId,row.hostName,row.path,row.name,row.txnid,row.created,row.table,row.completed,row.size,row.isReplicated,row.partitions,row.totalPartitions,row.readable,row.result,row.errMsg);
+    sortedResults.addRow(row.hostId,row.hostName,row.path,row.pathType,row.name,row.txnid,row.created,row.table,row.completed,row.size,row.isReplicated,row.partitions,row.totalPartitions,row.readable,row.result,row.errMsg);
   }
   return sortedResults;
 }
