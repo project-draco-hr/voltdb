@@ -1,0 +1,38 @@
+{
+  new Thread(){
+    @Override public void run(){
+      PlatformProperties.getPlatformProperties();
+    }
+  }
+.start();
+  URL url=Resources.getResource(ReportMaker.class,"template.html");
+  String contents=Resources.toString(url,Charsets.UTF_8);
+  Cluster cluster=catalog.getClusters().get("cluster");
+  assert(cluster != null);
+  Database db=cluster.getDatabases().get("database");
+  assert(db != null);
+  String statsData=getStatsHTML(db,minHeap,warnings);
+  contents=contents.replace("##STATS##",statsData);
+  String procData=generateProceduresTable(db.getTables(),db.getProcedures());
+  contents=contents.replace("##PROCS##",procData);
+  String schemaData=generateSchemaTable(db);
+  contents=contents.replace("##SCHEMA##",schemaData);
+  DatabaseSizes sizes=CatalogSizing.getCatalogSizes(db);
+  String sizeData=generateSizeTable(sizes);
+  contents=contents.replace("##SIZES##",sizeData);
+  String clusterConfig=generateClusterConfiguration(isPro,hostCount,sitesPerHost,kfactor);
+  contents=contents.replace("##CLUSTERCONFIG##",clusterConfig);
+  String sizeSummary=generateSizeSummary(sizes);
+  contents=contents.replace("##SIZESUMMARY##",sizeSummary);
+  String heapSummary=generateRecommendedServerSettings(sizes);
+  contents=contents.replace("##RECOMMENDEDSERVERSETTINGS##",heapSummary);
+  String platformData=PlatformProperties.getPlatformProperties().toHTML();
+  contents=contents.replace("##PLATFORM##",platformData);
+  contents=contents.replace("##VERSION##",VoltDB.instance().getVersionString());
+  contents=contents.replace("##DDL##",escapeHtml4(autoGenDDL));
+  DateFormat df=new SimpleDateFormat("d MMM yyyy HH:mm:ss z");
+  contents=contents.replace("##TIMESTAMP##",df.format(m_timestamp));
+  String msg=Encoder.hexEncode(VoltDB.instance().getVersionString() + "," + System.currentTimeMillis());
+  contents=contents.replace("get.py?a=KEY&",String.format("get.py?a=%s&",msg));
+  return contents;
+}

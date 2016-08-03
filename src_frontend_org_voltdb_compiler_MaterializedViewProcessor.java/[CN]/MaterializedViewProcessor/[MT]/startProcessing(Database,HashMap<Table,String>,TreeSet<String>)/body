@@ -1,0 +1,216 @@
+{
+  HashSet<String> viewTableNames=new HashSet<>();
+  for (  Entry<Table,String> entry : matViewMap.entrySet()) {
+    viewTableNames.add(entry.getKey().getTypeName());
+  }
+  for (  Entry<Table,String> entry : matViewMap.entrySet()) {
+    Table destTable=entry.getKey();
+    String query=entry.getValue();
+    VoltXMLElement xmlquery=null;
+    try {
+      xmlquery=m_hsql.getXMLCompiledStatement(query);
+    }
+ catch (    HSQLParseException e) {
+      e.printStackTrace();
+    }
+    assert(xmlquery != null);
+    ParsedSelectStmt stmt=null;
+    try {
+      stmt=(ParsedSelectStmt)AbstractParsedStmt.parse(query,xmlquery,null,db,null);
+    }
+ catch (    Exception e) {
+      throw m_compiler.new VoltCompilerException(e.getMessage());
+    }
+    assert(stmt != null);
+    String viewName=destTable.getTypeName();
+    checkViewMeetsSpec(viewName,stmt);
+    for (    Index destIndex : destTable.getIndexes()) {
+      if (destIndex.getUnique() || destIndex.getAssumeunique()) {
+        String msg="A UNIQUE or ASSUMEUNIQUE index is not allowed on a materialized view. " + "Remove the qualifier from the index " + destIndex.getTypeName() + "defined on the materialized view \""+ viewName+ "\".";
+        throw m_compiler.new VoltCompilerException(msg);
+      }
+    }
+    for (    Table srcTable : stmt.m_tableList) {
+      if (viewTableNames.contains(srcTable.getTypeName())) {
+        String msg=String.format("A materialized view (%s) can not be defined on another view (%s).",viewName,srcTable.getTypeName());
+        throw m_compiler.new VoltCompilerException(msg);
+      }
+    }
+    destTable.setMaterializer(stmt.m_tableList.get(0));
+    List<Column> destColumnArray=CatalogUtil.getSortedCatalogItems(destTable.getColumns(),"index");
+    List<AbstractExpression> groupbyExprs=null;
+    if (stmt.hasComplexGroupby()) {
+      groupbyExprs=new ArrayList<AbstractExpression>();
+      for (      ParsedColInfo col : stmt.m_groupByColumns) {
+        groupbyExprs.add(col.expression);
+      }
+    }
+    MatViewFallbackQueryXMLGenerator xmlGen=new MatViewFallbackQueryXMLGenerator(xmlquery,stmt.m_groupByColumns,stmt.m_displayColumns);
+    List<VoltXMLElement> fallbackQueryXMLs=xmlGen.getFallbackQueryXMLs();
+    if (stmt.m_groupByColumns.size() != 0) {
+      Index pkIndex=destTable.getIndexes().add(HSQLInterface.AUTO_GEN_MATVIEW_IDX);
+      pkIndex.setType(IndexType.BALANCED_TREE.getValue());
+      pkIndex.setUnique(true);
+      for (int i=0; i < stmt.m_groupByColumns.size(); i++) {
+        ColumnRef c=pkIndex.getColumns().add(String.valueOf(i));
+        c.setColumn(destColumnArray.get(i));
+        c.setIndex(i);
+      }
+      Constraint pkConstraint=destTable.getConstraints().add(HSQLInterface.AUTO_GEN_MATVIEW_CONST);
+      pkConstraint.setType(ConstraintType.PRIMARY_KEY.getValue());
+      pkConstraint.setIndex(pkIndex);
+    }
+    if (stmt.m_tableList.size() > 1) {
+      MaterializedViewHandlerInfo mvHandlerInfo=destTable.getMvhandlerinfo().add("mvHandlerInfo");
+      mvHandlerInfo.setDesttable(destTable);
+      for (      Table srcTable : stmt.m_tableList) {
+        if (exportTableNames.contains(srcTable.getTypeName())) {
+          String msg=String.format("A materialized view (%s) on joined tables cannot have streamed table (%s) as its source.",viewName,srcTable.getTypeName());
+          throw m_compiler.new VoltCompilerException(msg);
+        }
+        TableRef tableRef=mvHandlerInfo.getSourcetables().add(srcTable.getTypeName());
+        tableRef.setTable(srcTable);
+        if (destTable.getPartitioncolumn() == null && srcTable.getPartitioncolumn() != null) {
+          Column partitionColumn=srcTable.getPartitioncolumn();
+          String partitionColName=partitionColumn.getTypeName();
+          String srcTableName=srcTable.getTypeName();
+          destTable.setIsreplicated(false);
+          if (stmt.hasComplexGroupby()) {
+            for (int i=0; i < groupbyExprs.size(); i++) {
+              AbstractExpression groupbyExpr=groupbyExprs.get(i);
+              if (groupbyExpr instanceof TupleValueExpression) {
+                TupleValueExpression tve=(TupleValueExpression)groupbyExpr;
+                if (tve.getTableName().equals(srcTableName) && tve.getColumnName().equals(partitionColName)) {
+                  destTable.setPartitioncolumn(destColumnArray.get(i));
+                  break;
+                }
+              }
+            }
+          }
+ else {
+            for (int i=0; i < stmt.m_groupByColumns.size(); i++) {
+              ParsedColInfo gbcol=stmt.m_groupByColumns.get(i);
+              if (gbcol.tableName.equals(srcTableName) && gbcol.columnName.equals(partitionColName)) {
+                destTable.setPartitioncolumn(destColumnArray.get(i));
+                break;
+              }
+            }
+          }
+        }
+      }
+      compileFallbackQueriesAndUpdateCatalog(db,query,fallbackQueryXMLs,mvHandlerInfo);
+      compileCreateQueryAndUpdateCatalog(db,query,xmlquery,mvHandlerInfo);
+      mvHandlerInfo.setGroupbycolumncount(stmt.m_groupByColumns.size());
+      for (int i=0; i < stmt.m_displayColumns.size(); i++) {
+        ParsedColInfo col=stmt.m_displayColumns.get(i);
+        Column destColumn=destColumnArray.get(i);
+        destColumn.setType(col.expression.getValueType().getValue());
+        if (!col.expression.getValueType().isVariableLength()) {
+          destColumn.setSize(col.expression.getValueType().getMaxLengthInBytes());
+        }
+        destColumn.setAggregatetype(col.expression.getExpressionType().getValue());
+      }
+    }
+ else {
+      Table srcTable=stmt.m_tableList.get(0);
+      MaterializedViewInfo matviewinfo=srcTable.getViews().add(viewName);
+      matviewinfo.setDest(destTable);
+      AbstractExpression where=stmt.getSingleTableFilterExpression();
+      if (where != null) {
+        String hex=Encoder.hexEncode(where.toJSONString());
+        matviewinfo.setPredicate(hex);
+      }
+ else {
+        matviewinfo.setPredicate("");
+      }
+      List<Column> srcColumnArray=CatalogUtil.getSortedCatalogItems(srcTable.getColumns(),"index");
+      if (stmt.hasComplexGroupby()) {
+        String groupbyExprsJson=null;
+        try {
+          groupbyExprsJson=DDLCompiler.convertToJSONArray(groupbyExprs);
+        }
+ catch (        JSONException e) {
+          throw m_compiler.new VoltCompilerException("Unexpected error serializing non-column " + "expressions for group by expressions: " + e.toString());
+        }
+        matviewinfo.setGroupbyexpressionsjson(groupbyExprsJson);
+      }
+ else {
+        for (int i=0; i < stmt.m_groupByColumns.size(); i++) {
+          ParsedColInfo gbcol=stmt.m_groupByColumns.get(i);
+          Column srcCol=srcColumnArray.get(gbcol.index);
+          ColumnRef cref=matviewinfo.getGroupbycols().add(srcCol.getTypeName());
+          cref.setIndex(i);
+          cref.setColumn(srcCol);
+          ParsedColInfo col=stmt.m_displayColumns.get(i);
+          Column destColumn=destColumnArray.get(i);
+          processMaterializedViewColumn(srcTable,destColumn,ExpressionType.VALUE_TUPLE,(TupleValueExpression)col.expression);
+        }
+      }
+      ParsedColInfo countCol=stmt.m_displayColumns.get(stmt.m_groupByColumns.size());
+      assert(countCol.expression.getExpressionType() == ExpressionType.AGGREGATE_COUNT_STAR);
+      assert(countCol.expression.getLeft() == null);
+      processMaterializedViewColumn(srcTable,destColumnArray.get(stmt.m_groupByColumns.size()),ExpressionType.AGGREGATE_COUNT_STAR,null);
+      List<AbstractExpression> aggregationExprs=new ArrayList<AbstractExpression>();
+      boolean hasAggregationExprs=false;
+      ArrayList<AbstractExpression> minMaxAggs=new ArrayList<AbstractExpression>();
+      for (int i=stmt.m_groupByColumns.size() + 1; i < stmt.m_displayColumns.size(); i++) {
+        ParsedColInfo col=stmt.m_displayColumns.get(i);
+        AbstractExpression aggExpr=col.expression.getLeft();
+        if (aggExpr.getExpressionType() != ExpressionType.VALUE_TUPLE) {
+          hasAggregationExprs=true;
+        }
+        aggregationExprs.add(aggExpr);
+        if (col.expression.getExpressionType() == ExpressionType.AGGREGATE_MIN || col.expression.getExpressionType() == ExpressionType.AGGREGATE_MAX) {
+          minMaxAggs.add(aggExpr);
+        }
+      }
+      compileFallbackQueriesAndUpdateCatalog(db,query,fallbackQueryXMLs,matviewinfo);
+      if (hasAggregationExprs) {
+        String aggregationExprsJson=null;
+        try {
+          aggregationExprsJson=DDLCompiler.convertToJSONArray(aggregationExprs);
+        }
+ catch (        JSONException e) {
+          throw m_compiler.new VoltCompilerException("Unexpected error serializing non-column " + "expressions for aggregation expressions: " + e.toString());
+        }
+        matviewinfo.setAggregationexpressionsjson(aggregationExprsJson);
+      }
+      for (Integer i=0; i < minMaxAggs.size(); ++i) {
+        Index found=findBestMatchIndexForMatviewMinOrMax(matviewinfo,srcTable,groupbyExprs,minMaxAggs.get(i));
+        IndexRef refFound=matviewinfo.getIndexforminmax().add(i.toString());
+        if (found != null) {
+          refFound.setName(found.getTypeName());
+        }
+ else {
+          refFound.setName("");
+        }
+      }
+      for (int i=0; i <= stmt.m_groupByColumns.size(); i++) {
+        ParsedColInfo col=stmt.m_displayColumns.get(i);
+        Column destColumn=destColumnArray.get(i);
+        destColumn.setType(col.expression.getValueType().getValue());
+        if (!col.expression.getValueType().isVariableLength()) {
+          destColumn.setSize(col.expression.getValueType().getMaxLengthInBytes());
+        }
+      }
+      for (int i=stmt.m_groupByColumns.size() + 1; i < stmt.m_displayColumns.size(); i++) {
+        ParsedColInfo col=stmt.m_displayColumns.get(i);
+        Column destColumn=destColumnArray.get(i);
+        AbstractExpression colExpr=col.expression.getLeft();
+        TupleValueExpression tve=null;
+        if (colExpr.getExpressionType() == ExpressionType.VALUE_TUPLE) {
+          tve=(TupleValueExpression)colExpr;
+        }
+        processMaterializedViewColumn(srcTable,destColumn,col.expression.getExpressionType(),tve);
+        destColumn.setType(col.expression.getValueType().getValue());
+        if (!col.expression.getValueType().isVariableLength()) {
+          destColumn.setSize(col.expression.getValueType().getMaxLengthInBytes());
+        }
+      }
+      if (srcTable.getPartitioncolumn() != null) {
+        destTable.setIsreplicated(false);
+        setGroupedTablePartitionColumn(matviewinfo,srcTable.getPartitioncolumn());
+      }
+    }
+  }
+}

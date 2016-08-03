@@ -2,7 +2,6 @@
   String deprootFN=dt.getPaths().getVoltdbroot().getPath();
   File deprootFH=new VoltFile(deprootFN);
   File cnfrootFH=config.m_voltdbRoot;
-  boolean writeGeneratedDF=false;
   if (!cnfrootFH.exists() && !cnfrootFH.mkdirs()) {
     VoltDB.crashLocalVoltDB("Unable to create the voltdbroot directory in " + cnfrootFH,false,null);
   }
@@ -16,23 +15,24 @@
     }
     File cnfcanoFH=cnfrootFH.getCanonicalFile();
     if (!cnfcanoFH.equals(depcanoFH)) {
-      writeGeneratedDF=true;
       dt.getPaths().getVoltdbroot().setPath(cnfrootFH.getPath());
     }
-    if (!VoltDB.DBROOT.equals(deprootFN) && writeGeneratedDF) {
-      consoleLog.info("Ignoring voltdbroot \"" + deprootFN + "\"specified in the deployment file");
-      hostLog.info("Ignoring voltdbroot \"" + deprootFN + "\"specified in the deployment file");
-    }
-    if (dt.getAdminMode().isAdminstartup()) {
-      dt.getAdminMode().setAdminstartup(false);
-      writeGeneratedDF=true;
+    if (!VoltDB.DBROOT.equals(deprootFN)) {
+      consoleLog.info("Ignoring voltdbroot \"" + deprootFN + "\" specified in the deployment file");
+      hostLog.info("Ignoring voltdbroot \"" + deprootFN + "\" specified in the deployment file");
     }
   }
  catch (  IOException e) {
     VoltDB.crashLocalVoltDB("Unable to resolve voltdbroot location: " + config.m_voltdbRoot,false,e);
     return;
   }
-  List<String> nonEmptyPaths=managedPathsWithFiles(dt);
+  try {
+    loadPaths(dt);
+  }
+ catch (  IOException ex) {
+    VoltDB.crashLocalVoltDB("Unable to set up deployment configuration.",false,ex);
+  }
+  List<String> nonEmptyPaths=managedPathsWithFiles(config,dt);
   if (!nonEmptyPaths.isEmpty()) {
     StringBuilder crashMessage=new StringBuilder("Files from a previous database session exist in the managed directories:");
     for (    String nonEmptyPath : nonEmptyPaths) {
@@ -68,29 +68,16 @@
       return;
     }
   }
+  dt.getAdminMode().setAdminstartup(false);
+  stagePathConfiguration(config);
+  dt.setPaths(null);
   consoleLog.info("When using the INIT command, some deployment file settings (hostcount, voltdbroot path, " + "and admin-mode) are ignored");
   hostLog.info("When using the INIT command, some deployment file settings (hostcount, voltdbroot path, " + "and admin-mode) are ignored");
-  if (writeGeneratedDF) {
-    File depFH=getConfigLogDeployment(config);
-    try (FileWriter fw=new FileWriter(depFH)){
-      fw.write(CatalogUtil.getDeployment(dt,true));
-    }
- catch (    IOException|RuntimeException e) {
-      VoltDB.crashLocalVoltDB("Unable to marshal deployment configuration to " + depFH,false,e);
-      return;
-    }
+  File depFH=getConfigLogDeployment(config);
+  try (FileWriter fw=new FileWriter(depFH)){
+    fw.write(CatalogUtil.getDeployment(dt,true));
   }
- else {
-    File optFH=new VoltFile(config.m_pathToDeployment);
-    File depFH=getConfigLogDeployment(config);
-    try {
-      if (!depFH.getCanonicalFile().equals(optFH.getCanonicalFile())) {
-        Files.copy(optFH,depFH);
-      }
-    }
- catch (    IOException e) {
-      VoltDB.crashLocalVoltDB("Unable to set up deployment configuration in " + depFH,false,e);
-      return;
-    }
+ catch (  IOException|RuntimeException e) {
+    VoltDB.crashLocalVoltDB("Unable to marshal deployment configuration to " + depFH,false,e);
   }
 }

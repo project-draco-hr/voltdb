@@ -1,0 +1,76 @@
+{
+  int groupColCount=stmt.m_groupByColumns.size();
+  int displayColCount=stmt.m_displayColumns.size();
+  StringBuffer msg=new StringBuffer();
+  msg.append("Materialized view \"" + viewName + "\" ");
+  List<AbstractExpression> checkExpressions=new ArrayList<AbstractExpression>();
+  int i;
+  for (i=0; i < groupColCount; i++) {
+    ParsedColInfo gbcol=stmt.m_groupByColumns.get(i);
+    ParsedColInfo outcol=stmt.m_displayColumns.get(i);
+    if (!outcol.expression.equals(gbcol.expression)) {
+      msg.append("must exactly match the GROUP BY clause at index " + String.valueOf(i) + " of SELECT list.");
+      throw m_compiler.new VoltCompilerException(msg.toString());
+    }
+    StringBuffer exprMsg=new StringBuffer();
+    if (!outcol.expression.isValueTypeUniqueIndexable(exprMsg)) {
+      msg.append("with " + exprMsg + " in GROUP BY clause not supported.");
+      throw m_compiler.new VoltCompilerException(msg.toString());
+    }
+    checkExpressions.add(outcol.expression);
+  }
+  boolean countStarFound=false;
+  if (i < displayColCount) {
+    AbstractExpression coli=stmt.m_displayColumns.get(i).expression;
+    if (coli.getExpressionType() == ExpressionType.AGGREGATE_COUNT_STAR) {
+      countStarFound=true;
+    }
+  }
+  if (countStarFound == false) {
+    msg.append("must have count(*) after the GROUP BY columns (if any) but before the aggregate functions (if any).");
+    throw m_compiler.new VoltCompilerException(msg.toString());
+  }
+  for (i++; i < displayColCount; i++) {
+    ParsedColInfo outcol=stmt.m_displayColumns.get(i);
+    if ((outcol.expression.getExpressionType() != ExpressionType.AGGREGATE_COUNT) && (outcol.expression.getExpressionType() != ExpressionType.AGGREGATE_SUM) && (outcol.expression.getExpressionType() != ExpressionType.AGGREGATE_MIN)&& (outcol.expression.getExpressionType() != ExpressionType.AGGREGATE_MAX)) {
+      msg.append("must have non-group by columns aggregated by sum, count, min or max.");
+      throw m_compiler.new VoltCompilerException(msg.toString());
+    }
+    if (outcol.expression.getLeft() != null) {
+      checkExpressions.add(outcol.expression.getLeft());
+    }
+    assert(outcol.expression.getRight() == null);
+    assert(outcol.expression.getArgs() == null || outcol.expression.getArgs().size() == 0);
+  }
+  AbstractExpression where=stmt.getSingleTableFilterExpression();
+  if (where != null) {
+    checkExpressions.add(where);
+  }
+  if (!AbstractExpression.validateExprsForIndexesAndMVs(checkExpressions,msg)) {
+    throw m_compiler.new VoltCompilerException(msg.toString());
+  }
+  if (stmt.hasSubquery()) {
+    msg.append("with subquery sources is not supported.");
+    throw m_compiler.new VoltCompilerException(msg.toString());
+  }
+  if (!stmt.m_joinTree.allInnerJoins()) {
+    throw m_compiler.new VoltCompilerException("Materialized view only supports INNER JOIN.");
+  }
+  if (stmt.orderByColumns().size() != 0) {
+    msg.append("with ORDER BY clause is not supported.");
+    throw m_compiler.new VoltCompilerException(msg.toString());
+  }
+  if (stmt.hasLimitOrOffset()) {
+    msg.append("with LIMIT or OFFSET clause is not supported.");
+    throw m_compiler.new VoltCompilerException(msg.toString());
+  }
+  if (stmt.m_having != null) {
+    msg.append("with HAVING clause is not supported.");
+    throw m_compiler.new VoltCompilerException(msg.toString());
+  }
+  if (displayColCount <= groupColCount) {
+    msg.append("has too few columns.");
+    throw m_compiler.new VoltCompilerException(msg.toString());
+  }
+  checkViewSources(stmt.m_tableList);
+}
