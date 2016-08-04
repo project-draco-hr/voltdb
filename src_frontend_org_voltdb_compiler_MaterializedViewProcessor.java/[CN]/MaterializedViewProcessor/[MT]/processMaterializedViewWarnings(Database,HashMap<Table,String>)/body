@@ -1,61 +1,18 @@
 {
-  HashSet<String> viewTableNames=new HashSet<>();
-  for (  Entry<Table,String> entry : matViewMap.entrySet()) {
-    viewTableNames.add(entry.getKey().getTypeName());
-  }
-  for (  Entry<Table,String> entry : matViewMap.entrySet()) {
-    Table destTable=entry.getKey();
-    String query=entry.getValue();
-    VoltXMLElement xmlquery=null;
-    try {
-      xmlquery=m_hsql.getXMLCompiledStatement(query);
-    }
- catch (    HSQLParseException e) {
-      e.printStackTrace();
-    }
-    assert(xmlquery != null);
-    ParsedSelectStmt stmt=null;
-    try {
-      stmt=(ParsedSelectStmt)AbstractParsedStmt.parse(query,xmlquery,null,db,null);
-    }
- catch (    Exception e) {
-      throw m_compiler.new VoltCompilerException(e.getMessage());
-    }
-    assert(stmt != null);
-    String viewName=destTable.getTypeName();
-    Table srcTable=stmt.m_tableList.get(0);
-    if (CatalogUtil.isTableExportOnly(db,srcTable))     continue;
-    MaterializedViewInfo matviewinfo=srcTable.getViews().get(viewName);
-    if (matviewinfo == null) {
-      return;
-    }
-    boolean hasMinOrMaxAgg=false;
-    ArrayList<AbstractExpression> minMaxAggs=new ArrayList<AbstractExpression>();
-    for (int i=stmt.m_groupByColumns.size() + 1; i < stmt.m_displayColumns.size(); i++) {
-      ParsedColInfo col=stmt.m_displayColumns.get(i);
-      AbstractExpression aggExpr=col.expression.getLeft();
-      if (col.expression.getExpressionType() == ExpressionType.AGGREGATE_MIN || col.expression.getExpressionType() == ExpressionType.AGGREGATE_MAX) {
-        hasMinOrMaxAgg=true;
-        minMaxAggs.add(aggExpr);
-      }
-    }
-    if (hasMinOrMaxAgg) {
-      List<AbstractExpression> groupbyExprs=null;
-      if (stmt.hasComplexGroupby()) {
-        groupbyExprs=new ArrayList<AbstractExpression>();
-        for (        ParsedColInfo col : stmt.m_groupByColumns) {
-          groupbyExprs.add(col.expression);
+  for (  Table table : db.getTables()) {
+    for (    MaterializedViewInfo mvInfo : table.getViews()) {
+      for (      Statement stmt : mvInfo.getFallbackquerystmts()) {
+        if (needsWarningForSingleTableView(getPlanNodeTreeFromCatalogStatement(db,stmt))) {
+          m_compiler.addWarn("No index found to support UPDATE and DELETE on some of the min() / max() columns " + "in the materialized view " + mvInfo.getTypeName() + ", and a sequential scan might be issued when current min / max value is updated / deleted.");
+          break;
         }
       }
-      boolean needsWarning=false;
-      for (Integer i=0; i < minMaxAggs.size(); ++i) {
-        Index found=findBestMatchIndexForMatviewMinOrMax(matviewinfo,srcTable,groupbyExprs,minMaxAggs.get(i));
-        if (found == null) {
-          needsWarning=true;
-        }
-      }
-      if (needsWarning) {
-        m_compiler.addWarn("No index found to support UPDATE and DELETE on some of the min() / max() columns in the Materialized View " + matviewinfo.getTypeName() + ", and a sequential scan might be issued when current min / max value is updated / deleted.");
+    }
+    MaterializedViewHandlerInfo mvHandlerInfo=table.getMvhandlerinfo().get("mvHandlerInfo");
+    if (mvHandlerInfo != null) {
+      Statement createQueryStatement=mvHandlerInfo.getCreatequery().get("createQuery");
+      if (needsWarningForJoinQueryView(getPlanNodeTreeFromCatalogStatement(db,createQueryStatement))) {
+        m_compiler.addWarn("No index found to support some of the join operations required to refresh the materialized view " + table.getTypeName() + ". The refreshing may be slow.");
       }
     }
   }
