@@ -1,40 +1,23 @@
 def listen(self):
     '\n        Establishes session and responds to commands\n        '
-    os.environ['vertical'] = ''
-    os.environ['edit'] = ''
     while True:
-        channel = ''
         try:
-            incoming = list(self.client.rtm_read())
-            if self.can_reply(incoming):
-                text = incoming[0].get('text', None)
-                channel = incoming[0].get('channel', None)
-                user = incoming[0].get('user', None)
-                if ('end-session' in text):
-                    self.post_message(channel, 'Leaving...')
-                    sys.exit(0)
-                elif ('help' in text):
-                    self.post_message(channel, ''.join(self.help_text))
-                else:
-                    (query, params, filename) = self.parse_text(text, channel, user)
-                    if (query and params and filename):
-                        self.post_message(channel, 'Please wait..')
-                        self.query_and_response(query, params, [channel], filename)
-                    elif (query and params):
-                        self.query([channel], query, params, insert=True)
-        except (KeyboardInterrupt, SystemExit):
-            self.logger.info('Turning off the bot due to "end-session" command')
-            self.post_message(ADMIN_CHANNEL, 'Turning off the bot due to "end-session" command')
+            incoming = []
+            try:
+                incoming = list(self.client.rtm_read())
+            except:
+                self.logger.exception('Could not read from Real Time Messaging. Connection may have been closed')
+                if (not self.connect_to_slack()):
+                    self.logger.info('Could not connect to Slack')
+                    self.post_message(ADMIN_CHANNEL, 'Cannot connect to Slack')
+            if (len(incoming) == 0):
+                continue
+            workers = []
+            for data in incoming:
+                workers.append(WorkerThread(data, self))
+            for worker in workers:
+                worker.start()
+        except KeyboardInterrupt:
+            self.logger.info('Shuttind down due to "shut-down" command')
+            self.post_message(ADMIN_CHANNEL, 'Shutting down due to "shut-down" command')
             return
-        except IndexError:
-            self.logger.exception('Incorrect number or formatting of arguments')
-            if channel:
-                self.post_message(channel, ('Incorrect number or formatting of arguments\n\n' + ''.join(self.help_text)))
-        except:
-            self.logger.exception('Something unexpected went wrong')
-            if (not self.connect_to_slack()):
-                self.logger.info('Could not connect to Slack')
-                self.logger.info('Turning off the bot. Cannot connect to Slack')
-                self.post_message(ADMIN_CHANNEL, 'Turning off the bot. Cannot connect to Slack')
-                return
-        time.sleep(1)

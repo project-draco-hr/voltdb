@@ -1,0 +1,33 @@
+def run(self):
+    jenkins_bot = self.jenkins_bot
+    try:
+        if (not self.can_reply()):
+            return
+        text = self.incoming.get('text', None)
+        channel = self.incoming.get('channel', None)
+        user = self.incoming.get('user', None)
+        if ('shut-down' in text):
+            jenkins_bot.post_message(channel, 'Shutting down..')
+            thread.interrupt_main()
+        elif ('help' in text):
+            jenkins_bot.post_message(channel, jenkins_bot.help_text)
+        else:
+            query = None
+            params = None
+            filename = None
+            try:
+                (query, params, filename) = jenkins_bot.parse_text(text, channel, user)
+            except IndexError:
+                jenkins_bot.logger.exception('Incorrect number or formatting of arguments')
+                if channel:
+                    jenkins_bot.post_message(channel, ('Incorrect number or formatting of arguments\n\n' + jenkins_bot.help_text))
+            if (query and params and filename):
+                jenkins_bot.post_message(channel, 'Please wait..')
+                jenkins_bot.query_and_response(query, params, [channel], filename)
+            elif (query and params):
+                jenkins_bot.query([channel], query, params, insert=True)
+    except:
+        jenkins_bot.logger.exception('Something unexpected went wrong')
+        if (not jenkins_bot.connect_to_slack()):
+            jenkins_bot.logger.info('Could not connect to Slack')
+            jenkins_bot.post_message(ADMIN_CHANNEL, 'Cannot connect to Slack')

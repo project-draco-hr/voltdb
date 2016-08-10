@@ -1,5 +1,8 @@
 def parse_text(self, text, channel, user):
-    '\n        Parses the text in valid incoming data to determine what command it is\n        :param text: The text\n        :param channel: The channel this text is coming from\n        :param user: The user who wrote the text\n        :return: The query, parameters, and filename derived from the text\n        '
+    '\n        Parses the text in valid incoming data to determine what command it is. Could raise an IndexError\n        :param text: The text\n        :param channel: The channel this text is coming from\n        :param user: The user who wrote the text\n        :return: The query, parameters, and filename derived from the text\n        '
+    query = ''
+    params = {}
+    filename = ''
     alias_params = {'alias': text.strip(), 'slack_user_id': user, }
     table = self.query([channel], GA_QUERY, alias_params)
     if (len(table) == 2):
@@ -7,21 +10,6 @@ def parse_text(self, text, channel, user):
         if (len(rows) > 0):
             command = rows[0]
             text = command[0]
-    query = ''
-    params = {}
-    filename = ''
-    if ('pro' in text):
-        job = PRO
-    elif ('com' in text):
-        job = COMMUNITY
-    else:
-        args = text.split(' ')
-        if (len(args) > 1):
-            job = args[1]
-        else:
-            self.post_message(channel, ("Couldn't parse: " + text))
-            self.post_message(channel, ''.join(self.help_text))
-            return (query, params, filename)
     if ('=' in text):
         args = text.split('=')
         if (len(args) != 2):
@@ -31,30 +19,46 @@ def parse_text(self, text, channel, user):
         command = args[1]
         query = AA_QUERY
         params = {'slack_user_id': user, 'command': command.strip(), 'alias': alias.strip(), }
-        filename = ''
-    elif ('test-on-master' in text):
-        args = text.split(' ')
-        query = TOM_QUERY
+        return (query, params, filename)
+    elif ('aliases' in text):
+        query = SA_QUERY
+        params = {'slack_user_id': user, }
+        filename = 'aliases.txt'
+        return (query, params, filename)
+    args = text.split(' ')
+    if ('pro' in text):
+        job = PRO
+    elif ('com' in text):
+        job = COMMUNITY
+    elif (len(args) > 1):
+        job = args[1]
+    else:
+        job = args[0]
+    if ('recent-failure' in text):
+        query = RF_QUERY
         params = {'job': job, 'test': args[2], }
-        filename = ('%s-testonmaster.txt' % args[2])
+        filename = ('%s-recent-failure.txt' % args[2])
+    elif ('recent-status' in text):
+        query = RS_QUERY
+        params = {'job': job, 'test': args[2], }
+        filename = ('%s-recent-status.txt' % args[2])
     elif ('all-failures' in text):
         query = AF_QUERY
         params = {'job': job, }
         filename = ('%s-allfailures.txt' % job)
     elif ('days' in text):
-        args = text.split(' ')
-        query = D_QUERY
+        query = DL_QUERY
         params = {'job': job, 'days': args[2], }
         filename = ('%s-leaderboard-past-%s-days.txt' % (job, args[2]))
-    elif ('test-leaderboard' in text):
-        args = text.split(' ')
-        query = TL_QUERY
+    elif ('tests-since' in text):
+        query = TS_QUERY
         params = {'job': job, 'beginning': args[2], }
-        filename = ('%s-testleaderboard-from-%s.txt' % (job, args[2]))
+        filename = ('%s-testssince-%s.txt' % (job, args[2]))
     elif ('build-range' in text):
-        args = text.split(' ')
         builds = args[2].split('-')
         query = BR_QUERY
         params = {'job': job, 'build_low': builds[0], 'build_high': builds[1], }
         filename = ('%s-buildrange-%s-to-%s.txt' % (job, builds[0], builds[1]))
+    else:
+        self.post_message(channel, (("Couldn't parse: " + text) + '\nType "help" to see command usage'))
     return (query, params, filename)
