@@ -16,6 +16,8 @@ MEMVALDEBUG = os.environ.get('memvaldebug', None)
 DEBUG = os.environ.get('debug', None)
 MEMVAL = os.environ.get('memval', None)
 FULLMEMCHECK = os.environ.get('fullmemcheck', None)
+MASTER_JOBS = [PRO, COMMUNITY, VDM]
+CORE_JOBS = [MEMVALDEBUG, DEBUG, MEMVAL, FULLMEMCHECK]
 ADMIN_CHANNEL = os.environ.get('admin', None)
 GENERAL_CHANNEL = os.environ.get('general', None)
 RANDOM_CHANNEL = os.environ.get('random', None)
@@ -23,17 +25,18 @@ JUNIT = os.environ.get('junit', None)
 JIRA_USER = os.environ.get('jirauser', None)
 JIRA_PASS = os.environ.get('jirapass', None)
 JIRA_PROJECT = os.environ.get('jiraproject', None)
+SL_QUERY = "\n  SELECT job_name AS 'Job name',\n         workload AS 'Workload',\n         fails AS 'Fails',\n         total AS 'Total',\n         fails/total*100. AS 'Fail %',\n         latest AS 'Latest'\n    FROM\n        (\n           SELECT job_name,\n                  workload,\n                  COUNT(*) AS fails,\n                  (\n                   SELECT COUNT(*)\n                     FROM `apprunnerfailures` AS run\n                    WHERE NOW() - INTERVAL 30 DAY <= run.datetime AND\n                          run.job_name=failure.job_name AND\n                          run.workload=failure.workload AND\n                          run.branch_name=failure.branch_name\n                  ) AS total,\n                  MAX(failure.datetime) AS latest\n            FROM `apprunnerfailures` AS failure\n            WHERE NOW() - INTERVAL 30 DAY <= datetime AND\n                  result='FAIL' AND\n                  failure.branch_name='master'\n         GROUP BY job_name,\n                  workload\n        ) AS intermediate\nGROUP BY 6 DESC\n"
 TS_QUERY = "\n  SELECT tf.name AS 'Test name',\n         COUNT(*) AS 'Failures'\n    FROM `junit-test-failures` AS tf\n   WHERE NOT tf.status='FIXED' AND\n         tf.build >= %(beginning)s AND\n         tf.job=%(job)s\nGROUP BY tf.name\nORDER BY 2 DESC\n"
 DL_QUERY = "\n  SELECT tf.name AS 'Test name',\n         COUNT(*) AS 'Failures'\n    FROM `junit-test-failures` AS tf\n   WHERE NOT tf.status='FIXED' AND\n         NOW() - INTERVAL %(days)s DAY <= tf.stamp AND\n         tf.job=%(job)s\nGROUP BY tf.name\nORDER BY 2 DESC\n"
 BR_QUERY = "\n    SELECT tf.name AS 'Test name',\n           COUNT(*) AS 'Number of failures in this build range'\n      FROM `junit-test-failures` AS tf\nINNER JOIN `junit-builds` AS jb\n        ON NOT tf.status='FIXED' AND\n           jb.name=tf.job AND\n           jb.build=tf.build AND\n           jb.name=%(job)s AND\n           %(build_low)s <= jb.build AND\n           jb.build <= %(build_high)s\n  GROUP BY tf.name,\n           tf.job\n  ORDER BY 2 DESC\n"
 AF_QUERY = "\n  SELECT tf.name AS 'Test name',\n         tf.build AS 'Build',\n         tf.stamp AS 'Time'\n    FROM `junit-test-failures` AS tf\n   WHERE NOT STATUS='FIXED' AND\n         tf.job=%(job)s\nORDER BY 2 DESC\n"
-SB_QUERY = "\n    SELECT name AS 'Job name',\n           stamp AS 'Ran',\n           url AS 'Build url',\n           build AS 'Build number',\n           fails AS 'Fails',\n           total AS 'Total',\n           percent AS 'Fail %'\n      FROM `junit-builds`\n     WHERE name=%(job)s\nORDER BY 2 DESC\n"
+LB_QUERY = "\n    SELECT name AS 'Job name',\n           stamp AS 'Latest run',\n           url AS 'Build url',\n           build AS 'Build number'\n      FROM `junit-builds`\n     WHERE stamp = (\n              SELECT MAX(jb.stamp)\n                FROM `junit-builds` AS jb\n               WHERE jb.name=%(job)s\n           ) AND\n           name=%(job)s\n"
 RF_QUERY = "\n    SELECT MAX(tf.build) AS 'Most recent failure',\n           MAX(jb.build) AS 'Most recent build of job'\n      FROM `junit-test-failures` AS tf\nINNER JOIN `junit-builds` AS jb\n        ON NOT tf.status='FIXED' AND\n           jb.name=tf.job AND\n           tf.name=%(test)s AND\n           jb.name=%(job)s\n"
-RS_QUERY = "\n    SELECT name AS 'Test name',\n           status AS 'Latest status',\n           stamp AS 'Latest run',\n           build AS 'Latest build'\n      FROM `junit-test-failures`\n     WHERE stamp = (\n              select MAX(tf.stamp)\n                from `junit-test-failures` as tf\n               where tf.name=%(test)s AND\n                     tf.job=%(job)s\n           ) AND\n           name=%(test)s AND\n           job=%(job)s\n"
+RS_QUERY = "\n    SELECT name AS 'Test name',\n           status AS 'Latest status',\n           stamp AS 'Latest run',\n           build AS 'Latest build'\n      FROM `junit-test-failures`\n     WHERE stamp = (\n              SELECT MAX(tf.stamp)\n                FROM `junit-test-failures` AS tf\n               WHERE tf.name=%(test)s AND\n                     tf.job=%(job)s\n           ) AND\n           name=%(test)s AND\n           job=%(job)s\n"
 AA_QUERY = '\n    INSERT INTO `jenkinsbot-user-aliases`\n                (slack_user_id, command, alias)\n         VALUES (%(slack_user_id)s, %(command)s, %(alias)s)\n'
+RA_QUERY = '\n    DELETE FROM `jenkinsbot-user-aliases`\n          WHERE slack_user_id=%(slack_user_id)s AND\n                alias=%(alias)s\n'
 GA_QUERY = '\n    SELECT command\n      FROM `jenkinsbot-user-aliases`\n     WHERE alias=%(alias)s AND\n           slack_user_id=%(slack_user_id)s\n'
 SA_QUERY = '\n    SELECT alias,\n           command\n      FROM `jenkinsbot-user-aliases`\n     WHERE slack_user_id=%(slack_user_id)s\n'
-SL_QUERY = "\n  SELECT job_name AS 'Job name',\n         workload AS 'Workload',\n         fails AS 'Fails',\n         total AS 'Total',\n         fails/total*100. AS 'Fail %',\n         latest AS 'Latest'\n    FROM\n        (\n           SELECT job_name,\n                  workload,\n                  COUNT(*) AS fails,\n                  (\n                   SELECT COUNT(*)\n                     FROM `apprunnerfailures` AS run\n                    WHERE NOW() - INTERVAL 30 DAY <= run.datetime AND\n                          run.job_name=failure.job_name AND\n                          run.workload=failure.workload AND\n                          run.branch_name=failure.branch_name\n                  ) AS total,\n                  MAX(failure.datetime) AS latest\n            FROM `apprunnerfailures` AS failure\n            WHERE NOW() - INTERVAL 30 DAY <= datetime AND\n                  result='FAIL' AND\n                  failure.branch_name='master'\n         GROUP BY job_name,\n                  workload\n        ) AS intermediate\nGROUP BY 6 DESC\n"
 if (__name__ == '__main__'):
     jenkinsbot = JenkinsBot()
     help_text = '\n            usage: jenkinsbot <listen|master|core|system>\n                   listen - bring jenkinsbot online (do not use if already running)\n                   master - post the master branch junit leaderboard on Slack\n                   core - post the core extended junit leaderboard on Slack\n                   system - post the master systems test leaderboard on Slack\n            '
@@ -44,17 +47,15 @@ if (__name__ == '__main__'):
         if (sys.argv[1] == 'listen'):
             jenkinsbot.listen()
         elif (sys.argv[1] == 'master'):
-            jobs = [PRO, COMMUNITY, VDM]
-            query = jenkinsbot.leaderboard_query(jobs, days=30)
-            jenkinsbot.query_and_response(query, (), [ADMIN_CHANNEL], 'master-past30days.txt', vertical=True, edit=True)
+            query = jenkinsbot.leaderboard_query(MASTER_JOBS, days=30)
+            jenkinsbot.query_and_response(query, (), [ADMIN_CHANNEL], 'master-past30days.txt', vertical=True, edit=True, jobs=MASTER_JOBS)
         elif (sys.argv[1] == 'core'):
-            jobs = [MEMVALDEBUG, DEBUG, MEMVAL, FULLMEMCHECK]
-            query = jenkinsbot.leaderboard_query(jobs, days=7)
-            jenkinsbot.query_and_response(query, (), [ADMIN_CHANNEL], 'coreextended-past2days.txt', vertical=True, edit=True)
+            query = jenkinsbot.leaderboard_query(CORE_JOBS, days=7)
+            jenkinsbot.query_and_response(query, (), [ADMIN_CHANNEL], 'coreextended-past7days.txt', vertical=True, edit=True, jobs=CORE_JOBS)
         elif (sys.argv[1] == 'system'):
             jenkinsbot.query_and_response(SL_QUERY, (), [ADMIN_CHANNEL], 'systems-master-past30days.txt', vertical=True)
         else:
-            print 'Command not found. Options: listen, core, system, master'
+            print ('Command %s not found' % sys.argv[1])
             print help_text
     else:
         print 'Incorrect number of arguments'

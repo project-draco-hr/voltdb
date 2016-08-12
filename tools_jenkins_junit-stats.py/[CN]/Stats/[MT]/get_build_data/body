@@ -1,5 +1,5 @@
-def build_history(self, job, build_range):
-    '\n        Displays build history for a job. Can specify an inclusive build range.\n        For every build specified on the job, saves the test results\n        :param job: Full job name on Jenkins\n        :param build_range: Build range that exists for the job on Jenkins, ie "700-713", "1804-1804"\n        '
+def get_build_data(self, job, build_range):
+    '\n        Gets build data for a job. Can specify an inclusive build range.\n        For every build specified on the job, saves the test results\n        :param job: Full job name on Jenkins\n        :param build_range: Build range that exists for the job on Jenkins, ie "700-713", "1804-1804"\n        '
     if ((job is None) or (build_range is None)):
         print 'Either a job or build range was not specified.'
         print self.cmdhelp
@@ -98,11 +98,11 @@ def build_history(self, job, build_range):
             logging.exception('Catching unexpected errors to avoid causing a failing build for the upstream job')
     cursor.close()
     db.close()
+    if ((job != PRO) and (job != COMMUNITY)):
+        return
     try:
         jenkinsbot = JenkinsBot()
         for issue in issues:
-            if ((job != PRO) and (job != COMMUNITY)):
-                continue
             error_url = issue['url']
             error_report = self.read_url((error_url + '/api/python'))
             if (error_report is None):
@@ -116,6 +116,7 @@ def build_history(self, job, build_range):
             failed_since = error_report['failedSince']
             summary = ((((issue['name'] + ' is failing since build ') + str(failed_since)) + ' on ') + job)
             description = ((error_url + '\n') + error_report['errorStackTrace'])
-            jenkinsbot.create_bug_issue(JUNIT, summary, description, 'Core', 'V6.6', ['junit-consistent-failure', 'automatic'])
+            current_version = str(self.read_url('https://raw.githubusercontent.com/VoltDB/voltdb/master/version.txt'))
+            jenkinsbot.create_bug_issue(JUNIT, summary, description, 'Core', current_version, ['junit-consistent-failure', 'automatic'])
     except:
         logging.exception('Error with creating issue')
