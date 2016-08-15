@@ -39,9 +39,7 @@ synchronized (m_startAndStopLock) {
     ReadDeploymentResults readDepl=readPrimedDeployment(config);
     if (config.m_startAction == StartAction.INITIALIZE) {
       if (config.m_forceVoltdbCreate) {
-        for (        String path : pathsWithRecoverableArtifacts(readDepl.deployment)) {
-          MiscUtils.deleteRecursively(new VoltFile(path));
-        }
+        initForceDeleteFiles(config,readDepl.deployment);
       }
       stageDeploymemtFileForInitialize(config,readDepl.deployment);
       stageInitializedMarker(config);
@@ -116,6 +114,16 @@ synchronized (m_startAndStopLock) {
     if (m_config.m_buildStringOverrideForTest != null) {
       m_buildString=m_config.m_buildStringOverrideForTest;
     }
+    m_config.asClusterSettingsMap();
+    ClusterSettings fromPropertyFile=ClusterSettings.create();
+    if (m_config.m_startAction.doesRecover()) {
+      m_config.m_hostCount=fromPropertyFile.hostcount();
+    }
+    Map<String,String> fromCommandLine=m_config.asClusterSettingsMap();
+    Map<String,String> fromDeploymentFile=CatalogUtil.asClusterSettingsMap(readDepl.deployment);
+    ClusterSettings clusterSettings=ClusterSettings.create(fromCommandLine,fromPropertyFile.asMap(),fromDeploymentFile);
+    clusterSettings.store();
+    m_clusterSettings.set(clusterSettings,1);
     MeshProber.Determination determination=buildClusterMesh(readDepl);
     if (m_config.m_startAction == StartAction.PROBE) {
       String action="Starting a new database cluster";
@@ -130,7 +138,6 @@ synchronized (m_startAndStopLock) {
     }
     m_config.m_startAction=determination.startAction;
     m_config.m_hostCount=determination.hostCount;
-    modifyIfNecessaryDeploymentHostCount(m_config,readDepl.deployment,determination.hostCount);
     boolean isRejoin=m_config.m_startAction.doesRejoin();
     m_rejoining=isRejoin;
     m_rejoinDataPending=m_config.m_startAction.doesJoin();
@@ -337,7 +344,7 @@ synchronized (m_startAndStopLock) {
         Class<?> ndrgwClass=null;
         ndrgwClass=Class.forName("org.voltdb.dr2.DRProducer");
         Constructor<?> ndrgwConstructor=ndrgwClass.getConstructor(File.class,File.class,boolean.class,int.class,int.class);
-        m_producerDRGateway=(ProducerDRGateway)ndrgwConstructor.newInstance(new VoltFile(VoltDB.instance().getDROverflowPath()),new VoltFile(VoltDB.instance().getSnapshotPath()),m_replicationActive.get(),m_configuredNumberOfPartitions,m_catalogContext.getDeployment().getCluster().getHostcount());
+        m_producerDRGateway=(ProducerDRGateway)ndrgwConstructor.newInstance(new VoltFile(VoltDB.instance().getDROverflowPath()),new VoltFile(VoltDB.instance().getSnapshotPath()),m_replicationActive.get(),m_configuredNumberOfPartitions,m_catalogContext.getClusterSettings().hostcount());
         m_producerDRGateway.start();
         m_producerDRGateway.blockOnDRStateConvergence();
       }
@@ -395,7 +402,7 @@ synchronized (m_startAndStopLock) {
     }
     if (!isRejoin && !m_joining) {
       try {
-        m_messenger.waitForAllHostsToBeReady(m_catalogContext.getDeployment().getCluster().getHostcount());
+        m_messenger.waitForAllHostsToBeReady(m_catalogContext.getClusterSettings().hostcount());
       }
  catch (      Exception e) {
         hostLog.fatal("Failed to announce ready state.");
@@ -440,8 +447,8 @@ synchronized (m_startAndStopLock) {
         if (elasticServiceClass == null) {
           VoltDB.crashLocalVoltDB("Missing the ElasticJoinCoordinator class file in the enterprise " + "edition",false,null);
         }
-        Constructor<?> constructor=elasticServiceClass.getConstructor(HostMessenger.class,ClientInterface.class,Cartographer.class,BalancePartitionsStatistics.class,String.class,int.class);
-        m_elasticJoinService=(ElasticJoinService)constructor.newInstance(m_messenger,m_clientInterface,m_cartographer,rebalanceStats,VoltDB.instance().getCommandLogSnapshotPath(),m_catalogContext.getDeployment().getCluster().getKfactor());
+        Constructor<?> constructor=elasticServiceClass.getConstructor(HostMessenger.class,ClientInterface.class,Cartographer.class,BalancePartitionsStatistics.class,String.class,int.class,Supplier.class);
+        m_elasticJoinService=(ElasticJoinService)constructor.newInstance(m_messenger,m_clientInterface,m_cartographer,rebalanceStats,VoltDB.instance().getCommandLogSnapshotPath(),m_catalogContext.getDeployment().getCluster().getKfactor(),m_clusterSettings);
         m_elasticJoinService.updateConfig(m_catalogContext);
       }
     }
