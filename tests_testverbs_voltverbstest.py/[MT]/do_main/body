@@ -1,0 +1,34 @@
+def do_main():
+    parser = OptionParser()
+    parser.add_option('-o', '--report_file', dest='report_file', default='./voltverbstest.report', help='report output file')
+    (options, args) = parser.parse_args()
+    reportout = open(options.report_file, 'w+')
+    haddiffs = test_java_opts_override(reportout=reportout)
+    try:
+        for (verb, version) in volt_verbs.items():
+            if (not (version in volt_support_version)):
+                continue
+            (stdout, stderr) = run_voltcli(verb, [], mode=['--help'])
+            available_opts = option_name_re.findall(stdout)
+            covered_opts = [opt.pyname for opt in (volt_opts_mandatory[verb] + volt_opts[verb])]
+            untested_opts = ((set(available_opts) - set(option_ignore)) - set(covered_opts))
+            if untested_opts:
+                description = (((('Uncovered option(s) for ' + verb) + ' : [') + ' '.join(untested_opts)) + ']\n')
+                reportout.write(description)
+                haddiffs = True
+            (opts, expected_opts) = gen_config(volt_opts_mandatory[verb], volt_opts[verb], 0, volt_opts_default[verb].copy())
+            haddiffs = (run_unit_test(verb, opts, expected_opts, reportout) or haddiffs)
+            for opt in volt_opts[verb]:
+                (opts, expected_opts) = gen_config((volt_opts_mandatory[verb] + [opt]), [], 0, volt_opts_default[verb].copy())
+                haddiffs = (run_unit_test(verb, opts, expected_opts, reportout) or haddiffs)
+            (opts, expected_opts) = gen_config(volt_opts_mandatory[verb], volt_opts[verb], random.randint(0, len(volt_opts[verb])), volt_opts_default[verb].copy())
+            haddiffs = (run_unit_test(verb, opts, expected_opts, reportout) or haddiffs)
+            (opts, expected_opts) = gen_config(volt_opts_mandatory[verb], volt_opts_negative, 1)
+            haddiffs = (run_unit_test(verb, opts, expected_opts, reportout, expectedOut='Usage: voltdb {} [ OPTIONS ... ]{}\n\nvoltdb: error: no such option: --{}\n'.format(verb, volt_verbs_output[verb], volt_opts_negative[0].pyname)) or haddiffs)
+        unittest.main(verbosity=2)
+    finally:
+        print ('Summary report written to file://' + os.path.abspath(options.report_file))
+        if haddiffs:
+            sys.exit('One or more voltverbstest script failures or errors was detected.')
+        else:
+            print 'All verb test covered and passed!'
