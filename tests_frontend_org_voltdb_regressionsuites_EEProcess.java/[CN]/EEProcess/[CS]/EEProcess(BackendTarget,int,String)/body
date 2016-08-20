@@ -12,6 +12,9 @@
   args.add("--show-reachable=yes");
   args.add("--num-callers=32");
   args.add("--error-exitcode=-1");
+  args.add("--suppressions=tests/test_utils/vdbsuppressions.supp");
+  args.add("--xml=yes");
+  args.add(String.format("--xml-file=%s",String.format(VALGRIND_OUTPUT_FILE_PATTERN,"%p")));
   if (voltdbIPCPath == null) {
     args.add("--quiet");
     args.add("--log-file=" + logfile);
@@ -111,6 +114,7 @@
   }
   final Process p=m_eeProcess;
   m_stdoutParser=new Thread(){
+    ValgrindXMLParser m_xmlParser=null;
     @Override public void run(){
       while (true) {
         try {
@@ -150,9 +154,6 @@
             if (verbose) {
               System.err.println("[ipc=" + p.hashCode() + "]:::"+ line);
             }
-            if (line.startsWith("==" + m_eePID + "==")) {
-              processValgrindOutput(line);
-            }
           }
  else {
             try {
@@ -164,9 +165,9 @@
             if (verbose) {
               System.out.println("[ipc=" + m_eePID + "] Returned end of stream and exit value "+ p.exitValue());
             }
-            if (!m_allHeapBlocksFreed) {
-              m_valgrindErrors.add("Not all heap blocks were freed");
-            }
+            File valgrindOutputFile=new File(String.format(VALGRIND_OUTPUT_FILE_PATTERN,m_eePID));
+            ValgrindXMLParser parser=new ValgrindXMLParser(valgrindOutputFile);
+            parser.processValgrindOutput(valgrindOutputFile,m_valgrindErrors);
             return;
           }
         }
@@ -174,20 +175,6 @@
           e.printStackTrace();
           return;
         }
-      }
-    }
-    private void processValgrindOutput(    final String line){
-      final String errorLineString="ERROR SUMMARY: ";
-      final String heapBlocksFreedString="All heap blocks were freed";
-      if (line.contains(errorLineString)) {
-        final int index=line.indexOf(errorLineString) + errorLineString.length();
-        final char errorNumChar=line.charAt(index);
-        if (!(errorNumChar == '0')) {
-          m_valgrindErrors.add(line);
-        }
-      }
- else       if (line.contains(heapBlocksFreedString)) {
-        m_allHeapBlocksFreed=true;
       }
     }
   }
