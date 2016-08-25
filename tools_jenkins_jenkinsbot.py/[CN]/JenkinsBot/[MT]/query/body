@@ -1,0 +1,32 @@
+def query(self, channels, query, params, is_retry=False, insert=False):
+    '\n        Make a query and return a table\n        :param channels: Channels this query is for\n        :param query: Query to execute\n        :param params: Parameters for the query\n        :param is_retry: If this call of the query is a retry. Will not attempt to retry after calling.\n        :param insert: This query is an insert so the data needs to be committed\n        :return: Tuple of (headers, rows) as results\n        '
+    table = ()
+    cursor = None
+    database = None
+    try:
+        try:
+            database = mysql.connector.connect(host=os.environ.get('dbhost', None), user=os.environ.get('dbuser', None), password=os.environ.get('dbpass', None), database=os.environ.get('dbdb', None))
+            cursor = database.cursor()
+            cursor.execute(query, params)
+            if insert:
+                database.commit()
+            else:
+                headers = list(cursor.column_names)
+                rows = cursor.fetchall()
+                table = (headers, rows)
+        except MySQLError:
+            self.logger.exception('Either could not connect to database or execution error')
+            for channel in channels:
+                self.post_message(channel, 'Something went wrong with getting database information.')
+                if (query == AA_QUERY):
+                    self.post_message(channel, 'Are you sure this alias isn\t defined? Type `aliases` to see aliases.')
+        except:
+            self.logger.exception('Something unexpected went wrong')
+            if (self.connect_to_slack() and (not is_retry)):
+                table = self.query(query, params, True, insert=insert)
+    finally:
+        if (cursor is not None):
+            cursor.close()
+        if (database is not None):
+            database.close()
+    return table
