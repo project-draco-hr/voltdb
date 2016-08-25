@@ -16,6 +16,8 @@ def start_database(self, is_pause, recover=False):
         server = HTTPListener.Global.SERVERS.get(server_id)
         if (not server):
             return create_response(('Server details not found for id: %u' % server_id), 404)
+    server_unreachable = False
+    error_msg = ''
     failed = False
     server_status = {}
     action = 'start'
@@ -29,13 +31,20 @@ def start_database(self, is_pause, recover=False):
             response = requests.put(url)
             if (response.status_code != requests.codes.ok):
                 failed = True
-            server_status[curr['hostname']] = json.loads(response.text)['statusString']
+            db_status = json.loads(response.text)['statusString']
+            server_status[curr['hostname']] = db_status
         except Exception as err:
+            if ('ConnectionError' in str(err)):
+                error_msg = (('Could not connect to the server ' + curr['hostname']) + '. Please ensure that all servers are reachable.')
+                server_unreachable = True
+                break
             failed = True
             print traceback.format_exc()
             server_status[curr['hostname']] = str(err)
-    if failed:
-        url = ('http://%s:%u/api/1.0/databases/%u/status/' % (curr['hostname'], HTTPListener.__PORT__, self.database_id))
+    if server_unreachable:
+        return make_response(jsonify({'status': 500, 'statusString': error_msg, }), 500)
+    elif failed:
+        url = ('http://%s:%u/api/1.0/databases/%u/status/' % (HTTPListener.__IP__, HTTPListener.__PORT__, self.database_id))
         response = requests.get(url)
         return make_response(jsonify({'status': 200, 'statusString': response.text, }), 200)
     else:
