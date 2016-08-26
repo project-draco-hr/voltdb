@@ -2,6 +2,15 @@
   PipeToFile ptf=null;
   CommandLine cmdln=(templateCmdLine.makeCopy());
   cmdln.setJavaProperty(clusterHostIdProperty,String.valueOf(hostId));
+  if (isNewCli) {
+    cmdln.m_startAction=StartAction.PROBE;
+    cmdln.m_hostCount=m_hostCount;
+    String hostIdStr=cmdln.getJavaProperty(clusterHostIdProperty);
+    String root=m_hostRoots.get(hostIdStr);
+    cmdln.voltdbRoot(root);
+    cmdln.pathToDeployment(null);
+    cmdln.setForceVoltdbCreate(false);
+  }
   if (this.m_additionalProcessEnv != null) {
     for (    String name : this.m_additionalProcessEnv.keySet()) {
       cmdln.setJavaProperty(name,this.m_additionalProcessEnv.get(name));
@@ -36,29 +45,40 @@
       cmdln.debugPort(portGenerator.next());
     }
     cmdln.zkport(portGenerator.nextZkPort());
-    if (startAction == StartAction.JOIN) {
-      cmdln.startCommand(startAction);
-      int portNoToRejoin=m_cmdLines.get(0).internalPort();
-      cmdln.leader(":" + portNoToRejoin);
-      cmdln.enableAdd(true);
-    }
-    File subroot=null;
-    if (m_filePrefix != null) {
-      subroot=m_filePrefix;
-      m_subRoots.add(subroot);
-    }
- else     if (clearLocalDataDirectories) {
-      subroot=VoltFile.getNewSubroot();
-      m_subRoots.add(subroot);
+    if (!isNewCli) {
+      if (startAction == StartAction.JOIN) {
+        cmdln.startCommand(startAction);
+        int portNoToRejoin=m_cmdLines.get(0).internalPort();
+        cmdln.leader(":" + portNoToRejoin);
+        cmdln.enableAdd(true);
+      }
     }
  else {
-      if (m_subRoots.size() <= hostId) {
-        m_subRoots.add(VoltFile.getNewSubroot());
+      if (m_cmdLines.size() > 0) {
+        int portNoToRejoin=m_cmdLines.get(0).internalPort();
+        cmdln.leader(":" + portNoToRejoin);
+        cmdln.enableAdd(true);
       }
-      subroot=m_subRoots.get(hostId);
     }
-    cmdln.voltFilePrefix(subroot.getPath());
-    cmdln.voltRoot(subroot.getPath() + "/" + m_voltdbroot);
+    File subroot=null;
+    if (!isNewCli) {
+      if (m_filePrefix != null) {
+        subroot=m_filePrefix;
+        m_subRoots.add(subroot);
+      }
+ else       if (clearLocalDataDirectories) {
+        subroot=VoltFile.getNewSubroot();
+        m_subRoots.add(subroot);
+      }
+ else {
+        if (m_subRoots.size() <= hostId) {
+          m_subRoots.add(VoltFile.getNewSubroot());
+        }
+        subroot=m_subRoots.get(hostId);
+      }
+      cmdln.voltFilePrefix(subroot.getPath());
+      cmdln.voltRoot(subroot.getPath() + "/" + m_voltdbroot);
+    }
     if ((m_versionOverrides != null) && (m_versionOverrides.length > hostId)) {
       assert(m_versionOverrides[hostId] != null);
       assert(m_versionCheckRegexOverrides[hostId] != null);
@@ -82,6 +102,7 @@
       cmdLineFull+=" " + element;
     }
     log.info(cmdLineFull);
+    System.out.println(cmdLineFull);
     m_procBuilder.command().addAll(cmdlnList);
     String testoutputdir=cmdln.buildDir() + File.separator + "testoutput";
     System.out.println("Process output will be redirected to: " + testoutputdir);
@@ -105,7 +126,7 @@
     m_cluster.add(proc);
     String fileName=testoutputdir + File.separator + "LC-"+ getFileName()+ "-"+ m_clusterId+ "-"+ hostId+ "-"+ "idx"+ String.valueOf(perLocalClusterExtProcessIndex++)+ ".txt";
     System.out.println("Process output can be found in: " + fileName);
-    ptf=new PipeToFile(fileName,proc.getInputStream(),startAction == StartAction.JOIN ? PipeToFile.m_joinToken : PipeToFile.m_initToken,false,proc);
+    ptf=new PipeToFile(fileName,proc.getInputStream(),PipeToFile.m_initToken,false,proc);
     m_pipes.add(ptf);
     ptf.setName("ClusterPipe:" + String.valueOf(hostId));
     ptf.start();
@@ -114,7 +135,7 @@
     log.error("Failed to start cluster process:" + ex.getMessage(),ex);
     assert(false);
   }
-  if (startAction == StartAction.JOIN) {
+  if (startAction == StartAction.JOIN || startAction == StartAction.PROBE) {
     waitOnPTFReady(ptf,true,System.currentTimeMillis(),System.currentTimeMillis(),hostId);
   }
   if (hostId > (m_hostCount - 1)) {
