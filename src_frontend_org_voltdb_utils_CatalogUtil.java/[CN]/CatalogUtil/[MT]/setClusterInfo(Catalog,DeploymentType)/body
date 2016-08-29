@@ -1,43 +1,35 @@
 {
   ClusterType cluster=deployment.getCluster();
-  int hostCount=cluster.getHostcount();
   int sitesPerHost=cluster.getSitesperhost();
   int kFactor=cluster.getKfactor();
-  ClusterConfig config=new ClusterConfig(hostCount,sitesPerHost,kFactor);
-  if (!config.validate()) {
-    throw new RuntimeException(config.getErrorMsg());
+  Cluster catCluster=catalog.getClusters().get("cluster");
+  Deployment catDeploy=catCluster.getDeployment().get("deployment");
+  catDeploy.setSitesperhost(sitesPerHost);
+  catDeploy.setKfactor(kFactor);
+  String defaultPPDPrefix="partition_detection";
+  if (deployment.getPartitionDetection().isEnabled()) {
+    catCluster.setNetworkpartition(true);
+    CatalogMap<SnapshotSchedule> faultsnapshots=catCluster.getFaultsnapshots();
+    SnapshotSchedule sched=faultsnapshots.add("CLUSTER_PARTITION");
+    if (deployment.getPartitionDetection().getSnapshot() != null) {
+      sched.setPrefix(deployment.getPartitionDetection().getSnapshot().getPrefix());
+    }
+ else {
+      sched.setPrefix(defaultPPDPrefix);
+    }
   }
  else {
-    Cluster catCluster=catalog.getClusters().get("cluster");
-    Deployment catDeploy=catCluster.getDeployment().get("deployment");
-    catDeploy.setHostcount(hostCount);
-    catDeploy.setSitesperhost(sitesPerHost);
-    catDeploy.setKfactor(kFactor);
-    String defaultPPDPrefix="partition_detection";
-    if (deployment.getPartitionDetection().isEnabled()) {
-      catCluster.setNetworkpartition(true);
-      CatalogMap<SnapshotSchedule> faultsnapshots=catCluster.getFaultsnapshots();
-      SnapshotSchedule sched=faultsnapshots.add("CLUSTER_PARTITION");
-      if (deployment.getPartitionDetection().getSnapshot() != null) {
-        sched.setPrefix(deployment.getPartitionDetection().getSnapshot().getPrefix());
-      }
+    catCluster.setNetworkpartition(false);
+  }
+  catCluster.setAdminport(deployment.getAdminMode().getPort());
+  catCluster.setAdminstartup(deployment.getAdminMode().isAdminstartup());
+  setSystemSettings(deployment,catDeploy);
+  catCluster.setHeartbeattimeout(deployment.getHeartbeat().getTimeout());
+  if (cluster.getSchema() != null) {
+    catCluster.setUseddlschema(cluster.getSchema() == SchemaType.DDL);
+  }
  else {
-        sched.setPrefix(defaultPPDPrefix);
-      }
-    }
- else {
-      catCluster.setNetworkpartition(false);
-    }
-    catCluster.setAdminport(deployment.getAdminMode().getPort());
-    catCluster.setAdminstartup(deployment.getAdminMode().isAdminstartup());
-    setSystemSettings(deployment,catDeploy);
-    catCluster.setHeartbeattimeout(deployment.getHeartbeat().getTimeout());
-    if (cluster.getSchema() != null) {
-      catCluster.setUseddlschema(cluster.getSchema() == SchemaType.DDL);
-    }
- else {
-      hostLog.warn("Schema modification setting not found. " + "Forcing default behavior of UpdateCatalog to modify database schema.");
-      catCluster.setUseddlschema(false);
-    }
+    hostLog.warn("Schema modification setting not found. " + "Forcing default behavior of UpdateCatalog to modify database schema.");
+    catCluster.setUseddlschema(false);
   }
 }

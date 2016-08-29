@@ -1,0 +1,25 @@
+{
+  CatalogSpecificPlanner csp=new CatalogSpecificPlanner(m_asyncCompilerAgent,m_catalogContext);
+synchronized (m_catalogUpdateLock) {
+    int stamp[]=new int[]{0};
+    ClusterSettings expect=m_clusterSettings.get(stamp);
+    if (stamp[0] == expectedVersionId && m_clusterSettings.compareAndSet(expect,settings,stamp[0],expectedVersionId + 1)) {
+      try {
+        settings.store();
+      }
+ catch (      SettingsException e) {
+        hostLog.error(e);
+        throw e;
+      }
+    }
+ else     if (stamp[0] != expectedVersionId + 1) {
+      String msg="Failed to update cluster setting to version " + (expectedVersionId + 1) + ", from current version "+ stamp[0]+ ". Reloading from Zookeeper";
+      hostLog.warn(msg);
+      m_clusterSettings.load(m_messenger.getZK());
+    }
+    if (m_MPI != null) {
+      m_MPI.updateSettings(m_catalogContext,csp);
+    }
+  }
+  return Pair.of(m_catalogContext,csp);
+}

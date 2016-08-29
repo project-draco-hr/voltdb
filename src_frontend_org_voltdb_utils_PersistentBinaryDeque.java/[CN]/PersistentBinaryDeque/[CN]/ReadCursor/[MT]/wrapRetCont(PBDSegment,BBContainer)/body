@@ -1,0 +1,31 @@
+{
+  return new BBContainer(retcont.b()){
+    @Override public void discard(){
+synchronized (PersistentBinaryDeque.this) {
+        checkDoubleFree();
+        retcont.discard();
+        assert(m_closed || m_segments.containsKey(segment.segmentId()));
+        if (m_closed) {
+          return;
+        }
+        try {
+          PBDSegmentReader segmentReader=segment.getReader(m_cursorId);
+          if (segment == peekLastSegment() || !segmentReader.allReadAndDiscarded()) {
+            return;
+          }
+          if (canDeleteSegment(segment)) {
+            m_segments.remove(segment.segmentId());
+            if (m_usageSpecificLog.isDebugEnabled()) {
+              m_usageSpecificLog.debug("Segment " + segment.file() + " has been closed and deleted after discarding last buffer");
+            }
+            closeAndDeleteSegment(segment);
+          }
+        }
+ catch (        IOException e) {
+          LOG.error("Exception closing and deleting PBD segment",e);
+        }
+      }
+    }
+  }
+;
+}

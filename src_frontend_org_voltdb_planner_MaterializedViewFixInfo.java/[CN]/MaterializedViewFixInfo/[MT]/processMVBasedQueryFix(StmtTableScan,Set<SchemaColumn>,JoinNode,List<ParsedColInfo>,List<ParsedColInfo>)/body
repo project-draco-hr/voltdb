@@ -16,13 +16,8 @@
     return false;
   }
   m_mvTableScan=mvTableScan;
-  Set<String> mvDDLGroupbyColumnNames=new HashSet<String>();
+  Set<String> mvDDLGroupbyColumnNames=new HashSet<>();
   List<Column> mvColumnArray=CatalogUtil.getSortedCatalogItems(table.getColumns(),"index");
-  Set<SchemaColumn> mvDDLGroupbyColumns=new HashSet<SchemaColumn>();
-  NodeSchema inlineProjSchema=new NodeSchema();
-  for (  SchemaColumn scol : scanColumns) {
-    inlineProjSchema.addColumn(scol);
-  }
   String mvTableAlias=getMVTableAlias();
   int numOfGroupByColumns;
   MaterializedViewInfo mvInfo=srcTable.getViews().get(mvTableName);
@@ -46,6 +41,20 @@
     MaterializedViewHandlerInfo mvHandlerInfo=table.getMvhandlerinfo().get("mvHandlerInfo");
     numOfGroupByColumns=mvHandlerInfo.getGroupbycolumncount();
   }
+  if (scanColumns.isEmpty() && numOfGroupByColumns == 0) {
+    Column mvCol=mvColumnArray.get(0);
+    String colName=mvColumnArray.get(0).getName();
+    TupleValueExpression tve=new TupleValueExpression(mvTableName,mvTableAlias,colName,colName,0);
+    tve.setTypeSizeBytes(mvCol.getType(),mvCol.getSize(),mvCol.getInbytes());
+    tve.setOrigStmtId(mvTableScan.getStatementId());
+    SchemaColumn scol=new SchemaColumn(mvTableName,mvTableAlias,colName,colName,tve);
+    scanColumns.add(scol);
+  }
+  Set<SchemaColumn> mvDDLGroupbyColumns=new HashSet<>();
+  NodeSchema inlineProjSchema=new NodeSchema();
+  for (  SchemaColumn scol : scanColumns) {
+    inlineProjSchema.addColumn(scol);
+  }
   for (int i=0; i < numOfGroupByColumns; i++) {
     Column mvCol=mvColumnArray.get(i);
     String colName=mvCol.getName();
@@ -60,7 +69,7 @@
       inlineProjSchema.addColumn(scol);
     }
   }
-  Map<String,ExpressionType> mvColumnReAggType=new HashMap<String,ExpressionType>();
+  Map<String,ExpressionType> mvColumnReAggType=new HashMap<>();
   for (int i=numOfGroupByColumns; i < mvColumnArray.size(); i++) {
     Column mvCol=mvColumnArray.get(i);
     ExpressionType reAggType=ExpressionType.get(mvCol.getAggregatetype());
@@ -69,12 +78,13 @@
     }
     mvColumnReAggType.put(mvCol.getName(),reAggType);
   }
+  assert(inlineProjSchema.size() > 0);
   m_scanInlinedProjectionNode=new ProjectionPlanNode();
   m_scanInlinedProjectionNode.setOutputSchema(inlineProjSchema);
   m_reAggNode=new HashAggregatePlanNode();
   int outputColumnIndex=0;
   NodeSchema aggSchema=new NodeSchema();
-  for (  SchemaColumn scol : scanColumns) {
+  for (  SchemaColumn scol : inlineProjSchema.getColumns()) {
     if (mvDDLGroupbyColumns.contains(scol)) {
       m_reAggNode.addGroupByExpression(scol.getExpression());
     }
@@ -88,9 +98,10 @@
     aggSchema.addColumn(scol);
     outputColumnIndex++;
   }
+  assert(aggSchema.size() > 0);
   m_reAggNode.setOutputSchema(aggSchema);
-  List<TupleValueExpression> needReAggTVEs=new ArrayList<TupleValueExpression>();
-  List<AbstractExpression> aggPostExprs=new ArrayList<AbstractExpression>();
+  List<TupleValueExpression> needReAggTVEs=new ArrayList<>();
+  List<AbstractExpression> aggPostExprs=new ArrayList<>();
   for (int i=numOfGroupByColumns; i < mvColumnArray.size(); i++) {
     Column mvCol=mvColumnArray.get(i);
     String colName=mvCol.getName();

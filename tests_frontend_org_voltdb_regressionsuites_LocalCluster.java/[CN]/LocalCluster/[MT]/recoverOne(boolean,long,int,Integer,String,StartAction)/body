@@ -2,19 +2,29 @@
   if (rejoinHostId == null || m_hasLocalServer) {
     rejoinHostId=0;
   }
+  if (isNewCli) {
+    startAction=StartAction.PROBE;
+  }
   int portNoToRejoin=m_cmdLines.get(rejoinHostId).internalPort();
   if (hostId == 0 && m_hasLocalServer) {
     templateCmdLine.leaderPort(portNoToRejoin);
-    startLocalServer(rejoinHostId,false,StartAction.REJOIN);
+    try {
+      startLocalServer(rejoinHostId,false,startAction);
+    }
+ catch (    IOException ioe) {
+      throw new RuntimeException(ioe);
+    }
     return true;
   }
   log.info("Rejoining " + hostId + " to hostID: "+ rejoinHostId);
-  EEProcess eeProc=m_eeProcs.get(hostId);
-  try {
-    eeProc.waitForShutdown();
-  }
- catch (  InterruptedException e) {
-    throw new RuntimeException(e);
+  if (templateCmdLine.target().isIPC && m_eeProcs.contains(hostId)) {
+    EEProcess eeProc=m_eeProcs.get(hostId);
+    try {
+      eeProc.waitForShutdown();
+    }
+ catch (    InterruptedException e) {
+      throw new RuntimeException(e);
+    }
   }
   if (templateCmdLine.target().isIPC) {
     String logfile="LocalCluster_host_" + hostId + ".log";
@@ -24,6 +34,7 @@
   long start=0;
   try {
     CommandLine rejoinCmdLn=m_cmdLines.get(hostId);
+    rejoinCmdLn.setForceVoltdbCreate(false);
     rejoinCmdLn.javaProperties=templateCmdLine.javaProperties;
     rejoinCmdLn.setJavaProperty(clusterHostIdProperty,String.valueOf(hostId));
     rejoinCmdLn.startCommand(startAction);
@@ -73,7 +84,7 @@
       boolean status=dir.mkdirs();
       assert(status);
     }
-    ptf=new PipeToFile(testoutputdir + File.separator + "LC-"+ getFileName()+ "-"+ hostId+ "-"+ "idx"+ String.valueOf(perLocalClusterExtProcessIndex++)+ ".rejoined.txt",proc.getInputStream(),PipeToFile.m_rejoinToken,true,proc);
+    ptf=new PipeToFile(testoutputdir + File.separator + "LC-"+ getFileName()+ "-"+ hostId+ "-"+ "idx"+ String.valueOf(perLocalClusterExtProcessIndex++)+ ".rejoined.txt",proc.getInputStream(),PipeToFile.m_initToken,true,proc);
 synchronized (this) {
       m_pipes.set(hostId,ptf);
       m_cluster.set(hostId,proc);
@@ -87,5 +98,6 @@ synchronized (this) {
     log.error("Failed to start recovering cluster process:" + ex.getMessage(),ex);
     assert(false);
   }
+  m_running=true;
   return waitOnPTFReady(ptf,logtime,startTime,start,hostId);
 }

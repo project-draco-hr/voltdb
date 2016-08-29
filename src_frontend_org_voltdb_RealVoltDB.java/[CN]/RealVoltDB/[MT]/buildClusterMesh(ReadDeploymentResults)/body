@@ -1,6 +1,14 @@
 {
-  final boolean bareAtStartup=m_config.m_forceVoltdbCreate || managedPathsWithFiles(m_config,readDepl.deployment).isEmpty();
-  MeshProber criteria=MeshProber.builder().coordinators(m_config.m_coordinators).versionChecker(m_versionChecker).enterprise(m_config.m_isEnterprise).startAction(m_config.m_startAction).bare(bareAtStartup).configHash(CatalogUtil.makeDeploymentHashForConfig(readDepl.deploymentBytes)).hostCount(m_config.m_hostCount).kfactor(readDepl.deployment.getCluster().getKfactor()).paused(m_config.m_isPaused).nodeStateSupplier(m_statusTracker.getNodeStateSupplier()).addAllowed(m_config.m_enableAdd).safeMode(m_config.m_safeMode).build();
+  final boolean bareAtStartup=m_config.m_forceVoltdbCreate || pathsWithRecoverableArtifacts(readDepl.deployment).isEmpty();
+  setBare(bareAtStartup);
+  final Supplier<Integer> hostCountSupplier=new Supplier<Integer>(){
+    @Override public Integer get(){
+      return m_clusterSettings.get().hostcount();
+    }
+  }
+;
+  ClusterType clusterType=readDepl.deployment.getCluster();
+  MeshProber criteria=MeshProber.builder().coordinators(m_config.m_coordinators).versionChecker(m_versionChecker).enterprise(m_config.m_isEnterprise).startAction(m_config.m_startAction).bare(bareAtStartup).configHash(CatalogUtil.makeDeploymentHashForConfig(readDepl.deploymentBytes)).hostCountSupplier(hostCountSupplier).kfactor(clusterType.getKfactor()).paused(m_config.m_isPaused).nodeStateSupplier(m_statusTracker.getNodeStateSupplier()).addAllowed(m_config.m_enableAdd).safeMode(m_config.m_safeMode).build();
   HostAndPort hostAndPort=criteria.getLeader();
   String hostname=hostAndPort.getHostText();
   int port=hostAndPort.getPort();
@@ -37,6 +45,18 @@
   }
   if (m_myHostId == 0 && determination.startAction.doesJoin()) {
     VoltDB.crashLocalVoltDB("Unable to rejoin a node to itself.  " + "Please check your command line and start action and try again.",false,null);
+  }
+  if (determination.startAction.doesJoin()) {
+    m_clusterSettings.load(m_messenger.getZK());
+    m_clusterSettings.get().store();
+  }
+ else   if (m_myHostId == 0) {
+    m_clusterSettings.store(m_messenger.getZK());
+  }
+  ClusterConfig config=new ClusterConfig(m_clusterSettings.get().hostcount(),clusterType.getSitesperhost(),clusterType.getKfactor());
+  if (!config.validate()) {
+    VoltDB.crashLocalVoltDB("Cluster parameters failed validation: " + config.getErrorMsg());
+    ;
   }
   m_clusterCreateTime=m_messenger.getInstanceId().getTimestamp();
   return determination;

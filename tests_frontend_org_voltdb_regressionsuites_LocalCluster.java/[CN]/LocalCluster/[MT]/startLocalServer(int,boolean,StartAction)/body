@@ -1,23 +1,25 @@
 {
   File subroot=null;
-  try {
-    if (m_filePrefix != null) {
-      subroot=m_filePrefix;
-      m_subRoots.add(subroot);
-    }
- else     if (clearLocalDataDirectories) {
-      subroot=VoltFile.initNewSubrootForThisProcess();
-      m_subRoots.add(subroot);
-    }
- else {
-      if (m_subRoots.size() <= hostId) {
-        m_subRoots.add(VoltFile.initNewSubrootForThisProcess());
+  if (!isNewCli) {
+    try {
+      if (m_filePrefix != null) {
+        subroot=m_filePrefix;
+        m_subRoots.add(subroot);
       }
-      subroot=m_subRoots.get(hostId);
+ else       if (clearLocalDataDirectories) {
+        subroot=VoltFile.initNewSubrootForThisProcess();
+        m_subRoots.add(subroot);
+      }
+ else {
+        if (m_subRoots.size() <= hostId) {
+          m_subRoots.add(VoltFile.initNewSubrootForThisProcess());
+        }
+        subroot=m_subRoots.get(hostId);
+      }
     }
-  }
- catch (  IOException e) {
-    throw new RuntimeException(e);
+ catch (    IOException e) {
+      throw new RuntimeException(e);
+    }
   }
   CommandLine cmdln=(templateCmdLine.makeCopy());
   cmdln.startCommand(action);
@@ -27,7 +29,9 @@
       cmdln.setJavaProperty(name,this.m_additionalProcessEnv.get(name));
     }
   }
-  cmdln.voltFilePrefix(subroot.getPath());
+  if (!isNewCli) {
+    cmdln.voltFilePrefix(subroot.getPath());
+  }
   cmdln.internalPort(internalPortGenerator.nextInternalPort(hostId));
   cmdln.coordinators(internalPortGenerator.getCoordinators());
   cmdln.port(portGenerator.nextClient());
@@ -62,6 +66,14 @@
   m_cluster.add(null);
   m_pipes.add(null);
   m_cmdLines.add(cmdln);
+  if (isNewCli) {
+    cmdln.m_startAction=StartAction.PROBE;
+    cmdln.m_hostCount=m_hostCount;
+    String hostIdStr=cmdln.getJavaProperty(clusterHostIdProperty);
+    String root=m_hostRoots.get(hostIdStr);
+    cmdln.pathToDeployment(null);
+    cmdln.voltdbRoot(root);
+  }
   m_localServer=new ServerThread(cmdln);
   m_localServer.start();
 }

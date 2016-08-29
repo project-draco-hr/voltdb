@@ -1,0 +1,65 @@
+{
+  PipeToFile ptf=null;
+  CommandLine cmdln=(templateCmdLine.makeCopy());
+  cmdln.setJavaProperty(clusterHostIdProperty,String.valueOf(hostId));
+  if (this.m_additionalProcessEnv != null) {
+    for (    String name : this.m_additionalProcessEnv.keySet()) {
+      cmdln.setJavaProperty(name,this.m_additionalProcessEnv.get(name));
+    }
+  }
+  try {
+    File root=VoltFile.getServerSpecificRoot(String.valueOf(hostId),clearLocalDataDirectories);
+    cmdln=cmdln.voltdbRoot(root);
+    cmdln=cmdln.startCommand(StartAction.INITIALIZE);
+    if (clearLocalDataDirectories) {
+      cmdln.setForceVoltdbCreate(true);
+    }
+ else {
+      cmdln.setForceVoltdbCreate(false);
+    }
+    m_procBuilder.command().clear();
+    List<String> cmdlnList=cmdln.createCommandLine();
+    String cmdLineFull="Init cmd host=" + String.valueOf(hostId) + " :";
+    for (    String element : cmdlnList) {
+      assert(element != null);
+      cmdLineFull+=" " + element;
+    }
+    log.info(cmdLineFull);
+    m_procBuilder.command().addAll(cmdlnList);
+    String testoutputdir=cmdln.buildDir() + File.separator + "testoutput";
+    System.out.println("Process output will be redirected to: " + testoutputdir);
+    File dir=new File(testoutputdir);
+    if (dir.exists()) {
+      assert(dir.isDirectory());
+    }
+ else {
+      boolean status=dir.mkdirs();
+      assert(status);
+    }
+    File dirFile=new VoltFile(testoutputdir);
+    if (dirFile.listFiles() != null) {
+      for (      File f : dirFile.listFiles()) {
+        if (f.getName().startsWith(getName() + "-" + hostId)) {
+          f.delete();
+        }
+      }
+    }
+    Process proc=m_procBuilder.start();
+    String fileName=testoutputdir + File.separator + "LC-"+ getFileName()+ "-"+ m_clusterId+ "-init-"+ hostId+ "-"+ "idx"+ String.valueOf(perLocalClusterExtProcessIndex++)+ ".txt";
+    System.out.println("Process output can be found in: " + fileName);
+    ptf=new PipeToFile(fileName,proc.getInputStream(),String.valueOf(hostId),false,proc);
+    ptf.setName("ClusterPipe:" + String.valueOf(hostId));
+    ptf.start();
+    proc.waitFor();
+  }
+ catch (  IOException ex) {
+    log.error("Failed to start cluster process:" + ex.getMessage(),ex);
+    assert(false);
+  }
+catch (  InterruptedException ex) {
+    log.error("Failed to start cluster process:" + ex.getMessage(),ex);
+    assert(false);
+  }
+  String hostIdStr=cmdln.getJavaProperty(clusterHostIdProperty);
+  m_hostRoots.put(hostIdStr,cmdln.voltdbRoot().getPath());
+}
