@@ -1,32 +1,37 @@
 {
-  final Map<Long,PartitionInfo> currentPartitionInfo=app.getPartitionData();
-  final long partitionCount=currentPartitionInfo.size();
-  final CountDownLatch latch=new CountDownLatch((int)partitionCount);
   AtomicBoolean unfinished=new AtomicBoolean(false);
   long yieldTimeMs=app.config.deleteyieldtime;
   try {
     TimestampType dateTarget=app.getTargetDate();
     long rowTarget=app.getTargetRowsPerPartition();
-    for (    PartitionInfo pinfo : currentPartitionInfo.values()) {
-      try {
-        if (app.config.historyseconds > 0) {
-          app.client.callProcedure(new Callback(latch,unfinished),"DeleteAfterDate",pinfo.partitionKey,dateTarget,app.config.deletechunksize);
-        }
+    ClientResponseWithPartitionKey[] responses;
+    if (app.config.historyseconds > 0) {
+      responses=app.client.callAllPartitionProcedure("DeleteAfterDate",dateTarget,app.config.deletechunksize);
+    }
  else {
-          app.client.callProcedure(new Callback(latch,unfinished),"DeleteOldestToTarget",pinfo.partitionKey,rowTarget,app.config.deletechunksize);
+      responses=app.client.callAllPartitionProcedure("DeleteOldestToTarget",rowTarget,app.config.deletechunksize);
+    }
+    app.updatePartitionCount(responses.length);
+    for (    ClientResponseWithPartitionKey resp : responses) {
+      if (resp.getResponse().getStatus() == ClientResponse.SUCCESS) {
+        long tuplesDeleted=resp.getResponse().getResults()[0].asScalarLong();
+        app.addToDeletedTuples(tuplesDeleted);
+        if (tuplesDeleted >= app.config.deletechunksize) {
+          unfinished.set(true);
         }
       }
- catch (      Exception e) {
+ else {
         failureCount.incrementAndGet();
-        latch.countDown();
       }
     }
-    latch.await();
     if (unfinished.get()) {
       yieldTimeMs=0;
     }
   }
- catch (  Throwable t) {
+ catch (  Exception e) {
+    failureCount.incrementAndGet();
+  }
+catch (  Throwable t) {
     t.printStackTrace();
   }
  finally {
