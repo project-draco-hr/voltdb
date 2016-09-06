@@ -3,16 +3,29 @@ def printNodes(self, filter=all):
     print ('%50s %-10s %-20s' % ('Name', 'Available', 'Who/Description'))
     for node in nodes:
         name = str(node['displayName'])
+        executing = ''
+        owner = ''
         if (node['displayName'] == 'master'):
             name = '(master)'
             continue
         try:
             (busy, isBusyController) = self.isBusy(name)
-            offlineCause = node['offlineCause']
+            if (busy == NODE_STATE_BUSY):
+                if (node['executors'][0]['currentExecutable'] != None):
+                    executing = node['executors'][0]['currentExecutable']['fullDisplayName']
+                    if ((node['executors'][0]['currentExecutable']['changeSet'] != None) and (len(node['executors'][0]['currentExecutable']['changeSet']['items']) > 0)):
+                        owner = node['executors'][0]['currentExecutable']['changeSet']['items'][0]['author']['fullName']
+                    if ((owner == '') and (len(node['executors'][0]['currentExecutable']['culprits']) > 0)):
+                        owner = node['executors'][0]['currentExecutable']['culprits'][0]['fullName']
+                elif (str(executing) == ''):
+                    if (not isBusyController):
+                        executing = ('idle=' + str(node['executors'][0]['idle']))
             reason = node['offlineCauseReason']
+            if ((str(reason) == '') and (node['offlineCause'] != None)):
+                reason = node['offlineCause']['description']
             if ((str(reason) == '') and isBusyController):
                 reason = 'busy controller'
-            print ('%50s %-10s %-20s' % (name, busy, reason))
+            print ('%50s %-10s %-20s %-10s %-20s' % (name, busy, reason, executing, owner))
         except Exception as e:
             if (('[500]' in str(e)) and self.getServer().get_node_info(node_name, depth=0)):
                 continue
