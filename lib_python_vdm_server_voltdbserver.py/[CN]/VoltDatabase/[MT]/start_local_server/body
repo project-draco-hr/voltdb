@@ -1,55 +1,36 @@
-def start_local_server(self, sid, pause, recover=False, is_blocking=(-1), add_server=False):
-    '\n        start a local server process. recover if recover is true else create.\n        '
+def start_local_server(self, sid, pause, add_server=False):
+    '\n        start a local server process. Add if add_server is true else just start the server.\n        '
+    config_path = os.path.realpath(self.get_volt_server_data_folder(sid))
     server = HTTPListener.Global.SERVERS.get(sid)
     if (not server):
         return 1
-    '\n        Gets deployment.xml for this database and starts voltdb server locally\n        '
-    deploymentcontents = DeploymentConfig.DeploymentConfiguration.get_database_deployment(self.database_id)
     primary = self.get_first_hostname()
-    filename = os.path.realpath(os.path.join(HTTPListener.Global.CONFIG_PATH, 'deployment.xml'))
-    deploymentfile = open(filename, 'w')
-    deploymentfile.write(deploymentcontents)
-    deploymentfile.close()
     voltdb_dir = get_voltdb_dir()
-    verb = 'create'
+    verb = 'start'
     if server:
         url = ('http://%s:%u/api/1.0/databases/%u/status/' % (server['hostname'], HTTPListener.__PORT__, self.database_id))
         response = requests.get(url)
         is_running = response.json()['dbStatus']['status']
         server_ip = ''
-        rejoin = False
         if (is_running == 'running'):
             for value in response.json()['dbStatus']['serverStatus']:
                 for key in value:
                     status = value[key]['status']
                     if ((status == 'running') and (key != server['hostname'])):
                         server_ip = key
-                        rejoin = True
-    if recover:
-        verb = 'recover'
-    elif (add_server and (server_ip != '')):
+    if (add_server and (server_ip != '')):
         verb = 'add'
-    elif rejoin:
-        verb = 'rejoin'
-    if (verb == 'create'):
+    host_count = self.get_host_count()
+    host_list = self.get_host_list()
+    if (verb == 'start'):
         if (pause.lower() == 'true'):
-            voltdb_cmd = ['nohup', os.path.join(voltdb_dir, 'voltdb'), verb, '--pause', '--force', '-d', filename, '-H', primary]
+            voltdb_cmd = ['nohup', os.path.join(voltdb_dir, 'voltdb'), verb, '--pause', '-H', host_list, '-D', config_path]
         else:
-            voltdb_cmd = ['nohup', os.path.join(voltdb_dir, 'voltdb'), verb, '--force', '-d', filename, '-H', primary]
+            voltdb_cmd = ['nohup', os.path.join(voltdb_dir, 'voltdb'), verb, '-H', host_list, '-D', config_path]
     elif (verb == 'add'):
-        voltdb_cmd = ['nohup', os.path.join(voltdb_dir, 'voltdb'), verb, '-d', filename, ('--host=' + server_ip)]
-    elif rejoin:
-        if (is_blocking == 1):
-            voltdb_cmd = ['nohup', os.path.join(voltdb_dir, 'voltdb'), verb, '-d', filename, '-H', primary, '--blocking', ('--host=' + server_ip)]
-        else:
-            voltdb_cmd = ['nohup', os.path.join(voltdb_dir, 'voltdb'), verb, '-d', filename, '-H', primary, ('--host=' + server_ip)]
-    elif (verb == 'recover'):
-        if (pause.lower() == 'true'):
-            voltdb_cmd = ['nohup', os.path.join(voltdb_dir, 'voltdb'), verb, '--pause', '-d', filename, '-H', primary]
-        else:
-            voltdb_cmd = ['nohup', os.path.join(voltdb_dir, 'voltdb'), verb, '-d', filename, '-H', primary]
+        voltdb_cmd = ['nohup', os.path.join(voltdb_dir, 'voltdb'), 'start', '--add', ('--host=' + server_ip), '-D', config_path]
     else:
-        voltdb_cmd = ['nohup', os.path.join(voltdb_dir, 'voltdb'), verb, '-d', filename, '-H', primary]
+        voltdb_cmd = ['nohup', os.path.join(voltdb_dir, 'voltdb'), verb, '-H', host_list, '-D', config_path]
     self.build_network_options(server, voltdb_cmd)
     G.OUTFILE_COUNTER = (G.OUTFILE_COUNTER + 1)
     outfilename = os.path.realpath(os.path.join(HTTPListener.Global.CONFIG_PATH, ('voltserver.output.%s.%u' % (G.OUTFILE_TIME, G.OUTFILE_COUNTER))))
