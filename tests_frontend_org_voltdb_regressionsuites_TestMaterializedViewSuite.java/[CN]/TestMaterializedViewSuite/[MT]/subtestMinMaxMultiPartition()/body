@@ -113,18 +113,28 @@
   assertEquals(10,t.getLong(4));
   results=client.callProcedure("DeletePerson",1,1L,NORMALLY).getResults();
   results=client.callProcedure("DeletePerson",2,5L,NORMALLY).getResults();
-  results=client.callProcedure("@AdHoc","SELECT * FROM MATPEOPLE2").getResults();
-  assert(results != null);
-  assertEquals(1,results.length);
-  t=results[0];
-  assertEquals(2,t.getRowCount());
-  System.out.println(t.toString());
-  t.advanceRow();
-  assertEquals(2,t.getLong(2));
-  assertEquals(0,(int)(t.getDouble(3)));
-  assertEquals(10,t.getLong(4));
-  t.advanceRow();
-  assertEquals(2,t.getLong(2));
-  assertEquals(0,(int)(t.getDouble(3)));
-  assertEquals(10,t.getLong(4));
+  validateHardCodedStatusQuo(client);
+  System.out.println("Testing single-source-table truncates");
+  for (  int forceAbort : yesAndNo) {
+    for (int repeats=1; repeats <= 3; ++repeats) {
+      for (int restores=1; restores < repeats; ++restores) {
+        try {
+          try {
+            results=client.callProcedure("TruncatePeople",forceAbort,repeats,restores).getResults();
+            assertEquals("TruncatePeople was expected to roll back",0,forceAbort);
+          }
+ catch (          ProcCallException vae) {
+            if (!vae.getMessage().contains("Rolling back as requested")) {
+              throw vae;
+            }
+            assertEquals("TruncatePeople was not requested to roll back",1,forceAbort);
+          }
+        }
+ catch (        Exception other) {
+          fail("The call to TruncatePeople unexpectedly threw: " + other);
+        }
+        validateHardCodedStatusQuo(client);
+      }
+    }
+  }
 }
