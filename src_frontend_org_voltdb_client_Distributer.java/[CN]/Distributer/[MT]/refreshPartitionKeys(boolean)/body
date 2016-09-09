@@ -1,0 +1,24 @@
+{
+  long interval=System.currentTimeMillis() - m_lastPartitionKeyFetched.get();
+  if (!m_useClientAffinity && interval < PARTITION_KEYS_INFO_REFRESH_FREQUENCY) {
+    return;
+  }
+  try {
+    ProcedureInvocation invocation=new ProcedureInvocation(m_sysHandle.getAndDecrement(),"@GetPartitionKeys","INTEGER");
+    CountDownLatch latch=null;
+    if (!topologyUpdate) {
+      latch=new CountDownLatch(1);
+    }
+    PartitionUpdateCallback cb=new PartitionUpdateCallback(latch);
+    if (!queue(invocation,cb,true,System.nanoTime(),USE_DEFAULT_CLIENT_TIMEOUT)) {
+      m_partitionUpdateStatus.set(new ClientResponseImpl(ClientResponseImpl.SERVER_UNAVAILABLE,new VoltTable[0],"Fails to queue the partition update query, please try later."));
+    }
+    if (!topologyUpdate) {
+      latch.await();
+    }
+    m_lastPartitionKeyFetched.set(System.currentTimeMillis());
+  }
+ catch (  InterruptedException|IOException e) {
+    m_partitionUpdateStatus.set(new ClientResponseImpl(ClientResponseImpl.SERVER_UNAVAILABLE,new VoltTable[0],"Fails to fetch partition keys from server:" + e.getMessage()));
+  }
+}

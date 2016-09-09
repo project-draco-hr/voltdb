@@ -1,0 +1,58 @@
+{
+  String diff=null;
+  try {
+    System.out.println("Running TruncateTables." + rollback + "."+ truncateTable1+ "."+ truncateTable2+ "."+ truncateTable3+ "."+ truncateTable4);
+    int truncationCount=0;
+    VoltTable[] beforeViews=executeViewScans();
+    if (truncateTable1 != 0) {
+      ++truncationCount;
+      voltQueueSQL(clearcache1);
+      voltQueueSQL(cachebase1);
+      voltQueueSQL(truncatebase1);
+    }
+    if (truncateTable2 != 0) {
+      ++truncationCount;
+      voltQueueSQL(clearcache2);
+      voltQueueSQL(cachebase2);
+      voltQueueSQL(truncatebase2);
+    }
+    if (truncateTable3 != 0) {
+      ++truncationCount;
+      voltQueueSQL(clearcache3);
+      voltQueueSQL(cachebase3);
+      voltQueueSQL(truncatebase3);
+    }
+    if (truncateTable4 != 0) {
+      ++truncationCount;
+      voltQueueSQL(clearcache4);
+      voltQueueSQL(cachebase4);
+      voltQueueSQL(truncatebase4);
+    }
+    if (truncationCount == 0) {
+      if (rollback != 0) {
+        throw new VoltAbortException("Rolling back as requested.");
+      }
+      return wrapResult("");
+    }
+    voltExecuteSQL();
+    executeTruncationChecks(truncateTable1,truncateTable2,truncateTable3,truncateTable4);
+    executeRenewBases(truncateTable1,truncateTable2,truncateTable3,truncateTable4);
+    VoltTable[] afterViews=executeViewScans();
+    int ii=0;
+    for (    VoltTable afterView : afterViews) {
+      diff=compareTables("View " + (ii + 1) + " after "+ truncationCount+ " truncate(s) and restore(s), ",beforeViews[ii],afterView,0.01);
+      ++ii;
+    }
+  }
+ catch (  Throwable t) {
+    System.out.println("TruncateTables abnormal exit after: " + t);
+    throw t;
+  }
+  if (rollback != 0) {
+    System.out.println("Rolling back as requested.");
+    throw new VoltAbortException("Rolling back as requested.");
+  }
+  VoltTable result=wrapResult(diff);
+  System.out.println("TruncateTables normal exit.");
+  return result;
+}

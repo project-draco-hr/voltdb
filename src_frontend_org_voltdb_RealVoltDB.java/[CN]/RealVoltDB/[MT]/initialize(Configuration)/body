@@ -23,7 +23,7 @@ synchronized (m_startAndStopLock) {
     consoleLog.l7dlog(Level.INFO,LogKeys.host_VoltDB_StartupString.name(),null);
     if (config.m_startAction == StartAction.INITIALIZE) {
       if (config.m_forceVoltdbCreate) {
-        deleteEverythingButLogs(config.m_voltdbRoot);
+        deleteInitializationMarkers(config);
       }
     }
     if (config.m_pathToDeployment == null) {
@@ -38,8 +38,10 @@ synchronized (m_startAndStopLock) {
     }
     ReadDeploymentResults readDepl=readPrimedDeployment(config);
     if (config.m_startAction == StartAction.INITIALIZE) {
-      if (config.m_forceVoltdbCreate) {
-        initForceDeleteFiles(config,readDepl.deployment);
+      if (config.m_forceVoltdbCreate && m_paths.clean()) {
+        String msg="Archived previous snapshot directory to " + m_paths.getSnapshoth() + ".1";
+        consoleLog.info(msg);
+        hostLog.info(msg);
       }
       stageDeploymemtFileForInitialize(config,readDepl.deployment);
       stageInitializedMarker(config);
@@ -65,6 +67,12 @@ synchronized (m_startAndStopLock) {
           }
         }
       }
+    }
+    List<String> failed=m_paths.ensureDirectoriesExist();
+    if (!failed.isEmpty()) {
+      String msg="Unable to access or create the following directories:\n  - " + Joiner.on("\n  - ").join(failed);
+      VoltDB.crashLocalVoltDB(msg);
+      return;
     }
     if (config.m_hostCount == VoltDB.UNDEFINED) {
       config.m_hostCount=readDepl.deployment.getCluster().getHostcount();
@@ -94,6 +102,7 @@ synchronized (m_startAndStopLock) {
     m_replicationActive=new AtomicBoolean(false);
     m_configLogger=null;
     ActivePlanRepository.clear();
+    updateMaxThreadsLimit();
     final int computationThreads=Math.max(2,CoreUtils.availableProcessors() / 4);
     m_computationService=CoreUtils.getListeningExecutorService("Computation service thread",computationThreads,m_config.m_computationCoreBindings);
     try {
@@ -114,7 +123,6 @@ synchronized (m_startAndStopLock) {
     if (m_config.m_buildStringOverrideForTest != null) {
       m_buildString=m_config.m_buildStringOverrideForTest;
     }
-    m_config.asClusterSettingsMap();
     ClusterSettings fromPropertyFile=ClusterSettings.create();
     if (m_config.m_startAction.doesRecover()) {
       m_config.m_hostCount=fromPropertyFile.hostcount();
@@ -343,7 +351,7 @@ synchronized (m_startAndStopLock) {
  catch (    Exception e) {
       VoltDB.crashLocalVoltDB(e.getMessage(),true,e);
     }
-    if (m_config.m_isEnterprise) {
+    if (VoltDB.instance().getLicenseApi().isDrReplicationAllowed()) {
       try {
         Class<?> ndrgwClass=null;
         ndrgwClass=Class.forName("org.voltdb.dr2.DRProducer");

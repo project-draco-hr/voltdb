@@ -1,0 +1,61 @@
+{
+  if (expectedRows.getColumnCount() != actualRows.getColumnCount()) {
+    return prefix + "column count mismatch." + " Expected: "+ expectedRows.getColumnCount()+ " actual: "+ actualRows.getColumnCount();
+  }
+  if (expectedRows.getRowCount() != actualRows.getRowCount()) {
+    long expRowCount=expectedRows.getRowCount();
+    long actRowCount=actualRows.getRowCount();
+    if (expRowCount + actRowCount < TOO_MUCH_INFO) {
+      System.out.println("Expected: " + expectedRows);
+      System.out.println("Actual:   " + actualRows);
+    }
+ else {
+      System.out.println("Expected: " + expRowCount + " rows");
+      System.out.println("Actual:   " + actRowCount + " rows");
+    }
+    return prefix + "row count mismatch.  Expected: " + expectedRows.getRowCount()+ " actual: "+ actualRows.getRowCount();
+  }
+  int ii=1;
+  while (expectedRows.advanceRow()) {
+    if (!actualRows.advanceRow()) {
+      return prefix + "too few actual rows; expected more than " + ii;
+    }
+    for (int j=0; j < actualRows.getColumnCount(); j++) {
+      String columnName=actualRows.getColumnName(j);
+      String colPrefix=prefix + "row " + ii+ ": column: "+ columnName+ ": ";
+      VoltType actualType=actualRows.getColumnType(j);
+      VoltType expectedType=expectedRows.getColumnType(j);
+      if (expectedType != actualType) {
+        return colPrefix + "type mismatch: expected:" + expectedType+ " got: "+ actualType;
+      }
+      Object expectedObj=expectedRows.get(j,expectedType);
+      Object actualObj=actualRows.get(j,actualType);
+      if (expectedRows.wasNull()) {
+        if (actualRows.wasNull()) {
+          continue;
+        }
+        return colPrefix + "expected null, got non null value: " + actualObj;
+      }
+ else {
+        if (actualRows.wasNull()) {
+          return colPrefix + "expected the value " + expectedObj+ ", got a null value.";
+        }
+        String message=colPrefix + "values not equal: expected: " + expectedObj+ ", actual: "+ actualObj;
+        if (expectedType == VoltType.FLOAT) {
+          if (epsilon != null) {
+            if (((Double)expectedObj).doubleValue() + epsilon < ((Double)actualObj).doubleValue() || (((Double)actualObj).doubleValue() + epsilon < ((Double)expectedObj).doubleValue())) {
+              return message;
+            }
+            continue;
+          }
+          message+=". NOTE: You may want to pass a" + " non-null epsilon value >= " + Math.abs((Double)expectedObj - (Double)actualObj) + " to the table comparison test "+ " if nearly equal FLOAT values are "+ " causing a false positive mismatch.";
+        }
+        if (!expectedObj.equals(actualObj)) {
+          return message;
+        }
+      }
+    }
+    ++ii;
+  }
+  return "";
+}

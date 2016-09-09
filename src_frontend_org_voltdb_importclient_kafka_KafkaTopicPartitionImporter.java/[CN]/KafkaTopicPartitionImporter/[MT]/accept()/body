@@ -2,7 +2,7 @@
   info(null,"Starting partition fetcher for " + m_topicAndPartition);
   long submitCount=0;
   AtomicLong cbcnt=new AtomicLong(0);
-  Formatter<String> formatter=(Formatter<String>)m_config.getFormatterBuilder().create();
+  @SuppressWarnings("unchecked") Formatter<String> formatter=(Formatter<String>)m_config.getFormatterBuilder().create();
   try {
     resetLeader();
     int sleepCounter=1;
@@ -29,7 +29,7 @@
         info(null,"Starting offset for " + m_topicAndPartition + " is "+ m_currentOffset.get());
       }
       long currentFetchCount=0;
-      FetchRequest req=new FetchRequestBuilder().clientId(KafkaStreamImporterConfig.CLIENT_ID).addFetch(m_topicAndPartition.topic(),m_topicAndPartition.partition(),m_currentOffset.get(),m_config.getFetchSize()).build();
+      FetchRequest req=m_fetchRequestBuilder.addFetch(m_topicAndPartition.topic(),m_topicAndPartition.partition(),m_currentOffset.get(),m_config.getFetchSize()).build();
       FetchResponse fetchResponse=null;
       try {
         fetchResponse=m_consumer.fetch(req);
@@ -75,18 +75,19 @@
         ByteBuffer payload=messageAndOffset.message().payload();
         String line=new String(payload.array(),payload.arrayOffset(),payload.limit(),StandardCharsets.UTF_8);
         try {
+          m_gapTracker.submit(messageAndOffset.nextOffset());
           Invocation invocation=new Invocation(m_config.getProcedure(),formatter.transform(line));
           TopicPartitionInvocationCallback cb=new TopicPartitionInvocationCallback(messageAndOffset.nextOffset(),cbcnt,m_gapTracker,m_dead,invocation);
           if (!callProcedure(invocation,cb)) {
             if (isDebugEnabled()) {
               debug(null,"Failed to process Invocation possibly bad data: " + line);
             }
-            m_gapTracker.commit(currentOffset);
+            m_gapTracker.commit(messageAndOffset.nextOffset());
           }
         }
  catch (        FormatException e) {
           rateLimitedLog(Level.WARN,e,"Failed to tranform data: %s",line);
-          m_gapTracker.commit(currentOffset);
+          m_gapTracker.commit(messageAndOffset.nextOffset());
         }
         submitCount++;
         m_currentOffset.set(messageAndOffset.nextOffset());

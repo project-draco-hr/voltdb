@@ -1,0 +1,34 @@
+def initialize_local_config(self, sid, is_forced):
+    '\n        Initialize a local server configuration.\n        '
+    server = HTTPListener.Global.SERVERS.get(sid)
+    if (not server):
+        return 1
+    deployment_content = DeploymentConfig.DeploymentConfiguration.get_database_deployment(self.database_id)
+    filename = os.path.realpath(os.path.join(HTTPListener.Global.CONFIG_PATH, 'deployment.xml'))
+    config_path = os.path.realpath(self.get_volt_server_data_folder(sid))
+    deployment_file = open(filename, 'w')
+    deployment_file.write(deployment_content)
+    deployment_file.close()
+    volt_db_dir = get_voltdb_dir()
+    verb = 'init'
+    if (is_forced == 'true'):
+        volt_db_cmd = ['nohup', os.path.join(volt_db_dir, 'voltdb'), verb, '--force', '-C', filename, '-D', config_path]
+    else:
+        volt_db_cmd = ['nohup', os.path.join(volt_db_dir, 'voltdb'), verb, '-C', filename, '-D', config_path]
+    G.OUTFILE_COUNTER += 1
+    out_filename = os.path.realpath(os.path.join(HTTPListener.Global.CONFIG_PATH, ('voltserver.output.%s.%u' % (G.OUTFILE_TIME, G.OUTFILE_COUNTER))))
+    server_data_path = self.get_volt_server_data_folder(sid)
+    HTTPListener.Global.VOLT_SERVER_PATH = server_data_path
+    volt_init_status = self.run_voltserver_process(volt_db_cmd, out_filename, server_data_path, self.database_id)
+    initialized = False
+    read_file = open(out_filename)
+    while (volt_init_status.poll() is None):
+        time.sleep(0.5)
+    file_content = read_file.read()
+    if (('Initialized VoltDB root directory' in file_content) or ('voltdbroot is already initialized' in file_content)):
+        initialized = True
+    read_file.close()
+    if ((volt_init_status.returncode is 0) or initialized):
+        return 0
+    else:
+        return 1
