@@ -1,0 +1,49 @@
+{
+  Properties props=new Properties();
+  if (args.length < 1) {
+    System.out.println("testkafkaimporter: path-to-properties-file - The file should have brokers and topics properties at minimum.");
+    System.exit(1);
+  }
+  String filename=args[0];
+  try (InputStream is=new FileInputStream(new File(filename))){
+    props.load(is);
+  }
+ catch (  Exception ex) {
+    ex.printStackTrace();
+  }
+  String partition=props.getProperty("partition");
+  if (args.length > 2) {
+    partition=args[2];
+    if (partition != null && partition.equals("all")) {
+      partition=null;
+    }
+  }
+  String format=props.getProperty("format");
+  if (format == null || format.length() <= 0)   format="csv";
+  System.out.println("Properties are: " + props);
+  props.put("procedure","fake");
+  KafkaStreamImporterFactory factory=new KafkaStreamImporterFactory();
+  VoltCSVFormatterFactory ffactory=new VoltCSVFormatterFactory();
+  ffactory.create(format,props);
+  FormatterBuilder fb=new FormatterBuilder(format,props);
+  fb.setFormatterFactory(ffactory);
+  Map<URI,ImporterConfig> mmap=factory.createImporterConfigurations(props,fb);
+  System.out.println("Number of Partitions for topic are: " + mmap.size() + " Requested partition: "+ partition);
+  CountDownLatch cdl=new CountDownLatch(mmap.size());
+  for (  URI uri : mmap.keySet()) {
+    if (partition != null && !uri.toString().endsWith(partition)) {
+      cdl.countDown();
+      continue;
+    }
+    KafkaTopicPartitionImporter importer=new KafkaTopicPartitionImporter((KafkaStreamImporterConfig)mmap.get(uri));
+    Runner runner=new Runner(importer,cdl);
+    runner.start();
+  }
+  try {
+    cdl.await();
+  }
+ catch (  InterruptedException ex) {
+    ex.printStackTrace();
+  }
+  System.out.println("Exiting.");
+}
