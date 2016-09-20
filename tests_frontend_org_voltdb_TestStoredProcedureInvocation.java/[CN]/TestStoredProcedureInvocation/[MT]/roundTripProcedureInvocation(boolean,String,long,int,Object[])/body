@@ -1,0 +1,101 @@
+{
+  try {
+    ProcedureInvocation pi=new ProcedureInvocation(handle,timeout,procName,params);
+    ByteBuffer buf=ByteBuffer.allocate(pi.getSerializedSize());
+    pi.flattenToBuffer(buf);
+    buf.flip();
+    roundTripBuffer(expectSuccess,buf,procName,handle,timeout);
+  }
+ catch (  Exception e) {
+    if (expectSuccess) {
+      e.printStackTrace();
+      fail();
+    }
+  }
+  try {
+    StoredProcedureInvocation spi=new StoredProcedureInvocation();
+    spi.setProcName(procName);
+    spi.setClientHandle(handle);
+    spi.setBatchTimeout(timeout);
+    spi.setParams(params);
+    ByteBuffer buf=ByteBuffer.allocate(spi.getSerializedSize());
+    spi.flattenToBuffer(buf);
+    buf.flip();
+    roundTripBuffer(expectSuccess,buf,procName,handle,timeout);
+  }
+ catch (  Exception e) {
+    if (expectSuccess) {
+      e.printStackTrace();
+      fail();
+    }
+  }
+  try {
+    ByteBuffer buf=ByteBuffer.allocate(10000);
+    buf.put(ProcedureInvocationType.VERSION2.getValue());
+    SerializationHelper.writeString(procName,buf);
+    buf.putLong(handle);
+    if (timeout == BatchTimeoutOverrideType.NO_TIMEOUT) {
+      buf.put((byte)2);
+      buf.put((byte)75);
+      buf.put((byte)0);
+      buf.put((byte)93);
+      buf.put((byte)4);
+      buf.put(new byte[8]);
+    }
+ else {
+      buf.put((byte)1);
+      ProcedureInvocationExtensions.writeBatchTimeoutWithTypeByte(buf,timeout);
+    }
+    ParameterSet paramSet=(params != null ? ParameterSet.fromArrayWithCopy(params) : ParameterSet.emptyParameterSet());
+    paramSet.flattenToBuffer(buf);
+    buf.flip();
+    roundTripBuffer(expectSuccess,buf,procName,handle,timeout);
+  }
+ catch (  Exception e) {
+    if (expectSuccess) {
+      e.printStackTrace();
+      fail();
+    }
+  }
+  if (timeout == BatchTimeoutOverrideType.NO_TIMEOUT) {
+    try {
+      ByteBuffer buf=ByteBuffer.allocate(10000);
+      buf.put(ProcedureInvocationType.ORIGINAL.getValue());
+      SerializationHelper.writeString(procName,buf);
+      buf.putLong(handle);
+      ParameterSet paramSet=(params != null ? ParameterSet.fromArrayWithCopy(params) : ParameterSet.emptyParameterSet());
+      paramSet.flattenToBuffer(buf);
+      buf.flip();
+      roundTripBuffer(expectSuccess,buf,procName,handle,timeout);
+    }
+ catch (    Exception e) {
+      if (expectSuccess) {
+        e.printStackTrace();
+        fail();
+      }
+    }
+  }
+  try {
+    ByteBuffer buf=ByteBuffer.allocate(10000);
+    buf.put(ProcedureInvocationType.VERSION1.getValue());
+    if (timeout == BatchTimeoutOverrideType.NO_TIMEOUT) {
+      buf.put(BatchTimeoutOverrideType.NO_OVERRIDE_FOR_BATCH_TIMEOUT.getValue());
+    }
+ else {
+      buf.put(BatchTimeoutOverrideType.HAS_OVERRIDE_FOR_BATCH_TIMEOUT.getValue());
+      buf.putInt(timeout);
+    }
+    SerializationHelper.writeString(procName,buf);
+    buf.putLong(handle);
+    ParameterSet paramSet=(params != null ? ParameterSet.fromArrayWithCopy(params) : ParameterSet.emptyParameterSet());
+    paramSet.flattenToBuffer(buf);
+    buf.flip();
+    roundTripBuffer(expectSuccess,buf,procName,handle,timeout);
+  }
+ catch (  Exception e) {
+    if (expectSuccess) {
+      e.printStackTrace();
+      fail();
+    }
+  }
+}

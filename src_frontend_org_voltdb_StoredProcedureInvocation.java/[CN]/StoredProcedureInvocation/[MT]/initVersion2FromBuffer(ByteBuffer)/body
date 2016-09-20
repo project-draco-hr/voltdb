@@ -1,24 +1,37 @@
 {
-  setProcName(SerializationHelper.getVarbinary(buf));
+  byte[] procNameBytes=SerializationHelper.getVarbinary(buf);
+  if (procNameBytes == null) {
+    throw new IOException("Procedure name cannot be null in invocation deserialization.");
+  }
+  if (procNameBytes.length == 0) {
+    throw new IOException("Procedure name cannot be length zero in invocation deserialization.");
+  }
+  setProcName(procNameBytes);
   clientHandle=buf.getLong();
-  assert(getProcName().length() < 100);
   batchTimeout=BatchTimeoutOverrideType.NO_TIMEOUT;
   int extensionCount=buf.get();
-  assert(extensionCount < 2);
+  if (extensionCount < 0) {
+    throw new IOException("SPI extension count was < 0: possible corrupt network data.");
+  }
+  if (extensionCount > 30) {
+    throw new IOException("SPI extension count was > 30: possible corrupt network data.");
+  }
   for (int i=0; i < extensionCount; ++i) {
     final byte type=ProcedureInvocationExtensions.readNextType(buf);
 switch (type) {
 case ProcedureInvocationExtensions.BATCH_TIMEOUT:
       batchTimeout=ProcedureInvocationExtensions.readBatchTimeout(buf);
+    break;
 default :
-    ProcedureInvocationExtensions.skipUnknownExtension(buf);
+  ProcedureInvocationExtensions.skipUnknownExtension(buf);
+break;
 }
 }
 serializedParams=buf.slice();
 final ByteBuffer duplicate=serializedParams.duplicate();
 params=new FutureTask<ParameterSet>(new Callable<ParameterSet>(){
 @Override public ParameterSet call() throws Exception {
-  return ParameterSet.fromByteBuffer(duplicate);
+return ParameterSet.fromByteBuffer(duplicate);
 }
 }
 );
