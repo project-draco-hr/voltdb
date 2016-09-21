@@ -1,0 +1,32 @@
+{
+  if (callback == null) {
+    throw new IllegalArgumentException("AllPartitionProcedureCallback can not be null");
+  }
+  Object[] args=new Object[params.length + 1];
+  System.arraycopy(params,0,args,1,params.length);
+  final ImmutableSet<Integer> partitionSet=m_distributer.getPartitionKeys();
+  int partitionCount=partitionSet.size();
+  AtomicInteger counter=new AtomicInteger(partitionCount);
+  assert(partitionCount > 0);
+  ClientResponseWithPartitionKey[] responses=new ClientResponseWithPartitionKey[partitionCount];
+  for (  Integer key : partitionSet) {
+    args[0]=key;
+    partitionCount--;
+    OnePartitionProcedureCallback cb=new OnePartitionProcedureCallback(counter,key,partitionCount,responses,callback);
+    try {
+      if (!callProcedure(cb,procedureName,args)) {
+        final ClientResponse r=new ClientResponseImpl(ClientResponse.GRACEFUL_FAILURE,new VoltTable[0],"The procedure is not queued for execution.");
+        throw new ProcCallException(r,null,null);
+      }
+    }
+ catch (    Exception ex) {
+      try {
+        cb.exceptionCallback(ex);
+      }
+ catch (      Exception e) {
+        throw new IOException(e);
+      }
+    }
+  }
+  return true;
+}

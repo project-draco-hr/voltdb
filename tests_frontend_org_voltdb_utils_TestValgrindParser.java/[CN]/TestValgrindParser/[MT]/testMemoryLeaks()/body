@@ -1,0 +1,47 @@
+{
+  List<String> valgrindErrors=new ArrayList<>();
+  File urlFile=new File("tests/frontend/org/voltdb/utils/valgrind_test_files");
+  File[] files=urlFile.listFiles(new FilenameFilter(){
+    @Override public boolean accept(    File dir,    String name){
+      return name.endsWith(".xml");
+    }
+  }
+);
+  Arrays.sort(files);
+  for (  File file : files) {
+    String baseName=file.getName();
+    String valgrindVersion=baseName.substring(0,baseName.indexOf('_'));
+    String programName=baseName.substring(baseName.indexOf('_') + 1,baseName.length() - 4);
+    System.out.printf("Testing valgrind version %s with program %s\n",valgrindVersion,programName);
+    valgrindErrors.clear();
+    ValgrindXMLParser.processValgrindOutput(file,valgrindErrors);
+switch (programName) {
+case "definite_losses":
+      assertEquals(1,valgrindErrors.size());
+    assertTrue(valgrindErrors.get(0).startsWith("Leak_DefinitelyLost"));
+  break;
+case "indirect_losses":
+assertEquals(2,valgrindErrors.size());
+assertTrue(valgrindErrors.get(0).startsWith("Leak_IndirectlyLost"));
+assertTrue(valgrindErrors.get(1).startsWith("Leak_DefinitelyLost"));
+break;
+case "possible_losses":
+assertEquals(1,valgrindErrors.size());
+assertTrue(valgrindErrors.get(0).startsWith("Leak_PossiblyLost"));
+break;
+case "rw_deleted":
+assertEquals(3,valgrindErrors.size());
+assertTrue(valgrindErrors.get(0).startsWith("MismatchedFree"));
+assertTrue(valgrindErrors.get(1).startsWith("InvalidRead"));
+assertTrue(valgrindErrors.get(2).startsWith("InvalidWrite"));
+break;
+case "still_reachable_losses":
+assertEquals(1,valgrindErrors.size());
+assertTrue(valgrindErrors.get(0).startsWith("Leak_StillReachable"));
+break;
+case "no_losses":
+assertEquals(0,valgrindErrors.size());
+default :
+}
+}
+}

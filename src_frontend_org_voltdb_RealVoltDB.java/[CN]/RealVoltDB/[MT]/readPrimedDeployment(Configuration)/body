@@ -16,75 +16,75 @@
       VoltDB.crashLocalVoltDB("Not a valid XML deployment file at URL: " + config.m_pathToDeployment,false,null);
       return new ReadDeploymentResults(deploymentBytes,deployment);
     }
-    if (config.m_startAction == StartAction.PROBE) {
-      loadPathConfiguration(config);
-      if (config.m_hostCount == VoltDB.UNDEFINED) {
-        config.m_hostCount=1;
-      }
-    }
+    PathSettings pathSettings=null;
+switch (config.m_startAction) {
+case PROBE:
+      Settings.initialize(config.m_voltdbRoot);
+    pathSettings=PathSettings.create();
+  File pathSettingsFH=new File(getConfigDirectory(config),"path.properties");
+consoleLog.info("Loaded path settings from " + pathSettingsFH.getPath());
+hostLog.info("Loaded path settings from " + pathSettingsFH.getPath());
+break;
+case INITIALIZE:
+Settings.initialize(config.m_voltdbRoot);
+pathSettings=PathSettings.create(config.asPathSettingsMap(),CatalogUtil.asPathSettingsMap(deployment));
+break;
+default :
+pathSettings=PathSettings.create(CatalogUtil.asPathSettingsMap(deployment));
+Settings.initialize(pathSettings.getVoltDBRoot());
+config.m_voltdbRoot=pathSettings.getVoltDBRoot();
+break;
+}
+m_paths=pathSettings;
+if (config.m_startAction == StartAction.PROBE) {
+if (config.m_hostCount == VoltDB.UNDEFINED) {
+config.m_hostCount=1;
+}
+}
  else {
-      config.m_hostCount=deployment.getCluster().getHostcount();
-    }
-    File optrootFH=config.m_voltdbRoot;
-    String pathrootFN=m_pathList.getProperty(VoltDB.VOLTDBROOT_PATH_KEY);
-    if (pathrootFN != null && !pathrootFN.trim().isEmpty()) {
-      optrootFH=new File(pathrootFN);
-    }
-    File dplrootFH=new File(deployment.getPaths().getVoltdbroot().getPath());
-    if (config.m_startAction.isLegacy()) {
-      if (!optrootFH.getCanonicalFile().equals(dplrootFH.getCanonicalFile())) {
-        config.m_voltdbRoot=dplrootFH;
-      }
-    }
- else     if ((pathrootFN == null || pathrootFN.trim().isEmpty()) && !optrootFH.getCanonicalFile().equals(dplrootFH.getCanonicalFile())) {
-      if (config.m_startAction == StartAction.PROBE) {
-        String msg="VoltDB root specified on the command line \"" + optrootFH + "\" is different from the one specified at initialization \""+ dplrootFH+ "\"";
-        hostLog.fatal(msg);
-        VoltDB.crashLocalVoltDB(msg);
-        return new ReadDeploymentResults(deploymentBytes,deployment);
-      }
-    }
-    if (!config.m_isEnterprise) {
-      boolean shutdownDeployment=false;
-      boolean shutdownAction=false;
-      if ((deployment.getCluster() != null) && (deployment.getCluster().getKfactor() > 0)) {
-        consoleLog.error("K-Safety is not supported " + "in the community edition of VoltDB.");
-        shutdownDeployment=true;
-      }
-      if ((deployment.getSnapshot() != null) && (deployment.getSnapshot().isEnabled())) {
-        consoleLog.error("Snapshots are not supported " + "in the community edition of VoltDB.");
-        shutdownDeployment=true;
-      }
-      if ((deployment.getCommandlog() != null) && (deployment.getCommandlog().isEnabled())) {
-        consoleLog.error("Command logging is not supported " + "in the community edition of VoltDB.");
-        shutdownDeployment=true;
-      }
-      if ((deployment.getExport() != null) && Boolean.TRUE.equals(deployment.getExport().isEnabled())) {
-        consoleLog.error("Export is not supported " + "in the community edition of VoltDB.");
-        shutdownDeployment=true;
-      }
-      if (m_config.m_startAction != StartAction.CREATE) {
-        consoleLog.error("Start action \"" + m_config.m_startAction.getClass().getSimpleName() + "\" is not supported in the community edition of VoltDB.");
-        shutdownAction=true;
-      }
-      if (shutdownAction || shutdownDeployment) {
-        String msg="This process will exit. Please run VoltDB with ";
-        if (shutdownDeployment) {
-          msg+="a deployment file compatible with the community edition";
-        }
-        if (shutdownDeployment && shutdownAction) {
-          msg+=" and ";
-        }
-        if (shutdownAction && !shutdownDeployment) {
-          msg+="the CREATE start action";
-        }
-        msg+=".";
-        VoltDB.crashLocalVoltDB(msg,false,null);
-      }
-    }
-    return new ReadDeploymentResults(deploymentBytes,deployment);
-  }
- catch (  Exception e) {
-    throw new RuntimeException(e);
-  }
+config.m_hostCount=deployment.getCluster().getHostcount();
+}
+if (!config.m_isEnterprise) {
+boolean shutdownDeployment=false;
+boolean shutdownAction=false;
+if ((deployment.getCluster() != null) && (deployment.getCluster().getKfactor() > 0)) {
+consoleLog.error("K-Safety is not supported " + "in the community edition of VoltDB.");
+shutdownDeployment=true;
+}
+if ((deployment.getSnapshot() != null) && (deployment.getSnapshot().isEnabled())) {
+consoleLog.error("Snapshots are not supported " + "in the community edition of VoltDB.");
+shutdownDeployment=true;
+}
+if ((deployment.getCommandlog() != null) && (deployment.getCommandlog().isEnabled())) {
+consoleLog.error("Command logging is not supported " + "in the community edition of VoltDB.");
+shutdownDeployment=true;
+}
+if ((deployment.getExport() != null) && Boolean.TRUE.equals(deployment.getExport().isEnabled())) {
+consoleLog.error("Export is not supported " + "in the community edition of VoltDB.");
+shutdownDeployment=true;
+}
+if (m_config.m_startAction != StartAction.CREATE) {
+consoleLog.error("Start action \"" + m_config.m_startAction.getClass().getSimpleName() + "\" is not supported in the community edition of VoltDB.");
+shutdownAction=true;
+}
+if (shutdownAction || shutdownDeployment) {
+String msg="This process will exit. Please run VoltDB with ";
+if (shutdownDeployment) {
+msg+="a deployment file compatible with the community edition";
+}
+if (shutdownDeployment && shutdownAction) {
+msg+=" and ";
+}
+if (shutdownAction && !shutdownDeployment) {
+msg+="the CREATE start action";
+}
+msg+=".";
+VoltDB.crashLocalVoltDB(msg,false,null);
+}
+}
+return new ReadDeploymentResults(deploymentBytes,deployment);
+}
+ catch (Exception e) {
+throw new RuntimeException(e);
+}
 }

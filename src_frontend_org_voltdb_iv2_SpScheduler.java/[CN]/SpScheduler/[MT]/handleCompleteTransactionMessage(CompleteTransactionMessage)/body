@@ -1,10 +1,12 @@
 {
   CompleteTransactionMessage msg=message;
   if (m_isLeader) {
-    msg=new CompleteTransactionMessage(message);
-    if (!msg.isForReplay())     advanceTxnEgo();
+    msg=new CompleteTransactionMessage(m_mailbox.getHSId(),m_mailbox.getHSId(),message);
+    if (!msg.isForReplay()) {
+      advanceTxnEgo();
+    }
     msg.setSpHandle(getCurrentTxnId());
-    if (m_sendToHSIds.length > 0) {
+    if (m_sendToHSIds.length > 0 && !msg.isReadOnly()) {
       m_mailbox.send(m_sendToHSIds,msg);
     }
   }
@@ -13,14 +15,14 @@
   }
   TransactionState txn=m_outstandingTxns.get(msg.getTxnId());
   if (txn != null) {
-    Iv2Trace.logCompleteTransactionMessage(msg,m_mailbox.getHSId());
-    final CompleteTransactionTask task=new CompleteTransactionTask(txn,m_pendingTasks,msg,m_drGateway);
-    queueOrOfferMPTask(task);
-    if (!msg.isRestart()) {
-      m_outstandingTxns.remove(msg.getTxnId());
-      if (m_isLeader && txn.isDone()) {
-        setRepairLogTruncationHandle(txn.m_spHandle);
-      }
+    final boolean isSysproc=((FragmentTaskMessage)txn.getNotice()).isSysProcTask();
+    if (m_sendToHSIds.length > 0 && !msg.isRestart() && (!msg.isReadOnly() || isSysproc)) {
+      DuplicateCounter counter;
+      counter=new DuplicateCounter(msg.getCoordinatorHSId(),msg.getTxnId(),m_replicaHSIds,msg);
+      safeAddToDuplicateCounterMap(new DuplicateCounterKey(msg.getTxnId(),msg.getSpHandle()),counter);
     }
+    Iv2Trace.logCompleteTransactionMessage(msg,m_mailbox.getHSId());
+    final CompleteTransactionTask task=new CompleteTransactionTask(m_mailbox,txn,m_pendingTasks,msg,m_drGateway);
+    queueOrOfferMPTask(task);
   }
 }

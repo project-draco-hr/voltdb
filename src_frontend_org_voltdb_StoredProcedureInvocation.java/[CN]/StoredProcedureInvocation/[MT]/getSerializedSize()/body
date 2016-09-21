@@ -1,23 +1,21 @@
 {
-  int timeoutSize=0;
-  if (type.getValue() >= BatchTimeoutOverrideType.BATCH_TIMEOUT_VERSION) {
-    timeoutSize=1 + (batchTimeout == BatchTimeoutOverrideType.NO_TIMEOUT ? 0 : 4);
-  }
-  int size=1 + timeoutSize + 4+ procName.length()+ 8;
-  if (ProcedureInvocationType.isDeprecatedInternalDRType(type)) {
-    size+=8 + 8;
-  }
+  int batchExtensionSize=batchTimeout != BatchTimeoutOverrideType.NO_TIMEOUT ? 6 : 0;
+  int serializedParamSize=0;
   if (serializedParams != null) {
-    size+=serializedParams.remaining();
+    serializedParamSize=serializedParams.remaining();
   }
  else   if (params != null) {
     ParameterSet pset=getParams();
     assert(pset != null);
-    int serializedSize=pset.getSerializedSize();
-    if ((pset.size() > 0) && (serializedSize <= 2)) {
-      throw new IllegalStateException(String.format("Parameter set for invocation " + "%s doesn't have the proper size (currently = %s)",getProcName(),serializedSize));
+    serializedParamSize=pset.getSerializedSize();
+    if ((pset.size() > 0) && (serializedParamSize <= 2)) {
+      throw new IllegalStateException(String.format("Parameter set for invocation " + "%s doesn't have the proper size (currently = %s)",getProcName(),serializedParamSize));
     }
-    size+=pset.getSerializedSize();
   }
+ else {
+    throw new IllegalStateException("StoredProcedureInvocation instance params in invalid state.");
+  }
+  int size=1 + 4 + getProcNameBytes().length+ 8+ 1+ batchExtensionSize+ serializedParamSize;
+  assert(size > 0);
   return size;
 }

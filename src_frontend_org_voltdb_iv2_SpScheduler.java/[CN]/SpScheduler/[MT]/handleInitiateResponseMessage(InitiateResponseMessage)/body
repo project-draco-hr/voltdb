@@ -1,8 +1,15 @@
 {
-  boolean shortcutRead=message.isReadOnly() && (m_defaultConsistencyReadLevel == ReadLevel.FAST);
-  if (shortcutRead) {
-    m_mailbox.send(message.getInitiatorHSId(),message);
-    return;
+  if (message.isReadOnly()) {
+    if (m_defaultConsistencyReadLevel == ReadLevel.FAST) {
+      m_mailbox.send(message.getInitiatorHSId(),message);
+      return;
+    }
+    if (m_defaultConsistencyReadLevel == ReadLevel.SAFE) {
+      assert(m_isLeader);
+      assert(m_bufferedReadLog != null);
+      m_bufferedReadLog.offer(m_mailbox,message,m_repairLogTruncationHandle);
+      return;
+    }
   }
   final long spHandle=message.getSpHandle();
   final DuplicateCounterKey dcKey=new DuplicateCounterKey(message.getTxnId(),spHandle);
@@ -19,6 +26,7 @@
     }
   }
  else {
+    assert(!message.isReadOnly());
     setRepairLogTruncationHandle(spHandle);
     m_mailbox.send(message.getInitiatorHSId(),message);
   }

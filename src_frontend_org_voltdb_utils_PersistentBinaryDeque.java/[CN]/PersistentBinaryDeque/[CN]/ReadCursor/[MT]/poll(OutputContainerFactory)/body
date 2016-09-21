@@ -1,0 +1,28 @@
+{
+synchronized (PersistentBinaryDeque.this) {
+    if (m_closed) {
+      throw new IOException("Reader " + m_cursorId + " has been closed");
+    }
+    assertions();
+    moveToValidSegment();
+    PBDSegmentReader segmentReader=m_segment.getReader(m_cursorId);
+    if (segmentReader == null) {
+      segmentReader=m_segment.openForRead(m_cursorId);
+    }
+    long lastSegmentId=peekLastSegment().segmentId();
+    while (!segmentReader.hasMoreEntries()) {
+      if (m_segment.segmentId() == lastSegmentId) {
+        return null;
+      }
+      segmentReader.close();
+      m_segment=m_segments.higherEntry(m_segment.segmentId()).getValue();
+      segmentReader=m_segment.getReader(m_cursorId);
+      if (segmentReader == null)       segmentReader=m_segment.openForRead(m_cursorId);
+    }
+    BBContainer retcont=segmentReader.poll(ocf);
+    m_numRead++;
+    assertions();
+    assert(retcont.b() != null);
+    return wrapRetCont(m_segment,retcont);
+  }
+}
