@@ -1,0 +1,66 @@
+{
+  VoltFile.resetSubrootForThisProcess();
+  final Client client2=this.getClient();
+  for (int i=0; i < 50; i++) {
+    client2.callProcedure(new Callback(),"ArbitraryDurationProc",6000);
+  }
+  String[] myData=new String[5000];
+  for (int i=0; i < 5000; i++) {
+    myData[i]=i + ",1,2,3,4,5,6,7,8,9,10";
+  }
+  TestCSVFormatterSuiteBase.pushDataAsync(7001,myData);
+  final Client client=getAdminClient();
+  ClientResponse resp=client.callProcedure("@PrepareShutdown");
+  assertTrue(resp.getStatus() == ClientResponse.SUCCESS);
+  try {
+    client2.callProcedure("@SystemInformation","OVERVIEW");
+    fail("Unallowed sys proc is executed.");
+  }
+ catch (  ProcCallException e) {
+    System.out.println("@SystemInformation:" + e.getMessage());
+    assertTrue("Server shutdown in progress - new transactions are not processed.".equals(e.getMessage()));
+  }
+  try {
+    client2.callProcedure("ArbitraryDurationProc",0);
+    fail("Unallowed proc is executed.");
+  }
+ catch (  ProcCallException e) {
+    System.out.println("ArbitraryDurationProc:" + e.getMessage());
+    assertTrue("Server shutdown in progress - new transactions are not processed.".equals(e.getMessage()));
+  }
+  long sum=Long.MAX_VALUE;
+  while (sum > 0) {
+    resp=client2.callProcedure("@Statistics","liveclients",0);
+    assertTrue(resp.getStatus() == ClientResponse.SUCCESS);
+    VoltTable t=resp.getResults()[0];
+    long trxn=0, bytes=0, msg=0;
+    if (t.advanceRow()) {
+      trxn=t.getLong(6);
+      bytes=t.getLong(7);
+      msg=t.getLong(8);
+      sum=trxn + bytes + msg;
+    }
+    System.out.printf("Outstanding transactions: %d, buffer bytes :%d, response messages:%d\n",trxn,bytes,msg);
+    Thread.sleep(2000);
+  }
+  assertTrue(sum == 0);
+  sum=Long.MAX_VALUE;
+  while (sum > 0) {
+    resp=client2.callProcedure("@Statistics","IMPORTER",0);
+    assertTrue(resp.getStatus() == ClientResponse.SUCCESS);
+    VoltTable t=resp.getResults()[0];
+    if (t.advanceRow()) {
+      sum=t.getLong(8);
+    }
+    System.out.printf("Outstanding importer transactions: %d\n",sum);
+    Thread.sleep(500);
+  }
+  assertTrue(sum == 0);
+  try {
+    client.callProcedure("@Shutdown");
+    fail("@Shutdown fails via admin mode");
+  }
+ catch (  ProcCallException e) {
+    System.out.println("@Shutdown: cluster has been shutdown via admin mode ");
+  }
+}
