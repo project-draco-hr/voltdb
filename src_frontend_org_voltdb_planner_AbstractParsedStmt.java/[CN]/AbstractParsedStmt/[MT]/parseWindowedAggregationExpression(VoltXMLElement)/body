@@ -1,0 +1,69 @@
+{
+  int id=Integer.parseInt(exprNode.attributes.get("id"));
+  String optypeName=exprNode.attributes.get("optype");
+  ExpressionType optype=ExpressionType.get(optypeName);
+  if (optype == ExpressionType.INVALID) {
+    throw new PlanningErrorException("Undefined windowed function call " + optypeName);
+  }
+  if (!m_parsingInDisplayColumns) {
+    if (m_windowedExpressions.size() > 0) {
+      WindowedExpression we=m_windowedExpressions.get(0);
+      if (we.getXMLID() == id) {
+        return we.getDisplayListExpression();
+      }
+    }
+    throw new PlanningErrorException("Windowed function call expressions can only appear in the selection list of a query or subquery.");
+  }
+  List<AbstractExpression> partitionbyExprs=new ArrayList<>();
+  List<AbstractExpression> orderbyExprs=new ArrayList<>();
+  List<SortDirectionType> orderbyDirs=new ArrayList<>();
+  List<AbstractExpression> aggParams=new ArrayList<>();
+  for (  VoltXMLElement childEle : exprNode.children) {
+    if (childEle.name.equals("winspec")) {
+      for (      VoltXMLElement ele : childEle.children) {
+        if (ele.name.equals("partitionbyList")) {
+          for (int i=0; i < ele.children.size(); i++) {
+            VoltXMLElement childNode=ele.children.get(i);
+            AbstractExpression expr=parseExpressionNode(childNode);
+            ExpressionUtil.finalizeValueTypes(expr);
+            partitionbyExprs.add(expr);
+          }
+        }
+ else         if (ele.name.equals("orderbyList")) {
+          for (int i=0; i < ele.children.size(); i++) {
+            VoltXMLElement childNode=ele.children.get(i);
+            SortDirectionType sortDir=Boolean.valueOf(childNode.attributes.get("decending")) ? SortDirectionType.DESC : SortDirectionType.ASC;
+            AbstractExpression expr=parseExpressionNode(childNode.children.get(0));
+            ExpressionUtil.finalizeValueTypes(expr);
+            orderbyExprs.add(expr);
+            orderbyDirs.add(sortDir);
+          }
+        }
+      }
+    }
+ else     if (childEle.name.equals("winargs")) {
+      for (      VoltXMLElement ele : childEle.children) {
+        aggParams.add(parseExpressionNode(ele));
+      }
+    }
+ else {
+      throw new PlanningErrorException("Invalid windowed expression found: " + childEle.name);
+    }
+  }
+  String columnName=WINDOWED_AGGREGATE_COLUMN_NAME;
+  String alias=WINDOWED_AGGREGATE_COLUMN_NAME;
+  if (exprNode.attributes.containsKey("alias")) {
+    alias=exprNode.attributes.get("alias");
+  }
+  WindowedExpression rankExpr=new WindowedExpression(optype,partitionbyExprs,orderbyExprs,orderbyDirs,aggParams,id);
+  ExpressionUtil.finalizeValueTypes(rankExpr);
+  int offset=m_windowedExpressions.size();
+  m_windowedExpressions.add(rankExpr);
+  TupleValueExpression tve=new TupleValueExpression(TEMP_TABLE_NAME,TEMP_TABLE_NAME,alias,alias);
+  tve.setColumnIndex(offset);
+  tve.setValueType(rankExpr.getValueType());
+  tve.setValueSize(rankExpr.getValueSize());
+  tve.setNeedsNoDifferentiation();
+  rankExpr.setDisplayListExpression(tve);
+  return tve;
+}
