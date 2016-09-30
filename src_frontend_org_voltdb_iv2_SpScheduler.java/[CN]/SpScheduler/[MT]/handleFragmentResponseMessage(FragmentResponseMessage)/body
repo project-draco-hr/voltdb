@@ -17,24 +17,13 @@
     }
     return;
   }
- else {
-    if (txn == null) {
-      if (m_defaultConsistencyReadLevel == ReadLevel.SAFE) {
-        m_bufferedReadLog.offer(m_mailbox,message,m_repairLogTruncationHandle);
-        return;
-      }
-    }
- else {
-      if (txn.isReadOnly()) {
-        if (m_defaultConsistencyReadLevel == ReadLevel.SAFE) {
-          m_bufferedReadLog.offer(m_mailbox,message,m_repairLogTruncationHandle);
-          return;
-        }
-      }
- else       if (txn.isDone()) {
-        setRepairLogTruncationHandle(txn.m_spHandle);
-      }
-    }
+  if (m_defaultConsistencyReadLevel == ReadLevel.SAFE && m_isLeader && m_sendToHSIds.length > 0 && (txn == null || txn.isReadOnly())) {
+    long readTxnId=txn == null ? message.getSpHandle() : txn.m_spHandle;
+    m_bufferedReadLog.offer(m_mailbox,message,readTxnId,m_repairLogTruncationHandle);
+    return;
+  }
+  if (txn != null && !txn.isReadOnly() && txn.isDone()) {
+    setRepairLogTruncationHandle(txn.m_spHandle);
   }
   m_mailbox.send(message.getDestinationSiteId(),message);
 }

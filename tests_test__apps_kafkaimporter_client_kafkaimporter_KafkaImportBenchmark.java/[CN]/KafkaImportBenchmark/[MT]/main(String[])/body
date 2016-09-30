@@ -24,21 +24,24 @@
   }
  while (!RUNNING_STATE.equalsIgnoreCase(MatchChecks.getClusterState(client)) || importProgress.size() < 4 || importProgress.get(importProgress.size() - 1) > importProgress.get(importProgress.size() - 2) || importProgress.get(importProgress.size() - 1) > importProgress.get(importProgress.size() - 3) || importProgress.get(importProgress.size() - 1) > importProgress.get(importProgress.size() - 4));
   long[] importStatValues=MatchChecks.getImportValues(client);
-  long mirrorRows=MatchChecks.getMirrorTableRowCount(config.alltypes,client);
+  long mirrorRows=0;
+  if (!config.streamtest)   mirrorRows=MatchChecks.getMirrorTableRowCount(config.alltypes,client);
   long importRows=MatchChecks.getImportTableRowCount(config.alltypes,client);
-  long importRowCount=MatchChecks.getImportRowCount(client);
+  long importRowCount=0;
+  if (!config.streamtest)   importRowCount=MatchChecks.getImportRowCount(client);
   int trial=3;
   while (!RUNNING_STATE.equalsIgnoreCase(MatchChecks.getClusterState(client)) || ((--trial > 0) && ((importStatValues[OUTSTANDING_REQUESTS] > 0) || (importRows < config.expected_rows)))) {
     Thread.sleep(PAUSE_WAIT * 1000);
     importStatValues=MatchChecks.getImportValues(client);
-    mirrorRows=MatchChecks.getMirrorTableRowCount(config.alltypes,client);
+    if (!config.streamtest)     mirrorRows=MatchChecks.getMirrorTableRowCount(config.alltypes,client);
     importRows=MatchChecks.getImportTableRowCount(config.alltypes,client);
-    importRowCount=MatchChecks.getImportRowCount(client);
   }
   log.info("importer outstanding requests: " + importStatValues[OUTSTANDING_REQUESTS]);
-  log.info("mirrorRows: " + mirrorRows);
   log.info("importRows: " + importRows);
-  log.info("importRowCount: " + importRowCount);
+  if (!config.streamtest) {
+    log.info("mirrorRows: " + mirrorRows);
+    log.info("importRowCount: " + importRowCount);
+  }
   if (config.useexport) {
     log.info("exportRowCount: " + exportRowCount);
   }
@@ -55,7 +58,7 @@
     log.error("Export count '" + exportRowCount + "' does not match import stats count '"+ (importStatValues[SUCCESSES] + importStatValues[FAILURES])+ "' test fails.");
     testResult=false;
   }
-  if (!config.useexport) {
+  if (!config.useexport && !config.streamtest) {
     testResult=MatchChecks.checkPounderResults(config.expected_rows,client);
   }
   endTest(testResult);
