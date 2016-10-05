@@ -1,24 +1,41 @@
 {
   if (!isHSQL()) {
     Client client=getClient();
-    Object[] initialRow={"ENG_11203",1,2,4};
-    Object[] secondRow={"ENG_11203",6,2,4};
-    insertRow(client,initialRow);
-    VoltTable vt=client.callProcedure("@AdHoc","SELECT * FROM V_ENG_11203").getResults()[0];
+    Object[][] initialRows={{"ENG_11203_A",1,2,4},{"ENG_11203_B",1,2,4}};
+    Object[][] secondRows={{"ENG_11203_A",6,2,4},{"ENG_11203_B",6,2,4}};
+    insertRow(client,initialRows[0]);
+    insertRow(client,initialRows[1]);
+    VoltTable vt=client.callProcedure("@AdHoc","SELECT * FROM V_ENG_11203_SINGLE").getResults()[0];
+    assertContentOfTable(new Object[][]{{2,1,1}},vt);
+    vt=client.callProcedure("@AdHoc","SELECT * FROM V_ENG_11203_JOIN").getResults()[0];
     assertContentOfTable(new Object[][]{{2,1,1}},vt);
     try {
-      client.callProcedure("@AdHoc","CREATE INDEX I_ENG_11203 ON V_ENG_11203(a, b);");
+      client.callProcedure("@AdHoc","CREATE INDEX I_ENG_11203_SINGLE ON V_ENG_11203_SINGLE(a, b);");
     }
  catch (    ProcCallException pce) {
       pce.printStackTrace();
-      fail("Should be able to create an index on the single table view V_ENG_11203.");
+      fail("Should be able to create an index on the single table view V_ENG_11203_SINGLE.");
     }
-    insertRow(client,secondRow);
-    vt=client.callProcedure("@AdHoc","SELECT * FROM V_ENG_11203").getResults()[0];
+    try {
+      client.callProcedure("@AdHoc","CREATE INDEX I_ENG_11203_JOIN ON V_ENG_11203_JOIN(a, b);");
+    }
+ catch (    ProcCallException pce) {
+      pce.printStackTrace();
+      fail("Should be able to create an index on the joined table view V_ENG_11203_JOIN.");
+    }
+    insertRow(client,secondRows[0]);
+    insertRow(client,secondRows[1]);
+    vt=client.callProcedure("@AdHoc","SELECT * FROM V_ENG_11203_SINGLE").getResults()[0];
     assertContentOfTable(new Object[][]{{2,2,6}},vt);
-    deleteRow(client,initialRow);
-    deleteRow(client,secondRow);
-    vt=client.callProcedure("@AdHoc","SELECT * FROM V_ENG_11203").getResults()[0];
+    vt=client.callProcedure("@AdHoc","SELECT * FROM V_ENG_11203_JOIN").getResults()[0];
+    assertContentOfTable(new Object[][]{{2,4,6}},vt);
+    deleteRow(client,initialRows[0]);
+    deleteRow(client,initialRows[1]);
+    deleteRow(client,secondRows[0]);
+    deleteRow(client,secondRows[1]);
+    vt=client.callProcedure("@AdHoc","SELECT * FROM V_ENG_11203_SINGLE").getResults()[0];
+    assertContentOfTable(new Object[][]{},vt);
+    vt=client.callProcedure("@AdHoc","SELECT * FROM V_ENG_11203_JOIN").getResults()[0];
     assertContentOfTable(new Object[][]{},vt);
   }
 }
