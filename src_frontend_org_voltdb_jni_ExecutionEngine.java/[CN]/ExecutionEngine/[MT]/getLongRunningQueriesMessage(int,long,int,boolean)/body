@@ -1,28 +1,48 @@
 {
-  String status=timeout ? "timed out at" : "taking a long time to execute -- at least";
-  String msg=String.format("Procedure %s is %s " + "%.2f seconds spent accessing " + "%d tuples. Current plan fragment "+ "%s in call "+ "%d to voltExecuteSQL on site "+ "%s. Current temp table uses "+ "%d bytes memory, and the peak usage of memory for temp table is "+ "%d bytes.",m_currentProcedureName,status,latency / 1000.0,m_lastTuplesAccessed,PlanNodeType.get(planNodeTypeAsInt).name(),m_currentBatchIndex,CoreUtils.hsIdToString(m_siteId),m_currMemoryInBytes,m_peakMemoryInBytes);
-  if (m_sqlTexts != null && indexFromFragmentTask >= 0 && indexFromFragmentTask < m_sqlTexts.length) {
-    msg+="  Executing SQL statement is \"" + m_sqlTexts[indexFromFragmentTask] + "\".";
-  }
- else   if (m_sqlTexts == null) {
-    msg+="  SQL statement text is not available.";
-  }
+  StringBuilder sb=new StringBuilder();
+switch (m_fragmentContext) {
+default :
+case RO_BATCH:
+case RW_BATCH:
+    sb.append("Procedure " + m_currentProcedureName);
+  break;
+case CATALOG_UPDATE:
+sb.append("Catalog update");
+break;
+case CATALOG_LOAD:
+sb.append("Catalog load");
+break;
+}
+sb.append(timeout ? " is timed out at " : " is taking a long time to execute -- at least ");
+sb.append(String.format("%.2f seconds spent accessing %d tuples.",latency / 1000.0,m_lastTuplesAccessed));
+sb.append(" Current plan fragment " + PlanNodeType.get(planNodeTypeAsInt).name());
+if (indexFromFragmentTask >= 0) {
+sb.append(" in call " + m_currentBatchIndex + " to voltExecuteSQL");
+}
+sb.append(" on site " + CoreUtils.hsIdToString(m_siteId) + ".");
+if (m_currMemoryInBytes > 0 && m_peakMemoryInBytes > 0) {
+sb.append(" Current temp table uses " + m_currMemoryInBytes + " bytes memory,"+ " and the peak usage of memory for temp tables is "+ m_peakMemoryInBytes+ " bytes.");
+}
+if (m_sqlTexts != null && indexFromFragmentTask >= 0 && indexFromFragmentTask < m_sqlTexts.length) {
+sb.append(" Executing SQL statement is \"" + m_sqlTexts[indexFromFragmentTask] + "\".");
+}
+ else if (m_sqlTexts == null) {
+sb.append(" SQL statement text is not available.");
+}
  else {
-    StringBuffer sb=new StringBuffer();
-    sb.append("  Unable to report specific SQL statement text for " + "fragment task message index " + indexFromFragmentTask + ".  ");
-    sb.append("It MAY be one of these " + m_sqlTexts.length + " items: ");
-    for (int i=0; i < m_sqlTexts.length; ++i) {
-      if (m_sqlTexts[i] != null) {
-        sb.append("\"" + m_sqlTexts[i] + "\"");
-      }
+sb.append(" Unable to report specific SQL statement text for " + "fragment task message index " + indexFromFragmentTask + ".");
+sb.append(" It MAY be one of these " + m_sqlTexts.length + " items: ");
+for (int i=0; i < m_sqlTexts.length; ++i) {
+if (m_sqlTexts[i] != null) {
+sb.append("\"" + m_sqlTexts[i] + "\"");
+}
  else {
-        sb.append("[null]");
-      }
-      if (i != m_sqlTexts.length - 1) {
-        sb.append(", ");
-      }
-    }
-    msg+=sb.toString();
-  }
-  return msg;
+sb.append("[null]");
+}
+if (i != m_sqlTexts.length - 1) {
+sb.append(", ");
+}
+}
+}
+return sb.toString();
 }
