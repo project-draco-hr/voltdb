@@ -1,0 +1,50 @@
+{
+  try {
+    pns=compileInvalidToFragments("SELECT abs(PKEY) as sp, count(*) as ct FROM P1 GROUP BY count(*)");
+    fail("Did not expect invalid GROUP BY query to succeed.");
+  }
+ catch (  Exception ex) {
+    assertTrue(ex.getMessage().contains("invalid GROUP BY expression:  COUNT()"));
+  }
+  try {
+    pns=compileInvalidToFragments("SELECT abs(PKEY) as sp, count(*) as ct FROM P1 GROUP BY ct");
+    fail("Did not expect invalid GROUP BY alias query to succeed.");
+  }
+ catch (  Exception ex) {
+    assertTrue(ex.getMessage().contains("invalid GROUP BY expression:  COUNT()"));
+  }
+  try {
+    pns=compileInvalidToFragments("SELECT abs(PKEY) as sp, (count(*) +1 ) as ct FROM P1 GROUP BY ct");
+    fail("Did not expect invalid GROUP BY expression alias query to succeed.");
+  }
+ catch (  Exception ex) {
+    assertTrue(ex.getMessage().contains("invalid GROUP BY expression:  COUNT()"));
+  }
+  try {
+    pns=compileInvalidToFragments("SELECT abs(PKEY) as sp, count(*) as ct FROM P1 GROUP BY sp + 1");
+    fail("Did not expect invalid GROUP BY alias expression query to succeed.");
+  }
+ catch (  Exception ex) {
+    assertTrue(ex.getMessage().contains("user lacks privilege or object not found: SP"));
+  }
+  try {
+    pns=compileInvalidToFragments("SELECT ABS(A1), count(*) as ct FROM P1 GROUP BY ABS(A1) having ct > 3");
+    fail("Did not expect invalid HAVING condition on alias query to succeed.");
+  }
+ catch (  Exception ex) {
+    assertTrue(ex.getMessage().contains("user lacks privilege or object not found: CT"));
+  }
+  try {
+    pns=compileInvalidToFragments("SELECT abs(PKEY) as sp, count(*) as ct FROM P1 GROUP BY P1.sp");
+    fail("Did not expect invalid GROUP BY qualified alias query to succeed.");
+  }
+ catch (  Exception ex) {
+    assertTrue(ex.getMessage().contains("user lacks privilege or object not found: P1.SP"));
+  }
+  pns=compileToFragments("SELECT ABS(A1) AS A1, count(*) as ct FROM P1 GROUP BY A1");
+  AbstractPlanNode p=pns.get(1).getChild(0);
+  assertTrue(p instanceof AbstractScanPlanNode);
+  AggregatePlanNode agg=AggregatePlanNode.getInlineAggregationNode(p);
+  assertNotNull(agg);
+  assertEquals(agg.getGroupByExpressions().get(0).getExpressionType(),ExpressionType.VALUE_TUPLE);
+}

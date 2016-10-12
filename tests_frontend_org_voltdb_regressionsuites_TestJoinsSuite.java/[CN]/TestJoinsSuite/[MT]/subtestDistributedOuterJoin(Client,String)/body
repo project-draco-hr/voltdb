@@ -1,0 +1,55 @@
+{
+  client.callProcedure("P2.INSERT",1,1);
+  client.callProcedure("P2.INSERT",2,2);
+  client.callProcedure("P2.INSERT",3,3);
+  client.callProcedure("P2.INSERT",4,4);
+  client.callProcedure("R3.INSERT",1,1);
+  client.callProcedure("R3.INSERT",2,2);
+  client.callProcedure("R3.INSERT",4,4);
+  client.callProcedure("R3.INSERT",5,5);
+  String query;
+  query="SELECT * FROM P2 RIGHT JOIN R3 " + "ON R3.A " + joinOp + " P2.A AND P2.A < 3 WHERE P2.A IS NULL";
+  if (isHSQL()) {
+    VoltTable result=client.callProcedure("@AdHoc",query).getResults()[0];
+    System.out.println("Ignoring erroneous(?) HSQL: " + result);
+    if (2 == result.getRowCount()) {
+      System.out.println("The HSQL error MAY have been solved. Consider simplifying this test.");
+    }
+  }
+ else {
+    validateRowCount(client,query,2);
+  }
+  client.callProcedure("P3.INSERT",1,1);
+  client.callProcedure("P3.INSERT",2,2);
+  client.callProcedure("P3.INSERT",4,4);
+  client.callProcedure("P3.INSERT",5,5);
+  query="select *  FROM P2 RIGHT JOIN P3 " + "ON P3.A " + joinOp + " P2.A AND P2.A < 3 WHERE P2.A IS NULL";
+  if (isHSQL()) {
+    VoltTable result=client.callProcedure("@AdHoc",query).getResults()[0];
+    System.out.println("Ignoring erroneous(?) HSQL baseline: " + result);
+    if (2 == result.getRowCount()) {
+      System.out.println("The HSQL error MAY have been solved. Consider simplifying this test.");
+    }
+  }
+ else {
+    validateRowCount(client,query,2);
+  }
+  query="select * FROM P3 LEFT JOIN P2 " + "ON P3.A " + joinOp + " P2.A WHERE P3.A > 1";
+  validateRowCount(client,query,3);
+  query="SELECT LHS.A, LHS.E, RHS.A, RHS.E " + "FROM P2 LHS LEFT JOIN P2 RHS " + "ON LHS.A " + joinOp + " RHS.A AND "+ "LHS.A < 2 AND RHS.E = 1 "+ "ORDER BY 1, 2, 3, 4";
+  validateTableOfLongs(client,query,new long[][]{{1,1,1,1},{2,2,NULL_VALUE,NULL_VALUE},{3,3,NULL_VALUE,NULL_VALUE},{4,4,NULL_VALUE,NULL_VALUE}});
+  query="SELECT LHS.A, LHS.E, RHS.A, RHS.E " + "FROM P2 LHS RIGHT JOIN P2 RHS " + "ON LHS.A " + joinOp + " RHS.A AND "+ "LHS.A < 2 AND RHS.E = 1 "+ "ORDER BY 1, 2, 3, 4";
+  validateTableOfLongs(client,query,new long[][]{{NULL_VALUE,NULL_VALUE,2,2},{NULL_VALUE,NULL_VALUE,3,3},{NULL_VALUE,NULL_VALUE,4,4},{1,1,1,1}});
+  query="SELECT LHS.A, LHS.E, RHS.A, RHS.E " + "FROM P2 LHS LEFT JOIN P2 RHS " + "ON LHS.A " + joinOp + " RHS.A AND LHS.A = 1 AND RHS.E = 1 "+ "ORDER BY 1, 2, 3, 4";
+  validateTableOfLongs(client,query,new long[][]{{1,1,1,1},{2,2,NULL_VALUE,NULL_VALUE},{3,3,NULL_VALUE,NULL_VALUE},{4,4,NULL_VALUE,NULL_VALUE}});
+  query="SELECT LHS.A, LHS.E, RHS.A, RHS.E " + "FROM P2 LHS RIGHT JOIN P2 RHS " + "ON LHS.A " + joinOp + " RHS.A AND LHS.A = 1 AND RHS.E = 1 "+ "ORDER BY 1, 2, 3, 4";
+  validateTableOfLongs(client,query,new long[][]{{NULL_VALUE,NULL_VALUE,2,2},{NULL_VALUE,NULL_VALUE,3,3},{NULL_VALUE,NULL_VALUE,4,4},{1,1,1,1}});
+  query="SELECT P2.A, P2.E, P3.A, P3.F " + "FROM P2 LEFT JOIN P3 " + "ON P2.A = P3.A AND P2.A < 2 AND P3.F = 1 "+ "ORDER BY 1, 2, 3, 4";
+  validateTableOfLongs(client,query,new long[][]{{1,1,1,1},{2,2,NULL_VALUE,NULL_VALUE},{3,3,NULL_VALUE,NULL_VALUE},{4,4,NULL_VALUE,NULL_VALUE}});
+  query="SELECT P2.A, P2.E, P3.A, P3.F " + "FROM P2 RIGHT JOIN P3 " + "ON P2.A = P3.A AND P2.A < 2 AND P3.F = 1 "+ "ORDER BY 1, 2, 3, 4";
+  validateTableOfLongs(client,query,new long[][]{{NULL_VALUE,NULL_VALUE,2,2},{NULL_VALUE,NULL_VALUE,4,4},{NULL_VALUE,NULL_VALUE,5,5},{1,1,1,1}});
+  query="SELECT P2.A, P2.E, P3.A, P3.F " + "FROM P2 LEFT JOIN P3 " + "ON P2.A = P3.A AND P2.A = 1 AND P3.F = 1 "+ "ORDER BY 1, 2, 3, 4";
+  validateTableOfLongs(client,query,new long[][]{{1,1,1,1},{2,2,NULL_VALUE,NULL_VALUE},{3,3,NULL_VALUE,NULL_VALUE},{4,4,NULL_VALUE,NULL_VALUE}});
+  query="SELECT P2.A, P2.E, P3.A, P3.F " + "FROM P2 RIGHT JOIN P3 " + "ON P2.A = P3.A AND P2.A = 1 AND P3.F = 1 "+ "ORDER BY 1, 2, 3, 4";
+  validateTableOfLongs(client,query,new long[][]{{NULL_VALUE,NULL_VALUE,2,2},{NULL_VALUE,NULL_VALUE,4,4},{NULL_VALUE,NULL_VALUE,5,5},{1,1,1,1}});
+}

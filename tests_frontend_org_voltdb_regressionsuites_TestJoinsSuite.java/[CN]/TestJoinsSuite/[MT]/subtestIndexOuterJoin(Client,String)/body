@@ -1,0 +1,74 @@
+{
+  client.callProcedure("R2.INSERT",1,1);
+  client.callProcedure("R2.INSERT",2,2);
+  client.callProcedure("R2.INSERT",3,3);
+  client.callProcedure("R2.INSERT",4,4);
+  String query;
+  VoltTable result;
+  query="SELECT * FROM R2 LEFT JOIN R3 " + "ON R3.A " + joinOp + " R2.A "+ "ORDER BY R2.A";
+  result=client.callProcedure("@AdHoc",query).getResults()[0];
+  assertEquals(4,result.getRowCount());
+  VoltTableRow row=result.fetchRow(2);
+  assertEquals(3,row.getLong(1));
+  client.callProcedure("R3.INSERT",1,1);
+  client.callProcedure("R3.INSERT",2,2);
+  client.callProcedure("R3.INSERT",5,5);
+  query="SELECT * FROM R2 LEFT JOIN R3 " + "ON R3.A " + joinOp + " R2.A";
+  validateRowCount(client,query,4);
+  query="SELECT * FROM R3 RIGHT JOIN R2 " + "ON R3.A " + joinOp + " R2.A";
+  validateRowCount(client,query,4);
+  client.callProcedure("P2.INSERT",1,1);
+  client.callProcedure("P2.INSERT",2,2);
+  client.callProcedure("P2.INSERT",3,3);
+  client.callProcedure("P2.INSERT",4,4);
+  query="SELECT * FROM P2 LEFT JOIN R3 " + "ON R3.A = P2.A";
+  validateRowCount(client,query,4);
+  query="SELECT * FROM R2 LEFT JOIN R3 " + "ON R3.A " + joinOp + " R2.A AND R2.C < 0";
+  validateRowCount(client,query,4);
+  query="SELECT * FROM R3 RIGHT JOIN R2 " + "ON R3.A " + joinOp + " R2.A AND R2.C < 0";
+  validateRowCount(client,query,4);
+  query="SELECT * FROM P2 LEFT JOIN R3 " + "ON R3.A " + joinOp + " P2.A AND P2.E < 0";
+  query="SELECT * FROM R2 LEFT JOIN R3 " + "ON R3.A " + joinOp + " R2.A AND R3.A > 1";
+  validateRowCount(client,query,4);
+  query="SELECT * FROM R3 RIGHT JOIN R2 " + "ON R3.A " + joinOp + " R2.A AND R3.A > 1";
+  validateRowCount(client,query,4);
+  query="SELECT * FROM R2 LEFT JOIN R3 " + "ON R3.A " + joinOp + " R2.A WHERE R3.A IS NULL";
+  if (joinOp.equals("=") || !isHSQL()) {
+    validateRowCount(client,query,2);
+  }
+ else {
+    result=client.callProcedure("@AdHoc",query).getResults()[0];
+    System.out.println("Ignoring erroneous(?) HSQL baseline: " + result);
+    if (2 == result.getRowCount()) {
+      System.out.println("The HSQL error MAY have been solved. Consider simplifying this test.");
+    }
+  }
+  query="SELECT * FROM R3 RIGHT JOIN R2 " + "ON R3.A " + joinOp + " R2.A WHERE R3.A IS NULL";
+  if (isHSQL()) {
+    result=client.callProcedure("@AdHoc",query).getResults()[0];
+    System.out.println("Ignoring erroneous(?) HSQL baseline: " + result);
+    if (2 == result.getRowCount()) {
+      System.out.println("The HSQL error MAY have been solved. Consider simplifying this test.");
+    }
+  }
+ else {
+    validateRowCount(client,query,2);
+  }
+  query="SELECT * FROM R3 RIGHT JOIN P2 " + "ON R3.A " + joinOp + " P2.A WHERE R3.A IS NULL";
+  if (isHSQL()) {
+    result=client.callProcedure("@AdHoc",query).getResults()[0];
+    System.out.println("Ignoring erroneous(?) HSQL baseline: " + result);
+    if (2 == result.getRowCount()) {
+      System.out.println("The HSQL error MAY have been solved. Consider simplifying this test.");
+    }
+  }
+ else {
+    validateRowCount(client,query,2);
+  }
+  query="SELECT * FROM R2 LEFT JOIN R3 " + "ON R3.A " + joinOp + " R2.A WHERE R2.C < 0";
+  validateRowCount(client,query,0);
+  query="SELECT * FROM P2 LEFT JOIN R3 " + "ON R3.A " + joinOp + " P2.A WHERE P2.E < 0";
+  validateRowCount(client,query,0);
+  query="select * FROM R3 LEFT JOIN R2 " + "ON R3.A " + joinOp + " R2.A WHERE R3.A > 1";
+  validateRowCount(client,query,2);
+}
