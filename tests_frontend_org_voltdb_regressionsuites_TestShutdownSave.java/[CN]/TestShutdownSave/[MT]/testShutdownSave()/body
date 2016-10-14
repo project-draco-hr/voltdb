@@ -1,0 +1,73 @@
+{
+  if (!MiscUtils.isPro())   return;
+  if (isValgrind())   return;
+  final Client client2=this.getClient();
+  for (int i=0; i < 256; ++i) {
+    client2.callProcedure(new Callback(),"ArbitraryDurationProc",200);
+  }
+  final Client client=getAdminClient();
+  ClientResponse resp=client.callProcedure("@PrepareShutdown");
+  assertTrue(resp.getStatus() == ClientResponse.SUCCESS);
+  long sigil=resp.getResults()[0].asScalarLong();
+  try {
+    client2.callProcedure("@SystemInformation","OVERVIEW");
+    fail("Unallowed sys proc is executed.");
+  }
+ catch (  ProcCallException e) {
+    System.out.println("@SystemInformation:" + e.getMessage());
+    assertTrue("Server shutdown in progress - new transactions are not processed.".equals(e.getMessage()));
+  }
+  try {
+    client2.callProcedure("ArbitraryDurationProc",0);
+    fail("Unallowed proc is executed.");
+  }
+ catch (  ProcCallException e) {
+    System.out.println("ArbitraryDurationProc:" + e.getMessage());
+    assertTrue("Server shutdown in progress - new transactions are not processed.".equals(e.getMessage()));
+  }
+  long sum=Long.MAX_VALUE;
+  while (sum > 0) {
+    resp=client2.callProcedure("@Statistics","liveclients",0);
+    assertTrue(resp.getStatus() == ClientResponse.SUCCESS);
+    VoltTable t=resp.getResults()[0];
+    long trxn=0, bytes=0, msg=0;
+    if (t.advanceRow()) {
+      trxn=t.getLong(6);
+      bytes=t.getLong(7);
+      msg=t.getLong(8);
+      sum=trxn + bytes + msg;
+    }
+    System.out.printf("Outstanding transactions: %d, buffer bytes :%d, response messages:%d\n",trxn,bytes,msg);
+    Thread.sleep(2000);
+  }
+  assertTrue(sum == 0);
+  try {
+    client.callProcedure("@Shutdown",sigil);
+    fail("@Shutdown fails via admin mode");
+  }
+ catch (  ProcCallException e) {
+    if (!e.getMessage().contains("Connection to database host")) {
+      throw e;
+    }
+    System.out.println("@Shutdown: cluster has been shutdown via admin mode ");
+  }
+  LocalCluster cluster=(LocalCluster)m_config;
+  cluster.waitForNodesToShutdown();
+  for (int i=0; i < HOST_COUNT; ++i) {
+    File snapDH=getSnapshotPathForHost(cluster,i);
+    File terminusFH=new File(snapDH.getParentFile(),VoltDB.TERMINUS_MARKER);
+    assertTrue("(" + i + ") terminus file "+ terminusFH+ " is not accessible",terminusFH.exists() && terminusFH.isFile() && terminusFH.canRead());
+    String nonce;
+    try (BufferedReader br=new BufferedReader(new FileReader(terminusFH))){
+      nonce=br.readLine();
+    }
+     assertTrue("(" + i + ") no nonce written to terminus file "+ terminusFH,nonce != null && !nonce.trim().isEmpty());
+    File[] finished=snapDH.listFiles(new FileFilter(){
+      @Override public boolean accept(      File f){
+        return f.isFile() && f.getName().startsWith(nonce) && f.getName().endsWith(".finished");
+      }
+    }
+);
+    assertTrue("(" + i + ") snapshot did not finish "+ Arrays.asList(finished),finished.length == 1 && finished[0].exists() && finished[0].isFile());
+  }
+}

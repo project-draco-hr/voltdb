@@ -1,0 +1,138 @@
+{
+  if (!MiscUtils.isPro()) {
+    task.setParams();
+    return dispatch(task,handler,ccxn,user);
+  }
+  Object p0=task.getParams().getParam(0);
+  if (!(p0 instanceof Long)) {
+    return gracefulFailureResponse("Incorrect argument type",task.clientHandle);
+  }
+  final long zkTxnId=((Long)p0).longValue();
+  VoltDBInterface voltdb=VoltDB.instance();
+  if (!voltdb.isShuttingdown()) {
+    log.warn("Ignoring shutdown save snapshot request as VoltDB is not shutting down");
+    return unexpectedFailureResponse("Ignoring shutdown save snapshot request as VoltDB is not shutting down",task.clientHandle);
+  }
+  final ZooKeeper zk=voltdb.getHostMessenger().getZK();
+  Future<Long> fut=voltdb.getSES(true).submit(new Callable<Long>(){
+    @Override public Long call(){
+      try {
+        Stat stat=zk.exists(VoltZK.operationMode,false);
+        if (stat == null) {
+          VoltDB.crashLocalVoltDB("cluster operation mode zookeeper node does not exist");
+          return Long.MIN_VALUE;
+        }
+        return stat.getMzxid();
+      }
+ catch (      KeeperException|InterruptedException e) {
+        VoltDB.crashLocalVoltDB("Failed to stat the cluster operation zookeeper node",true,e);
+        return Long.MIN_VALUE;
+      }
+    }
+  }
+);
+  try {
+    if (fut.get().longValue() != zkTxnId) {
+      return unexpectedFailureResponse("Internal error: cannot write a shutdown snapshot because the " + "current system state is not consistent with an orderly shutdown. " + "Please try \"voltadmin shutdown --save\" again.",task.clientHandle);
+    }
+  }
+ catch (  InterruptedException|ExecutionException e1) {
+    VoltDB.crashLocalVoltDB("Failed to stat the cluster operation zookeeper node",true,e1);
+    return null;
+  }
+  PathSettings paths=m_catalogContext.get().getPaths();
+  String snapshotJson=null;
+  try {
+    JSONWriter jss=new JSONStringer().object().key(SnapshotUtil.JSON_URIPATH).value("file://" + paths.resolve(paths.getSnapshoth()).getPath()).key(SnapshotUtil.JSON_NONCE).value(SnapshotUtil.getShutdownSaveNonce(zkTxnId)).key(SnapshotUtil.JSON_TERMINUS).value(zkTxnId).key(SnapshotUtil.JSON_BLOCK).value(true).key(SnapshotUtil.JSON_PATH_TYPE).value(SnapshotPathType.SNAP_AUTO.toString()).key(SnapshotUtil.JSON_FORMAT).value(SnapshotFormat.NATIVE.toString()).endObject();
+    snapshotJson=jss.toString();
+  }
+ catch (  JSONException e) {
+    VoltDB.crashLocalVoltDB("Failed to create shutdown snapshot save command",true,e);
+    return null;
+  }
+  log.info("Invoking shutdown snapshot save: " + snapshotJson);
+  consoleLog.info("Taking snapshot to save database contents");
+  final StoredProcedureInvocation saveSnapshotTask=new StoredProcedureInvocation();
+  saveSnapshotTask.setProcName("@SnapshotSave");
+  saveSnapshotTask.setParams(snapshotJson);
+  final SimpleClientResponseAdapter alternateAdapter=new SimpleClientResponseAdapter(ClientInterface.SHUTDONW_SAVE_CID,"Blocking Shutdown Snapshot Save");
+  final InvocationClientHandler alternateHandler=new InvocationClientHandler(){
+    @Override public boolean isAdmin(){
+      return handler.isAdmin();
+    }
+    @Override public long connectionId(){
+      return ClientInterface.SHUTDONW_SAVE_CID;
+    }
+  }
+;
+  final long sourceHandle=task.clientHandle;
+  SimpleClientResponseAdapter.SyncCallback shutdownCallback=new SimpleClientResponseAdapter.SyncCallback();
+  final ListenableFuture<ClientResponse> onShutdownComplete=shutdownCallback.getResponseFuture();
+  onShutdownComplete.addListener(new Runnable(){
+    @Override public void run(){
+      try {
+        onShutdownComplete.get();
+      }
+ catch (      ExecutionException|InterruptedException e) {
+        VoltDB.crashLocalVoltDB("Should never happen",true,e);
+        return;
+      }
+    }
+  }
+,CoreUtils.SAMETHREADEXECUTOR);
+  task.setClientHandle(alternateAdapter.registerCallback(shutdownCallback));
+  SimpleClientResponseAdapter.SyncCallback saveCallback=new SimpleClientResponseAdapter.SyncCallback();
+  final ListenableFuture<ClientResponse> onSaveComplete=saveCallback.getResponseFuture();
+  onSaveComplete.addListener(new Runnable(){
+    @Override public void run(){
+      ClientResponse r;
+      try {
+        r=onSaveComplete.get();
+      }
+ catch (      ExecutionException|InterruptedException e) {
+        VoltDB.crashLocalVoltDB("Should never happen",true,e);
+        return;
+      }
+      if (r.getStatus() != ClientResponse.SUCCESS) {
+        transmitResponseMessage(r,ccxn,sourceHandle);
+        log.error("Received error response for saving shutdown shapshot " + r.getStatusString());
+        return;
+      }
+      consoleLog.info("Snapshot taken successfully");
+      task.setParams();
+      dispatch(task,alternateHandler,alternateAdapter,user);
+    }
+  }
+,CoreUtils.SAMETHREADEXECUTOR);
+  saveSnapshotTask.setClientHandle(alternateAdapter.registerCallback(saveCallback));
+  final byte[] guardContent=snapshotJson.getBytes(StandardCharsets.UTF_8);
+  Future<Boolean> guardFuture=voltdb.getSES(true).submit(new Callable<Boolean>(){
+    @Override public Boolean call() throws Exception {
+      try {
+        ZKUtil.asyncMkdirs(zk,VoltZK.shutdown_save_guard,guardContent).get();
+      }
+ catch (      NodeExistsException itIsOk) {
+        return false;
+      }
+catch (      InterruptedException|KeeperException e) {
+        VoltDB.crashLocalVoltDB("Failed to create shutdown save guard zookeeper node",true,e);
+        return false;
+      }
+      return true;
+    }
+  }
+);
+  boolean created;
+  try {
+    created=guardFuture.get().booleanValue();
+  }
+ catch (  InterruptedException|ExecutionException e) {
+    VoltDB.crashLocalVoltDB("Failed to create shutdown save guard zookeeper node",true,e);
+    return null;
+  }
+  if (!created) {
+    return unexpectedFailureResponse("Internal error: detected concurrent invocations of \"voltadmin shutdown --save\"",task.clientHandle);
+  }
+  voltdb.getClientInterface().bindAdapter(alternateAdapter,null);
+  return dispatch(saveSnapshotTask,alternateHandler,alternateAdapter,user);
+}
