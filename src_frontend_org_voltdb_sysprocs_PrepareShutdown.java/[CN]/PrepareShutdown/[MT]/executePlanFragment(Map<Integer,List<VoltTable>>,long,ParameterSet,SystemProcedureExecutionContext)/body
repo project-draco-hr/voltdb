@@ -1,0 +1,31 @@
+{
+  if (fragmentId == PF_prepareShutdown) {
+    super.run(context);
+    VoltTable t=new VoltTable(VoltSystemProcedure.STATUS_SCHEMA);
+    if (context.isLowestSiteId()) {
+      VoltDB.instance().setShuttingdown(true);
+      t.addRow(m_stat.getMzxid());
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("@PrepareShutdown returning sigil " + ll(m_stat.getMzxid()));
+      }
+    }
+    return new DependencyPair(DEP_prepareShutdown,t);
+  }
+ else   if (fragmentId == PF_prepareShutdownAggregate) {
+    NavigableSet<Long> uniqueTxnIds=new TreeSet<>();
+    for (    VoltTable t : dependencies.get(DEP_prepareShutdown)) {
+      while (t.advanceRow()) {
+        uniqueTxnIds.add(t.getLong(0));
+      }
+    }
+    VoltTable t=new VoltTable(VoltSystemProcedure.STATUS_SCHEMA);
+    for (    long zktxnid : uniqueTxnIds) {
+      t.addRow(zktxnid);
+    }
+    return new DependencyPair(DEP_prepareShutdonwAggregate,t);
+  }
+ else {
+    VoltDB.crashLocalVoltDB("Received unrecognized plan fragment id " + fragmentId + " in PrepareShutdown",false,null);
+  }
+  throw new RuntimeException("Should not reach this code");
+}

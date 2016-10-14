@@ -1,9 +1,33 @@
 {
+  VoltDBInterface voltdb=VoltDB.instance();
+  OperationMode opMode=voltdb.getMode();
   if (ctx.isLowestSiteId()) {
-    VoltDB.instance().setMode(OperationMode.RUNNING);
+    ZooKeeper zk=voltdb.getHostMessenger().getZK();
     try {
-      VoltDB.instance().getHostMessenger().getZK().setData(VoltZK.operationMode,OperationMode.RUNNING.getBytes(),-1);
-      VoltDB.instance().getHostMessenger().unpause();
+      Stat stat;
+      OperationMode zkMode=null;
+      Code code;
+      do {
+        stat=new Stat();
+        code=Code.BADVERSION;
+        try {
+          byte[] data=zk.getData(VoltZK.operationMode,false,stat);
+          zkMode=data == null ? opMode : OperationMode.valueOf(data);
+          if (zkMode == RUNNING) {
+            break;
+          }
+          stat=zk.setData(VoltZK.operationMode,RUNNING.getBytes(),stat.getVersion());
+          code=Code.OK;
+          zkMode=RUNNING;
+          break;
+        }
+ catch (        BadVersionException ex) {
+          code=ex.code();
+        }
+      }
+ while (zkMode != RUNNING && code == Code.BADVERSION);
+      voltdb.getHostMessenger().unpause();
+      voltdb.setMode(RUNNING);
     }
  catch (    Exception e) {
       throw new RuntimeException(e);
@@ -11,5 +35,5 @@
   }
   VoltTable t=new VoltTable(VoltSystemProcedure.STATUS_SCHEMA);
   t.addRow(VoltSystemProcedure.STATUS_OK);
-  return (new VoltTable[]{t});
+  return new VoltTable[]{t};
 }
