@@ -1,0 +1,32 @@
+{
+  ClientResponse cr;
+  assertTrue("sql string should start with \"create view \"",sql.startsWith("create view "));
+  int pos=sql.indexOf(" ",12);
+  String viewName=sql.substring(12,pos);
+  dropView(client,viewName);
+  truncateTables(client,TABLE_NAMES);
+  cr=client.callProcedure("@AdHoc",sql);
+  assertEquals(ClientResponse.SUCCESS,cr.getStatus());
+  dropView(client,viewName);
+  populateTables(client);
+  boolean success=true;
+  boolean expectedSuccess=(expectedDiagnostic == null);
+  try {
+    cr=client.callProcedure("@AdHoc",sql);
+    if (!expectedSuccess) {
+      fail("Unexpected SQL compilation success");
+    }
+  }
+ catch (  ProcCallException ex) {
+    cr=ex.getClientResponse();
+    success=false;
+    if (expectedSuccess) {
+      fail(String.format("Unexpected SQL compilation failure:\n%s",cr.getStatusString()));
+    }
+    assertTrue(String.format("Did not find \"%s\" in diagnostic message \"%s\"",expectedDiagnostic,cr.getStatusString()),cr.getStatusString().contains(expectedDiagnostic));
+  }
+  dropView(client,viewName);
+  truncateTables(client,TABLE_NAMES);
+  cr=client.callProcedure("@AdHoc",sql);
+  assertEquals("View creation on empty tables should always succeed.",ClientResponse.SUCCESS,cr.getStatus());
+}

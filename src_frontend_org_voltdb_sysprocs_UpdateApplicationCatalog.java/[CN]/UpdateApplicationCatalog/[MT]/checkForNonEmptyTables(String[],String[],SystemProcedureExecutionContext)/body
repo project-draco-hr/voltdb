@@ -6,9 +6,11 @@
   assert(reasonsForEmptyTables != null);
   assert(reasonsForEmptyTables.length == tablesThatMustBeEmpty.length);
   CatalogMap<Table> tables=context.getDatabase().getTables();
-  int[] tableIds=new int[tablesThatMustBeEmpty.length];
+  List<List<String>> allTableSets=decodeTables(tablesThatMustBeEmpty);
+  Map<String,Boolean> allTables=collapseSets(allTableSets);
+  int[] tableIds=new int[allTables.size()];
   int i=0;
-  for (  String tableName : tablesThatMustBeEmpty) {
+  for (  String tableName : allTables.keySet()) {
     Table table=tables.get(tableName);
     if (table == null) {
       String msg=String.format("@UpdateApplicationCatalog was checking to see if table %s was empty, " + "presumably as part of a schema change, and it failed to find the table " + "in the current catalog context.",tableName);
@@ -23,21 +25,34 @@
     throw new SpecifiedException(ClientResponse.UNEXPECTED_FAILURE,msg);
   }
   VoltTable stats=s1[0];
-  SortedSet<String> nonEmptyTables=new TreeSet<>();
   while (stats.advanceRow()) {
     long tupleCount=stats.getLong("TUPLE_COUNT");
     String tableName=stats.getString("TABLE_NAME");
+    boolean isEmpty=true;
     if (tupleCount > 0 && !"StreamedTable".equals(stats.getString("TABLE_TYPE"))) {
-      nonEmptyTables.add(tableName);
+      isEmpty=false;
     }
+    allTables.put(tableName.toUpperCase(),isEmpty);
   }
-  if (!nonEmptyTables.isEmpty()) {
-    String msg="Unable to make requested schema change:\n";
-    for (i=0; i < tablesThatMustBeEmpty.length; ++i) {
-      if (nonEmptyTables.contains(tablesThatMustBeEmpty[i])) {
-        msg+=reasonsForEmptyTables[i] + "\n";
+  String msg="Unable to make requested schema change:\n";
+  boolean allOk=true;
+  for (int idx=0; idx < allTableSets.size(); idx+=1) {
+    List<String> tableNames=allTableSets.get(idx);
+    boolean allNonEmpty=true;
+    for (    String tableName : tableNames) {
+      Boolean oneEmpty=allTables.get(tableName);
+      if (oneEmpty != null && oneEmpty) {
+        allNonEmpty=false;
+        break;
       }
     }
+    if (allNonEmpty) {
+      String errMsg=reasonsForEmptyTables[idx];
+      msg+=errMsg + "\n";
+      allOk=false;
+    }
+  }
+  if (!allOk) {
     throw new SpecifiedException(ClientResponse.GRACEFUL_FAILURE,msg);
   }
 }
