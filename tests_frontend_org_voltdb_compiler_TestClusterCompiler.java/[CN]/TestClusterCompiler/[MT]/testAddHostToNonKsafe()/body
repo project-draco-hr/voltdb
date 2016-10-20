@@ -1,13 +1,26 @@
 {
-  ClusterConfig config=new ClusterConfig(1,6,0);
+  final int hostCount=1;
+  final int Kfactor=0;
+  final int sitesperhost=6;
+  final int partitionNum=(hostCount * sitesperhost) / (Kfactor + 1);
+  Map<Integer,Integer> sphMap=generateSameSphMap(hostCount,sitesperhost);
+  ClusterConfig config=new ClusterConfig(hostCount,sphMap,Kfactor);
   Map<Integer,String> topology=Maps.newHashMap();
   topology.put(0,"0");
   JSONObject topo=config.getTopology(topology);
-  assertEquals(1,topo.getInt("hostcount"));
-  assertEquals(6,topo.getInt("sites_per_host"));
-  assertEquals(0,topo.getInt("kfactor"));
-  assertEquals(6,topo.getJSONArray("partitions").length());
+  assertEquals(hostCount,topo.getInt("hostcount"));
+  int size=topo.getJSONArray("host_id_to_sph").length();
+  assertEquals(sphMap.size(),size);
+  for (int ii=0; ii < size; ii++) {
+    JSONObject sphObj=topo.getJSONArray("host_id_to_sph").getJSONObject(ii);
+    int hostId=sphObj.getInt("host_id");
+    int sph=sphObj.getInt("sites_per_host");
+    assertTrue(sphMap.containsKey(hostId));
+    assertTrue(sphMap.get(hostId) == sph);
+  }
+  assertEquals(Kfactor,topo.getInt("kfactor"));
+  assertEquals(partitionNum,topo.getJSONArray("partitions").length());
   ClusterConfig.addHosts(1,topo);
-  assertEquals(2,topo.getInt("hostcount"));
-  assertEquals(0,topo.getInt("kfactor"));
+  assertEquals(hostCount + 1,topo.getInt("hostcount"));
+  assertEquals(Kfactor,topo.getInt("kfactor"));
 }
