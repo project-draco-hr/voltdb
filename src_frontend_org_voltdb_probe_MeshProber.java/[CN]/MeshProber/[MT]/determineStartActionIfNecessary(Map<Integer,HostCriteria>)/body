@@ -6,9 +6,11 @@
   int bare=0;
   int unmeshed=0;
   int operational=0;
+  int haveTerminus=0;
   int hostCount=getHostCount();
   boolean paused=isPaused();
   boolean safemode=isSafeMode();
+  final NavigableSet<String> terminusNonces=new TreeSet<>();
   for (  HostCriteria c : hostCriteria.values()) {
     if (c.getNodeState().operational()) {
       operational+=1;
@@ -23,6 +25,10 @@
       paused=c.isPaused();
     }
     safemode=safemode || c.isSafeMode();
+    if (c.getTerminusNonce() != null) {
+      terminusNonces.add(c.getTerminusNonce());
+      ++haveTerminus;
+    }
   }
   if (hostCriteria.size() < hostCount && operational == 0) {
     m_networkLog.debug("have yet to receive all the required host criteria");
@@ -38,8 +44,15 @@
     m_networkLog.debug("We have " + operational + " operational nodes, "+ bare+ " bare nodes, and "+ unmeshed+ " unmeshed nodes");
     m_networkLog.debug("Propagated cluster attribute are paused: " + paused + ", and safemode: "+ safemode);
   }
+  if (terminusNonces.size() > 1) {
+    org.voltdb.VoltDB.crashLocalVoltDB("Detected multiple startup snapshots, cannot " + "proceed with cluster startup. Snapshot IDs " + terminusNonces);
+  }
+  String terminusNonce=terminusNonces.pollFirst();
+  if (operational == 0 && haveTerminus <= (hostCount - ksafety)) {
+    terminusNonce=null;
+  }
   if (getStartAction() != StartAction.PROBE) {
-    m_probedDetermination.set(new Determination(getStartAction(),getHostCount(),paused));
+    m_probedDetermination.set(new Determination(getStartAction(),getHostCount(),paused,terminusNonce));
     return;
   }
   StartAction determination=isBare() ? StartAction.CREATE : StartAction.RECOVER;
@@ -66,7 +79,7 @@
     org.voltdb.VoltDB.crashLocalVoltDB("Cluster has incomplete command logs: " + bare + " nodes have no command logs, while "+ (unmeshed - bare)+ " nodes have them");
     return;
   }
-  final Determination dtrm=new Determination(determination,hostCount,paused);
+  final Determination dtrm=new Determination(determination,hostCount,paused,terminusNonce);
   if (m_networkLog.isDebugEnabled()) {
     m_networkLog.debug("made the following " + dtrm);
   }
