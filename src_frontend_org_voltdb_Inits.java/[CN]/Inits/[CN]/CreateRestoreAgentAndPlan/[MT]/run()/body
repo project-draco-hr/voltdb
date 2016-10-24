@@ -10,8 +10,9 @@
     }
     org.voltdb.catalog.CommandLog cl=m_rvdb.m_catalogContext.cluster.getLogconfig().get("log");
     if (cl == null || !cl.getEnabled())     return;
+    PathSettings paths=m_rvdb.m_paths;
     try {
-      m_rvdb.m_restoreAgent=new RestoreAgent(m_rvdb.m_messenger,m_rvdb.getSnapshotCompletionMonitor(),m_rvdb,m_config.m_startAction,cl.getEnabled(),VoltDB.instance().getCommandLogPath(),VoltDB.instance().getCommandLogSnapshotPath(),snapshotPath,allPartitions,VoltDB.instance().getVoltDBRootPath());
+      m_rvdb.m_restoreAgent=new RestoreAgent(m_rvdb.m_messenger,m_rvdb.getSnapshotCompletionMonitor(),m_rvdb,m_config.m_startAction,cl.getEnabled(),paths.resolve(paths.getCommandLog()).getPath(),paths.resolve(paths.getCommandLogSnapshot()).getPath(),snapshotPath,allPartitions,paths.getVoltDBRoot().getPath(),m_rvdb.m_terminusNonce);
     }
  catch (    IOException e) {
       VoltDB.crashLocalVoltDB("Unable to construct the RestoreAgent",true,e);
@@ -21,7 +22,7 @@
     if (catalog != null) {
       m_statusTracker.setNodeState(NodeState.RECOVERING);
     }
-    if (catalog != null) {
+    if (catalog != null && !m_rvdb.m_restoreAgent.willRestoreShutdownSnaphot()) {
       int hostId=catalog.getFirst().intValue();
       String catalogPath=catalog.getSecond();
       if (m_rvdb.m_myHostId == hostId) {
@@ -39,7 +40,9 @@
           hostLog.warn(String.format("Unable to load catalog for version check due to exception: %s.",e.getMessage()));
         }
       }
-      hostLog.debug("Found catalog to load on host " + hostId + ": "+ catalogPath);
+      if (hostLog.isDebugEnabled()) {
+        hostLog.debug("Found catalog to load on host " + hostId + ": "+ catalogPath);
+      }
       m_rvdb.m_hostIdWithStartupCatalog=hostId;
       assert(m_rvdb.m_hostIdWithStartupCatalog >= 0);
       m_rvdb.m_pathToStartupCatalog=catalogPath;

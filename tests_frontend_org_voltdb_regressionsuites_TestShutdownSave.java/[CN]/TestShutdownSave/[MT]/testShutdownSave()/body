@@ -1,9 +1,9 @@
 {
   if (!MiscUtils.isPro())   return;
   if (isValgrind())   return;
-  final Client client2=this.getClient();
+  Client client2=this.getClient();
   for (int i=0; i < 256; ++i) {
-    client2.callProcedure(new Callback(),"ArbitraryDurationProc",200);
+    client2.callProcedure("KV.INSERT",i);
   }
   final Client client=getAdminClient();
   ClientResponse resp=client.callProcedure("@PrepareShutdown");
@@ -15,7 +15,7 @@
   }
  catch (  ProcCallException e) {
     System.out.println("@SystemInformation:" + e.getMessage());
-    assertTrue("Server shutdown in progress - new transactions are not processed.".equals(e.getMessage()));
+    assertEquals("incorrect status from @SystemInformation","Server shutdown in progress - new transactions are not processed.",e.getMessage());
   }
   try {
     client2.callProcedure("ArbitraryDurationProc",0);
@@ -23,7 +23,7 @@
   }
  catch (  ProcCallException e) {
     System.out.println("ArbitraryDurationProc:" + e.getMessage());
-    assertTrue("Server shutdown in progress - new transactions are not processed.".equals(e.getMessage()));
+    assertEquals("incorrect status from ArbitraryDurationProc","Server shutdown in progress - new transactions are not processed.",e.getMessage());
   }
   long sum=Long.MAX_VALUE;
   while (sum > 0) {
@@ -69,5 +69,25 @@
     }
 );
     assertTrue("(" + i + ") snapshot did not finish "+ Arrays.asList(finished),finished.length == 1 && finished[0].exists() && finished[0].isFile());
+  }
+  if (!cluster.isNewCli()) {
+    cluster.overrideStartCommandVerb("recover");
+  }
+  m_config.startUp(false);
+  client2=this.getClient();
+  ClientResponse cr=client2.callProcedure("@Statistics","PROCEDUREPROFILE",0);
+  assertEquals("statistics invocation failed: " + cr.getStatusString(),ClientResponse.SUCCESS,cr.getStatus());
+  VoltTable t=cr.getResults()[0];
+  while (t.advanceRow()) {
+    assertNotSame("detected replayed transactions","KV.insert",t.getString(1));
+  }
+  cr=client2.callProcedure("@AdHoc","SELECT COUNT(*) FROM KV;");
+  assertEquals("count(*) invocation failed: " + cr.getStatusString(),ClientResponse.SUCCESS,cr.getStatus());
+  assertEquals("content did not restore",256L,cr.getResults()[0].asScalarLong());
+  m_config.shutDown();
+  for (int i=0; i < HOST_COUNT; ++i) {
+    File snapDH=getSnapshotPathForHost(cluster,i);
+    File terminusFH=new File(snapDH.getParentFile(),VoltDB.TERMINUS_MARKER);
+    assertFalse("(" + i + ") terminus file "+ terminusFH+ " is accessible",terminusFH.exists() && terminusFH.isFile() && terminusFH.canRead());
   }
 }

@@ -1,10 +1,13 @@
 {
-  String[] retval=new String[2];
+  TablePopulationRequirements retval=null;
   if (suspect instanceof Index) {
     Index idx=(Index)suspect;
     assert(idx.getUnique());
-    retval[0]=idx.getParent().getTypeName();
-    retval[1]=String.format("Unable to add unique index %s because table %s is not empty.",idx.getTypeName(),retval[0]);
+    String indexName=idx.getTypeName();
+    retval=new TablePopulationRequirements(indexName);
+    String tableName=idx.getParent().getTypeName();
+    retval.addTableName(tableName);
+    retval.setErrorMessage(String.format("Unable to add unique index %s because table %s is not empty.",indexName,tableName));
     return retval;
   }
   CatalogType parent=suspect.getParent();
@@ -13,8 +16,11 @@
     assert(idx.getUnique());
     assert(changeType == ChangeType.DELETION);
     Table table=(Table)idx.getParent();
-    retval[0]=table.getTypeName();
-    retval[1]=String.format("Unable to remove column %s from unique index %s because table %s is not empty.",suspect.getTypeName(),idx.getTypeName(),retval[0]);
+    String indexName=idx.getTypeName();
+    String tableName=table.getTypeName();
+    String errorMessage=String.format("Unable to remove column %s from unique index %s because table %s is not empty.",suspect.getTypeName(),indexName,tableName);
+    retval=new TablePopulationRequirements(indexName,tableName,errorMessage);
+    retval.addTableName(tableName);
     return retval;
   }
   if ((suspect instanceof Column) && (parent instanceof Table) && (changeType == ChangeType.ADDITION)) {
@@ -23,9 +29,32 @@
     if (CatalogUtil.isTableExportOnly((Database)table.getParent(),table)) {
       return null;
     }
-    retval[0]=parent.getTypeName();
-    retval[1]=String.format("Unable to add NOT NULL column %s because table %s is not empty and no default value was specified.",suspect.getTypeName(),retval[0]);
+    String tableName=parent.getTypeName();
+    retval=new TablePopulationRequirements(tableName);
+    retval.addTableName(tableName);
+    retval.setErrorMessage(String.format("Unable to add NOT NULL column %s because table %s is not empty and no default value was specified.",suspect.getTypeName(),tableName));
     return retval;
+  }
+  if (suspect instanceof Table) {
+    Table tbl=(Table)suspect;
+    if (tbl.getMvhandlerinfo().size() > 0) {
+      MaterializedViewHandlerInfo mvhInfo=tbl.getMvhandlerinfo().get("mvhandlerinfo");
+      if (mvhInfo != null && (!mvhInfo.getIssafewithnonemptysources())) {
+        retval=getMVHandlerInfoMessage(mvhInfo);
+        if (retval != null) {
+          return retval;
+        }
+      }
+    }
+ else {
+      MaterializedViewInfo mvInfo=MaterializedViewProcessor.getMaterializedViewInfo(tbl);
+      if (mvInfo != null && (!mvInfo.getIssafewithnonemptysources())) {
+        retval=getMVInfoMessage(tbl,mvInfo);
+        if (retval != null) {
+          return retval;
+        }
+      }
+    }
   }
   return null;
 }
