@@ -1,18 +1,23 @@
 {
   final VoltDBInterface voltdb=VoltDB.instance();
   if (voltdb.getMode() == OperationMode.SHUTTINGDOWN) {
-    return false;
+    return serverUnavailableResponse("Server is shutding down.",task.clientHandle);
+  }
+  if (voltdb.isShuttingdown() && procedure.getAllowedinshutdown()) {
+    return null;
   }
   if (voltdb.isShuttingdown()) {
-    return procedure.getAllowedinshutdown();
+    return serverUnavailableResponse("Server shutdown in progress - new transactions are not processed.",task.clientHandle);
   }
   if (voltdb.getMode() != OperationMode.PAUSED || handler.isAdmin()) {
-    return true;
+    return null;
   }
-  if (procedure.getSystemproc() && ("@AdHoc".equals(invocation.getProcName()) || "@AdHocSpForTest".equals(invocation.getProcName()))) {
-    return true;
+  final String procName=task.getProcName();
+  if (procedure.getSystemproc() && ("@AdHoc".equals(procName) || "@AdHocSpForTest".equals(procName))) {
+    return null;
   }
- else {
-    return procedure.getReadonly();
+ else   if (!procedure.getReadonly()) {
+    return serverUnavailableResponse("Server is paused and is available in read-only mode - please try again later.",task.clientHandle);
   }
+  return null;
 }
