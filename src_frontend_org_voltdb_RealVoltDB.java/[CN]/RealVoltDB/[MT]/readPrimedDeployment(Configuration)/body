@@ -16,26 +16,34 @@
       VoltDB.crashLocalVoltDB("Not a valid XML deployment file at URL: " + config.m_pathToDeployment,false,null);
       return new ReadDeploymentResults(deploymentBytes,deployment);
     }
-    PathSettings pathSettings=null;
+    if (config.m_sitesperhost == VoltDB.UNDEFINED) {
+      config.m_sitesperhost=deployment.getCluster().getSitesperhost();
+    }
+ else {
+      hostLog.info("Set the local sites count to " + config.m_sitesperhost);
+      consoleLog.info("CLI overrides the local sites count to " + config.m_sitesperhost);
+    }
+    NodeSettings nodeSettings=null;
 switch (config.m_startAction) {
 case PROBE:
       Settings.initialize(config.m_voltdbRoot);
-    pathSettings=PathSettings.create();
-  File pathSettingsFH=new File(getConfigDirectory(config),"path.properties");
-consoleLog.info("Loaded path settings from " + pathSettingsFH.getPath());
-hostLog.info("Loaded path settings from " + pathSettingsFH.getPath());
+    nodeSettings=NodeSettings.create(config.asNodeSettingsMap());
+  File nodeSettingsFH=new File(getConfigDirectory(config),"path.properties");
+consoleLog.info("Loaded node-specific settings from " + nodeSettingsFH.getPath());
+hostLog.info("Loaded node-specific settings from " + nodeSettingsFH.getPath());
 break;
 case INITIALIZE:
 Settings.initialize(config.m_voltdbRoot);
-pathSettings=PathSettings.create(config.asPathSettingsMap(),CatalogUtil.asPathSettingsMap(deployment));
+nodeSettings=NodeSettings.create(config.asNodeSettingsMap(),config.asPathSettingsMap(),CatalogUtil.asNodeSettingsMap(deployment));
 break;
 default :
-pathSettings=PathSettings.create(CatalogUtil.asPathSettingsMap(deployment));
-Settings.initialize(pathSettings.getVoltDBRoot());
-config.m_voltdbRoot=pathSettings.getVoltDBRoot();
+nodeSettings=NodeSettings.create(CatalogUtil.asNodeSettingsMap(deployment));
+Settings.initialize(nodeSettings.getVoltDBRoot());
+config.m_voltdbRoot=nodeSettings.getVoltDBRoot();
 break;
 }
-m_paths=pathSettings;
+m_nodeSettings=nodeSettings;
+m_nodeSettings.store();
 if (config.m_startAction == StartAction.PROBE) {
 if (config.m_hostCount == VoltDB.UNDEFINED) {
 config.m_hostCount=1;
