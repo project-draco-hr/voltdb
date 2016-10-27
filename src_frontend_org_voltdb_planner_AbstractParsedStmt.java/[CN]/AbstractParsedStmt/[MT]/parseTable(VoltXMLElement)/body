@@ -19,21 +19,39 @@
   }
   StmtTableScan tableScan=null;
   Table table=null;
+  AbstractExpression simplifiedSubqueryFilter=null;
   if (subqueryElement == null) {
     table=getTableFromDB(tableName);
     assert(table != null);
-    m_tableList.add(table);
     tableScan=addTableToStmtCache(table,tableAlias);
+    m_tableList.add(table);
   }
  else {
     AbstractParsedStmt subquery=parseFromSubQuery(subqueryElement);
-    tableScan=addSubqueryToStmtCache(subquery,tableAlias);
+    StmtSubqueryScan subqueryScan=addSubqueryToStmtCache(subquery,tableAlias);
+    tableScan=subqueryScan;
+    StmtTargetTableScan simpler=simplifierForSubquery(subquery);
+    if (simpler != null) {
+      tableScan=addSimplifiedSubqueryToStmtCache(subqueryScan,simpler);
+      table=simpler.getTargetTable();
+      assert(subquery.m_joinTree != null);
+      simplifiedSubqueryFilter=subquery.m_joinTree.getAllFilters();
+      List<TupleValueExpression> tves=ExpressionUtil.getTupleValueExpressions(simplifiedSubqueryFilter);
+      for (      TupleValueExpression tve : tves) {
+        tve.setTableAlias(tableScan.getTableAlias());
+        tve.setOrigStmtId(m_stmtId);
+      }
+    }
   }
   AbstractExpression joinExpr=parseJoinCondition(tableNode);
   AbstractExpression whereExpr=parseWhereCondition(tableNode);
+  if (simplifiedSubqueryFilter != null) {
+    joinExpr=(joinExpr != null) ? ExpressionUtil.combine(joinExpr,simplifiedSubqueryFilter) : simplifiedSubqueryFilter;
+  }
   int nodeId=(m_joinTree == null) ? 0 : m_joinTree.getId() + 1;
   JoinNode leafNode;
   if (table != null) {
+    assert(tableScan instanceof StmtTargetTableScan);
     leafNode=new TableLeafNode(nodeId,joinExpr,whereExpr,(StmtTargetTableScan)tableScan);
   }
  else {

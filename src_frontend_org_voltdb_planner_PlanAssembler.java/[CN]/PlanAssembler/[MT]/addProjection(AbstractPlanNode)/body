@@ -1,25 +1,23 @@
 {
   assert(m_parsedSelect != null);
   assert(m_parsedSelect.m_displayColumns != null);
-  ProjectionPlanNode projectionNode=new ProjectionPlanNode();
   NodeSchema proj_schema=m_parsedSelect.getFinalProjectionSchema();
-  List<TupleValueExpression> allTves=new ArrayList<>();
   for (  SchemaColumn col : proj_schema.getColumns()) {
-    allTves.addAll(ExpressionUtil.getTupleValueExpressions(col.getExpression()));
-  }
-  for (  TupleValueExpression tve : allTves) {
-    if (!tve.needsDifferentiation()) {
-      continue;
+    AbstractExpression colExpr=col.getExpression();
+    Collection<TupleValueExpression> allTves=ExpressionUtil.getTupleValueExpressions(colExpr);
+    for (    TupleValueExpression tve : allTves) {
+      if (!tve.needsDifferentiation()) {
+        continue;
+      }
+      rootNode.adjustDifferentiatorField(tve);
     }
-    tve.setDifferentiator(rootNode.adjustDifferentiatorField(tve.getColumnIndex()));
   }
+  ProjectionPlanNode projectionNode=new ProjectionPlanNode();
   projectionNode.setOutputSchemaWithoutClone(proj_schema);
   if (rootNode instanceof AbstractScanPlanNode) {
     rootNode.addInlinePlanNode(projectionNode);
     return rootNode;
   }
- else {
-    projectionNode.addAndLinkChild(rootNode);
-    return projectionNode;
-  }
+  projectionNode.addAndLinkChild(rootNode);
+  return projectionNode;
 }

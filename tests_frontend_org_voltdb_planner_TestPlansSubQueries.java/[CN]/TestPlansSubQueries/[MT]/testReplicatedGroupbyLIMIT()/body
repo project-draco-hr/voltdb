@@ -1,5 +1,6 @@
 {
   AbstractPlanNode pn;
+  AbstractPlanNode aggNode;
   pn=compile("select A, C FROM (SELECT * FROM R1 WHERE A > 3 Limit 3) T1 ");
   pn=pn.getChild(0);
   checkSeqScan(pn,"T1","A","C");
@@ -12,7 +13,8 @@
   pn=compile("select A, SUM(D) FROM (SELECT A, D FROM R1 WHERE A > 3 Limit 3 ) T1 Group by A");
   pn=pn.getChild(0);
   assertTrue(pn instanceof SeqScanPlanNode);
-  assertTrue(pn.getInlinePlanNode(PlanNodeType.HASHAGGREGATE) != null);
+  aggNode=pn.getInlinePlanNode(PlanNodeType.HASHAGGREGATE);
+  assertNotNull(aggNode);
   pn=pn.getChild(0);
   checkSeqScan(pn,"R1","A","D");
   checkPredicateComparisonExpression(pn,"R1");
@@ -21,7 +23,8 @@
   assertNotNull(((SeqScanPlanNode)pn).getInlinePlanNode(PlanNodeType.LIMIT));
   pn=compile("select A, SUM(D) FROM (SELECT A, D FROM R1 WHERE A > 3 ORDER BY D Limit 3 ) T1 Group by A");
   pn=pn.getChild(0);
-  assertTrue(pn.getInlinePlanNode(PlanNodeType.HASHAGGREGATE) != null);
+  aggNode=pn.getInlinePlanNode(PlanNodeType.HASHAGGREGATE);
+  assertNotNull(aggNode);
   checkSeqScan(pn,"T1");
   pn=pn.getChild(0);
   assertTrue(pn instanceof ProjectionPlanNode);
@@ -33,11 +36,13 @@
   checkPredicateComparisonExpression(pn,"R1");
   assertEquals(((SeqScanPlanNode)pn).getInlinePlanNodes().size(),1);
   assertNotNull(((SeqScanPlanNode)pn).getInlinePlanNode(PlanNodeType.PROJECTION));
-  AbstractPlanNode aggNode;
   pn=compile("select A, SUM(D) FROM (SELECT A, D FROM R1 WHERE A > 3 ORDER BY D Limit 3 ) T1 Group by A HAVING SUM(D) < 3");
   pn=pn.getChild(0);
-  assertTrue(pn.getInlinePlanNode(PlanNodeType.HASHAGGREGATE) != null);
+  if (pn instanceof ProjectionPlanNode) {
+    pn=pn.getChild(0);
+  }
   aggNode=pn.getInlinePlanNode(PlanNodeType.HASHAGGREGATE);
+  assertNotNull(aggNode);
   assertNotNull(((HashAggregatePlanNode)aggNode).getPostPredicate());
   checkSeqScan(pn,"T1");
   pn=pn.getChild(0);
@@ -54,8 +59,8 @@
   pn=pn.getChild(0);
   assertTrue(pn instanceof ProjectionPlanNode);
   pn=pn.getChild(0);
-  assertTrue(pn.getInlinePlanNode(PlanNodeType.HASHAGGREGATE) != null);
   aggNode=pn.getInlinePlanNode(PlanNodeType.HASHAGGREGATE);
+  assertNotNull(aggNode);
   assertNotNull(((HashAggregatePlanNode)aggNode).getPostPredicate());
   checkSeqScan(pn,"T1");
   pn=pn.getChild(0);
@@ -72,8 +77,8 @@
   pn=pn.getChild(0);
   assertTrue(pn instanceof ProjectionPlanNode);
   pn=pn.getChild(0);
-  assertTrue(pn.getInlinePlanNode(PlanNodeType.HASHAGGREGATE) != null);
   aggNode=pn.getInlinePlanNode(PlanNodeType.HASHAGGREGATE);
+  assertNotNull(aggNode);
   assertNotNull(((HashAggregatePlanNode)aggNode).getPostPredicate());
   checkSeqScan(pn,"T1");
   pn=pn.getChild(0);
@@ -96,12 +101,14 @@
   assertTrue(pn instanceof OrderByPlanNode);
   assertNotNull(pn.getInlinePlanNode(PlanNodeType.LIMIT));
   pn=pn.getChild(0);
-  assertTrue(pn.getInlinePlanNode(PlanNodeType.HASHAGGREGATE) != null);
+  aggNode=pn.getInlinePlanNode(PlanNodeType.HASHAGGREGATE);
+  assertNotNull(aggNode);
   assertTrue(pn instanceof SeqScanPlanNode);
   checkSeqScan(pn,"R1");
   pn=compile("select SC, SUM(A) as SA FROM (SELECT A, SUM(C) as SC, MAX(D) as MD FROM R1 " + "WHERE A > 3 GROUP BY A ORDER BY A Limit 3) T1  " + "Group by SC");
   pn=pn.getChild(0);
-  assertTrue(pn.getInlinePlanNode(PlanNodeType.HASHAGGREGATE) != null);
+  aggNode=pn.getInlinePlanNode(PlanNodeType.HASHAGGREGATE);
+  assertNotNull(aggNode);
   assertTrue(pn instanceof SeqScanPlanNode);
   checkSeqScan(pn,"T1");
   pn=pn.getChild(0);

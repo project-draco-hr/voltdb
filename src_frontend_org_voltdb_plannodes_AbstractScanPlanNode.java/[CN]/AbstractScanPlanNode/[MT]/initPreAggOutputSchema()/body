@@ -1,0 +1,28 @@
+{
+  ProjectionPlanNode proj=(ProjectionPlanNode)getInlinePlanNode(PlanNodeType.PROJECTION);
+  if (proj != null) {
+    m_outputSchema=proj.getOutputSchema().copyAndReplaceWithTVE();
+    m_hasSignificantOutputSchema=false;
+  }
+ else   if (m_tableScanSchema.size() != 0) {
+    int difftor=0;
+    for (    SchemaColumn col : m_tableScanSchema.getColumns()) {
+      col.setDifferentiator(difftor);
+      ++difftor;
+      AbstractExpression colExpr=col.getExpression();
+      assert(colExpr instanceof TupleValueExpression);
+      TupleValueExpression tve=(TupleValueExpression)colExpr;
+      tve.setColumnIndexUsingSchema(m_tableSchema);
+    }
+    m_tableScanSchema.sortByTveIndex();
+    ProjectionPlanNode projectionNode=new ProjectionPlanNode(m_tableScanSchema);
+    addInlinePlanNode(projectionNode);
+    m_outputSchema=projectionNode.getOutputSchema().copyAndReplaceWithTVE();
+    m_hasSignificantOutputSchema=false;
+  }
+ else {
+    m_outputSchema=m_tableSchema.clone();
+    m_hasSignificantOutputSchema=true;
+  }
+  m_preAggOutputSchema=m_outputSchema;
+}

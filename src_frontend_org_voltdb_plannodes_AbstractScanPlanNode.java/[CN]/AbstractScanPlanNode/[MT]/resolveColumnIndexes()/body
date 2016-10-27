@@ -1,21 +1,20 @@
 {
   List<TupleValueExpression> predicate_tves=ExpressionUtil.getTupleValueExpressions(m_predicate);
   for (  TupleValueExpression tve : predicate_tves) {
-    int index=tve.resolveColumnIndexesUsingSchema(m_tableSchema);
-    tve.setColumnIndex(index);
+    tve.setColumnIndexUsingSchema(m_tableSchema);
   }
   ProjectionPlanNode proj=(ProjectionPlanNode)getInlinePlanNode(PlanNodeType.PROJECTION);
   if (proj != null) {
     proj.resolveColumnIndexesUsingSchema(m_tableSchema);
     m_outputSchema=proj.getOutputSchema().clone();
-    m_hasSignificantOutputSchema=false;
   }
  else {
+    m_outputSchema=m_preAggOutputSchema;
     for (    SchemaColumn col : m_outputSchema.getColumns()) {
-      assert(col.getExpression() instanceof TupleValueExpression);
-      TupleValueExpression tve=(TupleValueExpression)col.getExpression();
-      int index=tve.resolveColumnIndexesUsingSchema(m_tableSchema);
-      tve.setColumnIndex(index);
+      AbstractExpression colExpr=col.getExpression();
+      assert(colExpr instanceof TupleValueExpression);
+      TupleValueExpression tve=(TupleValueExpression)colExpr;
+      tve.setColumnIndexUsingSchema(m_tableSchema);
     }
     m_outputSchema.sortByTveIndex();
   }
@@ -28,7 +27,7 @@
   AggregatePlanNode aggNode=AggregatePlanNode.getInlineAggregationNode(this);
   if (aggNode != null) {
     aggNode.resolveColumnIndexesUsingSchema(m_outputSchema);
-    m_outputSchema=aggNode.getOutputSchema().clone();
+    m_outputSchema=aggNode.getOutputSchema().copyAndReplaceWithTVE();
     m_hasSignificantOutputSchema=true;
   }
 }

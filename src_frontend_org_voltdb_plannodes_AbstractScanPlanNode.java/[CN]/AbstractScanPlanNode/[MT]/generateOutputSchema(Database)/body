@@ -1,50 +1,8 @@
 {
   if (m_tableSchema == null) {
-    if (isSubQuery()) {
-      assert(m_children.size() == 1);
-      m_children.get(0).generateOutputSchema(db);
-      m_tableSchema=m_children.get(0).getOutputSchema();
-      m_tableSchema=m_tableSchema.replaceTableClone(getTargetTableAlias());
-    }
- else {
-      m_tableSchema=new NodeSchema();
-      CatalogMap<Column> cols=db.getTables().getExact(m_targetTableName).getColumns();
-      for (      Column col : CatalogUtil.getSortedCatalogItems(cols,"index")) {
-        TupleValueExpression tve=new TupleValueExpression(m_targetTableName,m_targetTableAlias,col.getTypeName(),col.getTypeName(),col.getIndex());
-        tve.setTypeSizeBytes(col.getType(),col.getSize(),col.getInbytes());
-        m_tableSchema.addColumn(new SchemaColumn(m_targetTableName,m_targetTableAlias,col.getTypeName(),col.getTypeName(),tve,col.getIndex()));
-      }
-    }
+    initTableSchema(db);
   }
-  ProjectionPlanNode proj=(ProjectionPlanNode)getInlinePlanNode(PlanNodeType.PROJECTION);
-  if (proj != null) {
-    m_outputSchema=proj.getOutputSchema().copyAndReplaceWithTVE();
-    m_hasSignificantOutputSchema=false;
-  }
- else   if (m_tableScanSchema.size() != 0) {
-    List<TupleValueExpression> scan_tves=new ArrayList<TupleValueExpression>();
-    int i=0;
-    for (    SchemaColumn col : m_tableScanSchema.getColumns()) {
-      assert(col.getExpression() instanceof TupleValueExpression);
-      col.setDifferentiator(i);
-      scan_tves.addAll(ExpressionUtil.getTupleValueExpressions(col.getExpression()));
-      ++i;
-    }
-    for (    TupleValueExpression tve : scan_tves) {
-      int index=tve.resolveColumnIndexesUsingSchema(m_tableSchema);
-      tve.setColumnIndex(index);
-    }
-    m_tableScanSchema.sortByTveIndex();
-    ProjectionPlanNode projectionNode=new ProjectionPlanNode();
-    projectionNode.setOutputSchema(m_tableScanSchema);
-    addInlinePlanNode(projectionNode);
-    m_outputSchema=projectionNode.getOutputSchema().copyAndReplaceWithTVE();
-    m_hasSignificantOutputSchema=false;
-  }
- else {
-    m_outputSchema=m_tableSchema.clone();
-    m_hasSignificantOutputSchema=true;
-  }
+  initPreAggOutputSchema();
   Collection<AbstractExpression> exprs=findAllSubquerySubexpressions();
   for (  AbstractExpression expr : exprs) {
     ((AbstractSubqueryExpression)expr).generateOutputSchema(db);

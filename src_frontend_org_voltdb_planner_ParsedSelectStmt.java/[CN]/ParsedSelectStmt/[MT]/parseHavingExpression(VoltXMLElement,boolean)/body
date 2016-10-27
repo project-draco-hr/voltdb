@@ -4,6 +4,7 @@
   m_having=parseConditionTree(havingNode.children.get(0));
   assert(m_having != null);
   if (m_having.hasSubquerySubexpression()) {
+    m_aggregationList.clear();
     throw new PlanningErrorException("SQL HAVING with subquery expression is not allowed.");
   }
   if (isDistributed) {
@@ -13,25 +14,35 @@
   ExpressionUtil.finalizeValueTypes(m_having);
   m_having=ExpressionUtil.evaluateExpression(m_having);
   if (ConstantValueExpression.isBooleanTrue(m_having)) {
+    m_aggregationList.clear();
     m_having=null;
   }
-  if (m_aggregationList.size() >= 1) {
-    m_hasAggregateExpression=true;
+  if (m_aggregationList.isEmpty()) {
+    return;
   }
+  m_hasAggregateExpression=true;
   for (  AbstractExpression expr : m_aggregationList) {
-    ParsedColInfo col=new ParsedColInfo();
-    col.expression=(AbstractExpression)expr.clone();
-    assert(col.expression instanceof AggregateExpression);
-    if (col.expression.getExpressionType() == ExpressionType.AGGREGATE_AVG) {
+    assert(expr instanceof AggregateExpression);
+    if (expr.getExpressionType() == ExpressionType.AGGREGATE_AVG) {
       m_hasAverage=true;
     }
-    col.tableName=TEMP_TABLE_NAME;
-    col.tableAlias=TEMP_TABLE_NAME;
-    col.columnName="";
-    if (!m_aggResultColumns.contains(col)) {
-      m_hasComplexAgg=true;
-      ExpressionUtil.finalizeValueTypes(col.expression);
+    boolean isNewAgg=true;
+    for (    ParsedColInfo existingAggCol : m_aggResultColumns) {
+      AbstractExpression existingExpr=existingAggCol.expression;
+      if (expr.equals(existingExpr)) {
+        isNewAgg=false;
+        break;
+      }
+    }
+    if (isNewAgg) {
+      ExpressionUtil.finalizeValueTypes(expr);
+      ParsedColInfo col=new ParsedColInfo();
+      col.expression=expr.clone();
+      col.tableName=TEMP_TABLE_NAME;
+      col.tableAlias=TEMP_TABLE_NAME;
+      col.columnName="";
       m_aggResultColumns.add(col);
+      m_hasComplexAgg=true;
     }
   }
 }

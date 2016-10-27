@@ -1,39 +1,35 @@
 {
+  AggregatePlanNode rootAggNode;
   if (coordNode != null) {
     coordNode.m_isCoordinatingAggregator=true;
   }
   if (coordNode != null && root instanceof ReceivePlanNode) {
-    boolean noNeedCoordNode=selectStmt.hasPartitionColumnInGroupby();
     AbstractPlanNode accessPlanTemp=root;
     root=accessPlanTemp.getChild(0).getChild(0);
     root.clearParents();
     accessPlanTemp.getChild(0).clearChildren();
     distNode.addAndLinkChild(root);
-    if (noNeedCoordNode) {
-      distNode.setPostPredicate(m_parsedSelect.m_having);
-      if (m_parsedSelect.isComplexOrderBy()) {
+    if (selectStmt.hasPartitionColumnInGroupby()) {
+      distNode.setPostPredicate(selectStmt.getHavingPredicate());
+      if (selectStmt.isComplexOrderBy()) {
         accessPlanTemp.getChild(0).addAndLinkChild(distNode);
         root=processComplexAggProjectionNode(selectStmt,accessPlanTemp);
         return root;
       }
- else {
-        root=processComplexAggProjectionNode(selectStmt,distNode);
-        accessPlanTemp.getChild(0).addAndLinkChild(root);
-        return accessPlanTemp;
-      }
+      root=processComplexAggProjectionNode(selectStmt,distNode);
+      accessPlanTemp.getChild(0).addAndLinkChild(root);
+      return accessPlanTemp;
     }
     fixDistributedApproxCountDistinct(distNode,coordNode);
     accessPlanTemp.getChild(0).addAndLinkChild(distNode);
-    root=accessPlanTemp;
-    coordNode.addAndLinkChild(root);
-    root=coordNode;
-    coordNode.setPostPredicate(m_parsedSelect.m_having);
+    coordNode.addAndLinkChild(accessPlanTemp);
+    rootAggNode=coordNode;
   }
  else {
     distNode.addAndLinkChild(root);
-    root=distNode;
-    distNode.setPostPredicate(m_parsedSelect.m_having);
+    rootAggNode=distNode;
   }
-  root=processComplexAggProjectionNode(selectStmt,root);
+  rootAggNode.setPostPredicate(selectStmt.getHavingPredicate());
+  root=processComplexAggProjectionNode(selectStmt,rootAggNode);
   return root;
 }
